@@ -63,6 +63,14 @@ class GlxTracer(GlTracer):
         if function.name in self.destroyContextFunctionNames:
             print('    gltrace::releaseContext((uintptr_t)ctx);')
 
+        if function.name == 'glCompressedTexImage2DARB':
+            width_arg = function.args[3].name
+            height_arg = function.args[4].name
+            format_arg = function.args[2].name
+            print('    THE_TextureWidth = %s;' % width_arg)
+            print('    THE_TextureHeight = %s;' % height_arg)
+            print('    THE_TextureFormat = %s;' % format_arg)
+
         GlTracer.traceFunctionImplBody(self, function)
 
         if function.name == 'glXSwapBuffers':
@@ -73,10 +81,7 @@ class GlxTracer(GlTracer):
             texture_arg = function.args[1].name
             print('    THE_TextureId = %s;' % texture_arg)
         elif function.name == 'glCompressedTexImage2DARB':
-            width_arg = function.args[3].name
-            height_arg = function.args[4].name
-            print('    THE_TextureWidth = %s;' % width_arg)
-            print('    THE_TextureHeight = %s;' % height_arg)
+            print('    THE_TextureFormat = 0;')
         elif function.name == 'glXCreateContextAttribsARB':
             print('    if (_result != NULL)')
             print('        gltrace::createContext((uintptr_t)_result, (uintptr_t)share_context);')

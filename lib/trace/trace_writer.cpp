@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <wchar.h>
 #include <vector>
 #include <sys/stat.h>
@@ -47,7 +48,43 @@ int THE_TextureFormat = 0;
 
 namespace trace {
 
+static const int THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT = 0x83F0;
+
+static void writeDssHeader(FILE *f, int width, int height, size_t dataSize) {
+    if (!f) {
+        return;
+    }
+
+    const uint32_t DDSD_CAPS = 0x00000001u;
+    const uint32_t DDSD_HEIGHT = 0x00000002u;
+    const uint32_t DDSD_WIDTH = 0x00000004u;
+    const uint32_t DDSD_PIXELFORMAT = 0x00001000u;
+    const uint32_t DDSD_LINEARSIZE = 0x00080000u;
+    const uint32_t DDSCAPS_TEXTURE = 0x00001000u;
+    const uint32_t DDPF_FOURCC = 0x00000004u;
+
+    uint32_t header[31] = {0};
+    header[0] = 124u; // DDS_HEADER.dwSize
+    header[1] = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT | DDSD_LINEARSIZE;
+    header[2] = (uint32_t)height;
+    header[3] = (uint32_t)width;
+    header[4] = (uint32_t)dataSize;
+    header[7] = 1u; // dwMipMapCount
+    header[18] = 32u; // DDS_PIXELFORMAT.dwSize
+    header[19] = DDPF_FOURCC;
+    header[20] = 0x31545844u; // "DXT1"
+    header[26] = DDSCAPS_TEXTURE;
+
+    static const char magic[4] = {'D', 'D', 'S', ' '};
+    fwrite(magic, 1, sizeof(magic), f);
+    fwrite(header, sizeof(uint32_t), 31, f);
+}
+
 static void exportPlain(const void *ptr, size_t size, int id) {
+    if (THE_TextureFormat != THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT) {
+        return;
+    }
+
     struct stat st = {0};
     if (stat("/tmp/output", &st) == -1) {
         mkdir("/tmp/output", 0755);
@@ -61,10 +98,11 @@ static void exportPlain(const void *ptr, size_t size, int id) {
     }
 
     char filePath[512];
-    snprintf(filePath, sizeof(filePath), "%s/%dx%d_%d.bin", frameDir, THE_TextureWidth, THE_TextureHeight, id);
+    snprintf(filePath, sizeof(filePath), "%s/%dx%d_%d.dds", frameDir, THE_TextureWidth, THE_TextureHeight, id);
 
     FILE *f = fopen(filePath, "wb");
     if (f) {
+        writeDssHeader(f, THE_TextureWidth, THE_TextureHeight, size);
         fwrite(ptr, 1, size, f);
         fclose(f);
     }
