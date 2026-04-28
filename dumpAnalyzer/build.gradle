@@ -1,5 +1,6 @@
 plugins {
     id 'application'
+    id 'antlr'
 }
 
 group = 'org.example'
@@ -14,7 +15,7 @@ java {
 sourceSets {
     main {
         java {
-            srcDirs = ['src/java']
+            srcDirs = ['src/java', "$buildDir/generated-src/antlr/main"]
         }
     }
 }
@@ -26,3 +27,14 @@ application {
 repositories {
     mavenCentral()
 }
+
+dependencies {
+    antlr 'org.antlr:antlr4:4.13.2'
+    implementation 'org.antlr:antlr4-runtime:4.13.2'
+}
+
+generateGrammarSource {
+    arguments += ['-visitor', '-long-messages']
+}
+
+compileJava.dependsOn(generateGrammarSource)
