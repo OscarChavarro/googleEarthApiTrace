@@ -63,6 +63,12 @@ class GlxTracer(GlTracer):
         if function.name in self.destroyContextFunctionNames:
             print('    gltrace::releaseContext((uintptr_t)ctx);')
 
+        if function.name == 'glDrawElements':
+            print('    THE_DrawElementMode = mode;')
+            print('    THE_DrawElementType = type;')
+            print('    THE_DrawElementBlobId = (unsigned long long)(uintptr_t)indices;')
+            print('    THE_DrawElementShouldExport = (mode == GL_TRIANGLE_STRIP && type == GL_UNSIGNED_SHORT) ? 1 : 0;')
+
         if function.name == 'glCompressedTexImage2DARB':
             width_arg = function.args[3].name
             height_arg = function.args[4].name
@@ -82,6 +88,9 @@ class GlxTracer(GlTracer):
             print('    THE_TextureId = %s;' % texture_arg)
         elif function.name == 'glCompressedTexImage2DARB':
             print('    THE_TextureFormat = 0;')
+        elif function.name == 'glDrawElements':
+            print('    THE_DrawElementShouldExport = 0;')
+            print('    THE_DrawElementBlobId = 0;')
         elif function.name == 'glXCreateContextAttribsARB':
             print('    if (_result != NULL)')
             print('        gltrace::createContext((uintptr_t)_result, (uintptr_t)share_context);')

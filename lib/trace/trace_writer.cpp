@@ -46,11 +46,19 @@ int THE_TextureId = 0;
 int THE_TextureWidth = 0;
 int THE_TextureHeight = 0;
 int THE_TextureFormat = 0;
+int THE_DrawElementMode = 0;
+int THE_DrawElementType = 0;
+int THE_DrawElementShouldExport = 0;
+unsigned long long THE_DrawElementBlobId = 0;
 
 namespace trace {
 
 static const int THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT = 0x83F0;
+static const int THE_GL_TRIANGLE_STRIP = 0x0005;
+static const int THE_GL_UNSIGNED_SHORT = 0x1403;
 static std::unordered_map<int, bool> g_exportedTextureIds;
+static std::unordered_map<unsigned long long, bool> g_exportedDrawElementBlobIds;
+static std::unordered_map<int, unsigned long long> g_drawElementCountByFrame;
 
 static void writeDssHeader(FILE *f, int width, int height, size_t dataSize) {
     if (!f) {
@@ -112,6 +120,47 @@ static void exportPlain(const void *ptr, size_t size, int id) {
         fwrite(ptr, 1, size, f);
         fclose(f);
         g_exportedTextureIds[id] = true;
+    }
+}
+
+static void exportDrawElementsBlob(const void *ptr, size_t size) {
+    if (!THE_DrawElementShouldExport) {
+        return;
+    }
+
+    if (THE_DrawElementMode != THE_GL_TRIANGLE_STRIP || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
+        return;
+    }
+
+    if (THE_DrawElementBlobId == 0) {
+        return;
+    }
+
+    if (g_exportedDrawElementBlobIds.find(THE_DrawElementBlobId) != g_exportedDrawElementBlobIds.end()) {
+        return;
+    }
+
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    unsigned long long drawCount = ++g_drawElementCountByFrame[THE_FrameNumber];
+
+    char filePath[512];
+    snprintf(filePath, sizeof(filePath), "%s/drawElements_%llu.bin", frameDir, drawCount);
+
+    FILE *f = fopen(filePath, "wb");
+    if (f) {
+        fwrite(ptr, 1, size, f);
+        fclose(f);
+        g_exportedDrawElementBlobIds[THE_DrawElementBlobId] = true;
     }
 }
 
@@ -419,6 +468,8 @@ void Writer::writeBlob(const void *data, size_t size) {
     if (size >= 32768) {
         exportPlain(data, size, THE_TextureId);
     }
+
+    exportDrawElementsBlob(data, size);
 
     _writeByte(trace::TYPE_BLOB);
     _writeUInt(size);

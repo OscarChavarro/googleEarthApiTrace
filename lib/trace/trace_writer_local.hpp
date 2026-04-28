@@ -127,3 +127,7 @@ extern int THE_FrameNumber;
 extern int THE_TextureWidth;
 extern int THE_TextureHeight;
 extern int THE_TextureFormat;
+extern int THE_DrawElementMode;
+extern int THE_DrawElementType;
+extern int THE_DrawElementShouldExport;
+extern unsigned long long THE_DrawElementBlobId;
