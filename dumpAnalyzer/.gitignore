@@ -1,0 +1,13 @@
+# Gradle build outputs
+.gradle/
+build/
+
+# Compiled Java classes
+*.class
+
+# IDE files
+.idea/
+*.iml
+
+# Local output folder
+output/
