@@ -2,8 +2,13 @@ package dumpanalyzer;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public class Main {
@@ -18,6 +23,7 @@ public class Main {
         GlTraceProcessor processor = new GlTraceProcessor(counter);
         FrameScanner scanner = new FrameScanner(OUTPUT_ROOT);
         List<FrameTask> frameTasks = scanner.scanFrames();
+        Set<Frame> frames = ConcurrentHashMap.newKeySet();
 
         BlockingQueue<FrameTask> frameQueue = new LinkedBlockingQueue<>();
         BlockingQueue<String> logQueue = new LinkedBlockingQueue<>();
@@ -35,7 +41,8 @@ public class Main {
 
         Thread[] workers = new Thread[workerCount];
         for (int i = 0; i < workerCount; i++) {
-            workers[i] = createWorker(frameQueue, logQueue, processor, i);
+            int workerId = i;
+            workers[i] = createWorker(frameQueue, logQueue, processor, frames, workerId);
             workers[i].start();
         }
 
@@ -47,12 +54,14 @@ public class Main {
         joinOrFail(loggerThread, "logger");
 
         counter.printSorted();
+        writeFrames(frames);
     }
 
     private static Thread createWorker(
         BlockingQueue<FrameTask> frameQueue,
         BlockingQueue<String> logQueue,
         GlTraceProcessor processor,
+        Set<Frame> frames,
         int workerId
     ) {
         return new Thread(() -> {
@@ -61,9 +70,22 @@ public class Main {
                 if (task.frame() < 0) {
                     return;
                 }
-                processor.processFrame(task.frame(), task.filename(), logQueue);
+                Frame frame = processor.processFrame(task.frame(), task.filename(), logQueue);
+                frames.add(frame);
             }
         }, "frame-worker-" + workerId);
+    }
+
+    private static void writeFrames(Set<Frame> frameSet) {
+        for (Frame frame : frameSet) {
+            Path frameDir = OUTPUT_ROOT.resolve(String.format("%05d", frame.getId()));
+            Path frameFile = frameDir.resolve("frame.txt");
+            try {
+                Files.writeString(frameFile, frame.toString() + System.lineSeparator(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                FatalErrorHandler.fail(frameFile, "Cannot write frame file: " + e.getMessage());
+            }
+        }
     }
 
     private static Thread createLoggerThread(BlockingQueue<String> logQueue) {

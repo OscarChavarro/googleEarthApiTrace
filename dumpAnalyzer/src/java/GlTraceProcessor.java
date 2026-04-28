@@ -5,6 +5,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.BlockingQueue;
 
 import org.antlr.v4.runtime.BaseErrorListener;
@@ -14,13 +18,16 @@ import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 
 public class GlTraceProcessor {
+    private static final Pattern BIND_TEXTURE_PATTERN = Pattern.compile(
+        "\\bglBindTexture\\s*\\(\\s*[^,]+,\\s*(\\d+)\\s*\\)"
+    );
     private final FunctionCounter functionCounter;
 
     public GlTraceProcessor(FunctionCounter functionCounter) {
         this.functionCounter = functionCounter;
     }
 
-    public void processFrame(int frame, String filename, BlockingQueue<String> logQueue) {
+    public Frame processFrame(int frame, String filename, BlockingQueue<String> logQueue) {
         enqueueLog(logQueue, "Processing frame " + frame + " from file " + filename);
         Path filePath = Paths.get(filename).toAbsolutePath();
 
@@ -29,12 +36,31 @@ public class GlTraceProcessor {
             content = Files.readString(filePath, StandardCharsets.UTF_8);
         } catch (IOException e) {
             FatalErrorHandler.fail(filePath, "Cannot read file: " + e.getMessage());
-            return;
+            return new Frame(frame);
         }
 
         String normalized = LogicalLineNormalizer.normalize(content);
         parseOrFail(filePath, normalized);
         functionCounter.addFromContent(normalized);
+
+        return buildFrameFromGlTrace(frame, normalized);
+    }
+
+    private static Frame buildFrameFromGlTrace(int frameId, String normalizedContent) {
+        Frame frame = new Frame(frameId);
+        Set<Integer> ids = new LinkedHashSet<>();
+        Matcher matcher = BIND_TEXTURE_PATTERN.matcher(normalizedContent);
+
+        while (matcher.find()) {
+            ids.add(Integer.parseInt(matcher.group(1)));
+        }
+
+        for (Integer contentId : ids) {
+            frame.addTile(new TileInstance(contentId, null, null, null, null));
+        }
+
+        frame.sortTilesByContentId();
+        return frame;
     }
 
     private static void enqueueLog(BlockingQueue<String> logQueue, String message) {
