@@ -11,17 +11,27 @@ public class FunctionCounter {
     private final Map<String, Integer> functionCounts = new LinkedHashMap<>();
 
     public void addFromContent(String normalizedContent) {
+        Map<String, Integer> localCounts = new LinkedHashMap<>();
+
         CommonTokenStream tokenStream = new CommonTokenStream(new GlTraceLexer(CharStreams.fromString(normalizedContent)));
         tokenStream.fill();
 
         for (Token token : tokenStream.getTokens()) {
             if (token.getType() == GlTraceLexer.GL_FUNCTION) {
-                functionCounts.merge(token.getText(), 1, Integer::sum);
+                localCounts.merge(token.getText(), 1, Integer::sum);
             }
+        }
+
+        mergeLocalCounts(localCounts);
+    }
+
+    private synchronized void mergeLocalCounts(Map<String, Integer> localCounts) {
+        for (Map.Entry<String, Integer> entry : localCounts.entrySet()) {
+            functionCounts.merge(entry.getKey(), entry.getValue(), Integer::sum);
         }
     }
 
-    public void printSorted() {
+    public synchronized void printSorted() {
         functionCounts.entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> System.out.println(entry.getKey() + " => " + entry.getValue()));

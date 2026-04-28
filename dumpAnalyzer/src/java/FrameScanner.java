@@ -3,45 +3,43 @@ package dumpanalyzer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class FrameScanner {
-    @FunctionalInterface
-    public interface FrameConsumer {
-        void accept(int frame, String filename);
-    }
-
     private final Path outputRoot;
-    private final FrameConsumer frameConsumer;
 
-    public FrameScanner(Path outputRoot, FrameConsumer frameConsumer) {
+    public FrameScanner(Path outputRoot) {
         this.outputRoot = outputRoot;
-        this.frameConsumer = frameConsumer;
     }
 
-    public void scan() {
+    public List<FrameTask> scanFrames() {
         if (!Files.exists(outputRoot)) {
             System.out.println("Output folder does not exist: " + outputRoot);
-            return;
+            return List.of();
         }
 
         if (!Files.isDirectory(outputRoot)) {
             System.out.println("Output path is not a directory: " + outputRoot);
-            return;
+            return List.of();
         }
 
+        List<FrameTask> tasks = new ArrayList<>();
         try (Stream<Path> entries = Files.list(outputRoot)) {
             entries
                 .filter(Files::isDirectory)
                 .sorted(Comparator.comparing(path -> path.getFileName().toString()))
-                .forEach(this::processFrameDirectory);
+                .forEach(frameDirectory -> addFrameTask(frameDirectory, tasks));
         } catch (IOException e) {
             FatalErrorHandler.fail(outputRoot, "Failed to scan output folder: " + e.getMessage());
         }
+
+        return tasks;
     }
 
-    private void processFrameDirectory(Path frameDirectory) {
+    private static void addFrameTask(Path frameDirectory, List<FrameTask> tasks) {
         String frameDirName = frameDirectory.getFileName().toString();
         int frame;
 
@@ -53,7 +51,7 @@ public class FrameScanner {
 
         Path glFile = frameDirectory.resolve("gl.txt");
         if (Files.isRegularFile(glFile)) {
-            frameConsumer.accept(frame, glFile.toAbsolutePath().toString());
+            tasks.add(new FrameTask(frame, glFile.toAbsolutePath().toString()));
         }
     }
 }

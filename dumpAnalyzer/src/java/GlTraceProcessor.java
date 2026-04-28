@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.BlockingQueue;
 
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStreams;
@@ -19,8 +20,8 @@ public class GlTraceProcessor {
         this.functionCounter = functionCounter;
     }
 
-    public void processFrame(int frame, String filename) {
-        System.out.println("Processing frame " + frame + " from file " + filename);
+    public void processFrame(int frame, String filename, BlockingQueue<String> logQueue) {
+        enqueueLog(logQueue, "Processing frame " + frame + " from file " + filename);
         Path filePath = Paths.get(filename).toAbsolutePath();
 
         String content;
@@ -34,6 +35,15 @@ public class GlTraceProcessor {
         String normalized = LogicalLineNormalizer.normalize(content);
         parseOrFail(filePath, normalized);
         functionCounter.addFromContent(normalized);
+    }
+
+    private static void enqueueLog(BlockingQueue<String> logQueue, String message) {
+        try {
+            logQueue.put(message);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            FatalErrorHandler.fail(Path.of("/tmp/output"), "Interrupted while queuing log message");
+        }
     }
 
     private static void parseOrFail(Path filePath, String normalized) {
