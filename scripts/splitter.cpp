@@ -12,11 +12,11 @@
 
 #define MAX_LINE 2048
 
-static int ensure_output_dir() {
+static int ensure_output_dir(const char *output) {
     struct stat st;
-    if (stat("./output", &st) != 0) {
-        if (mkdir("./output", 0755) != 0) {
-            printf("Error creating ./output: %s\n", strerror(errno));
+    if (stat(output, &st) != 0) {
+        if (mkdir(output, 0755) != 0) {
+            printf("Error creating %s: %s\n", output, strerror(errno));
             return 0;
         }
     }
@@ -25,8 +25,12 @@ static int ensure_output_dir() {
 
 static FILE* open_output_file(int index) {
     char path[64];
-    // 0001.txt, 0002.txt, ...
-    snprintf(path, sizeof(path), "./output/%04d.txt", index);
+
+    snprintf(path, sizeof(path), "./output/%05d", index);
+    if (!ensure_output_dir(path)) {
+    }
+
+    snprintf(path, sizeof(path), "./output/%05d/gl.txt", index);
     FILE* f = fopen(path, "wb");
     if (!f) {
         printf("Error opening output file %s: %s\n", path, strerror(errno));
@@ -40,7 +44,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!ensure_output_dir()) {
+    if (!ensure_output_dir("./output")) {
         return 1;
     }
 

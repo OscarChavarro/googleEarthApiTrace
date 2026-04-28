@@ -27,15 +27,12 @@
 
 """GLX tracing generator."""
 
-
 from gltrace import GlTracer
 from specs.stdapi import Module, API
 from specs.glapi import glapi
 from specs.glxapi import glxapi
 
-
 class GlxTracer(GlTracer):
-
     def isFunctionPublic(self, function):
         # The symbols visible in libGL.so can vary, so expose them all
         return True
@@ -68,7 +65,19 @@ class GlxTracer(GlTracer):
 
         GlTracer.traceFunctionImplBody(self, function)
 
-        if function.name == 'glXCreateContextAttribsARB':
+        if function.name == 'glXSwapBuffers':
+            print('    printf("Frame %d\\n", THE_FrameNumber);')
+            print('    fflush(stdout);')
+            print('    THE_FrameNumber++;')
+        elif function.name == 'glBindTexture':
+            texture_arg = function.args[1].name
+            print('    THE_TextureId = %s;' % texture_arg)
+        elif function.name == 'glCompressedTexImage2DARB':
+            width_arg = function.args[3].name
+            height_arg = function.args[4].name
+            print('    THE_TextureWidth = %s;' % width_arg)
+            print('    THE_TextureHeight = %s;' % height_arg)
+        elif function.name == 'glXCreateContextAttribsARB':
             print('    if (_result != NULL)')
             print('        gltrace::createContext((uintptr_t)_result, (uintptr_t)share_context);')
         elif function.name == 'glXCreateContextWithConfigSGIX':
@@ -169,6 +178,7 @@ if __name__ == '__main__':
     print('#include <memory>')
     print()
     print('#include "trace_writer_local.hpp"')
+    print('#include "trace_writer.hpp"')
     print()
     print('// To validate our prototypes')
     print('#define GL_GLEXT_PROTOTYPES')

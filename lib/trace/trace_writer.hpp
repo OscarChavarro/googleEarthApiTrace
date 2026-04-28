@@ -123,3 +123,7 @@ namespace trace {
 
 } /* namespace trace */
 
+extern int THE_TextureId;
+extern int THE_TextureWidth;
+extern int THE_TextureHeight;
+extern int THE_TextureFormat;

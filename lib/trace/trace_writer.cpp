@@ -31,14 +31,44 @@
 #include <string.h>
 #include <wchar.h>
 #include <vector>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "os.hpp"
 #include "trace_ostream.hpp"
 #include "trace_writer.hpp"
 #include "trace_format.hpp"
 
+int THE_FrameNumber = 1;
+int THE_TextureId = 0;
+int THE_TextureWidth = 0;
+int THE_TextureHeight = 0;
+int THE_TextureFormat = 0;
+
 namespace trace {
 
+static void exportPlain(const void *ptr, size_t size, int id) {
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    char filePath[512];
+    snprintf(filePath, sizeof(filePath), "%s/%dx%d_%d.bin", frameDir, THE_TextureWidth, THE_TextureHeight, id);
+
+    FILE *f = fopen(filePath, "wb");
+    if (f) {
+        fwrite(ptr, 1, size, f);
+        fclose(f);
+    }
+}
 
 Writer::Writer() :
     call_no(0)
@@ -340,6 +370,11 @@ void Writer::writeBlob(const void *data, size_t size) {
         Writer::writeNull();
         return;
     }
+
+    if (size >= 32768) {
+        exportPlain(data, size, THE_TextureId);
+    }
+
     _writeByte(trace::TYPE_BLOB);
     _writeUInt(size);
     if (size) {
@@ -391,6 +426,4 @@ void Writer::writePointer(unsigned long long addr) {
     _writeUInt(addr);
 }
 
-
 } /* namespace trace */
-
