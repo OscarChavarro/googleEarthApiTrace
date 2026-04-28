@@ -1,9 +1,12 @@
 package dumpanalyzer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.util.DefaultIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +18,8 @@ public class Main {
     private static final Path OUTPUT_ROOT = Paths.get("/tmp/output");
     private static final FrameTask POISON_TASK = new FrameTask(-1, "");
     private static final String LOG_POISON = "__LOG_POISON__";
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+    private static final DefaultPrettyPrinter JSON_PRETTY_PRINTER = createPrettyPrinter();
 
     public static void main(String[] args) {
         int workerCount = Runtime.getRuntime().availableProcessors();
@@ -79,13 +84,21 @@ public class Main {
     private static void writeFrames(Set<Frame> frameSet) {
         for (Frame frame : frameSet) {
             Path frameDir = OUTPUT_ROOT.resolve(String.format("%05d", frame.getId()));
-            Path frameFile = frameDir.resolve("frame.txt");
+            Path frameFile = frameDir.resolve("frame.json");
             try {
-                Files.writeString(frameFile, frame.toString() + System.lineSeparator(), StandardCharsets.UTF_8);
+                JSON_MAPPER.writer(JSON_PRETTY_PRINTER).writeValue(frameFile.toFile(), frame);
             } catch (IOException e) {
                 FatalErrorHandler.fail(frameFile, "Cannot write frame file: " + e.getMessage());
             }
         }
+    }
+
+    private static DefaultPrettyPrinter createPrettyPrinter() {
+        DefaultPrettyPrinter printer = new DefaultPrettyPrinter();
+        DefaultIndenter indenter = new DefaultIndenter("  ", System.lineSeparator());
+        printer = printer.withArrayIndenter(indenter);
+        printer = printer.withObjectIndenter(indenter);
+        return printer;
     }
 
     private static Thread createLoggerThread(BlockingQueue<String> logQueue) {
