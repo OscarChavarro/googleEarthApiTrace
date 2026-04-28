@@ -33,27 +33,24 @@ if (NOT BROTLIDEC_FOUND OR NOT BROTLIENC_FOUND)
 endif ()
 
 
-    # Seekable format (builds on top of Zstd -- included in the source but not part
-    # of the shipped library)
-    add_convenience_library(zstd_seekable STATIC EXCLUDE_FROM_ALL
-        zstd/contrib/seekable_format/zstdseek_compress.c
-        zstd/contrib/seekable_format/zstdseek_decompress.c
-        zstd/lib/common/xxhash.c
-    )
-    target_include_directories(zstd_seekable PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/zstd/lib/common
-        ${CMAKE_CURRENT_SOURCE_DIR}/zstd/contrib/seekable_format
-    )
-    target_link_libraries (zstd_seekable PUBLIC
-        PkgConfig::ZSTD
-    )
-
+# Seekable format (builds on top of system Zstd; sources are vendored locally)
+add_convenience_library(zstd_seekable STATIC EXCLUDE_FROM_ALL
+    zstd_seekable/seekable/zstdseek_compress.c
+    zstd_seekable/seekable/zstdseek_decompress.c
+    zstd_seekable/common/xxhash.c
+)
+target_include_directories(zstd_seekable PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/zstd_seekable/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/zstd_seekable/seekable
+)
+target_link_libraries (zstd_seekable PUBLIC
+    PkgConfig::ZSTD
+)
 
 if (NOT ZSTD_FOUND)
-    message (STATUS "Using bundled zstd")
-    include_with_scope (zstd.cmake)
-else()
-  message(STATUS "Using system zstd")
+    message (FATAL_ERROR "libzstd >= 1.4.0 was not found. Install libzstd-dev.")
+else ()
+    message (STATUS "Using system zstd")
 endif ()
 
 if(NOT MSVC)
