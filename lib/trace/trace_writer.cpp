@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <wchar.h>
+#include <unordered_map>
 #include <vector>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -49,6 +50,7 @@ int THE_TextureFormat = 0;
 namespace trace {
 
 static const int THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT = 0x83F0;
+static std::unordered_map<int, bool> g_exportedTextureIds;
 
 static void writeDssHeader(FILE *f, int width, int height, size_t dataSize) {
     if (!f) {
@@ -85,6 +87,10 @@ static void exportPlain(const void *ptr, size_t size, int id) {
         return;
     }
 
+    if (g_exportedTextureIds.find(id) != g_exportedTextureIds.end()) {
+        return;
+    }
+
     struct stat st = {0};
     if (stat("/tmp/output", &st) == -1) {
         mkdir("/tmp/output", 0755);
@@ -105,6 +111,7 @@ static void exportPlain(const void *ptr, size_t size, int id) {
         writeDssHeader(f, THE_TextureWidth, THE_TextureHeight, size);
         fwrite(ptr, 1, size, f);
         fclose(f);
+        g_exportedTextureIds[id] = true;
     }
 }
 
