@@ -13,6 +13,7 @@ public final class TileInstance {
     private final Vector3D min;
     private final Vector3D max;
     private final List<Vector3D> points;
+    private final List<List<Vector3D>> strips;
 
     public TileInstance(
         int contentId,
@@ -22,7 +23,8 @@ public final class TileInstance {
         Integer westNeighbor,
         Vector3D min,
         Vector3D max,
-        List<Vector3D> points
+        List<Vector3D> points,
+        List<List<Vector3D>> strips
     ) {
         this.contentId = contentId;
         this.southNeighbor = southNeighbor;
@@ -32,6 +34,7 @@ public final class TileInstance {
         this.min = min == null ? null : Vector3D.copyOf(min);
         this.max = max == null ? null : Vector3D.copyOf(max);
         this.points = points == null ? List.of() : List.copyOf(points);
+        this.strips = strips == null ? List.of() : strips.stream().map(List::copyOf).toList();
     }
 
     public int getContentId() {
@@ -69,5 +72,10 @@ public final class TileInstance {
 
     public int getNumberOfPoints() {
         return points.size();
+    }
+
+    @JsonIgnore
+    public List<List<Vector3D>> getStrips() {
+        return strips;
     }
 }

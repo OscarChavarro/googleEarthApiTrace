@@ -23,14 +23,18 @@ import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 
 public class GlTraceProcessor {
-    private static final Pattern BIND_TEXTURE_PATTERN = Pattern.compile("\\bglBindTexture\\s*\\(\\s*[^,]+,\\s*(\\d+)\\s*\\)");
     private static final Pattern BIND_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglBindTexture\\s*\\((.*)\\)");
     private static final Pattern VERTEX_ATTRIB_LINE_PATTERN = Pattern.compile("\\bglVertexAttribPointer\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_LINE_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
     private static final Pattern TEXTURE_VALUE_PATTERN = Pattern.compile("texture\\s*=\\s*(\\d+)");
     private static final Pattern ATTRIB_INDEX_PATTERN = Pattern.compile("index\\s*=\\s*(\\d+)");
     private static final Pattern ATTRIB_SIZE_PATTERN = Pattern.compile("size\\s*=\\s*(\\d+)");
+    private static final Pattern ATTRIB_STRIDE_PATTERN = Pattern.compile("stride\\s*=\\s*(\\d+)");
     private static final Pattern ATTRIB_TYPE_PATTERN = Pattern.compile("type\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern ATTRIB_POINTER_BLOB_PATTERN = Pattern.compile("pointer\\s*=\\s*blob\\(\\d+\\)");
+    private static final Pattern DRAW_MODE_PATTERN = Pattern.compile("mode\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern DRAW_COUNT_PATTERN = Pattern.compile("count\\s*=\\s*(\\d+)");
+    private static final Pattern DRAW_TYPE_PATTERN = Pattern.compile("type\\s*=\\s*([A-Z0-9_]+)");
 
     private final FunctionCounter functionCounter;
 
@@ -62,14 +66,14 @@ public class GlTraceProcessor {
     }
 
     private static List<TileInstance> processFrameCalls(String normalizedContent, Path frameDirectory) {
-        List<TileInstance> tiles = new ArrayList<>();
+        Map<Integer, TileBuilder> tilesByTextureId = new HashMap<>();
         String[] lines = normalizedContent.split("\\n");
-        int definitionCount = 0;
         int drawCount = 0;
+        int vertexAttribCallCount = 0;
         int lastTextureId = -1;
-        float[] currentPositionVertices = null;
+        Integer currentPositionVertexAttribId = null;
         int currentVertexSize = 3;
-        Map<Integer, float[]> loadedVertexBlobsByDefinitionId = new HashMap<>();
+        int currentVertexStride = 0;
 
         for (String line : lines) {
             Matcher bindMatcher = BIND_TEXTURE_LINE_PATTERN.matcher(line);
@@ -83,20 +87,18 @@ public class GlTraceProcessor {
 
             Matcher attribMatcher = VERTEX_ATTRIB_LINE_PATTERN.matcher(line);
             if (attribMatcher.find()) {
-                definitionCount++;
+                vertexAttribCallCount++;
                 String args = attribMatcher.group(1);
-
-                float[] blobVertices = loadedVertexBlobsByDefinitionId.computeIfAbsent(
-                    definitionCount,
-                    id -> loadFloatBlob(frameDirectory.resolve("drawElements_" + id + ".bin"))
-                );
 
                 Integer index = extractInt(ATTRIB_INDEX_PATTERN, args);
                 Integer size = extractInt(ATTRIB_SIZE_PATTERN, args);
+                Integer stride = extractInt(ATTRIB_STRIDE_PATTERN, args);
                 String type = extractToken(ATTRIB_TYPE_PATTERN, args);
-                if (index != null && index == 0 && "GL_FLOAT".equals(type) && size != null && size >= 3 && blobVertices != null) {
-                    currentPositionVertices = blobVertices;
+                boolean hasBlobPointer = ATTRIB_POINTER_BLOB_PATTERN.matcher(args).find();
+                if (index != null && index == 0 && "GL_FLOAT".equals(type) && size != null && size >= 3 && hasBlobPointer) {
+                    currentPositionVertexAttribId = vertexAttribCallCount;
                     currentVertexSize = size;
+                    currentVertexStride = stride == null ? 0 : stride;
                 }
                 continue;
             }
@@ -111,20 +113,29 @@ public class GlTraceProcessor {
                 continue;
             }
 
-            TileGeometry candidate = computeCandidateGeometry(frameDirectory, drawCount, currentPositionVertices, currentVertexSize);
+            String drawArgs = drawMatcher.group(1);
+            String mode = extractToken(DRAW_MODE_PATTERN, drawArgs);
+            Integer count = extractInt(DRAW_COUNT_PATTERN, drawArgs);
+            String type = extractToken(DRAW_TYPE_PATTERN, drawArgs);
+            if (!"GL_TRIANGLE_STRIP".equals(mode) || !"GL_UNSIGNED_SHORT".equals(type) || count == null || count <= 0) {
+                continue;
+            }
+
+            int[] drawIndices = loadUnsignedShortBlob(frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin"), count);
+            if (currentPositionVertexAttribId == null) {
+                continue;
+            }
+            byte[] positionBlob = loadBlob(frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + currentPositionVertexAttribId + ".bin"));
+            TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
             if (candidate == null) {
                 continue;
             }
-            tiles.add(new TileInstance(
-                lastTextureId,
-                null,
-                null,
-                null,
-                null,
-                candidate.min(),
-                candidate.max(),
-                candidate.points()
-            ));
+            TileBuilder builder = tilesByTextureId.computeIfAbsent(lastTextureId, TileBuilder::new);
+            builder.addStrip(candidate.points(), candidate.min(), candidate.max());
+        }
+        List<TileInstance> tiles = new ArrayList<>(tilesByTextureId.size());
+        for (TileBuilder builder : tilesByTextureId.values()) {
+            tiles.add(builder.build());
         }
         return tiles;
     }
@@ -141,43 +152,23 @@ public class GlTraceProcessor {
         return matcher.group(1);
     }
 
-    private static float[] loadFloatBlob(Path path) {
-        byte[] data;
+    private static byte[] loadBlob(Path path) {
         try {
-            data = Files.readAllBytes(path);
+            return Files.readAllBytes(path);
         } catch (IOException e) {
             return null;
         }
-
-        if (data.length < 12) {
-            return null;
-        }
-
-        ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
-        float[] out = new float[data.length / 4];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = bb.getFloat();
-        }
-        return out;
     }
 
-    private static TileGeometry computeCandidateGeometry(Path frameDirectory, int drawCount, float[] currentPositionVertices, int currentVertexSize) {
-        float[] drawVertices = loadFloatBlob(frameDirectory.resolve("drawElements_" + drawCount + ".bin"));
-        if (drawVertices != null) {
-            int size = currentVertexSize >= 3 ? currentVertexSize : 3;
-            return computeGeometryFromAllVertices(drawVertices, size);
-        }
-        if (currentPositionVertices != null) {
-            return computeGeometryFromAllVertices(currentPositionVertices, currentVertexSize);
-        }
-        return null;
-    }
-
-    private static TileGeometry computeGeometry(float[] vertices, int vertexSize, int[] indices) {
-        if (vertexSize < 3) return null;
-
-        int vertexCount = vertices.length / vertexSize;
+    private static TileGeometry computeGeometry(byte[] vertexBlob, int vertexSize, int vertexStride, int[] indices) {
+        if (vertexSize < 3 || vertexBlob == null || indices == null || indices.length == 0) return null;
+        int minStride = vertexSize * 4;
+        int strideBytes = vertexStride > 0 ? vertexStride : minStride;
+        if (strideBytes < minStride) return null;
+        if (vertexBlob.length < minStride) return null;
+        int vertexCount = vertexBlob.length / strideBytes;
         if (vertexCount <= 0) return null;
+        ByteBuffer bb = ByteBuffer.wrap(vertexBlob).order(ByteOrder.LITTLE_ENDIAN);
 
         boolean hasAny = false;
         double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
@@ -185,10 +176,11 @@ public class GlTraceProcessor {
 
         for (int index : indices) {
             if (index < 0 || index >= vertexCount) continue;
-            int base = index * vertexSize;
-            double x = vertices[base];
-            double y = vertices[base + 1];
-            double z = vertices[base + 2];
+            int baseBytes = index * strideBytes;
+            if (baseBytes + 12 > vertexBlob.length) continue;
+            double x = bb.getFloat(baseBytes);
+            double y = bb.getFloat(baseBytes + 4);
+            double z = bb.getFloat(baseBytes + 8);
             points.add(new Vector3D(x, y, z));
 
             if (!hasAny) {
@@ -211,19 +203,24 @@ public class GlTraceProcessor {
         return new TileGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), points);
     }
 
-    private static TileGeometry computeGeometryFromAllVertices(float[] vertices, int vertexSize) {
-        if (vertexSize < 3 || vertices == null || vertices.length < vertexSize) {
+    private static int[] loadUnsignedShortBlob(Path path, int maxCount) {
+        byte[] data;
+        try {
+            data = Files.readAllBytes(path);
+        } catch (IOException e) {
             return null;
         }
-        int vertexCount = vertices.length / vertexSize;
-        if (vertexCount <= 0) {
+        if (data.length < 2) {
             return null;
         }
-        int[] all = new int[vertexCount];
-        for (int i = 0; i < vertexCount; i++) {
-            all[i] = i;
+        int available = data.length / 2;
+        int count = Math.min(Math.max(maxCount, 0), available);
+        int[] out = new int[count];
+        ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < count; i++) {
+            out[i] = bb.getShort() & 0xFFFF;
         }
-        return computeGeometry(vertices, vertexSize, all);
+        return out;
     }
 
     private static void enqueueLog(BlockingQueue<String> logQueue, String message) {
@@ -254,5 +251,56 @@ public class GlTraceProcessor {
     }
 
     private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {
+    }
+
+    private static final class TileBuilder {
+        private final int textureId;
+        private final List<List<Vector3D>> strips = new ArrayList<>();
+        private final List<Vector3D> flatPoints = new ArrayList<>();
+        private Vector3D min;
+        private Vector3D max;
+
+        private TileBuilder(int textureId) {
+            this.textureId = textureId;
+        }
+
+        private void addStrip(List<Vector3D> stripPoints, Vector3D stripMin, Vector3D stripMax) {
+            if (stripPoints == null || stripPoints.isEmpty()) {
+                return;
+            }
+            strips.add(List.copyOf(stripPoints));
+            flatPoints.addAll(stripPoints);
+
+            if (min == null || max == null) {
+                min = Vector3D.copyOf(stripMin);
+                max = Vector3D.copyOf(stripMax);
+                return;
+            }
+
+            min = new Vector3D(
+                Math.min(min.x(), stripMin.x()),
+                Math.min(min.y(), stripMin.y()),
+                Math.min(min.z(), stripMin.z())
+            );
+            max = new Vector3D(
+                Math.max(max.x(), stripMax.x()),
+                Math.max(max.y(), stripMax.y()),
+                Math.max(max.z(), stripMax.z())
+            );
+        }
+
+        private TileInstance build() {
+            return new TileInstance(
+                textureId,
+                null,
+                null,
+                null,
+                null,
+                min,
+                max,
+                flatPoints,
+                strips
+            );
+        }
     }
 }

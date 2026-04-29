@@ -49,16 +49,29 @@ int THE_TextureFormat = 0;
 int THE_DrawElementMode = 0;
 int THE_DrawElementType = 0;
 int THE_DrawElementShouldExport = 0;
-unsigned long long THE_DrawElementBlobId = 0;
+unsigned long long THE_DrawElementIndicesBlobId = 0;
+int THE_VertexAttribPointerShouldExport = 0;
+unsigned long long THE_VertexAttribPointerBlobId = 0;
+int THE_BoundArrayBufferId = 0;
+int THE_BoundElementArrayBufferId = 0;
+int THE_BufferDataShouldExport = 0;
+int THE_BufferDataTarget = 0;
+int THE_BufferDataBufferId = 0;
+int THE_BufferDataIsSubData = 0;
+unsigned long long THE_BufferDataOffset = 0;
+unsigned long long THE_BufferDataSize = 0;
 
 namespace trace {
 
 static const int THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT = 0x83F0;
 static const int THE_GL_TRIANGLE_STRIP = 0x0005;
 static const int THE_GL_UNSIGNED_SHORT = 0x1403;
+static const int THE_GL_ARRAY_BUFFER = 0x8892;
+static const int THE_GL_ELEMENT_ARRAY_BUFFER = 0x8893;
 static std::unordered_map<int, bool> g_exportedTextureIds;
-static std::unordered_map<unsigned long long, bool> g_exportedDrawElementBlobIds;
 static std::unordered_map<int, unsigned long long> g_drawElementCountByFrame;
+static std::unordered_map<int, unsigned long long> g_vertexAttribPointerCountByFrame;
+static std::unordered_map<int, unsigned long long> g_bufferDataUpdateCountByFrame;
 
 static void writeDssHeader(FILE *f, int width, int height, size_t dataSize) {
     if (!f) {
@@ -132,11 +145,11 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
         return;
     }
 
-    if (THE_DrawElementBlobId == 0) {
+    if (THE_DrawElementIndicesBlobId == 0) {
         return;
     }
-
-    if (g_exportedDrawElementBlobIds.find(THE_DrawElementBlobId) != g_exportedDrawElementBlobIds.end()) {
+    unsigned long long currentBlobId = (unsigned long long)(uintptr_t)ptr;
+    if (currentBlobId != THE_DrawElementIndicesBlobId) {
         return;
     }
 
@@ -154,14 +167,117 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
     unsigned long long drawCount = ++g_drawElementCountByFrame[THE_FrameNumber];
 
     char filePath[512];
-    snprintf(filePath, sizeof(filePath), "%s/drawElements_%llu.bin", frameDir, drawCount);
+    snprintf(filePath, sizeof(filePath), "%s/drawElements_indices_%llu.bin", frameDir, drawCount);
 
     FILE *f = fopen(filePath, "wb");
     if (f) {
         fwrite(ptr, 1, size, f);
         fclose(f);
-        g_exportedDrawElementBlobIds[THE_DrawElementBlobId] = true;
     }
+}
+
+static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
+    if (!THE_VertexAttribPointerShouldExport) {
+        return;
+    }
+
+    if (THE_VertexAttribPointerBlobId == 0) {
+        return;
+    }
+    unsigned long long currentBlobId = (unsigned long long)(uintptr_t)ptr;
+    if (currentBlobId != THE_VertexAttribPointerBlobId) {
+        return;
+    }
+
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    unsigned long long vertexAttribCount = ++g_vertexAttribPointerCountByFrame[THE_FrameNumber];
+
+    char filePath[512];
+    snprintf(filePath, sizeof(filePath), "%s/glVertexAttribPointer_vertexAttrib_%llu.bin", frameDir, vertexAttribCount);
+
+    FILE *f = fopen(filePath, "wb");
+    if (f) {
+        fwrite(ptr, 1, size, f);
+        fclose(f);
+    }
+}
+
+static void exportBufferDataBlob(const void *ptr, size_t size) {
+    if (!THE_BufferDataShouldExport) {
+        return;
+    }
+    if (THE_BufferDataBufferId <= 0) {
+        return;
+    }
+    if (THE_BufferDataTarget != THE_GL_ARRAY_BUFFER && THE_BufferDataTarget != THE_GL_ELEMENT_ARRAY_BUFFER) {
+        return;
+    }
+
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    const char *targetLabel = THE_BufferDataTarget == THE_GL_ARRAY_BUFFER ? "arrayBuffer" : "elementArrayBuffer";
+    unsigned long long updateId = ++g_bufferDataUpdateCountByFrame[THE_FrameNumber];
+
+    char filePath[512];
+    snprintf(
+        filePath,
+        sizeof(filePath),
+        "%s/glBufferData_%s_buffer_%d_update_%llu.bin",
+        frameDir,
+        targetLabel,
+        THE_BufferDataBufferId,
+        updateId
+    );
+
+    FILE *f = fopen(filePath, "wb");
+    if (!f) {
+        return;
+    }
+    fwrite(ptr, 1, size, f);
+    fclose(f);
+
+    char metaPath[512];
+    snprintf(
+        metaPath,
+        sizeof(metaPath),
+        "%s/glBufferData_%s_buffer_%d_update_%llu.meta.txt",
+        frameDir,
+        targetLabel,
+        THE_BufferDataBufferId,
+        updateId
+    );
+    FILE *m = fopen(metaPath, "wb");
+    if (!m) {
+        return;
+    }
+    fprintf(m, "frame=%d\n", THE_FrameNumber);
+    fprintf(m, "target=%s\n", targetLabel);
+    fprintf(m, "bufferId=%d\n", THE_BufferDataBufferId);
+    fprintf(m, "updateId=%llu\n", updateId);
+    fprintf(m, "operation=%s\n", THE_BufferDataIsSubData ? "glBufferSubData" : "glBufferData");
+    fprintf(m, "offset=%llu\n", THE_BufferDataOffset);
+    fprintf(m, "declaredSize=%llu\n", THE_BufferDataSize);
+    fprintf(m, "exportedBlobSize=%zu\n", size);
+    fclose(m);
 }
 
 Writer::Writer() :
@@ -469,6 +585,8 @@ void Writer::writeBlob(const void *data, size_t size) {
         exportPlain(data, size, THE_TextureId);
     }
 
+    exportBufferDataBlob(data, size);
+    exportVertexAttribPointerBlob(data, size);
     exportDrawElementsBlob(data, size);
 
     _writeByte(trace::TYPE_BLOB);

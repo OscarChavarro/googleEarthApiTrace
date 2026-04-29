@@ -66,8 +66,32 @@ class GlxTracer(GlTracer):
         if function.name == 'glDrawElements':
             print('    THE_DrawElementMode = mode;')
             print('    THE_DrawElementType = type;')
-            print('    THE_DrawElementBlobId = (unsigned long long)(uintptr_t)indices;')
+            print('    THE_DrawElementIndicesBlobId = (unsigned long long)(uintptr_t)indices;')
             print('    THE_DrawElementShouldExport = (mode == GL_TRIANGLE_STRIP && type == GL_UNSIGNED_SHORT) ? 1 : 0;')
+
+        if function.name == 'glBindBuffer':
+            print('    if (target == GL_ARRAY_BUFFER) THE_BoundArrayBufferId = (int)buffer;')
+            print('    if (target == GL_ELEMENT_ARRAY_BUFFER) THE_BoundElementArrayBufferId = (int)buffer;')
+
+        if function.name == 'glBufferData':
+            print('    THE_BufferDataTarget = (int)target;')
+            print('    THE_BufferDataBufferId = (target == GL_ARRAY_BUFFER) ? THE_BoundArrayBufferId : ((target == GL_ELEMENT_ARRAY_BUFFER) ? THE_BoundElementArrayBufferId : 0);')
+            print('    THE_BufferDataIsSubData = 0;')
+            print('    THE_BufferDataOffset = 0;')
+            print('    THE_BufferDataSize = (unsigned long long)size;')
+            print('    THE_BufferDataShouldExport = ((target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER) && data != NULL && size > 0 && THE_BufferDataBufferId > 0) ? 1 : 0;')
+
+        if function.name == 'glBufferSubData':
+            print('    THE_BufferDataTarget = (int)target;')
+            print('    THE_BufferDataBufferId = (target == GL_ARRAY_BUFFER) ? THE_BoundArrayBufferId : ((target == GL_ELEMENT_ARRAY_BUFFER) ? THE_BoundElementArrayBufferId : 0);')
+            print('    THE_BufferDataIsSubData = 1;')
+            print('    THE_BufferDataOffset = (unsigned long long)offset;')
+            print('    THE_BufferDataSize = (unsigned long long)size;')
+            print('    THE_BufferDataShouldExport = ((target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER) && data != NULL && size > 0 && THE_BufferDataBufferId > 0) ? 1 : 0;')
+
+        if function.name == 'glVertexAttribPointer':
+            print('    THE_VertexAttribPointerBlobId = (unsigned long long)(uintptr_t)pointer;')
+            print('    THE_VertexAttribPointerShouldExport = (THE_BoundArrayBufferId == 0) ? 1 : 0;')
 
         if function.name == 'glCompressedTexImage2DARB':
             width_arg = function.args[3].name
@@ -90,7 +114,17 @@ class GlxTracer(GlTracer):
             print('    THE_TextureFormat = 0;')
         elif function.name == 'glDrawElements':
             print('    THE_DrawElementShouldExport = 0;')
-            print('    THE_DrawElementBlobId = 0;')
+            print('    THE_DrawElementIndicesBlobId = 0;')
+        elif function.name == 'glVertexAttribPointer':
+            print('    THE_VertexAttribPointerShouldExport = 0;')
+            print('    THE_VertexAttribPointerBlobId = 0;')
+        elif function.name == 'glBufferData' or function.name == 'glBufferSubData':
+            print('    THE_BufferDataShouldExport = 0;')
+            print('    THE_BufferDataTarget = 0;')
+            print('    THE_BufferDataBufferId = 0;')
+            print('    THE_BufferDataIsSubData = 0;')
+            print('    THE_BufferDataOffset = 0;')
+            print('    THE_BufferDataSize = 0;')
         elif function.name == 'glXCreateContextAttribsARB':
             print('    if (_result != NULL)')
             print('        gltrace::createContext((uintptr_t)_result, (uintptr_t)share_context);')

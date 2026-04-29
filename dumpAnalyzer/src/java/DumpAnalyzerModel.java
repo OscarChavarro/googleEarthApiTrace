@@ -12,7 +12,7 @@ public final class DumpAnalyzerModel {
     private final ConcurrentHashMap<Integer, String> texturePathById = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final AtomicInteger selectedFrameIndex = new AtomicInteger(1);
-    private final AtomicInteger selectedTileIndex = new AtomicInteger(1);
+    private final AtomicInteger selectedTileIndex = new AtomicInteger(0);
 
     public void addListener(Runnable listener) {
         listeners.add(listener);
@@ -49,8 +49,8 @@ public final class DumpAnalyzerModel {
 
         Frame selectedFrame = frames.get(frameIdx - 1);
         int tileCount = selectedFrame.getTiles().size();
-        int tileIdx = tileCount == 0 ? 0 : clamp(selectedTileIndex.get(), 1, tileCount);
-        selectedTileIndex.set(tileIdx == 0 ? 1 : tileIdx);
+        int tileIdx = tileCount == 0 ? 0 : clamp(selectedTileIndex.get(), 0, tileCount);
+        selectedTileIndex.set(tileIdx);
 
         int selectedTextureId = 0;
         if (tileIdx > 0 && tileIdx <= tileCount) {
@@ -84,7 +84,7 @@ public final class DumpAnalyzerModel {
         int processed = framesById.size();
         if (processed <= 0) {
             selectedFrameIndex.set(1);
-            selectedTileIndex.set(1);
+            selectedTileIndex.set(0);
             return;
         }
 
@@ -95,9 +95,10 @@ public final class DumpAnalyzerModel {
         Frame selectedFrame = frames.get(frameIdx - 1);
         int tiles = selectedFrame.getTiles().size();
         if (tiles <= 0) {
-            selectedTileIndex.set(1);
-        } else {
-            selectedTileIndex.set(clamp(selectedTileIndex.get(), 1, tiles));
+            selectedTileIndex.set(0);
+        }
+        else {
+            selectedTileIndex.set(clamp(selectedTileIndex.get(), 0, tiles));
         }
     }
 

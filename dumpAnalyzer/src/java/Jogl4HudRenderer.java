@@ -70,7 +70,7 @@ public final class Jogl4HudRenderer {
                 h - 70
             );
             textRenderer.draw(
-                "Selected tile [3, 4]: " + state.selectedTileIndex() + "/" + state.tilesInSelectedFrame(),
+                "Selected tile [3, 4]: " + (state.selectedTileIndex() == 0 ? "ALL" : state.selectedTileIndex()) + "/" + state.tilesInSelectedFrame(),
                 20,
                 h - 100
             );

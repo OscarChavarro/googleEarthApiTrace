@@ -131,7 +131,11 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         Frame frameData = frames.get(frameIndex - 1);
-        if (tileIndex <= 0 || tileIndex > frameData.getTiles().size()) {
+        if (tileIndex == 0) {
+            recenterCameraToAllTiles(frameData);
+            return;
+        }
+        if (tileIndex < 0 || tileIndex > frameData.getTiles().size()) {
             return;
         }
         TileInstance tile = frameData.getTiles().get(tileIndex - 1);
@@ -166,11 +170,21 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private void drawSelectedTile(GL4 gl, GL2 gl2, Frame frameData, int selectedTileIndex1Based, Matrix4x4 projection) {
-        if (selectedTileIndex1Based <= 0 || selectedTileIndex1Based > frameData.getTiles().size()) {
+        if (selectedTileIndex1Based == 0) {
+            for (TileInstance tile : frameData.getTiles()) {
+                drawTileWireframe(gl, gl2, tile, projection, false);
+            }
+            return;
+        }
+        if (selectedTileIndex1Based < 0 || selectedTileIndex1Based > frameData.getTiles().size()) {
             return;
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex1Based - 1);
-        if (tile.getMin() != null && tile.getMax() != null) {
+        drawTileWireframe(gl, gl2, tile, projection, true);
+    }
+
+    private void drawTileWireframe(GL4 gl, GL2 gl2, TileInstance tile, Matrix4x4 projection, boolean drawAabb) {
+        if (drawAabb && tile.getMin() != null && tile.getMax() != null) {
             double[] mm = {
                 tile.getMin().x(), tile.getMin().y(), tile.getMin().z(),
                 tile.getMax().x(), tile.getMax().y(), tile.getMax().z()
@@ -186,18 +200,69 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl2.glLoadIdentity();
 
         gl2.glDisable(GL2.GL_LIGHTING);
-        gl2.glPointSize(3.0f);
         gl2.glColor3d(1.0, 1.0, 1.0);
-        gl2.glBegin(GL2.GL_POINTS);
-        for (Vector3D p : tile.getPoints()) {
-            gl2.glVertex3d(p.x(), p.y(), p.z());
+        gl2.glLineWidth(1.0f);
+        for (List<Vector3D> strip : tile.getStrips()) {
+            if (strip.size() < 2) {
+                continue;
+            }
+            gl2.glBegin(GL2.GL_LINE_STRIP);
+            for (Vector3D p : strip) {
+                gl2.glVertex3d(p.x(), p.y(), p.z());
+            }
+            gl2.glEnd();
         }
-        gl2.glEnd();
 
         gl2.glPopMatrix();
         gl2.glMatrixMode(GL2.GL_PROJECTION);
         gl2.glPopMatrix();
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
+    }
+
+    private void recenterCameraToAllTiles(Frame frameData) {
+        Vector3D min = null;
+        Vector3D max = null;
+        for (TileInstance tile : frameData.getTiles()) {
+            if (tile.getMin() == null || tile.getMax() == null) {
+                continue;
+            }
+            if (min == null) {
+                min = tile.getMin();
+                max = tile.getMax();
+                continue;
+            }
+            min = new Vector3D(
+                Math.min(min.x(), tile.getMin().x()),
+                Math.min(min.y(), tile.getMin().y()),
+                Math.min(min.z(), tile.getMin().z())
+            );
+            max = new Vector3D(
+                Math.max(max.x(), tile.getMax().x()),
+                Math.max(max.y(), tile.getMax().y()),
+                Math.max(max.z(), tile.getMax().z())
+            );
+        }
+        if (min == null || max == null) {
+            return;
+        }
+        Vector3D center = new Vector3D(
+            (min.x() + max.x()) * 0.5,
+            (min.y() + max.y()) * 0.5,
+            (min.z() + max.z()) * 0.5
+        );
+        double dx = max.x() - min.x();
+        double dy = max.y() - min.y();
+        double dz = max.z() - min.z();
+        double diagonal = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double distance = Math.max(1e-6, 1.5 * diagonal);
+
+        Vector3D front = camera.getFront().normalized();
+        Vector3D newPosition = center.subtract(front.multiply(distance));
+        cameraController.setPointOfInterest(center);
+        camera.setPosition(newPosition);
+        camera.setFocusedPositionMaintainingOrthogonality(center);
+        camera.setNearPlaneDistance(Math.max(1e-6, distance / 10.0));
+        camera.setFarPlaneDistance(Math.max(1e-5, distance * 3.0));
     }
 
     @Override
