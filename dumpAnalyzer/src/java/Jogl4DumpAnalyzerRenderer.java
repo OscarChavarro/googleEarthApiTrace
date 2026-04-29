@@ -21,6 +21,7 @@ import com.jogamp.opengl.GLCapabilities;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
+import vsdk.toolkit.common.RendererConfiguration;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
@@ -48,6 +49,10 @@ public class Jogl4DumpAnalyzerRenderer implements
     private JFrame frame;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
+    private static final float SURFACE_POLYGON_OFFSET_FACTOR = 1.0f;
+    private static final float SURFACE_POLYGON_OFFSET_UNITS = 1.0f;
+    private static final float POINT_POLYGON_OFFSET_FACTOR = -2.0f;
+    private static final float POINT_POLYGON_OFFSET_UNITS = -2.0f;
 
     public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
         this.model = model;
@@ -66,6 +71,7 @@ public class Jogl4DumpAnalyzerRenderer implements
 
         GLProfile profile = GLProfile.get(GLProfile.GL4bc);
         GLCapabilities caps = new GLCapabilities(profile);
+        caps.setDepthBits(64);
         canvas = new GLCanvas(caps);
         canvas.addGLEventListener(this);
         canvas.setFocusable(true);
@@ -184,7 +190,8 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private void drawTileWireframe(GL4 gl, GL2 gl2, TileInstance tile, Matrix4x4 projection, boolean drawAabb) {
-        if (drawAabb && tile.getMin() != null && tile.getMax() != null) {
+        RendererConfiguration quality = model.getRendererConfiguration();
+        if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
             double[] mm = {
                 tile.getMin().x(), tile.getMin().y(), tile.getMin().z(),
                 tile.getMax().x(), tile.getMax().y(), tile.getMax().z()
@@ -199,19 +206,64 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl2.glPushMatrix();
         gl2.glLoadIdentity();
 
-        gl2.glDisable(GL2.GL_LIGHTING);
-        gl2.glColor3d(1.0, 1.0, 1.0);
-        gl2.glLineWidth(1.0f);
-        for (List<Vector3D> strip : tile.getStrips()) {
-            if (strip.size() < 2) {
-                continue;
+        if (quality.isSurfacesSet()) {
+            gl2.glDisable(GL2.GL_LIGHTING);
+            gl2.glEnable(GL2.GL_DEPTH_TEST);
+            gl2.glDepthMask(true);
+            gl2.glDepthFunc(GL2.GL_LESS);
+            gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
+            gl2.glPolygonOffset(SURFACE_POLYGON_OFFSET_FACTOR, SURFACE_POLYGON_OFFSET_UNITS);
+            gl2.glColor3d(0.85, 0.85, 0.85);
+            for (List<Vector3D> strip : tile.getStrips()) {
+                if (strip.size() < 3) {
+                    continue;
+                }
+                gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
+                for (Vector3D p : strip) {
+                    gl2.glVertex3d(p.x(), p.y(), p.z());
+                }
+                gl2.glEnd();
             }
-            gl2.glBegin(GL2.GL_LINE_STRIP);
-            for (Vector3D p : strip) {
-                gl2.glVertex3d(p.x(), p.y(), p.z());
-            }
-            gl2.glEnd();
+            gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
+        if (quality.isWiresSet()) {
+            gl2.glDisable(GL2.GL_LIGHTING);
+            gl2.glEnable(GL2.GL_DEPTH_TEST);
+            gl2.glDepthMask(false);
+            gl2.glDepthFunc(GL2.GL_LEQUAL);
+            gl2.glColor3d(1.0, 1.0, 1.0);
+            gl2.glLineWidth(1.0f);
+            for (List<Vector3D> strip : tile.getStrips()) {
+                if (strip.size() < 2) {
+                    continue;
+                }
+                gl2.glBegin(GL2.GL_LINE_STRIP);
+                for (Vector3D p : strip) {
+                    gl2.glVertex3d(p.x(), p.y(), p.z());
+                }
+                gl2.glEnd();
+            }
+        }
+        if (quality.isPointsSet()) {
+            gl2.glDisable(GL2.GL_LIGHTING);
+            gl2.glEnable(GL2.GL_DEPTH_TEST);
+            gl2.glDepthMask(false);
+            gl2.glDepthFunc(GL2.GL_LEQUAL);
+            gl2.glEnable(GL2.GL_POLYGON_OFFSET_POINT);
+            gl2.glPolygonOffset(POINT_POLYGON_OFFSET_FACTOR, POINT_POLYGON_OFFSET_UNITS);
+            gl2.glColor3d(1.0, 0.0, 0.0);
+            gl2.glPointSize(3.0f);
+            for (List<Vector3D> strip : tile.getStrips()) {
+                gl2.glBegin(GL2.GL_POINTS);
+                for (Vector3D p : strip) {
+                    gl2.glVertex3d(p.x(), p.y(), p.z());
+                }
+                gl2.glEnd();
+            }
+            gl2.glDisable(GL2.GL_POLYGON_OFFSET_POINT);
+        }
+        gl2.glDepthMask(true);
+        gl2.glDepthFunc(GL2.GL_LESS);
 
         gl2.glPopMatrix();
         gl2.glMatrixMode(GL2.GL_PROJECTION);

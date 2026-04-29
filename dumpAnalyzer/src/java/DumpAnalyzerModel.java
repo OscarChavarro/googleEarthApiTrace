@@ -6,6 +6,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import vsdk.toolkit.common.RendererConfiguration;
+import vsdk.toolkit.gui.KeyEvent;
+import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class DumpAnalyzerModel {
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();
@@ -13,6 +16,14 @@ public final class DumpAnalyzerModel {
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final AtomicInteger selectedFrameIndex = new AtomicInteger(1);
     private final AtomicInteger selectedTileIndex = new AtomicInteger(0);
+    private final RendererConfiguration rendererConfiguration = new RendererConfiguration();
+    private final RendererConfigurationController rendererConfigurationController =
+        new RendererConfigurationController(rendererConfiguration);
+
+    public DumpAnalyzerModel() {
+        rendererConfiguration.setWires(true);
+        rendererConfiguration.setBoundingVolume(true);
+    }
 
     public void addListener(Runnable listener) {
         listeners.add(listener);
@@ -78,6 +89,18 @@ public final class DumpAnalyzerModel {
         selectedTileIndex.incrementAndGet();
         clampSelection();
         notifyListeners();
+    }
+
+    public RendererConfiguration getRendererConfiguration() {
+        return rendererConfiguration;
+    }
+
+    public boolean processRendererConfigurationKey(KeyEvent event) {
+        boolean changed = rendererConfigurationController.processKeyPressedEvent(event);
+        if (changed) {
+            notifyListeners();
+        }
+        return changed;
     }
 
     private void clampSelection() {

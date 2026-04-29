@@ -39,6 +39,7 @@ public final class KeyboardInteractionTechnique implements KeyListener {
 
     @Override
     public void keyPressed(KeyEvent e) {
+        vsdk.toolkit.gui.KeyEvent event = AwtSystem.awt2vsdkEvent(e);
         switch (e.getKeyCode()) {
             case KeyEvent.VK_ESCAPE -> closeAction.run();
             case KeyEvent.VK_1 -> {
@@ -52,7 +53,10 @@ public final class KeyboardInteractionTechnique implements KeyListener {
             case KeyEvent.VK_3 -> model.selectPreviousTile();
             case KeyEvent.VK_4 -> model.selectNextTile();
             default -> {
-                if (cameraController != null && cameraController.processKeyPressedEvent(AwtSystem.awt2vsdkEvent(e))) {
+                if (model.processRendererConfigurationKey(event)) {
+                    repaintAction.run();
+                }
+                else if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
                     repaintAction.run();
                 }
             }
