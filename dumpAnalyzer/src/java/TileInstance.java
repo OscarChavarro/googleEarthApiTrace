@@ -2,32 +2,36 @@ package dumpanalyzer;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
+import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
-public class TileInstance {
+public final class TileInstance {
     private final int contentId;
     private final Integer southNeighbor;
     private final Integer northNeighbor;
     private final Integer eastNeighbor;
     private final Integer westNeighbor;
-    private Double minX;
-    private Double minY;
-    private Double minZ;
-    private Double maxX;
-    private Double maxY;
-    private Double maxZ;
+    private final Vector3D min;
+    private final Vector3D max;
+    private final List<Vector3D> points;
 
     public TileInstance(
         int contentId,
         Integer southNeighbor,
         Integer northNeighbor,
         Integer eastNeighbor,
-        Integer westNeighbor
+        Integer westNeighbor,
+        Vector3D min,
+        Vector3D max,
+        List<Vector3D> points
     ) {
         this.contentId = contentId;
         this.southNeighbor = southNeighbor;
         this.northNeighbor = northNeighbor;
         this.eastNeighbor = eastNeighbor;
         this.westNeighbor = westNeighbor;
+        this.min = min == null ? null : Vector3D.copyOf(min);
+        this.max = max == null ? null : Vector3D.copyOf(max);
+        this.points = points == null ? List.of() : List.copyOf(points);
     }
 
     public int getContentId() {
@@ -50,85 +54,20 @@ public class TileInstance {
         return westNeighbor;
     }
 
-    public List<Double> getMin() {
-        if (minX == null || minY == null || minZ == null) {
-            return null;
-        }
-        return List.of(minX, minY, minZ);
+    public Vector3D getMin() {
+        return min;
     }
 
-    public List<Double> getMax() {
-        if (maxX == null || maxY == null || maxZ == null) {
-            return null;
-        }
-        return List.of(maxX, maxY, maxZ);
+    public Vector3D getMax() {
+        return max;
     }
 
     @JsonIgnore
-    public Double getMinX() {
-        return minX;
+    public List<Vector3D> getPoints() {
+        return points;
     }
 
-    @JsonIgnore
-    public Double getMinY() {
-        return minY;
-    }
-
-    @JsonIgnore
-    public Double getMinZ() {
-        return minZ;
-    }
-
-    @JsonIgnore
-    public Double getMaxX() {
-        return maxX;
-    }
-
-    @JsonIgnore
-    public Double getMaxY() {
-        return maxY;
-    }
-
-    @JsonIgnore
-    public Double getMaxZ() {
-        return maxZ;
-    }
-
-    public void mergeBounds(double bxMin, double byMin, double bzMin, double bxMax, double byMax, double bzMax) {
-        if (minX == null || bxMin < minX) {
-            minX = bxMin;
-        }
-        if (minY == null || byMin < minY) {
-            minY = byMin;
-        }
-        if (minZ == null || bzMin < minZ) {
-            minZ = bzMin;
-        }
-        if (maxX == null || bxMax > maxX) {
-            maxX = bxMax;
-        }
-        if (maxY == null || byMax > maxY) {
-            maxY = byMax;
-        }
-        if (maxZ == null || bzMax > maxZ) {
-            maxZ = bzMax;
-        }
-    }
-
-    @Override
-    public String toString() {
-        return "TileInstance{" +
-            "contentId=" + contentId +
-            ", southNeighbor=" + southNeighbor +
-            ", northNeighbor=" + northNeighbor +
-            ", eastNeighbor=" + eastNeighbor +
-            ", westNeighbor=" + westNeighbor +
-            ", minX=" + minX +
-            ", minY=" + minY +
-            ", minZ=" + minZ +
-            ", maxX=" + maxX +
-            ", maxY=" + maxY +
-            ", maxZ=" + maxZ +
-            '}';
+    public int getNumberOfPoints() {
+        return points.size();
     }
 }

@@ -52,3 +52,15 @@ gradle run
 ```
 
 The application always processes `/tmp/output` in the current implementation.
+
+# Recognized OpenGL API calls
+
+| Category | Functions |
+|---|---|
+| Shaders / Programs | `glAttachShader`, `glBindAttribLocation`, `glCompileShader`, `glCreateProgram`, `glCreateShader`, `glDeleteProgram`, `glDeleteShader`, `glGetActiveAttrib`, `glGetActiveUniform`, `glGetProgramiv`, `glGetShaderSource`, `glGetShaderiv`, `glGetUniformLocation`, `glLinkProgram`, `glShaderSource`, `glUniform1fv`, `glUniform1i`, `glUniform3fv`, `glUniform4fv`, `glUniformMatrix4fv`, `glUseProgram` |
+| Textures | `glActiveTextureARB`, `glBindTexture`, `glClientActiveTextureARB`, `glCompressedTexImage2DARB`, `glDeleteTextures`, `glGenTextures`, `glPixelStorei`, `glTexEnvi`, `glTexImage2D`, `glTexParameterf`, `glTexParameteri`, `glTexSubImage2D` |
+| Geometry / Buffers / Draw | `glBindBuffer`, `glBufferData`, `glBufferSubData`, `glDisableVertexAttribArray`, `glDrawArrays`, `glDrawElements`, `glEnableVertexAttribArray`, `glGenBuffers`, `glLineStipple`, `glLineWidth`, `glPointSize`, `glPolygonMode`, `glPolygonOffset`, `glVertexAttribPointer` |
+| Transformations / Camera | `glDepthRange`, `glGetFloatv`, `glLoadIdentity`, `glLoadMatrixf`, `glMatrixMode`, `glUniformMatrix4fv`, `glViewport` |
+| State / Framebuffer / Tests | `glAlphaFunc`, `glBlendFunc`, `glClear`, `glClearColor`, `glClearDepth`, `glClearStencil`, `glClipPlane`, `glColor4ub`, `glColorMask`, `glColorMaterial`, `glCullFace`, `glDepthFunc`, `glDepthMask`, `glDisable`, `glEnable`, `glFogf`, `glFogfv`, `glFogi`, `glFrontFace`, `glGetIntegerv`, `glScissor`, `glShadeModel`, `glStencilFunc`, `glStencilMask`, `glStencilOp` |
+| Lighting / Material | `glLightModelfv`, `glLightModeli`, `glLightf`, `glLightfv`, `glMaterialf`, `glMaterialfv` |
+| Context / Window (GLX) | `glXChooseVisual`, `glXCreateContext`, `glXDestroyContext`, `glXMakeCurrent`, `glXSwapBuffers`, `glXSwapIntervalSGI` |

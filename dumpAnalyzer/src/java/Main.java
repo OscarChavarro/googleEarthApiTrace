@@ -7,28 +7,33 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
+import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public class Main {
     private static final Path OUTPUT_ROOT = Paths.get("/tmp/output");
+    private static final int MAX_FRAME = 100000;
     private static final FrameTask POISON_TASK = new FrameTask(-1, "");
     private static final String LOG_POISON = "__LOG_POISON__";
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final DefaultPrettyPrinter JSON_PRETTY_PRINTER = createPrettyPrinter();
 
     public static void main(String[] args) {
+        JSON_MAPPER.addMixIn(Vector3D.class, Vector3DMixin.class);
         int workerCount = Runtime.getRuntime().availableProcessors();
+
+        DumpAnalyzerModel model = new DumpAnalyzerModel();
+        TexturePathScanner.scanRecursive(OUTPUT_ROOT, model);
 
         FunctionCounter counter = new FunctionCounter();
         GlTraceProcessor processor = new GlTraceProcessor(counter);
         FrameScanner scanner = new FrameScanner(OUTPUT_ROOT);
         List<FrameTask> frameTasks = scanner.scanFrames();
-        Set<Frame> frames = ConcurrentHashMap.newKeySet();
+
+        Thread rendererThread = createRendererThread(model);
+        rendererThread.start();
 
         BlockingQueue<FrameTask> frameQueue = new LinkedBlockingQueue<>();
         BlockingQueue<String> logQueue = new LinkedBlockingQueue<>();
@@ -36,7 +41,7 @@ public class Main {
         Thread loggerThread = createLoggerThread(logQueue);
         loggerThread.start();
 
-        for (FrameTask task : frameTasks) {
+        for (FrameTask task : frameTasks.stream().limit(MAX_FRAME).toList()) {
             putFrameTask(frameQueue, task);
         }
 
@@ -47,7 +52,7 @@ public class Main {
         Thread[] workers = new Thread[workerCount];
         for (int i = 0; i < workerCount; i++) {
             int workerId = i;
-            workers[i] = createWorker(frameQueue, logQueue, processor, frames, workerId);
+            workers[i] = createWorker(frameQueue, logQueue, processor, model, workerId);
             workers[i].start();
         }
 
@@ -59,14 +64,21 @@ public class Main {
         joinOrFail(loggerThread, "logger");
 
         counter.printSorted();
-        writeFrames(frames);
+        writeFrames(model.snapshotFrames());
+    }
+
+    private static Thread createRendererThread(DumpAnalyzerModel model) {
+        return new Thread(() -> {
+            Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, Main::shutdownNow);
+            renderer.start();
+        }, "jogl4-renderer");
     }
 
     private static Thread createWorker(
         BlockingQueue<FrameTask> frameQueue,
         BlockingQueue<String> logQueue,
         GlTraceProcessor processor,
-        Set<Frame> frames,
+        DumpAnalyzerModel model,
         int workerId
     ) {
         return new Thread(() -> {
@@ -76,13 +88,13 @@ public class Main {
                     return;
                 }
                 Frame frame = processor.processFrame(task.frame(), task.filename(), logQueue);
-                frames.add(frame);
+                model.addFrame(frame);
             }
         }, "frame-worker-" + workerId);
     }
 
-    private static void writeFrames(Set<Frame> frameSet) {
-        for (Frame frame : frameSet) {
+    private static void writeFrames(List<Frame> frames) {
+        for (Frame frame : frames) {
             Path frameDir = OUTPUT_ROOT.resolve(String.format("%05d", frame.getId()));
             Path frameFile = frameDir.resolve("frame.json");
             try {
@@ -158,5 +170,9 @@ public class Main {
             Thread.currentThread().interrupt();
             FatalErrorHandler.fail(OUTPUT_ROOT, "Interrupted while waiting for " + threadRole + " thread");
         }
+    }
+
+    private static void shutdownNow() {
+        System.exit(0);
     }
 }
