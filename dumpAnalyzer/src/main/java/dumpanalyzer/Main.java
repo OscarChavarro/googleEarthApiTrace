@@ -10,12 +10,15 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import com.jogamp.opengl.awt.GLCanvas;
+import dumpanalyzer.gui.KeyboardInteractionTechnique;
+import dumpanalyzer.gui.MouseInteractionTechnique;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.parser.FunctionCounter;
-import dumpanalyzer.parser.GlTraceProcessor;
+import dumpanalyzer.parser.TraceProcessor;
 import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public class Main {
     private static final Path OUTPUT_ROOT = Paths.get("/tmp/output");
@@ -26,16 +29,18 @@ public class Main {
     private static final DefaultPrettyPrinter JSON_PRETTY_PRINTER = createPrettyPrinter();
 
     public static void main(String[] args) {
-        JSON_MAPPER.addMixIn(Vector3D.class, Vector3DMixin.class);
         int workerCount = Runtime.getRuntime().availableProcessors();
 
         DumpAnalyzerModel model = new DumpAnalyzerModel();
         TexturePathScanner.scanRecursive(OUTPUT_ROOT, model);
 
         FunctionCounter counter = new FunctionCounter();
-        GlTraceProcessor processor = new GlTraceProcessor(counter);
+        TraceProcessor processor = new TraceProcessor(counter);
         FrameScanner scanner = new FrameScanner(OUTPUT_ROOT);
-        List<FrameTask> frameTasks = scanner.scanFrames();
+        List<FrameTask> frameTasks = scanner.scanFrames().stream()
+            .map(Main::toFrameTask)
+            .filter(task -> task.frame() >= 0)
+            .toList();
 
         Thread rendererThread = createRendererThread(model);
         rendererThread.start();
@@ -75,14 +80,40 @@ public class Main {
     private static Thread createRendererThread(DumpAnalyzerModel model) {
         return new Thread(() -> {
             Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, Main::shutdownNow);
-            renderer.start();
+            renderer.start((canvas, cameraController, closeAction, repaintAction) ->
+                installInteractionTechniques(model, canvas, cameraController, closeAction, repaintAction)
+            );
         }, "jogl4-renderer");
+    }
+
+    private static void installInteractionTechniques(
+        DumpAnalyzerModel model,
+        GLCanvas canvas,
+        CameraControllerOrbiter cameraController,
+        Runnable closeAction,
+        Runnable repaintAction
+    ) {
+        KeyboardInteractionTechnique keyboard = new KeyboardInteractionTechnique(
+            model,
+            closeAction,
+            cameraController,
+            repaintAction
+        );
+        MouseInteractionTechnique mouse = new MouseInteractionTechnique(
+            cameraController,
+            repaintAction,
+            canvas::requestFocusInWindow
+        );
+        canvas.addKeyListener(keyboard);
+        canvas.addMouseListener(mouse);
+        canvas.addMouseMotionListener(mouse);
+        canvas.addMouseWheelListener(mouse);
     }
 
     private static Thread createWorker(
         BlockingQueue<FrameTask> frameQueue,
         BlockingQueue<String> logQueue,
-        GlTraceProcessor processor,
+        TraceProcessor processor,
         DumpAnalyzerModel model,
         int workerId
     ) {
@@ -179,5 +210,21 @@ public class Main {
 
     private static void shutdownNow() {
         System.exit(0);
+    }
+
+    private static FrameTask toFrameTask(Path glFile) {
+        if (glFile == null || glFile.getParent() == null || glFile.getParent().getFileName() == null) {
+            return POISON_TASK;
+        }
+        String frameDirName = glFile.getParent().getFileName().toString();
+        try {
+            int frame = Integer.parseInt(frameDirName);
+            return new FrameTask(frame, glFile.toString());
+        } catch (NumberFormatException ex) {
+            return POISON_TASK;
+        }
+    }
+
+    private record FrameTask(int frame, String filename) {
     }
 }

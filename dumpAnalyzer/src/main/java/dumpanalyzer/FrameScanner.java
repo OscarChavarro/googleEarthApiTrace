@@ -3,7 +3,6 @@ package dumpanalyzer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -15,7 +14,7 @@ public class FrameScanner {
         this.outputRoot = outputRoot;
     }
 
-    public List<FrameTask> scanFrames() {
+    public List<Path> scanFrames() {
         if (!Files.exists(outputRoot)) {
             System.out.println("Output folder does not exist: " + outputRoot);
             return List.of();
@@ -26,32 +25,18 @@ public class FrameScanner {
             return List.of();
         }
 
-        List<FrameTask> tasks = new ArrayList<>();
         try (Stream<Path> entries = Files.list(outputRoot)) {
-            entries
+            return entries
                 .filter(Files::isDirectory)
                 .sorted(Comparator.comparing(path -> path.getFileName().toString()))
-                .forEach(frameDirectory -> addFrameTask(frameDirectory, tasks));
+                .map(frameDirectory -> frameDirectory.resolve("gl.txt"))
+                .filter(Files::isRegularFile)
+                .map(Path::toAbsolutePath)
+                .toList();
         } catch (IOException e) {
             FatalErrorHandler.fail(outputRoot, "Failed to scan output folder: " + e.getMessage());
         }
 
-        return tasks;
-    }
-
-    private static void addFrameTask(Path frameDirectory, List<FrameTask> tasks) {
-        String frameDirName = frameDirectory.getFileName().toString();
-        int frame;
-
-        try {
-            frame = Integer.parseInt(frameDirName);
-        } catch (NumberFormatException ex) {
-            return;
-        }
-
-        Path glFile = frameDirectory.resolve("gl.txt");
-        if (Files.isRegularFile(glFile)) {
-            tasks.add(new FrameTask(frame, glFile.toAbsolutePath().toString()));
-        }
+        return List.of();
     }
 }

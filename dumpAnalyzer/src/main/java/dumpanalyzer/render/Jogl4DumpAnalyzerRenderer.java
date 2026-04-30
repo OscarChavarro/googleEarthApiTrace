@@ -2,12 +2,6 @@ package dumpanalyzer.render;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.event.KeyListener;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseListener;
-import java.awt.event.MouseMotionListener;
-import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
 import java.util.List;
 
 import javax.swing.JFrame;
@@ -21,15 +15,12 @@ import com.jogamp.opengl.GLCapabilities;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
-import dumpanalyzer.gui.KeyboardInteractionTechnique;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
-import vsdk.toolkit.common.RendererConfiguration;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
-import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.render.jogl.Jogl4CameraRenderer;
 import vsdk.toolkit.render.jogl.Jogl4MatrixRenderer;
@@ -38,10 +29,7 @@ import vsdk.toolkit.render.jogl.Jogl4Renderer;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public class Jogl4DumpAnalyzerRenderer implements
-    GLEventListener,
-    MouseListener,
-    MouseMotionListener,
-    MouseWheelListener {
+    GLEventListener {
 
     private final Runnable shutdownHook;
     private final DumpAnalyzerModel model;
@@ -53,10 +41,6 @@ public class Jogl4DumpAnalyzerRenderer implements
     private JFrame frame;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
-    private static final float SURFACE_POLYGON_OFFSET_FACTOR = 1.0f;
-    private static final float SURFACE_POLYGON_OFFSET_UNITS = 1.0f;
-    private static final float POINT_POLYGON_OFFSET_FACTOR = -2.0f;
-    private static final float POINT_POLYGON_OFFSET_UNITS = -2.0f;
     private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
     private static final double MAX_ABS_COORD = 1.0e6;
     private static final double MIN_DIAGONAL = 1.0e-6;
@@ -69,11 +53,16 @@ public class Jogl4DumpAnalyzerRenderer implements
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
         this.camera = new Camera();
+        this.camera.setName("ViewingCamera");
         this.cameraController = new CameraControllerOrbiter(camera);
         this.cameraController.setDeltaMovement(0.2);
     }
 
-    public void start() {
+    public interface InteractionInstaller {
+        void install(GLCanvas canvas, CameraControllerOrbiter cameraController, Runnable closeAction, Runnable repaintAction);
+    }
+
+    public void start(InteractionInstaller interactionInstaller) {
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
             System.out.println("Can not start OpenGL/JOGL renderer.");
             return;
@@ -85,30 +74,22 @@ public class Jogl4DumpAnalyzerRenderer implements
         canvas = new GLCanvas(caps);
         canvas.addGLEventListener(this);
         canvas.setFocusable(true);
-        canvas.addMouseListener(this);
-        canvas.addMouseMotionListener(this);
-        canvas.addMouseWheelListener(this);
-
-        KeyListener keyboard = new KeyboardInteractionTechnique(
-            model,
-            this::requestClose,
-            cameraController,
-            this::requestRedraw
-        );
-        canvas.addKeyListener(keyboard);
 
         frame = new JFrame("dumpAnalyzer HUD - ESC to exit");
         frame.add(canvas, BorderLayout.CENTER);
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.setMinimumSize(new Dimension(900, 540));
         frame.setSize(new Dimension(1200, 720));
-        frame.addKeyListener(keyboard);
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
                 requestClose();
             }
         });
+
+        if (interactionInstaller != null) {
+            interactionInstaller.install(canvas, cameraController, this::requestClose, this::requestRedraw);
+        }
 
         model.addListener(this::requestRedraw);
 
@@ -224,130 +205,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         Matrix4x4 projection,
         boolean drawAabb
     ) {
-        RendererConfiguration quality = model.getRendererConfiguration();
-        boolean textured = quality.isTextureSet();
-        int activeTextureId = 0;
-        if (textured) {
-            activeTextureId = hudRenderer.activateTexture(gl, model.getTexturePath(tile.getContentId()));
-            if (activeTextureId > 0) {
-                gl2.glActiveTexture(GL2.GL_TEXTURE0);
-                gl2.glEnable(GL2.GL_TEXTURE_2D);
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, activeTextureId);
-            }
-            else {
-                textured = false;
-            }
-        }
-        if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
-            if (textured) {
-                gl2.glActiveTexture(GL2.GL_TEXTURE0);
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-                gl2.glDisable(GL2.GL_TEXTURE_2D);
-            }
-            gl2.glDisable(GL2.GL_LIGHTING);
-            gl2.glColor3d(1.0, 1.0, 0.0);
-            double[] mm = {
-                tile.getMin().x(), tile.getMin().y(), tile.getMin().z(),
-                tile.getMax().x(), tile.getMax().y(), tile.getMax().z()
-            };
-            Jogl4MinMaxRenderer.draw(gl, mm, camera);
-            if (textured && activeTextureId > 0) {
-                gl2.glActiveTexture(GL2.GL_TEXTURE0);
-                gl2.glEnable(GL2.GL_TEXTURE_2D);
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, activeTextureId);
-            }
-        }
-        float[] mvp = projection.exportToFloatArrayColumnOrder();
-        gl2.glMatrixMode(GL2.GL_PROJECTION);
-        gl2.glPushMatrix();
-        gl2.glLoadMatrixf(mvp, 0);
-        gl2.glMatrixMode(GL2.GL_MODELVIEW);
-        gl2.glPushMatrix();
-        gl2.glLoadIdentity();
-        if (quality.isSurfacesSet()) {
-            gl2.glDisable(GL2.GL_LIGHTING);
-            gl2.glEnable(GL2.GL_DEPTH_TEST);
-            gl2.glDepthMask(true);
-            gl2.glDepthFunc(GL2.GL_LESS);
-            gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
-            gl2.glPolygonOffset(SURFACE_POLYGON_OFFSET_FACTOR, SURFACE_POLYGON_OFFSET_UNITS);
-            gl2.glColor3d(0.85, 0.85, 0.85);
-            List<List<Vector3D>> strips = tile.getStrips();
-            List<List<Vector3D>> stripTexCoords = tile.getStripTexCoords();
-            for (int stripIndex = 0; stripIndex < strips.size(); stripIndex++) {
-                List<Vector3D> strip = strips.get(stripIndex);
-                if (strip.size() < 3) {
-                    continue;
-                }
-                List<Vector3D> uvStrip = stripIndex < stripTexCoords.size() ? stripTexCoords.get(stripIndex) : List.of();
-                gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
-                for (int i = 0; i < strip.size(); i++) {
-                    Vector3D p = strip.get(i);
-                    if (textured && i < uvStrip.size()) {
-                        Vector3D uv = uvStrip.get(i);
-                        gl2.glTexCoord2d(uv.x(), uv.y());
-                    }
-                    gl2.glVertex3d(p.x(), p.y(), p.z());
-                }
-                gl2.glEnd();
-            }
-            gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
-        }
-        if (quality.isWiresSet()) {
-            if (textured) {
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-                gl2.glDisable(GL2.GL_TEXTURE_2D);
-            }
-            gl2.glDisable(GL2.GL_LIGHTING);
-            gl2.glEnable(GL2.GL_DEPTH_TEST);
-            gl2.glDepthMask(false);
-            gl2.glDepthFunc(GL2.GL_LEQUAL);
-            gl2.glColor3d(1.0, 1.0, 1.0);
-            gl2.glLineWidth(1.0f);
-            for (List<Vector3D> strip : tile.getStrips()) {
-                if (strip.size() < 2) {
-                    continue;
-                }
-                gl2.glBegin(GL2.GL_LINE_STRIP);
-                for (Vector3D p : strip) {
-                    gl2.glVertex3d(p.x(), p.y(), p.z());
-                }
-                gl2.glEnd();
-            }
-        }
-        if (quality.isPointsSet()) {
-            if (textured) {
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-                gl2.glDisable(GL2.GL_TEXTURE_2D);
-            }
-            gl2.glDisable(GL2.GL_LIGHTING);
-            gl2.glEnable(GL2.GL_DEPTH_TEST);
-            gl2.glDepthMask(false);
-            gl2.glDepthFunc(GL2.GL_LEQUAL);
-            gl2.glEnable(GL2.GL_POLYGON_OFFSET_POINT);
-            gl2.glPolygonOffset(POINT_POLYGON_OFFSET_FACTOR, POINT_POLYGON_OFFSET_UNITS);
-            gl2.glColor3d(1.0, 0.0, 0.0);
-            gl2.glPointSize(3.0f);
-            for (List<Vector3D> strip : tile.getStrips()) {
-                gl2.glBegin(GL2.GL_POINTS);
-                for (Vector3D p : strip) {
-                    gl2.glVertex3d(p.x(), p.y(), p.z());
-                }
-                gl2.glEnd();
-            }
-            gl2.glDisable(GL2.GL_POLYGON_OFFSET_POINT);
-        }
-        gl2.glDepthMask(true);
-        gl2.glDepthFunc(GL2.GL_LESS);
-
-        gl2.glPopMatrix();
-        gl2.glMatrixMode(GL2.GL_PROJECTION);
-        gl2.glPopMatrix();
-        gl2.glMatrixMode(GL2.GL_MODELVIEW);
-        if (textured) {
-            gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-            gl2.glDisable(GL2.GL_TEXTURE_2D);
-        }
+        Jogl4TileRenderer.drawTile(gl, gl2, tile, projection, drawAabb, model, hudRenderer, camera);
     }
 
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
@@ -553,45 +411,6 @@ public class Jogl4DumpAnalyzerRenderer implements
         GL4 gl = drawable.getGL().getGL4();
         gl.glViewport(0, 0, width, height);
         camera.updateViewportResize(width, height);
-    }
-
-    @Override
-    public void mouseClicked(MouseEvent e) {
-        if (cameraController.processMouseClickedEvent(AwtSystem.awt2vsdkEvent(e))) requestRedraw();
-    }
-
-    @Override
-    public void mousePressed(MouseEvent e) {
-        if (cameraController.processMousePressedEvent(AwtSystem.awt2vsdkEvent(e))) requestRedraw();
-    }
-
-    @Override
-    public void mouseReleased(MouseEvent e) {
-        if (cameraController.processMouseReleasedEvent(AwtSystem.awt2vsdkEvent(e))) requestRedraw();
-    }
-
-    @Override
-    public void mouseEntered(MouseEvent e) {
-        if (canvas != null) canvas.requestFocusInWindow();
-    }
-
-    @Override
-    public void mouseExited(MouseEvent e) {
-    }
-
-    @Override
-    public void mouseDragged(MouseEvent e) {
-        if (cameraController.processMouseDraggedEvent(AwtSystem.awt2vsdkEvent(e))) requestRedraw();
-    }
-
-    @Override
-    public void mouseMoved(MouseEvent e) {
-        if (cameraController.processMouseMovedEvent(AwtSystem.awt2vsdkEvent(e))) requestRedraw();
-    }
-
-    @Override
-    public void mouseWheelMoved(MouseWheelEvent e) {
-        if (cameraController.processMouseWheelEvent(AwtSystem.awt2vsdkEvent(e))) requestRedraw();
     }
 
     private void requestRedraw() {

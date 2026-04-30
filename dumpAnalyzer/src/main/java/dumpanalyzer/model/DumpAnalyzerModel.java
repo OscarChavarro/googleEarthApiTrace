@@ -21,9 +21,9 @@ public final class DumpAnalyzerModel {
         new RendererConfigurationController(rendererConfiguration);
 
     public DumpAnalyzerModel() {
-        rendererConfiguration.setWires(true);
+        rendererConfiguration.setWires(false);
         rendererConfiguration.setBoundingVolume(true);
-        rendererConfiguration.setTexture(false);
+        rendererConfiguration.setTexture(true);
     }
 
     public void addListener(Runnable listener) {

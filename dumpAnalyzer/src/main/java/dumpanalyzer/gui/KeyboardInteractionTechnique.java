@@ -9,7 +9,6 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.List;
 
-import dumpanalyzer.Vector3DMixin;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
@@ -20,9 +19,6 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 public final class KeyboardInteractionTechnique implements KeyListener {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final DefaultPrettyPrinter JSON_PRETTY_PRINTER = createPrettyPrinter();
-    static {
-        JSON_MAPPER.addMixIn(Vector3D.class, Vector3DMixin.class);
-    }
 
     private final DumpAnalyzerModel model;
     private final Runnable closeAction;
