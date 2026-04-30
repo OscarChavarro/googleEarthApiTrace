@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.parser;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -14,6 +14,10 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.BlockingQueue;
+import dumpanalyzer.FatalErrorHandler;
+import dumpanalyzer.LogicalLineNormalizer;
+import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 import org.antlr.v4.runtime.BaseErrorListener;

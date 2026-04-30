@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.parser;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

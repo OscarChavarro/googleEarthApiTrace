@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.render;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
@@ -21,6 +21,10 @@ import com.jogamp.opengl.GLCapabilities;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
+import dumpanalyzer.gui.KeyboardInteractionTechnique;
+import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.RendererConfiguration;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;

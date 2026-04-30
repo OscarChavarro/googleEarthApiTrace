@@ -10,6 +10,11 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.Frame;
+import dumpanalyzer.parser.FunctionCounter;
+import dumpanalyzer.parser.GlTraceProcessor;
+import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public class Main {

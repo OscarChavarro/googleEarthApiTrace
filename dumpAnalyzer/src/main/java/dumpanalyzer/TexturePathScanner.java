@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import dumpanalyzer.model.DumpAnalyzerModel;
 
 public final class TexturePathScanner {
     private static final Pattern DDS_NAME_PATTERN = Pattern.compile(".*_(\\d+)\\.dds$", Pattern.CASE_INSENSITIVE);

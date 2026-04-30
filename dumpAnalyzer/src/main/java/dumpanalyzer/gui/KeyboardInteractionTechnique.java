@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.gui;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.util.DefaultIndenter;
@@ -9,6 +9,10 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.List;
 
+import dumpanalyzer.Vector3DMixin;
+import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;

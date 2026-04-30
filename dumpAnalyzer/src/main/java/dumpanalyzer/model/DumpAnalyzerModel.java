@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.model;
 
 import java.util.ArrayList;
 import java.util.List;

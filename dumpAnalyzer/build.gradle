@@ -15,7 +15,7 @@ java {
 sourceSets {
     main {
         java {
-            srcDirs = ['src/java', "$buildDir/generated-src/antlr/main"]
+            srcDirs = ['src/main/java', "$buildDir/generated-src/antlr/main"]
         }
     }
 }

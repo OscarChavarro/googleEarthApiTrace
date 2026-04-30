@@ -1,7 +1,7 @@
 grammar GlTrace;
 
 @header {
-package dumpanalyzer;
+package dumpanalyzer.parser;
 }
 
 traceFile

@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.render;
 
 import java.awt.Color;
 import java.awt.Font;
@@ -12,6 +12,7 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.util.awt.TextRenderer;
+import dumpanalyzer.model.DumpAnalyzerModel;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.render.jogl.Jogl4ImageRenderer;
