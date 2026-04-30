@@ -1174,7 +1174,6 @@ class GlTracer(Tracer):
         print('            GLint _binding = 0;')
         print('            _glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &_binding);')
         print('            if (!_binding) {')
-
         print('                GLint divisor = 0;')
         print('                if (instanced && _ctx->features.instanced_arrays) {')
         print('                    _glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_DIVISOR, &divisor);')
@@ -1187,11 +1186,18 @@ class GlTracer(Tracer):
             print('                %s %s = 0;' % (arg_type, arg.name))
             print('                _%s(index, %s, &%s);' % (arg_get_function, arg_get_enum, arg.name))
 
+        print('                unsigned long long _ptr_value = (unsigned long long)(size_t)pointer;')
+        print('                if (_ptr_value <= 4096u) {')
+        print('                    os::log(\"apitrace: warning: %s: skipping fake glVertexAttribPointer for suspicious client pointer 0x%llx\\n\", __FUNCTION__, (unsigned long long)_ptr_value);')
+        print('                    continue;')
+        print('                }')
+
         arg_names = ', '.join([arg.name for arg in function.args[1:-1]])
         print('                size_t _size = _%s_size(%s, divisor > 0 ? instancecount / divisor : count);' % (function.name, arg_names))
 
         # Emit a fake glVertexAttribPointer function
         print('                unsigned _call = trace::localWriter.beginEnter(&_%s_sig, true);' % (function.name,))
+        print('                trace::exportVertexAttribPointerBlobForCall((unsigned long long)_call, (int)index, (const void *)pointer, _size);')
         for arg in function.args:
             assert not arg.output
             print('                trace::localWriter.beginArg(%u);' % (arg.index,))
@@ -1272,4 +1278,3 @@ class GlTracer(Tracer):
 
     def emitFakeTexture2D(self):
         print(r'    _fake_glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);')
-

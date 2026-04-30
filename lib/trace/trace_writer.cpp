@@ -35,23 +35,26 @@
 #include <vector>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <png.h>
 
 #include "os.hpp"
 #include "trace_ostream.hpp"
 #include "trace_writer.hpp"
 #include "trace_format.hpp"
 
-int THE_FrameNumber = 1;
+int THE_FrameNumber = 0;
 int THE_TextureId = 0;
 int THE_TextureWidth = 0;
 int THE_TextureHeight = 0;
 int THE_TextureFormat = 0;
+int THE_TextureType = 0;
 int THE_DrawElementMode = 0;
 int THE_DrawElementType = 0;
 int THE_DrawElementShouldExport = 0;
 unsigned long long THE_DrawElementIndicesBlobId = 0;
 int THE_VertexAttribPointerShouldExport = 0;
 unsigned long long THE_VertexAttribPointerBlobId = 0;
+int THE_VertexAttribPointerAttribIndex = -1;
 int THE_BoundArrayBufferId = 0;
 int THE_BoundElementArrayBufferId = 0;
 int THE_BufferDataShouldExport = 0;
@@ -60,19 +63,59 @@ int THE_BufferDataBufferId = 0;
 int THE_BufferDataIsSubData = 0;
 unsigned long long THE_BufferDataOffset = 0;
 unsigned long long THE_BufferDataSize = 0;
+unsigned long long THE_CurrentGlCallNumber = 0;
+int THE_PositionAttribBufferId = 0;
+unsigned long long THE_PositionAttribOffset = 0;
+int THE_PositionAttribSize = 0;
+int THE_PositionAttribStride = 0;
+int THE_PositionAttribType = 0;
 
 namespace trace {
 
 static const int THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT = 0x83F0;
+static const int THE_GL_UNSIGNED_BYTE = 0x1401;
+static const int THE_GL_ALPHA = 0x1906;
+static const int THE_GL_RGB = 0x1907;
+static const int THE_GL_RGBA = 0x1908;
+static const int THE_GL_LUMINANCE = 0x1909;
+static const int THE_GL_LUMINANCE_ALPHA = 0x190A;
+static const int THE_GL_BGR = 0x80E0;
+static const int THE_GL_BGRA = 0x80E1;
 static const int THE_GL_TRIANGLE_STRIP = 0x0005;
 static const int THE_GL_TRIANGLES = 0x0004;
 static const int THE_GL_UNSIGNED_SHORT = 0x1403;
+static const int THE_GL_FLOAT = 0x1406;
 static const int THE_GL_ARRAY_BUFFER = 0x8892;
 static const int THE_GL_ELEMENT_ARRAY_BUFFER = 0x8893;
 static std::unordered_map<int, bool> g_exportedTextureIds;
 static std::unordered_map<int, unsigned long long> g_drawElementCountByFrame;
 static std::unordered_map<int, unsigned long long> g_vertexAttribPointerCountByFrame;
 static std::unordered_map<int, unsigned long long> g_bufferDataUpdateCountByFrame;
+static std::unordered_map<int, std::vector<uint8_t>> g_arrayBufferSnapshots;
+static std::unordered_map<int, std::vector<uint8_t>> g_elementArrayBufferSnapshots;
+
+static void appendManifestLine(int frameNumber, const char *line) {
+    if (!line) {
+        return;
+    }
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", frameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+    char manifestPath[512];
+    snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.txt", frameDir);
+    FILE *m = fopen(manifestPath, "ab");
+    if (!m) {
+        return;
+    }
+    fprintf(m, "%s\n", line);
+    fclose(m);
+}
 
 static void writeDssHeader(FILE *f, int width, int height, size_t dataSize) {
     if (!f) {
@@ -104,8 +147,139 @@ static void writeDssHeader(FILE *f, int width, int height, size_t dataSize) {
     fwrite(header, sizeof(uint32_t), 31, f);
 }
 
+static bool writePngFile(const char *filePath, int width, int height, const uint8_t *rgba) {
+    FILE *fp = fopen(filePath, "wb");
+    if (!fp) {
+        return false;
+    }
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+    if (!png) {
+        fclose(fp);
+        return false;
+    }
+    png_infop info = png_create_info_struct(png);
+    if (!info) {
+        png_destroy_write_struct(&png, nullptr);
+        fclose(fp);
+        return false;
+    }
+    if (setjmp(png_jmpbuf(png))) {
+        png_destroy_write_struct(&png, &info);
+        fclose(fp);
+        return false;
+    }
+
+    png_init_io(png, fp);
+    png_set_IHDR(
+        png, info,
+        width, height,
+        8,
+        PNG_COLOR_TYPE_RGBA,
+        PNG_INTERLACE_NONE,
+        PNG_COMPRESSION_TYPE_DEFAULT,
+        PNG_FILTER_TYPE_DEFAULT
+    );
+    png_write_info(png, info);
+
+    std::vector<png_bytep> rows((size_t)height);
+    for (int y = 0; y < height; ++y) {
+        const int srcY = (height - 1) - y;
+        rows[(size_t)y] = const_cast<png_bytep>(rgba + (size_t)srcY * (size_t)width * 4u);
+    }
+    png_write_image(png, rows.data());
+    png_write_end(png, nullptr);
+    png_destroy_write_struct(&png, &info);
+    fclose(fp);
+    return true;
+}
+
+static bool decodeToRgba(const void *ptr, size_t size, int width, int height, int format, int type, std::vector<uint8_t> &rgbaOut) {
+    if (!ptr || width <= 0 || height <= 0) {
+        return false;
+    }
+    if (type != THE_GL_UNSIGNED_BYTE) {
+        return false;
+    }
+
+    int channels = 0;
+    if (format == THE_GL_ALPHA || format == THE_GL_LUMINANCE) {
+        channels = 1;
+    }
+    else if (format == THE_GL_LUMINANCE_ALPHA) {
+        channels = 2;
+    }
+    else if (format == THE_GL_RGB || format == THE_GL_BGR) {
+        channels = 3;
+    }
+    else if (format == THE_GL_RGBA || format == THE_GL_BGRA) {
+        channels = 4;
+    }
+    else {
+        return false;
+    }
+
+    const size_t expected = (size_t)width * (size_t)height * (size_t)channels;
+    if (size < expected) {
+        return false;
+    }
+
+    const uint8_t *src = reinterpret_cast<const uint8_t *>(ptr);
+    rgbaOut.resize((size_t)width * (size_t)height * 4u);
+    size_t si = 0;
+    size_t di = 0;
+    for (int i = 0; i < width * height; ++i) {
+        uint8_t r = 0, g = 0, b = 0, a = 255;
+        if (format == THE_GL_ALPHA) {
+            a = src[si + 0];
+            r = 255;
+            g = 255;
+            b = 255;
+        }
+        else if (format == THE_GL_LUMINANCE) {
+            r = src[si + 0];
+            g = src[si + 0];
+            b = src[si + 0];
+        }
+        else if (format == THE_GL_LUMINANCE_ALPHA) {
+            r = src[si + 0];
+            g = src[si + 0];
+            b = src[si + 0];
+            a = src[si + 1];
+        }
+        else if (format == THE_GL_RGB) {
+            r = src[si + 0];
+            g = src[si + 1];
+            b = src[si + 2];
+        }
+        else if (format == THE_GL_BGR) {
+            b = src[si + 0];
+            g = src[si + 1];
+            r = src[si + 2];
+        }
+        else if (format == THE_GL_RGBA) {
+            r = src[si + 0];
+            g = src[si + 1];
+            b = src[si + 2];
+            a = src[si + 3];
+        }
+        else if (format == THE_GL_BGRA) {
+            b = src[si + 0];
+            g = src[si + 1];
+            r = src[si + 2];
+            a = src[si + 3];
+        }
+        si += (size_t)channels;
+        rgbaOut[di + 0] = r;
+        rgbaOut[di + 1] = g;
+        rgbaOut[di + 2] = b;
+        rgbaOut[di + 3] = a;
+        di += 4u;
+    }
+    return true;
+}
+
 static void exportPlain(const void *ptr, size_t size, int id) {
-    if (THE_TextureFormat != THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT) {
+    if (THE_TextureWidth <= 0 || THE_TextureHeight <= 0 || id <= 0) {
         return;
     }
 
@@ -125,14 +299,26 @@ static void exportPlain(const void *ptr, size_t size, int id) {
         mkdir(frameDir, 0755);
     }
 
-    char filePath[512];
-    snprintf(filePath, sizeof(filePath), "%s/%dx%d_%d.dds", frameDir, THE_TextureWidth, THE_TextureHeight, id);
+    if (THE_TextureFormat == THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT) {
+        char filePath[512];
+        snprintf(filePath, sizeof(filePath), "%s/%dx%d_%d.dds", frameDir, THE_TextureWidth, THE_TextureHeight, id);
+        FILE *f = fopen(filePath, "wb");
+        if (f) {
+            writeDssHeader(f, THE_TextureWidth, THE_TextureHeight, size);
+            fwrite(ptr, 1, size, f);
+            fclose(f);
+            g_exportedTextureIds[id] = true;
+        }
+        return;
+    }
 
-    FILE *f = fopen(filePath, "wb");
-    if (f) {
-        writeDssHeader(f, THE_TextureWidth, THE_TextureHeight, size);
-        fwrite(ptr, 1, size, f);
-        fclose(f);
+    std::vector<uint8_t> rgba;
+    if (!decodeToRgba(ptr, size, THE_TextureWidth, THE_TextureHeight, THE_TextureFormat, THE_TextureType, rgba)) {
+        return;
+    }
+    char pngPath[512];
+    snprintf(pngPath, sizeof(pngPath), "%s/%dx%d_%d.png", frameDir, THE_TextureWidth, THE_TextureHeight, id);
+    if (writePngFile(pngPath, THE_TextureWidth, THE_TextureHeight, rgba.data())) {
         g_exportedTextureIds[id] = true;
     }
 }
@@ -168,13 +354,158 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
     unsigned long long drawCount = ++g_drawElementCountByFrame[THE_FrameNumber];
 
     char filePath[512];
-    snprintf(filePath, sizeof(filePath), "%s/drawElements_indices_%llu.bin", frameDir, drawCount);
+    snprintf(filePath, sizeof(filePath), "%s/drawElements_indices_call_%llu.bin", frameDir, THE_CurrentGlCallNumber);
 
     FILE *f = fopen(filePath, "wb");
     if (f) {
         fwrite(ptr, 1, size, f);
         fclose(f);
+
+        char manifestLine[768];
+        snprintf(manifestLine, sizeof(manifestLine), "kind=draw_elements frame=%d call=%llu parserCall=%llu file=%s mode=%d type=%d blobPtr=%llu bytes=%zu", THE_FrameNumber, THE_CurrentGlCallNumber, drawCount, filePath, THE_DrawElementMode, THE_DrawElementType, THE_DrawElementIndicesBlobId, size);
+        appendManifestLine(THE_FrameNumber, manifestLine);
     }
+}
+
+static bool writeBlobToPath(const char *path, const void *ptr, size_t size) {
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        return false;
+    }
+    fwrite(ptr, 1, size, f);
+    fclose(f);
+    return true;
+}
+
+static void exportVertexPositionsFromVbo(int frameNumber, unsigned long long drawCall, const std::vector<uint8_t> &indexBytes) {
+    if (THE_PositionAttribBufferId <= 0 || THE_PositionAttribType != THE_GL_FLOAT || THE_PositionAttribSize < 3) {
+        return;
+    }
+    auto it = g_arrayBufferSnapshots.find(THE_PositionAttribBufferId);
+    if (it == g_arrayBufferSnapshots.end()) {
+        return;
+    }
+    const std::vector<uint8_t> &arraySnapshot = it->second;
+    if (arraySnapshot.empty()) {
+        return;
+    }
+
+    size_t maxIndex = 0;
+    bool hasAnyIndex = false;
+    for (size_t i = 0; i + 1 < indexBytes.size(); i += 2) {
+        const unsigned value = (unsigned)indexBytes[i] | ((unsigned)indexBytes[i + 1] << 8);
+        if (!hasAnyIndex || value > maxIndex) {
+            maxIndex = value;
+            hasAnyIndex = true;
+        }
+    }
+    if (!hasAnyIndex) {
+        return;
+    }
+
+    const size_t minStride = (size_t)THE_PositionAttribSize * 4u;
+    size_t stride = THE_PositionAttribStride > 0 ? (size_t)THE_PositionAttribStride : minStride;
+    if (stride < minStride) {
+        return;
+    }
+
+    const size_t offset = (size_t)THE_PositionAttribOffset;
+    const size_t neededBytes = offset + (maxIndex + 1u) * stride;
+    if (neededBytes > arraySnapshot.size()) {
+        return;
+    }
+
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", frameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    const size_t outBytes = (maxIndex + 1u) * stride;
+    char filePath[512];
+    snprintf(filePath, sizeof(filePath), "%s/glVertexAttribPointer_vertexAttrib_call_%llu.bin", frameDir, drawCall);
+    if (!writeBlobToPath(filePath, arraySnapshot.data() + offset, outBytes)) {
+        return;
+    }
+
+    char manifestLine[768];
+    snprintf(
+        manifestLine,
+        sizeof(manifestLine),
+        "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=0 bufferId=%d offset=%llu stride=%d size=%d type=%d bytes=%zu source=vbo_snapshot",
+        frameNumber,
+        drawCall,
+        filePath,
+        THE_PositionAttribBufferId,
+        THE_PositionAttribOffset,
+        THE_PositionAttribStride,
+        THE_PositionAttribSize,
+        THE_PositionAttribType,
+        outBytes
+    );
+    appendManifestLine(frameNumber, manifestLine);
+}
+
+void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, unsigned long long indexBytes) {
+    if (!THE_DrawElementShouldExport) {
+        return;
+    }
+    if ((THE_DrawElementMode != THE_GL_TRIANGLE_STRIP && THE_DrawElementMode != THE_GL_TRIANGLES) || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
+        return;
+    }
+    if (THE_BoundElementArrayBufferId <= 0 || indexBytes == 0) {
+        return;
+    }
+
+    auto it = g_elementArrayBufferSnapshots.find(THE_BoundElementArrayBufferId);
+    if (it == g_elementArrayBufferSnapshots.end()) {
+        return;
+    }
+    const std::vector<uint8_t> &snapshot = it->second;
+    const size_t offset = (size_t)indicesOffsetBytes;
+    const size_t size = (size_t)indexBytes;
+    if (offset > snapshot.size() || size > snapshot.size() - offset) {
+        return;
+    }
+
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    char filePath[512];
+    snprintf(filePath, sizeof(filePath), "%s/drawElements_indices_call_%llu.bin", frameDir, THE_CurrentGlCallNumber);
+    if (!writeBlobToPath(filePath, snapshot.data() + offset, size)) {
+        return;
+    }
+
+    char manifestLine[768];
+    snprintf(
+        manifestLine,
+        sizeof(manifestLine),
+        "kind=draw_elements frame=%d call=%llu parserCall=0 file=%s mode=%d type=%d indicesOffset=%llu bytes=%zu source=ebo_snapshot",
+        THE_FrameNumber,
+        THE_CurrentGlCallNumber,
+        filePath,
+        THE_DrawElementMode,
+        THE_DrawElementType,
+        indicesOffsetBytes,
+        size
+    );
+    appendManifestLine(THE_FrameNumber, manifestLine);
+
+    std::vector<uint8_t> indexSlice(size);
+    memcpy(indexSlice.data(), snapshot.data() + offset, size);
+    exportVertexPositionsFromVbo(THE_FrameNumber, THE_CurrentGlCallNumber, indexSlice);
 }
 
 static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
@@ -183,6 +514,9 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
     }
 
     if (THE_VertexAttribPointerBlobId == 0) {
+        return;
+    }
+    if (THE_VertexAttribPointerBlobId <= 4096ull) {
         return;
     }
     unsigned long long currentBlobId = (unsigned long long)(uintptr_t)ptr;
@@ -204,13 +538,68 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
     unsigned long long vertexAttribCount = ++g_vertexAttribPointerCountByFrame[THE_FrameNumber];
 
     char filePath[512];
-    snprintf(filePath, sizeof(filePath), "%s/glVertexAttribPointer_vertexAttrib_%llu.bin", frameDir, vertexAttribCount);
+    snprintf(filePath, sizeof(filePath), "%s/glVertexAttribPointer_vertexAttrib_call_%llu.bin", frameDir, THE_CurrentGlCallNumber);
 
     FILE *f = fopen(filePath, "wb");
     if (f) {
         fwrite(ptr, 1, size, f);
         fclose(f);
+
+        char manifestLine[768];
+        snprintf(
+            manifestLine,
+            sizeof(manifestLine),
+            "kind=vertex_attrib frame=%d call=%llu parserCall=%llu file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=wrapped_call",
+            THE_FrameNumber,
+            THE_CurrentGlCallNumber,
+            vertexAttribCount,
+            filePath,
+            THE_VertexAttribPointerAttribIndex,
+            THE_VertexAttribPointerBlobId,
+            size
+        );
+        appendManifestLine(THE_FrameNumber, manifestLine);
     }
+}
+
+void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribIndex, const void *ptr, size_t size) {
+    if (!ptr || size == 0) {
+        return;
+    }
+    unsigned long long blobPtr = (unsigned long long)(uintptr_t)ptr;
+    if (blobPtr <= 4096ull) {
+        return;
+    }
+
+    struct stat st = {0};
+    if (stat("/tmp/output", &st) == -1) {
+        mkdir("/tmp/output", 0755);
+    }
+    char frameDir[256];
+    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    if (stat(frameDir, &st) == -1) {
+        mkdir(frameDir, 0755);
+    }
+
+    char filePath[512];
+    snprintf(filePath, sizeof(filePath), "%s/glVertexAttribPointer_vertexAttrib_call_%llu.bin", frameDir, callNo);
+    if (!writeBlobToPath(filePath, ptr, size)) {
+        return;
+    }
+
+    char manifestLine[768];
+    snprintf(
+        manifestLine,
+        sizeof(manifestLine),
+        "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=fake_call",
+        THE_FrameNumber,
+        callNo,
+        filePath,
+        attribIndex,
+        blobPtr,
+        size
+    );
+    appendManifestLine(THE_FrameNumber, manifestLine);
 }
 
 static void exportBufferDataBlob(const void *ptr, size_t size) {
@@ -279,6 +668,28 @@ static void exportBufferDataBlob(const void *ptr, size_t size) {
     fprintf(m, "declaredSize=%llu\n", THE_BufferDataSize);
     fprintf(m, "exportedBlobSize=%zu\n", size);
     fclose(m);
+
+    std::unordered_map<int, std::vector<uint8_t>> *targetSnapshots = nullptr;
+    if (THE_BufferDataTarget == THE_GL_ARRAY_BUFFER) {
+        targetSnapshots = &g_arrayBufferSnapshots;
+    } else if (THE_BufferDataTarget == THE_GL_ELEMENT_ARRAY_BUFFER) {
+        targetSnapshots = &g_elementArrayBufferSnapshots;
+    }
+    if (!targetSnapshots) {
+        return;
+    }
+
+    std::vector<uint8_t> &snapshot = (*targetSnapshots)[THE_BufferDataBufferId];
+    const size_t writeOffset = (size_t)THE_BufferDataOffset;
+    const size_t writeSize = size;
+    if (!THE_BufferDataIsSubData) {
+        snapshot.assign((const uint8_t *)ptr, (const uint8_t *)ptr + writeSize);
+        return;
+    }
+    if (snapshot.size() < writeOffset + writeSize) {
+        snapshot.resize(writeOffset + writeSize, 0);
+    }
+    memcpy(snapshot.data() + writeOffset, ptr, writeSize);
 }
 
 Writer::Writer() :
@@ -448,6 +859,7 @@ Writer::endProperties(void)
 }
 
 unsigned Writer::beginEnter(const FunctionSig *sig, unsigned thread_id) {
+    THE_CurrentGlCallNumber = (unsigned long long)call_no;
     _writeByte(trace::EVENT_ENTER);
     _writeUInt(thread_id);
     _writeUInt(sig->id);
@@ -582,7 +994,7 @@ void Writer::writeBlob(const void *data, size_t size) {
         return;
     }
 
-    if (size >= 32768) {
+    if (THE_TextureFormat != 0 && THE_TextureWidth > 0 && THE_TextureHeight > 0) {
         exportPlain(data, size, THE_TextureId);
     }
 

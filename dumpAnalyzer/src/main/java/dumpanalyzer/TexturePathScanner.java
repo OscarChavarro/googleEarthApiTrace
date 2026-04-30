@@ -9,7 +9,7 @@ import java.util.stream.Stream;
 import dumpanalyzer.model.DumpAnalyzerModel;
 
 public final class TexturePathScanner {
-    private static final Pattern DDS_NAME_PATTERN = Pattern.compile(".*_(\\d+)\\.dds$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern TEXTURE_NAME_PATTERN = Pattern.compile(".*_(\\d+)\\.(dds|png)$", Pattern.CASE_INSENSITIVE);
 
     private TexturePathScanner() {
     }
@@ -21,16 +21,19 @@ public final class TexturePathScanner {
         try (Stream<Path> paths = Files.walk(outputRoot)) {
             paths
                 .filter(Files::isRegularFile)
-                .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".dds"))
+                .filter(path -> {
+                    String n = path.getFileName().toString().toLowerCase();
+                    return n.endsWith(".dds") || n.endsWith(".png");
+                })
                 .forEach(path -> register(path, model));
         } catch (IOException e) {
-            FatalErrorHandler.fail(outputRoot, "Failed to recursively scan DDS files: " + e.getMessage());
+            FatalErrorHandler.fail(outputRoot, "Failed to recursively scan texture files: " + e.getMessage());
         }
     }
 
     private static void register(Path path, DumpAnalyzerModel model) {
         String name = path.getFileName().toString();
-        Matcher matcher = DDS_NAME_PATTERN.matcher(name);
+        Matcher matcher = TEXTURE_NAME_PATTERN.matcher(name);
         if (!matcher.matches()) {
             return;
         }

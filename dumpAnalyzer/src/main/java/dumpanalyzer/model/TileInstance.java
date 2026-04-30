@@ -14,6 +14,13 @@ public final class TileInstance {
     private final Vector3D max;
     private final List<Vector3D> points;
     private final List<List<Vector3D>> strips;
+    private final String primitive;
+    private final int parserCall;
+    private final long glCall;
+    private final int vertexArraySize;
+    private final int indexArraySize;
+    private final boolean skipped;
+    private final String skipReason;
 
     public TileInstance(
         int contentId,
@@ -24,7 +31,14 @@ public final class TileInstance {
         Vector3D min,
         Vector3D max,
         List<Vector3D> points,
-        List<List<Vector3D>> strips
+        List<List<Vector3D>> strips,
+        String primitive,
+        int parserCall,
+        long glCall,
+        int vertexArraySize,
+        int indexArraySize,
+        boolean skipped,
+        String skipReason
     ) {
         this.contentId = contentId;
         this.southNeighbor = southNeighbor;
@@ -35,6 +49,13 @@ public final class TileInstance {
         this.max = max == null ? null : Vector3D.copyOf(max);
         this.points = points == null ? List.of() : List.copyOf(points);
         this.strips = strips == null ? List.of() : strips.stream().map(List::copyOf).toList();
+        this.primitive = primitive == null ? "n/a" : primitive;
+        this.parserCall = parserCall;
+        this.glCall = glCall;
+        this.vertexArraySize = vertexArraySize;
+        this.indexArraySize = indexArraySize;
+        this.skipped = skipped;
+        this.skipReason = skipReason == null ? "" : skipReason;
     }
 
     public int getContentId() {
@@ -77,5 +98,33 @@ public final class TileInstance {
     @JsonIgnore
     public List<List<Vector3D>> getStrips() {
         return strips;
+    }
+
+    public String getPrimitive() {
+        return primitive;
+    }
+
+    public int getParserCall() {
+        return parserCall;
+    }
+
+    public long getGlCall() {
+        return glCall;
+    }
+
+    public int getVertexArraySize() {
+        return vertexArraySize;
+    }
+
+    public int getIndexArraySize() {
+        return indexArraySize;
+    }
+
+    public boolean isSkipped() {
+        return skipped;
+    }
+
+    public String getSkipReason() {
+        return skipReason;
     }
 }

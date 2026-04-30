@@ -14,8 +14,8 @@ public final class DumpAnalyzerModel {
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();
     private final ConcurrentHashMap<Integer, String> texturePathById = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
-    private final AtomicInteger selectedFrameIndex = new AtomicInteger(1);
-    private final AtomicInteger selectedTileIndex = new AtomicInteger(0);
+    private final AtomicInteger selectedFrameIndex = new AtomicInteger(48);
+    private final AtomicInteger selectedTileIndex = new AtomicInteger(1);
     private final RendererConfiguration rendererConfiguration = new RendererConfiguration();
     private final RendererConfigurationController rendererConfigurationController =
         new RendererConfigurationController(rendererConfiguration);
@@ -53,20 +53,20 @@ public final class DumpAnalyzerModel {
         int processed = frames.size();
 
         if (processed == 0) {
-            return new HudState(0, 0, 0, 0, 0);
+            return new HudState(0, 0, -1, 0, 0);
         }
 
-        int frameIdx = clamp(selectedFrameIndex.get(), 1, processed);
+        int frameIdx = clamp(selectedFrameIndex.get(), 0, processed - 1);
         selectedFrameIndex.set(frameIdx);
 
-        Frame selectedFrame = frames.get(frameIdx - 1);
+        Frame selectedFrame = frames.get(frameIdx);
         int tileCount = selectedFrame.getTiles().size();
-        int tileIdx = tileCount == 0 ? 0 : clamp(selectedTileIndex.get(), 0, tileCount);
+        int tileIdx = tileCount == 0 ? -1 : clamp(selectedTileIndex.get(), -1, tileCount - 1);
         selectedTileIndex.set(tileIdx);
 
         int selectedTextureId = 0;
-        if (tileIdx > 0 && tileIdx <= tileCount) {
-            selectedTextureId = selectedFrame.getTiles().get(tileIdx - 1).getContentId();
+        if (tileIdx >= 0 && tileIdx < tileCount) {
+            selectedTextureId = selectedFrame.getTiles().get(tileIdx).getContentId();
         }
 
         return new HudState(frameIdx, processed, tileIdx, tileCount, selectedTextureId);
@@ -107,22 +107,22 @@ public final class DumpAnalyzerModel {
     private void clampSelection() {
         int processed = framesById.size();
         if (processed <= 0) {
-            selectedFrameIndex.set(1);
-            selectedTileIndex.set(0);
+            selectedFrameIndex.set(0);
+            selectedTileIndex.set(-1);
             return;
         }
 
-        int frameIdx = clamp(selectedFrameIndex.get(), 1, processed);
+        int frameIdx = clamp(selectedFrameIndex.get(), 0, processed - 1);
         List<Frame> frames = snapshotFrames();
         selectedFrameIndex.set(frameIdx);
 
-        Frame selectedFrame = frames.get(frameIdx - 1);
+        Frame selectedFrame = frames.get(frameIdx);
         int tiles = selectedFrame.getTiles().size();
         if (tiles <= 0) {
-            selectedTileIndex.set(0);
+            selectedTileIndex.set(-1);
         }
         else {
-            selectedTileIndex.set(clamp(selectedTileIndex.get(), 0, tiles));
+            selectedTileIndex.set(clamp(selectedTileIndex.get(), -1, tiles - 1));
         }
     }
 
@@ -136,10 +136,10 @@ public final class DumpAnalyzerModel {
             return;
         }
 
-        int current = clamp(selectedFrameIndex.get(), 1, frames.size());
+        int current = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
         int idx = current + direction;
-        while (idx >= 1 && idx <= frames.size()) {
-            if (!frames.get(idx - 1).getTiles().isEmpty()) {
+        while (idx >= 0 && idx < frames.size()) {
+            if (!frames.get(idx).getTiles().isEmpty()) {
                 selectedFrameIndex.set(idx);
                 clampSelection();
                 notifyListeners();

@@ -8,11 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.BlockingQueue;
@@ -43,6 +42,7 @@ public class GlTraceProcessor {
     private static final Pattern DRAW_MODE_PATTERN = Pattern.compile("mode\\s*=\\s*([A-Z0-9_]+)");
     private static final Pattern DRAW_COUNT_PATTERN = Pattern.compile("count\\s*=\\s*(\\d+)");
     private static final Pattern DRAW_TYPE_PATTERN = Pattern.compile("type\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern GL_CALL_NUMBER_PATTERN = Pattern.compile("^\\s*(\\d+)\\s+gl[A-Za-z0-9_]+\\s*\\(");
 
     private final FunctionCounter functionCounter;
 
@@ -70,17 +70,17 @@ public class GlTraceProcessor {
     }
 
     private static Frame buildFrameFromGlTrace(int frameId, String normalizedContent, Path frameDirectory) {
-        return new Frame(frameId, processFrameCalls(normalizedContent, frameDirectory));
+        return new Frame(frameId, processFrameCalls(frameId, normalizedContent, frameDirectory));
     }
 
-    private static List<TileInstance> processFrameCalls(String normalizedContent, Path frameDirectory) {
+    private static List<TileInstance> processFrameCalls(int frameId, String normalizedContent, Path frameDirectory) {
         Map<Integer, TileBuilder> tilesByTextureId = new HashMap<>();
-        Set<String> warned = new HashSet<>();
+        ManifestIndex manifest = loadManifestIndex(frameDirectory);
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
-        int vertexAttribCallCount = 0;
+        int vertexAttribExportCallCount = 0;
         int lastTextureId = -1;
-        Integer currentPositionVertexAttribId = null;
+        Long currentPositionVertexAttribCall = null;
         int currentVertexSize = 3;
         int currentVertexStride = 0;
 
@@ -91,16 +91,13 @@ public class GlTraceProcessor {
                 if (textureId != null) {
                     lastTextureId = textureId;
                 }
-                else {
-                    warnOnce(warned, "Malformed glBindTexture call. Texture id missing.");
-                }
                 continue;
             }
 
             Matcher attribMatcher = VERTEX_ATTRIB_LINE_PATTERN.matcher(line);
             if (attribMatcher.find()) {
-                vertexAttribCallCount++;
                 String args = attribMatcher.group(1);
+                long attribGlCall = extractGlCallNumber(line);
 
                 Integer index = extractInt(ATTRIB_INDEX_PATTERN, args);
                 Integer size = extractInt(ATTRIB_SIZE_PATTERN, args);
@@ -108,7 +105,8 @@ public class GlTraceProcessor {
                 String type = extractToken(ATTRIB_TYPE_PATTERN, args);
                 boolean hasBlobPointer = ATTRIB_POINTER_BLOB_PATTERN.matcher(args).find();
                 if (index != null && index == 0 && "GL_FLOAT".equals(type) && size != null && size >= 3 && hasBlobPointer) {
-                    currentPositionVertexAttribId = vertexAttribCallCount;
+                    vertexAttribExportCallCount++;
+                    currentPositionVertexAttribCall = attribGlCall >= 0 ? attribGlCall : null;
                     currentVertexSize = size;
                     currentVertexStride = stride == null ? 0 : stride;
                 }
@@ -121,71 +119,256 @@ public class GlTraceProcessor {
             }
 
             drawCount++;
+            long glCallNumber = extractGlCallNumber(line);
             if (lastTextureId < 0) {
-                warnOnce(warned, "Skipping draw: no bound texture id.");
                 continue;
             }
+            int tileNumber = getOrCreateTileNumber(tilesByTextureId, lastTextureId);
 
             String drawArgs = drawMatcher.group(1);
             String mode = extractToken(DRAW_MODE_PATTERN, drawArgs);
             Integer count = extractInt(DRAW_COUNT_PATTERN, drawArgs);
             String type = extractToken(DRAW_TYPE_PATTERN, drawArgs);
             if (mode == null || type == null || count == null) {
-                warnOnce(warned, "Skipping draw: malformed glDrawElements arguments.");
                 continue;
             }
             if ((!GL_TRIANGLE_STRIP.equals(mode) && !GL_TRIANGLES.equals(mode)) || !"GL_UNSIGNED_SHORT".equals(type) || count == null || count <= 0) {
-                if (!GL_TRIANGLE_STRIP.equals(mode) && !GL_TRIANGLES.equals(mode)) {
-                    warnOnce(warned, "Skipping draw: unsupported draw mode " + mode + ".");
-                }
-                else if (!"GL_UNSIGNED_SHORT".equals(type)) {
-                    warnOnce(warned, "Skipping draw: unsupported index type " + type + ".");
-                }
-                else {
-                    warnOnce(warned, "Skipping draw: invalid index count.");
-                }
                 continue;
             }
 
-            Path indicesPath = frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin");
+            Path indicesPath = resolveIndicesBlobPath(frameDirectory, manifest, glCallNumber, drawCount);
             int[] drawIndices = loadUnsignedShortBlob(indicesPath, count);
             if (drawIndices == null || drawIndices.length == 0) {
-                if (drawArgs.contains("indices = NULL")) {
-                    warnOnce(warned, "Skipping draw: indices come from element buffer and blob is unavailable.");
+                String reason = classifyBlobFailure(drawArgs.contains("indices = NULL"), indicesPath, "index");
+                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                if (skippedBuilder != null) {
+                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, 0, true, reason);
                 }
-                else {
-                    warnOnce(warned, "Skipping draw: missing index blob " + indicesPath.getFileName() + ".");
-                }
+                logMissingGeometry(frameId, tileNumber, mode, drawCount, glCallNumber, reason);
                 continue;
             }
-            if (currentPositionVertexAttribId == null) {
-                warnOnce(warned, "Skipping draw: position vertex attribute is unavailable.");
+            if (currentPositionVertexAttribCall == null && vertexAttribExportCallCount <= 0) {
+                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                if (skippedBuilder != null) {
+                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, "null blob");
+                }
+                logMissingGeometry(
+                    frameId,
+                    tileNumber,
+                    mode,
+                    drawCount,
+                    glCallNumber,
+                    "position vertex attribute points to VBO/NULL (no blob pointer)"
+                );
                 continue;
             }
-            Path vertexPath = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + currentPositionVertexAttribId + ".bin");
+            Path vertexPath = resolveVertexBlobPath(frameDirectory, manifest, currentPositionVertexAttribCall, vertexAttribExportCallCount);
             byte[] positionBlob = loadBlob(vertexPath);
             if (positionBlob == null || positionBlob.length == 0) {
-                warnOnce(warned, "Skipping draw: missing vertex blob " + vertexPath.getFileName() + ".");
+                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                String reason = classifyBlobFailure(false, vertexPath, "vertex");
+                if (skippedBuilder != null) {
+                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, reason);
+                }
+                logMissingGeometry(frameId, tileNumber, mode, drawCount, glCallNumber, reason);
+                continue;
+            }
+            int vertexArraySize = estimateVertexArraySize(positionBlob, currentVertexSize, currentVertexStride);
+            if (vertexArraySize <= 0) {
+                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                if (skippedBuilder != null) {
+                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, "zero array length blob");
+                }
                 continue;
             }
             TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
             if (candidate == null) {
-                warnOnce(warned, "Skipping draw: invalid geometry data.");
+                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                if (skippedBuilder != null) {
+                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, true, "invalid geometry data");
+                }
                 continue;
             }
-            TileBuilder builder = tilesByTextureId.computeIfAbsent(lastTextureId, TileBuilder::new);
+            TileBuilder builder = tilesByTextureId.get(lastTextureId);
+            if (builder == null) {
+                tileNumber = getOrCreateTileNumber(tilesByTextureId, lastTextureId);
+                builder = tilesByTextureId.get(lastTextureId);
+                if (builder == null) {
+                    logMissingGeometry(frameId, tileNumber, mode, drawCount, glCallNumber, "internal tile mapping error");
+                    continue;
+                }
+            }
             if (GL_TRIANGLES.equals(mode)) {
-                addTrianglesAsStrips(builder, candidate.points(), warned);
+                addTrianglesAsStrips(builder, candidate.points());
             }
             else {
                 builder.addStrip(candidate.points(), candidate.min(), candidate.max());
             }
+            builder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, false, "");
         }
         List<TileInstance> tiles = new ArrayList<>(tilesByTextureId.size());
         for (TileBuilder builder : tilesByTextureId.values()) {
             tiles.add(builder.build());
         }
         return tiles;
+    }
+
+    private static Path resolveIndicesBlobPath(Path frameDirectory, ManifestIndex manifest, long glCallNumber, int drawCount) {
+        if (glCallNumber >= 0) {
+            Path fromManifest = manifest.drawByCall.get(glCallNumber);
+            if (fromManifest != null) {
+                return fromManifest;
+            }
+            Path stableName = frameDirectory.resolve("drawElements_indices_call_" + glCallNumber + ".bin");
+            if (Files.exists(stableName)) {
+                return stableName;
+            }
+        }
+        return frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin");
+    }
+
+    private static Path resolveVertexBlobPath(Path frameDirectory, ManifestIndex manifest, Long vertexAttribCall, int vertexAttribExportCallCount) {
+        if (vertexAttribCall != null) {
+            long[] candidates = {vertexAttribCall, vertexAttribCall + 1L, vertexAttribCall - 1L};
+            for (long candidateCall : candidates) {
+                VertexManifestEntry fromManifest = manifest.vertexByCall.get(candidateCall);
+                if (fromManifest != null) {
+                    return fromManifest.filePath();
+                }
+                Path stableName = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_call_" + candidateCall + ".bin");
+                if (Files.exists(stableName)) {
+                    return stableName;
+                }
+            }
+        }
+        return frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + vertexAttribExportCallCount + ".bin");
+    }
+
+    private static ManifestIndex loadManifestIndex(Path frameDirectory) {
+        ManifestIndex out = new ManifestIndex();
+        if (frameDirectory == null) {
+            return out;
+        }
+        for (Path dir : candidateManifestDirectories(frameDirectory)) {
+            Path manifestPath = dir.resolve("manifest.txt");
+            if (!Files.exists(manifestPath)) {
+                continue;
+            }
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(manifestPath, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                continue;
+            }
+            for (String line : lines) {
+                Map<String, String> kv = parseManifestLine(line);
+                String kind = kv.get("kind");
+                String callText = kv.get("call");
+                String fileText = kv.get("file");
+                if (kind == null || callText == null || fileText == null) {
+                    continue;
+                }
+                long call;
+                try {
+                    call = Long.parseLong(callText);
+                } catch (NumberFormatException ex) {
+                    continue;
+                }
+                Path filePath = Paths.get(fileText);
+                if (!filePath.isAbsolute()) {
+                    filePath = dir.resolve(fileText);
+                }
+                if ("draw_elements".equals(kind)) {
+                    out.drawByCall.putIfAbsent(call, filePath);
+                }
+                else if ("vertex_attrib".equals(kind)) {
+                    Integer attribIndex = tryParseInt(kv.get("attribIndex"));
+                    if (attribIndex != null && attribIndex == 0) {
+                        out.vertexByCall.putIfAbsent(call, new VertexManifestEntry(filePath, attribIndex));
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static List<Path> candidateManifestDirectories(Path frameDirectory) {
+        LinkedHashSet<Path> out = new LinkedHashSet<>();
+        out.add(frameDirectory);
+        Path parent = frameDirectory.getParent();
+        if (parent == null) {
+            return new ArrayList<>(out);
+        }
+        String name = frameDirectory.getFileName().toString();
+        Integer current = tryParseInt(name);
+        if (current == null) {
+            return new ArrayList<>(out);
+        }
+        out.add(parent.resolve(String.format("%05d", current + 1)));
+        if (current > 0) {
+            out.add(parent.resolve(String.format("%05d", current - 1)));
+        }
+        return new ArrayList<>(out);
+    }
+
+    private static Map<String, String> parseManifestLine(String line) {
+        Map<String, String> kv = new HashMap<>();
+        if (line == null || line.isBlank()) {
+            return kv;
+        }
+        String[] parts = line.trim().split("\\s+");
+        for (String part : parts) {
+            int eq = part.indexOf('=');
+            if (eq <= 0 || eq >= part.length() - 1) {
+                continue;
+            }
+            String k = part.substring(0, eq);
+            String v = part.substring(eq + 1);
+            kv.put(k, v);
+        }
+        return kv;
+    }
+
+    private static Integer tryParseInt(String text) {
+        if (text == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static String classifyBlobFailure(boolean isNullPointerInTrace, Path path, String blobKind) {
+        if (isNullPointerInTrace) {
+            return "null blob";
+        }
+        if (path == null || !Files.exists(path)) {
+            return "null blob";
+        }
+        try {
+            long size = Files.size(path);
+            if (size <= 0) {
+                return "zero array length blob";
+            }
+            if ("index".equals(blobKind) && (size % 2L) != 0L) {
+                return "invalid index blob";
+            }
+            return "blob decode failure";
+        } catch (IOException ex) {
+            return "null blob";
+        }
+    }
+
+    private static int getOrCreateTileNumber(Map<Integer, TileBuilder> tilesByTextureId, int textureId) {
+        TileBuilder existing = tilesByTextureId.get(textureId);
+        if (existing != null) {
+            return existing.tileNumber();
+        }
+        int tileNumber = tilesByTextureId.size() + 1;
+        tilesByTextureId.put(textureId, new TileBuilder(textureId, tileNumber));
+        return tileNumber;
     }
 
     private static Integer extractInt(Pattern pattern, String source) {
@@ -251,12 +434,9 @@ public class GlTraceProcessor {
         return new TileGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), points);
     }
 
-    private static void addTrianglesAsStrips(TileBuilder builder, List<Vector3D> points, Set<String> warned) {
+    private static void addTrianglesAsStrips(TileBuilder builder, List<Vector3D> points) {
         if (builder == null || points == null || points.size() < 3) {
             return;
-        }
-        if ((points.size() % 3) != 0) {
-            warnOnce(warned, "GL_TRIANGLES point list is not divisible by 3. Truncating trailing points.");
         }
         int triangleCount = points.size() / 3;
         for (int i = 0; i < triangleCount; i++) {
@@ -320,6 +500,18 @@ public class GlTraceProcessor {
         return out;
     }
 
+    private static int estimateVertexArraySize(byte[] vertexBlob, int vertexSize, int vertexStride) {
+        if (vertexBlob == null || vertexSize < 3) {
+            return 0;
+        }
+        int minStride = vertexSize * 4;
+        int strideBytes = vertexStride > 0 ? vertexStride : minStride;
+        if (strideBytes < minStride || strideBytes <= 0) {
+            return 0;
+        }
+        return vertexBlob.length / strideBytes;
+    }
+
     private static void enqueueLog(BlockingQueue<String> logQueue, String message) {
         try {
             logQueue.put(message);
@@ -347,10 +539,28 @@ public class GlTraceProcessor {
         parser.traceFile();
     }
 
-    private static void warnOnce(Set<String> warned, String message) {
-        if (warned.add(message)) {
-            System.out.println("[dumpAnalyzer] " + message);
+    private static long extractGlCallNumber(String line) {
+        Matcher matcher = GL_CALL_NUMBER_PATTERN.matcher(line);
+        if (!matcher.find()) {
+            return -1L;
         }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException ex) {
+            return -1L;
+        }
+    }
+
+    private static void logMissingGeometry(
+        int frameId,
+        int tileNumber,
+        String primitive,
+        int parserCallNumber,
+        long glCallNumber,
+        String reason
+    ) {
+        // Intentionally silent: per-tile diagnostics are emitted by the viewer
+        // only when user changes frame/tile selection.
     }
 
     private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {
@@ -358,13 +568,51 @@ public class GlTraceProcessor {
 
     private static final class TileBuilder {
         private final int textureId;
+        private final int tileNumber;
         private final List<List<Vector3D>> strips = new ArrayList<>();
         private final List<Vector3D> flatPoints = new ArrayList<>();
+        private String primitive = "n/a";
+        private int parserCall = -1;
+        private long glCall = -1L;
+        private int vertexArraySize = 0;
+        private int indexArraySize = 0;
+        private boolean skipped = false;
+        private String skipReason = "";
         private Vector3D min;
         private Vector3D max;
 
-        private TileBuilder(int textureId) {
+        private TileBuilder(int textureId, int tileNumber) {
             this.textureId = textureId;
+            this.tileNumber = tileNumber;
+        }
+
+        private int tileNumber() {
+            return tileNumber;
+        }
+
+        private void noteDraw(
+            String primitive,
+            int parserCall,
+            long glCall,
+            int vertexArraySize,
+            int indexArraySize,
+            boolean skipped,
+            String skipReason
+        ) {
+            this.primitive = primitive == null ? "n/a" : primitive;
+            this.parserCall = parserCall;
+            this.glCall = glCall;
+            this.vertexArraySize = Math.max(0, vertexArraySize);
+            this.indexArraySize = Math.max(0, indexArraySize);
+            // If tile already has valid geometry, keep it as non-skipped even
+            // if a later primitive in the same texture bucket fails.
+            if (!strips.isEmpty() || !flatPoints.isEmpty()) {
+                this.skipped = false;
+                this.skipReason = "";
+                return;
+            }
+            this.skipped = skipped;
+            this.skipReason = skipReason == null ? "" : skipReason;
         }
 
         private void addStrip(List<Vector3D> stripPoints, Vector3D stripMin, Vector3D stripMax) {
@@ -402,8 +650,23 @@ public class GlTraceProcessor {
                 min,
                 max,
                 flatPoints,
-                strips
+                strips,
+                primitive,
+                parserCall,
+                glCall,
+                vertexArraySize,
+                indexArraySize,
+                skipped,
+                skipReason
             );
         }
+    }
+
+    private static final class ManifestIndex {
+        private final Map<Long, Path> drawByCall = new HashMap<>();
+        private final Map<Long, VertexManifestEntry> vertexByCall = new HashMap<>();
+    }
+
+    private record VertexManifestEntry(Path filePath, int attribIndex) {
     }
 }

@@ -123,16 +123,23 @@ namespace trace {
 
 } /* namespace trace */
 
+namespace trace {
+    void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, unsigned long long indexBytes);
+    void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribIndex, const void *ptr, size_t size);
+}
+
 extern int THE_TextureId;
 extern int THE_TextureWidth;
 extern int THE_TextureHeight;
 extern int THE_TextureFormat;
+extern int THE_TextureType;
 extern int THE_DrawElementMode;
 extern int THE_DrawElementType;
 extern int THE_DrawElementShouldExport;
 extern unsigned long long THE_DrawElementIndicesBlobId;
 extern int THE_VertexAttribPointerShouldExport;
 extern unsigned long long THE_VertexAttribPointerBlobId;
+extern int THE_VertexAttribPointerAttribIndex;
 extern int THE_BoundArrayBufferId;
 extern int THE_BoundElementArrayBufferId;
 extern int THE_BufferDataShouldExport;
@@ -141,3 +148,9 @@ extern int THE_BufferDataBufferId;
 extern int THE_BufferDataIsSubData;
 extern unsigned long long THE_BufferDataOffset;
 extern unsigned long long THE_BufferDataSize;
+extern unsigned long long THE_CurrentGlCallNumber;
+extern int THE_PositionAttribBufferId;
+extern unsigned long long THE_PositionAttribOffset;
+extern int THE_PositionAttribSize;
+extern int THE_PositionAttribStride;
+extern int THE_PositionAttribType;

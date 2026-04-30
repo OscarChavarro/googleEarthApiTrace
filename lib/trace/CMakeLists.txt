@@ -35,6 +35,7 @@ target_link_libraries(common
     highlight
     os
     Snappy::snappy
+    PNG::PNG
     ZLIB::ZLIB
     PkgConfig::BROTLIDEC
     PkgConfig::ZSTD

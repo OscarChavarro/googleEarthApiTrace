@@ -92,6 +92,14 @@ class GlxTracer(GlTracer):
         if function.name == 'glVertexAttribPointer':
             print('    THE_VertexAttribPointerBlobId = (unsigned long long)(uintptr_t)pointer;')
             print('    THE_VertexAttribPointerShouldExport = (THE_BoundArrayBufferId == 0) ? 1 : 0;')
+            print('    THE_VertexAttribPointerAttribIndex = (int)index;')
+            print('    if (index == 0) {')
+            print('        THE_PositionAttribBufferId = THE_BoundArrayBufferId;')
+            print('        THE_PositionAttribOffset = (unsigned long long)(uintptr_t)pointer;')
+            print('        THE_PositionAttribSize = (int)size;')
+            print('        THE_PositionAttribStride = (int)stride;')
+            print('        THE_PositionAttribType = (int)type;')
+            print('    }')
 
         if function.name == 'glCompressedTexImage2DARB':
             width_arg = function.args[3].name
@@ -100,6 +108,27 @@ class GlxTracer(GlTracer):
             print('    THE_TextureWidth = %s;' % width_arg)
             print('    THE_TextureHeight = %s;' % height_arg)
             print('    THE_TextureFormat = %s;' % format_arg)
+            print('    THE_TextureType = 0;')
+
+        if function.name == 'glTexImage2D':
+            width_arg = function.args[3].name
+            height_arg = function.args[4].name
+            format_arg = function.args[6].name
+            type_arg = function.args[7].name
+            print('    THE_TextureWidth = %s;' % width_arg)
+            print('    THE_TextureHeight = %s;' % height_arg)
+            print('    THE_TextureFormat = %s;' % format_arg)
+            print('    THE_TextureType = %s;' % type_arg)
+
+        if function.name == 'glTexSubImage2D':
+            width_arg = function.args[4].name
+            height_arg = function.args[5].name
+            format_arg = function.args[6].name
+            type_arg = function.args[7].name
+            print('    THE_TextureWidth = %s;' % width_arg)
+            print('    THE_TextureHeight = %s;' % height_arg)
+            print('    THE_TextureFormat = %s;' % format_arg)
+            print('    THE_TextureType = %s;' % type_arg)
 
         GlTracer.traceFunctionImplBody(self, function)
 
@@ -112,12 +141,23 @@ class GlxTracer(GlTracer):
             print('    THE_TextureId = %s;' % texture_arg)
         elif function.name == 'glCompressedTexImage2DARB':
             print('    THE_TextureFormat = 0;')
+            print('    THE_TextureType = 0;')
+        elif function.name == 'glTexImage2D':
+            print('    THE_TextureFormat = 0;')
+            print('    THE_TextureType = 0;')
+        elif function.name == 'glTexSubImage2D':
+            print('    THE_TextureFormat = 0;')
+            print('    THE_TextureType = 0;')
         elif function.name == 'glDrawElements':
+            print('    if (THE_DrawElementShouldExport && THE_BoundElementArrayBufferId > 0 && type == GL_UNSIGNED_SHORT) {')
+            print('        trace::exportDrawElementsFromBoundBuffers((unsigned long long)(uintptr_t)indices, (unsigned long long)count * 2ull);')
+            print('    }')
             print('    THE_DrawElementShouldExport = 0;')
             print('    THE_DrawElementIndicesBlobId = 0;')
         elif function.name == 'glVertexAttribPointer':
             print('    THE_VertexAttribPointerShouldExport = 0;')
             print('    THE_VertexAttribPointerBlobId = 0;')
+            print('    THE_VertexAttribPointerAttribIndex = -1;')
         elif function.name == 'glBufferData' or function.name == 'glBufferSubData':
             print('    THE_BufferDataShouldExport = 0;')
             print('    THE_BufferDataTarget = 0;')

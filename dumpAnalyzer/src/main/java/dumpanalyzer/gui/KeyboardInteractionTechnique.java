@@ -48,11 +48,9 @@ public final class KeyboardInteractionTechnique implements KeyListener {
             case KeyEvent.VK_ESCAPE -> closeAction.run();
             case KeyEvent.VK_1 -> {
                 model.selectPreviousFrame();
-                printSelectedFrameJson();
             }
             case KeyEvent.VK_2 -> {
                 model.selectNextFrame();
-                printSelectedFrameJson();
             }
             case KeyEvent.VK_3 -> model.selectPreviousTile();
             case KeyEvent.VK_4 -> model.selectNextTile();
@@ -83,12 +81,12 @@ public final class KeyboardInteractionTechnique implements KeyListener {
         List<Frame> frames = model.snapshotFrames();
 
         int idx = state.selectedFrameIndex();
-        if (idx <= 0 || idx > frames.size()) {
+        if (idx < 0 || idx >= frames.size()) {
             System.out.println("[dumpAnalyzer] No frame selected.");
             return;
         }
 
-        Frame selected = frames.get(idx - 1);
+        Frame selected = frames.get(idx);
         try {
             String json = JSON_MAPPER.writer(JSON_PRETTY_PRINTER).writeValueAsString(selected);
             String aabbSummary = buildGlobalAabbSummary(selected);

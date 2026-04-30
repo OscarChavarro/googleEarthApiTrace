@@ -2,6 +2,7 @@ package dumpanalyzer.render;
 
 import java.awt.Color;
 import java.awt.Font;
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -15,6 +16,8 @@ import com.jogamp.opengl.util.awt.TextRenderer;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBImage;
 import vsdk.toolkit.render.jogl.Jogl4ImageRenderer;
 
 public final class Jogl4HudRenderer {
@@ -26,6 +29,8 @@ public final class Jogl4HudRenderer {
     private int loadedTextureGlId;
     private int loadedTextureWidth;
     private int loadedTextureHeight;
+    private RGBImage loadedRgbImage;
+    private boolean loadedTextureFromDds;
 
     public void initializeIfNeeded() {
         if (textRenderer == null) {
@@ -35,6 +40,7 @@ public final class Jogl4HudRenderer {
 
     public void dispose(GL4 gl) {
         unloadTexture(gl);
+        Jogl4ImageRenderer.dispose(gl);
     }
 
     public void render(GLAutoDrawable drawable, DumpAnalyzerModel.HudState state, Camera camera, String texturePath) {
@@ -61,7 +67,7 @@ public final class Jogl4HudRenderer {
             textRenderer.beginRendering(w, h);
             textRenderer.setColor(Color.WHITE);
             textRenderer.draw(
-                "Frame [1, 2]: " + state.selectedFrameIndex() + "/" + state.processedFrames(),
+                "Frame [1, 2]: " + state.selectedFrameIndex() + "/" + Math.max(0, state.processedFrames() - 1),
                 20,
                 h - 40
             );
@@ -71,7 +77,7 @@ public final class Jogl4HudRenderer {
                 h - 70
             );
             textRenderer.draw(
-                "Selected tile [3, 4]: " + (state.selectedTileIndex() == 0 ? "ALL" : state.selectedTileIndex()) + "/" + state.tilesInSelectedFrame(),
+                "Selected tile [3, 4]: " + state.selectedTileIndex() + "/" + Math.max(-1, state.tilesInSelectedFrame() - 1),
                 20,
                 h - 100
             );
@@ -93,20 +99,58 @@ public final class Jogl4HudRenderer {
     }
 
     private void drawSelectedTexturePreview(GL4 gl, Camera camera, String texturePath) {
-        if (texturePath == null || texturePath.isBlank() || camera == null) {
+        int textureId = activateTexture(gl, texturePath);
+        if (textureId == 0 || camera == null) {
+            return;
+        }
+        drawTextureOn2DWindowScaled(gl, camera, 10, 10, 2.0, 1.0);
+    }
+
+    public int activateTexture(GL4 gl, String texturePath) {
+        if (texturePath == null || texturePath.isBlank()) {
             unloadTexture(gl);
             loadedTexturePath = null;
-            return;
+            return 0;
         }
         if (!texturePath.equals(loadedTexturePath)) {
             unloadTexture(gl);
             loadedTexturePath = texturePath;
-            loadDdsTexture(gl, texturePath);
+            loadTexture(gl, texturePath);
+        }
+        if (loadedRgbImage != null) {
+            int textureId = Jogl4ImageRenderer.activate(gl, loadedRgbImage);
+            if (textureId > 0) {
+                loadedTextureGlId = textureId;
+                loadedTextureWidth = loadedRgbImage.getXSize();
+                loadedTextureHeight = loadedRgbImage.getYSize();
+                loadedTextureFromDds = false;
+            }
         }
         if (loadedTextureGlId == 0 || loadedTextureWidth <= 0 || loadedTextureHeight <= 0) {
+            return 0;
+        }
+        return loadedTextureGlId;
+    }
+
+    private void loadTexture(GL4 gl, String texturePath) {
+        String lower = texturePath.toLowerCase();
+        if (lower.endsWith(".png")) {
+            loadPngTexture(texturePath);
             return;
         }
-        drawTextureOn2DWindowScaled(gl, camera, 10, 10, 2.0, 1.0);
+        loadDdsTexture(gl, texturePath);
+    }
+
+    private void loadPngTexture(String texturePath) {
+        try {
+            loadedRgbImage = ImagePersistence.importRGB(new File(texturePath));
+            if (loadedRgbImage != null) {
+                loadedTextureWidth = loadedRgbImage.getXSize();
+                loadedTextureHeight = loadedRgbImage.getYSize();
+            }
+        } catch (Exception e) {
+            loadedRgbImage = null;
+        }
     }
 
     private void loadDdsTexture(GL4 gl, String texturePath) {
@@ -165,17 +209,23 @@ public final class Jogl4HudRenderer {
         loadedTextureGlId = textureId;
         loadedTextureWidth = width;
         loadedTextureHeight = height;
+        loadedTextureFromDds = true;
     }
 
     private void unloadTexture(GL4 gl) {
-        if (loadedTextureGlId != 0) {
+        if (loadedRgbImage != null) {
+            Jogl4ImageRenderer.unload(gl, loadedRgbImage);
+            loadedRgbImage = null;
+        }
+        if (loadedTextureGlId != 0 && loadedTextureFromDds) {
             gl.glBindTexture(GL4.GL_TEXTURE_2D, 0);
             int[] ids = new int[] { loadedTextureGlId };
             gl.glDeleteTextures(1, ids, 0);
-            loadedTextureGlId = 0;
-            loadedTextureWidth = 0;
-            loadedTextureHeight = 0;
         }
+        loadedTextureGlId = 0;
+        loadedTextureWidth = 0;
+        loadedTextureHeight = 0;
+        loadedTextureFromDds = false;
     }
 
     private void drawTextureOn2DWindowScaled(GL4 gl, Camera c, int x, int y, double scale, double alpha) {

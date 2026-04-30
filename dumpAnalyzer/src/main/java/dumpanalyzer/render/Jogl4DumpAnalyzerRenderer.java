@@ -8,7 +8,6 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
-import java.util.Arrays;
 import java.util.List;
 
 import javax.swing.JFrame;
@@ -58,7 +57,6 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final float SURFACE_POLYGON_OFFSET_UNITS = 1.0f;
     private static final float POINT_POLYGON_OFFSET_FACTOR = -2.0f;
     private static final float POINT_POLYGON_OFFSET_UNITS = -2.0f;
-    private static final boolean TRACE_TILE_MATRICES = true;
     private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
     private static final double MAX_ABS_COORD = 1.0e6;
     private static final double MIN_DIAGONAL = 1.0e-6;
@@ -130,8 +128,8 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl.glClear(GL4.GL_COLOR_BUFFER_BIT | GL4.GL_DEPTH_BUFFER_BIT);
         Matrix4x4 projection = Jogl4CameraRenderer.activate(gl, camera);
         drawObjectsGL(gl, projection);
-        if (state.selectedFrameIndex() > 0 && state.selectedFrameIndex() <= frames.size()) {
-            drawSelectedTile(gl, drawable.getGL().getGL2(), frames.get(state.selectedFrameIndex() - 1), state.selectedTileIndex(), projection);
+        if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
+            drawSelectedTile(gl, drawable.getGL().getGL2(), frames.get(state.selectedFrameIndex()), state.selectedTileIndex(), projection);
         }
         hudRenderer.render(drawable, state, camera, model.getTexturePath(state.selectedTextureId()));
     }
@@ -145,19 +143,21 @@ public class Jogl4DumpAnalyzerRenderer implements
         lastSelectedFrameIndex = frameIndex;
         lastSelectedTileIndex = tileIndex;
 
-        if (frameIndex <= 0 || frameIndex > frames.size()) {
+        if (frameIndex < 0 || frameIndex >= frames.size()) {
             return;
         }
-        Frame frameData = frames.get(frameIndex - 1);
+        Frame frameData = frames.get(frameIndex);
         AabbStats frameStats = computeAabbStats(frameData);
-        if (tileIndex == 0) {
+        if (tileIndex == -1) {
             recenterCameraToAllTiles(frameData, frameStats);
+            logSelectedTile(frameData, tileIndex);
             return;
         }
-        if (tileIndex < 0 || tileIndex > frameData.getTiles().size()) {
+        if (tileIndex < 0 || tileIndex >= frameData.getTiles().size()) {
             return;
         }
-        TileInstance tile = frameData.getTiles().get(tileIndex - 1);
+        TileInstance tile = frameData.getTiles().get(tileIndex);
+        logSelectedTile(frameData, tileIndex);
         if (!isValidAndConsistentAabb(tile.getMin(), tile.getMax(), frameStats)) {
             return;
         }
@@ -190,37 +190,51 @@ public class Jogl4DumpAnalyzerRenderer implements
         Jogl4MatrixRenderer.draw(gl, projection, Matrix4x4.identityMatrix());
     }
 
-    private void drawSelectedTile(GL4 gl, GL2 gl2, Frame frameData, int selectedTileIndex1Based, Matrix4x4 projection) {
-        // Scene geometry must be rendered without texture state.
-        gl2.glActiveTexture(GL2.GL_TEXTURE0);
-        gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-        gl2.glDisable(GL2.GL_TEXTURE_2D);
+    private void drawSelectedTile(GL4 gl, GL2 gl2, Frame frameData, int selectedTileIndex, Matrix4x4 projection) {
+        if (!model.getRendererConfiguration().isTextureSet()) {
+            gl2.glActiveTexture(GL2.GL_TEXTURE0);
+            gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+            gl2.glDisable(GL2.GL_TEXTURE_2D);
+        }
 
-        if (selectedTileIndex1Based == 0) {
-            int tileOrdinal = 1;
+        if (selectedTileIndex == -1) {
+            int tileOrdinal = 0;
             for (TileInstance tile : frameData.getTiles()) {
                 drawTileWireframe(gl, gl2, frameData.getId(), tileOrdinal, tile, projection, false);
                 tileOrdinal++;
             }
             return;
         }
-        if (selectedTileIndex1Based < 0 || selectedTileIndex1Based > frameData.getTiles().size()) {
+        if (selectedTileIndex < 0 || selectedTileIndex >= frameData.getTiles().size()) {
             return;
         }
-        TileInstance tile = frameData.getTiles().get(selectedTileIndex1Based - 1);
-        drawTileWireframe(gl, gl2, frameData.getId(), selectedTileIndex1Based, tile, projection, true);
+        TileInstance tile = frameData.getTiles().get(selectedTileIndex);
+        drawTileWireframe(gl, gl2, frameData.getId(), selectedTileIndex, tile, projection, true);
     }
 
     private void drawTileWireframe(
         GL4 gl,
         GL2 gl2,
         int frameId,
-        int tileIndex1Based,
+        int tileIndex,
         TileInstance tile,
         Matrix4x4 projection,
         boolean drawAabb
     ) {
         RendererConfiguration quality = model.getRendererConfiguration();
+        boolean textured = quality.isTextureSet();
+        int activeTextureId = 0;
+        if (textured) {
+            activeTextureId = hudRenderer.activateTexture(gl, model.getTexturePath(tile.getContentId()));
+            if (activeTextureId > 0) {
+                gl2.glActiveTexture(GL2.GL_TEXTURE0);
+                gl2.glEnable(GL2.GL_TEXTURE_2D);
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, activeTextureId);
+            }
+            else {
+                textured = false;
+            }
+        }
         if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
             double[] mm = {
                 tile.getMin().x(), tile.getMin().y(), tile.getMin().z(),
@@ -235,20 +249,6 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
         gl2.glPushMatrix();
         gl2.glLoadIdentity();
-        if (TRACE_TILE_MATRICES) {
-            float[] modelView = new float[16];
-            float[] projectionMatrix = new float[16];
-            gl2.glGetFloatv(GL2.GL_MODELVIEW_MATRIX, modelView, 0);
-            gl2.glGetFloatv(GL2.GL_PROJECTION_MATRIX, projectionMatrix, 0);
-            System.out.println(
-                "[dumpAnalyzer] Frame " + frameId +
-                ", Tile " + tileIndex1Based +
-                ", Texture " + tile.getContentId() +
-                ": MODELVIEW=" + Arrays.toString(modelView) +
-                " PROJECTION=" + Arrays.toString(projectionMatrix)
-            );
-        }
-
         if (quality.isSurfacesSet()) {
             gl2.glDisable(GL2.GL_LIGHTING);
             gl2.glEnable(GL2.GL_DEPTH_TEST);
@@ -257,12 +257,21 @@ public class Jogl4DumpAnalyzerRenderer implements
             gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
             gl2.glPolygonOffset(SURFACE_POLYGON_OFFSET_FACTOR, SURFACE_POLYGON_OFFSET_UNITS);
             gl2.glColor3d(0.85, 0.85, 0.85);
+            Vector3D texMin = tile.getMin();
+            Vector3D texMax = tile.getMax();
+            double texDx = (texMin != null && texMax != null) ? Math.max(1e-9, texMax.x() - texMin.x()) : 1.0;
+            double texDy = (texMin != null && texMax != null) ? Math.max(1e-9, texMax.y() - texMin.y()) : 1.0;
             for (List<Vector3D> strip : tile.getStrips()) {
                 if (strip.size() < 3) {
                     continue;
                 }
                 gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
                 for (Vector3D p : strip) {
+                    if (textured && texMin != null && texMax != null) {
+                        double u = (p.x() - texMin.x()) / texDx;
+                        double v = (p.y() - texMin.y()) / texDy;
+                        gl2.glTexCoord2d(u, v);
+                    }
                     gl2.glVertex3d(p.x(), p.y(), p.z());
                 }
                 gl2.glEnd();
@@ -312,6 +321,10 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl2.glMatrixMode(GL2.GL_PROJECTION);
         gl2.glPopMatrix();
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        if (textured) {
+            gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+            gl2.glDisable(GL2.GL_TEXTURE_2D);
+        }
     }
 
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
@@ -385,6 +398,34 @@ public class Jogl4DumpAnalyzerRenderer implements
         double far = Math.max(near + 1e-3, d * 3.0);
         camera.setNearPlaneDistance(near);
         camera.setFarPlaneDistance(far);
+    }
+
+    private void logSelectedTile(Frame frameData, int tileIndex) {
+        if (frameData == null || tileIndex < 0 || tileIndex >= frameData.getTiles().size()) {
+            return;
+        }
+        TileInstance tile = frameData.getTiles().get(tileIndex);
+        String base =
+            "[dumpAnalyzer] Frame " + frameData.getId() +
+            ", Tile " + tileIndex +
+            ", Call: " + tile.getGlCall() +
+            ", Primitive " + tile.getPrimitive() +
+            ", ParserCall " + tile.getParserCall() +
+            "";
+        if (tile.isSkipped()) {
+            String reason = tile.getSkipReason();
+            if (reason == null || reason.isBlank()) {
+                reason = "unknown";
+            }
+            System.out.println(base + ", Skipped true, Reason " + reason);
+        }
+        else {
+            System.out.println(
+                base +
+                ", VertexArraySize " + tile.getVertexArraySize() +
+                ", IndexArraySize " + tile.getIndexArraySize()
+            );
+        }
     }
 
     private AabbStats computeAabbStats(Frame frameData) {
