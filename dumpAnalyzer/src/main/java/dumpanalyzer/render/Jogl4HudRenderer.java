@@ -4,6 +4,9 @@ import java.awt.Color;
 import java.awt.Font;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
@@ -18,10 +21,9 @@ import vsdk.toolkit.render.jogl.Jogl4ImageRenderer;
 
 public final class Jogl4HudRenderer {
     private TextRenderer textRenderer;
-    private String loadedTexturePath;
-    private int loadedTextureWidth;
-    private int loadedTextureHeight;
-    private Image loadedImage;
+    private final Map<String, TextureResident> residentsByPath = new HashMap<>();
+    private final ArrayDeque<TextureResident> residentsFifo = new ArrayDeque<>();
+    private TextureResident activeResident;
 
     public void initializeIfNeeded() {
         if (textRenderer == null) {
@@ -30,11 +32,11 @@ public final class Jogl4HudRenderer {
     }
 
     public void dispose(GL4 gl) {
-        unloadTexture(gl);
+        unloadAllTextures(gl, null);
         Jogl4ImageRenderer.dispose(gl);
     }
 
-    public void render(GLAutoDrawable drawable, DumpAnalyzerModel.HudState state, Camera camera, String texturePath) {
+    public void render(GLAutoDrawable drawable, DumpAnalyzerModel model, DumpAnalyzerModel.HudState state, Camera camera, String texturePath) {
         initializeIfNeeded();
 
         GL2 gl = drawable.getGL().getGL2();
@@ -78,7 +80,7 @@ public final class Jogl4HudRenderer {
                 h - 40
             );
             textRenderer.endRendering();
-            drawSelectedTexturePreview(gl4, camera, texturePath);
+            drawSelectedTexturePreview(gl4, model, camera, texturePath);
         }
         finally {
             gl.glMatrixMode(GL2.GL_PROJECTION);
@@ -89,65 +91,110 @@ public final class Jogl4HudRenderer {
         }
     }
 
-    private void drawSelectedTexturePreview(GL4 gl, Camera camera, String texturePath) {
-        int textureId = activateTexture(gl, texturePath);
+    private void drawSelectedTexturePreview(GL4 gl, DumpAnalyzerModel model, Camera camera, String texturePath) {
+        int textureId = activateTexture(gl, model, texturePath);
         if (textureId == 0 || camera == null) {
             return;
         }
         drawTextureOn2DWindowScaled(gl, camera, 10, 10, 2.0, 1.0);
     }
 
-    public int activateTexture(GL4 gl, String texturePath) {
+    public int activateTexture(GL4 gl, DumpAnalyzerModel model, String texturePath) {
         if (texturePath == null || texturePath.isBlank()) {
-            unloadTexture(gl);
-            loadedTexturePath = null;
+            activeResident = null;
             return 0;
         }
-        if (!texturePath.equals(loadedTexturePath)) {
-            unloadTexture(gl);
-            loadedTexturePath = texturePath;
-            loadTexture(gl, texturePath);
+
+        TextureResident resident = residentsByPath.get(texturePath);
+        if (resident != null) {
+            activeResident = resident;
+            return resident.glTextureId();
         }
-        int textureId = loadedImage == null ? 0 : Jogl4ImageRenderer.activate(gl, loadedImage);
-        if (textureId <= 0 || loadedTextureWidth <= 0 || loadedTextureHeight <= 0) {
+
+        TextureResident created = createResident(gl, model, texturePath);
+        if (created == null) {
             return 0;
         }
-        return textureId;
+        activeResident = created;
+        return created.glTextureId();
     }
 
-    private void loadTexture(GL4 gl, String texturePath) {
+    private TextureResident createResident(GL4 gl, DumpAnalyzerModel model, String texturePath) {
+        Image image;
         try {
-            loadedImage = ImagePersistence.importRGB(new File(texturePath));
-            if (loadedImage != null) {
-                loadedTextureWidth = loadedImage.getXSize();
-                loadedTextureHeight = loadedImage.getYSize();
-            }
+            image = ImagePersistence.importRGB(new File(texturePath));
         } catch (IOException e) {
-            loadedImage = null;
+            return null;
         } catch (Exception e) {
-            loadedImage = null;
+            return null;
+        }
+        if (image == null) {
+            return null;
+        }
+
+        int width = image.getXSize();
+        int height = image.getYSize();
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+        long bytes = estimateTextureBytes(width, height);
+        ensureCapacityBeforeAssign(gl, model, bytes);
+
+        int textureId = Jogl4ImageRenderer.activate(gl, image);
+        if (textureId <= 0) {
+            return null;
+        }
+        TextureResident resident = new TextureResident(texturePath, image, width, height, textureId, bytes);
+        residentsByPath.put(texturePath, resident);
+        residentsFifo.addLast(resident);
+        if (model != null) {
+            model.addGpuRamTextureBytesAssigned(bytes);
+        }
+        return resident;
+    }
+
+    private void ensureCapacityBeforeAssign(GL4 gl, DumpAnalyzerModel model, long incomingBytes) {
+        if (model == null) {
+            return;
+        }
+        while (!residentsFifo.isEmpty()
+            && model.getGpuRamTextureBytesAssigned() + incomingBytes > DumpAnalyzerModel.GPU_RAM_TEXTURE_LIMIT) {
+            evictOldest(gl, model);
         }
     }
 
-    private void unloadTexture(GL4 gl) {
-        if (loadedImage != null) {
-            Jogl4ImageRenderer.unload(gl, loadedImage);
-            loadedImage = null;
+    private void unloadAllTextures(GL4 gl, DumpAnalyzerModel model) {
+        while (!residentsFifo.isEmpty()) {
+            evictOldest(gl, model);
         }
-        loadedTextureWidth = 0;
-        loadedTextureHeight = 0;
+        activeResident = null;
+    }
+
+    private void evictOldest(GL4 gl, DumpAnalyzerModel model) {
+        TextureResident oldest = residentsFifo.pollFirst();
+        if (oldest == null) {
+            return;
+        }
+        residentsByPath.remove(oldest.path());
+        Jogl4ImageRenderer.unload(gl, oldest.image());
+        if (model != null) {
+            model.subtractGpuRamTextureBytesAssigned(oldest.bytesAssigned());
+        }
+        if (activeResident == oldest) {
+            activeResident = null;
+        }
     }
 
     private void drawTextureOn2DWindowScaled(GL4 gl, Camera c, int x, int y, double scale, double alpha) {
-        if (c == null || scale <= 0.0 || loadedImage == null) {
+        if (c == null || scale <= 0.0 || activeResident == null) {
             return;
         }
-        int textureId = Jogl4ImageRenderer.activate(gl, loadedImage);
+        int textureId = activeResident.glTextureId();
         if (textureId <= 0) {
             return;
         }
-        int width = (int)Math.round(loadedTextureWidth * scale);
-        int height = (int)Math.round(loadedTextureHeight * scale);
+        int width = (int)Math.round(activeResident.width() * scale);
+        int height = (int)Math.round(activeResident.height() * scale);
         double fx = (((double) width) * 2.0) / c.getViewportXSize();
         double fy = (((double) height) * 2.0) / c.getViewportYSize();
         double dx = ((double) (x) * 2.0 + ((double) width)) / c.getViewportXSize();
@@ -175,5 +222,12 @@ public final class Jogl4HudRenderer {
             (float)alpha,
             (float)alpha
         );
+    }
+
+    private static long estimateTextureBytes(int width, int height) {
+        return (long)width * (long)height * 4L;
+    }
+
+    private record TextureResident(String path, Image image, int width, int height, int glTextureId, long bytesAssigned) {
     }
 }

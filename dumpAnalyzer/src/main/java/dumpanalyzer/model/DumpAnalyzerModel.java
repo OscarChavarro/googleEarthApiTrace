@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import dumpanalyzer.parser.CameraProcessor;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.common.RendererConfiguration;
@@ -17,6 +18,8 @@ import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class DumpAnalyzerModel {
+    public static final long GPU_RAM_TEXTURE_LIMIT = 10L * 1024L * 1024L * 1024L;
+
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();
     private final ConcurrentHashMap<Integer, ConcurrentSkipListMap<Integer, String>> texturePathByIdAndFrame = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> textureIs256ByPath = new ConcurrentHashMap<>();
@@ -28,6 +31,7 @@ public final class DumpAnalyzerModel {
         new RendererConfigurationController(rendererConfiguration);
     private final Camera viewingCamera = new Camera();
     private final Camera googleCamera = new Camera();
+    private final AtomicLong gpuRamTextureBytesAssigned = new AtomicLong(0L);
     private volatile boolean useGoogleCameraAsView = true;
     private volatile boolean showGuiTextures = true;
 
@@ -114,6 +118,24 @@ public final class DumpAnalyzerModel {
         boolean is256 = readTextureSize256x256(texturePath);
         textureIs256ByPath.putIfAbsent(texturePath, is256);
         return is256;
+    }
+
+    public long getGpuRamTextureBytesAssigned() {
+        return gpuRamTextureBytesAssigned.get();
+    }
+
+    public void addGpuRamTextureBytesAssigned(long bytes) {
+        if (bytes <= 0L) {
+            return;
+        }
+        gpuRamTextureBytesAssigned.addAndGet(bytes);
+    }
+
+    public void subtractGpuRamTextureBytesAssigned(long bytes) {
+        if (bytes <= 0L) {
+            return;
+        }
+        gpuRamTextureBytesAssigned.updateAndGet(v -> Math.max(0L, v - bytes));
     }
 
     public void toggleActiveCamera() {

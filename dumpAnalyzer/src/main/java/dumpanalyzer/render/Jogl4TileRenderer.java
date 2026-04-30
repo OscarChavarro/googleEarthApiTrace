@@ -41,7 +41,7 @@ final class Jogl4TileRenderer {
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
         if (textured) {
-            activeTextureId = hudRenderer.activateTexture(gl, model.getTexturePath(frameId, tile.getContentId()));
+            activeTextureId = hudRenderer.activateTexture(gl, model, model.getTexturePath(frameId, tile.getContentId()));
             if (activeTextureId > 0) {
                 gl2.glActiveTexture(GL2.GL_TEXTURE0);
                 gl2.glEnable(GL2.GL_TEXTURE_2D);

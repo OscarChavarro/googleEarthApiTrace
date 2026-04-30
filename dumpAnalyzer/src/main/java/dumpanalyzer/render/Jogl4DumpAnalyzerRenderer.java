@@ -163,7 +163,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             );
         }
         if (!offlineMode) {
-            hudRenderer.render(drawable, state, activeCamera, hudTexturePath);
+            hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath);
         }
         if (offlineMode && !offlineCaptureDone) {
             captureOffscreen(drawable, gl);
