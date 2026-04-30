@@ -14,6 +14,7 @@ public final class TileInstance {
     private final Vector3D max;
     private final List<Vector3D> points;
     private final List<List<Vector3D>> strips;
+    private final List<List<Vector3D>> stripTexCoords;
     private final String primitive;
     private final int parserCall;
     private final long glCall;
@@ -32,6 +33,7 @@ public final class TileInstance {
         Vector3D max,
         List<Vector3D> points,
         List<List<Vector3D>> strips,
+        List<List<Vector3D>> stripTexCoords,
         String primitive,
         int parserCall,
         long glCall,
@@ -49,6 +51,7 @@ public final class TileInstance {
         this.max = max == null ? null : Vector3D.copyOf(max);
         this.points = points == null ? List.of() : List.copyOf(points);
         this.strips = strips == null ? List.of() : strips.stream().map(List::copyOf).toList();
+        this.stripTexCoords = stripTexCoords == null ? List.of() : stripTexCoords.stream().map(List::copyOf).toList();
         this.primitive = primitive == null ? "n/a" : primitive;
         this.parserCall = parserCall;
         this.glCall = glCall;
@@ -98,6 +101,11 @@ public final class TileInstance {
     @JsonIgnore
     public List<List<Vector3D>> getStrips() {
         return strips;
+    }
+
+    @JsonIgnore
+    public List<List<Vector3D>> getStripTexCoords() {
+        return stripTexCoords;
     }
 
     public String getPrimitive() {

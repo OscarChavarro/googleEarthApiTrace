@@ -131,7 +131,10 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
             drawSelectedTile(gl, drawable.getGL().getGL2(), frames.get(state.selectedFrameIndex()), state.selectedTileIndex(), projection);
         }
-        hudRenderer.render(drawable, state, camera, model.getTexturePath(state.selectedTextureId()));
+        String hudTexturePath = model.getRendererConfiguration().isTextureSet()
+            ? null
+            : model.getTexturePath(state.selectedTextureId());
+        hudRenderer.render(drawable, state, camera, hudTexturePath);
     }
 
     private void recenterCameraIfSelectionChanged(DumpAnalyzerModel.HudState state, List<Frame> frames) {
@@ -236,11 +239,23 @@ public class Jogl4DumpAnalyzerRenderer implements
             }
         }
         if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
+            if (textured) {
+                gl2.glActiveTexture(GL2.GL_TEXTURE0);
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+            }
+            gl2.glDisable(GL2.GL_LIGHTING);
+            gl2.glColor3d(1.0, 1.0, 0.0);
             double[] mm = {
                 tile.getMin().x(), tile.getMin().y(), tile.getMin().z(),
                 tile.getMax().x(), tile.getMax().y(), tile.getMax().z()
             };
             Jogl4MinMaxRenderer.draw(gl, mm, camera);
+            if (textured && activeTextureId > 0) {
+                gl2.glActiveTexture(GL2.GL_TEXTURE0);
+                gl2.glEnable(GL2.GL_TEXTURE_2D);
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, activeTextureId);
+            }
         }
         float[] mvp = projection.exportToFloatArrayColumnOrder();
         gl2.glMatrixMode(GL2.GL_PROJECTION);
@@ -257,20 +272,20 @@ public class Jogl4DumpAnalyzerRenderer implements
             gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
             gl2.glPolygonOffset(SURFACE_POLYGON_OFFSET_FACTOR, SURFACE_POLYGON_OFFSET_UNITS);
             gl2.glColor3d(0.85, 0.85, 0.85);
-            Vector3D texMin = tile.getMin();
-            Vector3D texMax = tile.getMax();
-            double texDx = (texMin != null && texMax != null) ? Math.max(1e-9, texMax.x() - texMin.x()) : 1.0;
-            double texDy = (texMin != null && texMax != null) ? Math.max(1e-9, texMax.y() - texMin.y()) : 1.0;
-            for (List<Vector3D> strip : tile.getStrips()) {
+            List<List<Vector3D>> strips = tile.getStrips();
+            List<List<Vector3D>> stripTexCoords = tile.getStripTexCoords();
+            for (int stripIndex = 0; stripIndex < strips.size(); stripIndex++) {
+                List<Vector3D> strip = strips.get(stripIndex);
                 if (strip.size() < 3) {
                     continue;
                 }
+                List<Vector3D> uvStrip = stripIndex < stripTexCoords.size() ? stripTexCoords.get(stripIndex) : List.of();
                 gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
-                for (Vector3D p : strip) {
-                    if (textured && texMin != null && texMax != null) {
-                        double u = (p.x() - texMin.x()) / texDx;
-                        double v = (p.y() - texMin.y()) / texDy;
-                        gl2.glTexCoord2d(u, v);
+                for (int i = 0; i < strip.size(); i++) {
+                    Vector3D p = strip.get(i);
+                    if (textured && i < uvStrip.size()) {
+                        Vector3D uv = uvStrip.get(i);
+                        gl2.glTexCoord2d(uv.x(), uv.y());
                     }
                     gl2.glVertex3d(p.x(), p.y(), p.z());
                 }
@@ -279,6 +294,10 @@ public class Jogl4DumpAnalyzerRenderer implements
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
         if (quality.isWiresSet()) {
+            if (textured) {
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+            }
             gl2.glDisable(GL2.GL_LIGHTING);
             gl2.glEnable(GL2.GL_DEPTH_TEST);
             gl2.glDepthMask(false);
@@ -297,6 +316,10 @@ public class Jogl4DumpAnalyzerRenderer implements
             }
         }
         if (quality.isPointsSet()) {
+            if (textured) {
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+            }
             gl2.glDisable(GL2.GL_LIGHTING);
             gl2.glEnable(GL2.GL_DEPTH_TEST);
             gl2.glDepthMask(false);

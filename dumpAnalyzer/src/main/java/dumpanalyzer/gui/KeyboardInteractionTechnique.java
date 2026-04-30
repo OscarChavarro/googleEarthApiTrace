@@ -44,6 +44,9 @@ public final class KeyboardInteractionTechnique implements KeyListener {
     @Override
     public void keyPressed(KeyEvent e) {
         vsdk.toolkit.gui.KeyEvent event = AwtSystem.awt2vsdkEvent(e);
+        if (event.keycode == vsdk.toolkit.gui.KeyEvent.KEY_t || event.keycode == vsdk.toolkit.gui.KeyEvent.KEY_T) {
+            event.keycode = vsdk.toolkit.gui.KeyEvent.KEY_F8;
+        }
         switch (e.getKeyCode()) {
             case KeyEvent.VK_ESCAPE -> closeAction.run();
             case KeyEvent.VK_1 -> {

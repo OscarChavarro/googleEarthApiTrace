@@ -33,7 +33,12 @@ public class GlTraceProcessor {
     private static final Pattern BIND_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglBindTexture\\s*\\((.*)\\)");
     private static final Pattern VERTEX_ATTRIB_LINE_PATTERN = Pattern.compile("\\bglVertexAttribPointer\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_LINE_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
+    private static final Pattern MATRIX_MODE_LINE_PATTERN = Pattern.compile("\\bglMatrixMode\\s*\\((.*)\\)");
+    private static final Pattern LOAD_IDENTITY_LINE_PATTERN = Pattern.compile("\\bglLoadIdentity\\s*\\((.*)\\)");
+    private static final Pattern LOAD_MATRIXF_LINE_PATTERN = Pattern.compile("\\bglLoadMatrixf\\s*\\((.*)\\)");
     private static final Pattern TEXTURE_VALUE_PATTERN = Pattern.compile("texture\\s*=\\s*(\\d+)");
+    private static final Pattern MATRIX_MODE_VALUE_PATTERN = Pattern.compile("mode\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern MATRIX_VALUES_PATTERN = Pattern.compile("m\\s*=\\s*\\{([^}]*)\\}");
     private static final Pattern ATTRIB_INDEX_PATTERN = Pattern.compile("index\\s*=\\s*(\\d+)");
     private static final Pattern ATTRIB_SIZE_PATTERN = Pattern.compile("size\\s*=\\s*(\\d+)");
     private static final Pattern ATTRIB_STRIDE_PATTERN = Pattern.compile("stride\\s*=\\s*(\\d+)");
@@ -83,8 +88,39 @@ public class GlTraceProcessor {
         Long currentPositionVertexAttribCall = null;
         int currentVertexSize = 3;
         int currentVertexStride = 0;
+        Long currentTexCoordVertexAttribCall = null;
+        int currentTexCoordSize = 2;
+        int currentTexCoordStride = 0;
+        boolean textureMatrixMode = false;
+        double[] currentTextureMatrix = identityTextureMatrix();
 
         for (String line : lines) {
+            Matcher matrixModeMatcher = MATRIX_MODE_LINE_PATTERN.matcher(line);
+            if (matrixModeMatcher.find()) {
+                String mode = extractToken(MATRIX_MODE_VALUE_PATTERN, matrixModeMatcher.group(1));
+                textureMatrixMode = "GL_TEXTURE".equals(mode);
+                continue;
+            }
+
+            Matcher loadIdentityMatcher = LOAD_IDENTITY_LINE_PATTERN.matcher(line);
+            if (loadIdentityMatcher.find()) {
+                if (textureMatrixMode) {
+                    currentTextureMatrix = identityTextureMatrix();
+                }
+                continue;
+            }
+
+            Matcher loadMatrixMatcher = LOAD_MATRIXF_LINE_PATTERN.matcher(line);
+            if (loadMatrixMatcher.find()) {
+                if (textureMatrixMode) {
+                    double[] parsed = parseMatrix4(loadMatrixMatcher.group(1));
+                    if (parsed != null) {
+                        currentTextureMatrix = parsed;
+                    }
+                }
+                continue;
+            }
+
             Matcher bindMatcher = BIND_TEXTURE_LINE_PATTERN.matcher(line);
             if (bindMatcher.find()) {
                 Integer textureId = extractInt(TEXTURE_VALUE_PATTERN, bindMatcher.group(1));
@@ -109,6 +145,11 @@ public class GlTraceProcessor {
                     currentPositionVertexAttribCall = attribGlCall >= 0 ? attribGlCall : null;
                     currentVertexSize = size;
                     currentVertexStride = stride == null ? 0 : stride;
+                }
+                if (index != null && index == 3 && "GL_FLOAT".equals(type) && size != null && size >= 2 && hasBlobPointer) {
+                    currentTexCoordVertexAttribCall = attribGlCall >= 0 ? attribGlCall : null;
+                    currentTexCoordSize = size;
+                    currentTexCoordStride = stride == null ? 0 : stride;
                 }
                 continue;
             }
@@ -162,7 +203,7 @@ public class GlTraceProcessor {
                 );
                 continue;
             }
-            Path vertexPath = resolveVertexBlobPath(frameDirectory, manifest, currentPositionVertexAttribCall, vertexAttribExportCallCount);
+            Path vertexPath = resolveVertexBlobPath(frameDirectory, manifest, currentPositionVertexAttribCall, vertexAttribExportCallCount, 0);
             byte[] positionBlob = loadBlob(vertexPath);
             if (positionBlob == null || positionBlob.length == 0) {
                 TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
@@ -198,11 +239,21 @@ public class GlTraceProcessor {
                     continue;
                 }
             }
+            Path texCoordPath = resolveVertexBlobPath(frameDirectory, manifest, currentTexCoordVertexAttribCall, -1, 3);
+            byte[] texCoordBlob = loadBlob(texCoordPath);
+            List<Vector3D> baseTexCoords = computeTexCoords(texCoordBlob, currentTexCoordSize, currentTexCoordStride, drawIndices);
+            List<Vector3D> transformedTexCoords = buildTexCoords(baseTexCoords, candidate.points(), candidate.min(), candidate.max(), currentTextureMatrix);
+
             if (GL_TRIANGLES.equals(mode)) {
-                addTrianglesAsStrips(builder, candidate.points());
+                addTrianglesAsStrips(builder, candidate.points(), transformedTexCoords);
             }
             else {
-                builder.addStrip(candidate.points(), candidate.min(), candidate.max());
+                builder.addStrip(
+                    candidate.points(),
+                    transformedTexCoords,
+                    candidate.min(),
+                    candidate.max()
+                );
             }
             builder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, false, "");
         }
@@ -227,19 +278,34 @@ public class GlTraceProcessor {
         return frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin");
     }
 
-    private static Path resolveVertexBlobPath(Path frameDirectory, ManifestIndex manifest, Long vertexAttribCall, int vertexAttribExportCallCount) {
+    private static Path resolveVertexBlobPath(
+        Path frameDirectory,
+        ManifestIndex manifest,
+        Long vertexAttribCall,
+        int vertexAttribExportCallCount,
+        int expectedAttribIndex
+    ) {
         if (vertexAttribCall != null) {
             long[] candidates = {vertexAttribCall, vertexAttribCall + 1L, vertexAttribCall - 1L};
             for (long candidateCall : candidates) {
-                VertexManifestEntry fromManifest = manifest.vertexByCall.get(candidateCall);
+                VertexManifestEntry fromManifest = manifest.vertexByCallAndIndex.get(vertexKey(candidateCall, expectedAttribIndex));
                 if (fromManifest != null) {
                     return fromManifest.filePath();
+                }
+                if (expectedAttribIndex >= 0) {
+                    VertexManifestEntry fromAnyIndex = manifest.vertexByCallAndIndex.get(vertexKey(candidateCall, -1));
+                    if (fromAnyIndex != null) {
+                        return fromAnyIndex.filePath();
+                    }
                 }
                 Path stableName = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_call_" + candidateCall + ".bin");
                 if (Files.exists(stableName)) {
                     return stableName;
                 }
             }
+        }
+        if (vertexAttribExportCallCount < 0) {
+            return frameDirectory.resolve("__missing__.bin");
         }
         return frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + vertexAttribExportCallCount + ".bin");
     }
@@ -283,8 +349,9 @@ public class GlTraceProcessor {
                 }
                 else if ("vertex_attrib".equals(kind)) {
                     Integer attribIndex = tryParseInt(kv.get("attribIndex"));
-                    if (attribIndex != null && attribIndex == 0) {
-                        out.vertexByCall.putIfAbsent(call, new VertexManifestEntry(filePath, attribIndex));
+                    if (attribIndex != null) {
+                        out.vertexByCallAndIndex.putIfAbsent(vertexKey(call, attribIndex), new VertexManifestEntry(filePath, attribIndex));
+                        out.vertexByCallAndIndex.putIfAbsent(vertexKey(call, -1), new VertexManifestEntry(filePath, attribIndex));
                     }
                 }
             }
@@ -434,7 +501,7 @@ public class GlTraceProcessor {
         return new TileGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), points);
     }
 
-    private static void addTrianglesAsStrips(TileBuilder builder, List<Vector3D> points) {
+    private static void addTrianglesAsStrips(TileBuilder builder, List<Vector3D> points, List<Vector3D> texCoords) {
         if (builder == null || points == null || points.size() < 3) {
             return;
         }
@@ -446,10 +513,123 @@ public class GlTraceProcessor {
                 points.get(base + 1),
                 points.get(base + 2)
             );
+            List<Vector3D> triangleUv = texCoords != null && texCoords.size() >= base + 3
+                ? List.of(texCoords.get(base), texCoords.get(base + 1), texCoords.get(base + 2))
+                : List.of();
             Vector3D min = minOf(triangle);
             Vector3D max = maxOf(triangle);
-            builder.addStrip(triangle, min, max);
+            builder.addStrip(
+                triangle,
+                triangleUv,
+                min,
+                max
+            );
         }
+    }
+
+    private static List<Vector3D> buildTexCoords(
+        List<Vector3D> baseTexCoords,
+        List<Vector3D> points,
+        Vector3D min,
+        Vector3D max,
+        double[] textureMatrix
+    ) {
+        if (points == null || points.isEmpty()) {
+            return List.of();
+        }
+        boolean useBase = baseTexCoords != null && baseTexCoords.size() == points.size();
+        double dx = Math.max(1.0e-9, max.x() - min.x());
+        double dy = Math.max(1.0e-9, max.y() - min.y());
+        double[] m = textureMatrix == null ? identityTextureMatrix() : textureMatrix;
+        List<Vector3D> uv = new ArrayList<>(points.size());
+        for (int i = 0; i < points.size(); i++) {
+            Vector3D p = points.get(i);
+            double u0;
+            double v0;
+            if (useBase) {
+                Vector3D t = baseTexCoords.get(i);
+                u0 = t.x();
+                v0 = t.y();
+            }
+            else {
+                u0 = (p.x() - min.x()) / dx;
+                v0 = (p.y() - min.y()) / dy;
+            }
+            double[] t = applyTextureMatrix(m, u0, v0);
+            uv.add(new Vector3D(t[0], t[1], 0.0));
+        }
+        return uv;
+    }
+
+    private static List<Vector3D> computeTexCoords(byte[] texCoordBlob, int texCoordSize, int texCoordStride, int[] indices) {
+        if (texCoordBlob == null || texCoordBlob.length == 0 || texCoordSize < 2 || indices == null || indices.length == 0) {
+            return List.of();
+        }
+        int minStride = texCoordSize * 4;
+        int strideBytes = texCoordStride > 0 ? texCoordStride : minStride;
+        if (strideBytes < minStride || texCoordBlob.length < minStride) {
+            return List.of();
+        }
+        int vertexCount = texCoordBlob.length / strideBytes;
+        if (vertexCount <= 0) {
+            return List.of();
+        }
+        ByteBuffer bb = ByteBuffer.wrap(texCoordBlob).order(ByteOrder.LITTLE_ENDIAN);
+        List<Vector3D> out = new ArrayList<>(indices.length);
+        for (int index : indices) {
+            if (index < 0 || index >= vertexCount) {
+                out.add(new Vector3D(0.0, 0.0, 0.0));
+                continue;
+            }
+            int baseBytes = index * strideBytes;
+            if (baseBytes + 8 > texCoordBlob.length) {
+                out.add(new Vector3D(0.0, 0.0, 0.0));
+                continue;
+            }
+            double u = bb.getFloat(baseBytes);
+            double v = bb.getFloat(baseBytes + 4);
+            out.add(new Vector3D(u, v, 0.0));
+        }
+        return out;
+    }
+
+    private static double[] applyTextureMatrix(double[] m, double u, double v) {
+        double x = m[0] * u + m[4] * v + m[8] * 0.0 + m[12] * 1.0;
+        double y = m[1] * u + m[5] * v + m[9] * 0.0 + m[13] * 1.0;
+        double w = m[3] * u + m[7] * v + m[11] * 0.0 + m[15] * 1.0;
+        if (Math.abs(w) > 1.0e-12) {
+            return new double[] { x / w, y / w };
+        }
+        return new double[] { x, y };
+    }
+
+    private static double[] parseMatrix4(String args) {
+        Matcher mm = MATRIX_VALUES_PATTERN.matcher(args);
+        if (!mm.find()) {
+            return null;
+        }
+        String[] tokens = mm.group(1).split(",");
+        if (tokens.length != 16) {
+            return null;
+        }
+        double[] out = new double[16];
+        for (int i = 0; i < 16; i++) {
+            try {
+                out[i] = Double.parseDouble(tokens[i].trim());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return out;
+    }
+
+    private static double[] identityTextureMatrix() {
+        return new double[] {
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        };
     }
 
     private static Vector3D minOf(List<Vector3D> points) {
@@ -570,6 +750,7 @@ public class GlTraceProcessor {
         private final int textureId;
         private final int tileNumber;
         private final List<List<Vector3D>> strips = new ArrayList<>();
+        private final List<List<Vector3D>> stripTexCoords = new ArrayList<>();
         private final List<Vector3D> flatPoints = new ArrayList<>();
         private String primitive = "n/a";
         private int parserCall = -1;
@@ -615,11 +796,12 @@ public class GlTraceProcessor {
             this.skipReason = skipReason == null ? "" : skipReason;
         }
 
-        private void addStrip(List<Vector3D> stripPoints, Vector3D stripMin, Vector3D stripMax) {
+        private void addStrip(List<Vector3D> stripPoints, List<Vector3D> uvCoords, Vector3D stripMin, Vector3D stripMax) {
             if (stripPoints == null || stripPoints.isEmpty()) {
                 return;
             }
             strips.add(List.copyOf(stripPoints));
+            stripTexCoords.add(uvCoords == null ? List.of() : List.copyOf(uvCoords));
             flatPoints.addAll(stripPoints);
 
             if (min == null || max == null) {
@@ -651,6 +833,7 @@ public class GlTraceProcessor {
                 max,
                 flatPoints,
                 strips,
+                stripTexCoords,
                 primitive,
                 parserCall,
                 glCall,
@@ -664,9 +847,13 @@ public class GlTraceProcessor {
 
     private static final class ManifestIndex {
         private final Map<Long, Path> drawByCall = new HashMap<>();
-        private final Map<Long, VertexManifestEntry> vertexByCall = new HashMap<>();
+        private final Map<String, VertexManifestEntry> vertexByCallAndIndex = new HashMap<>();
     }
 
     private record VertexManifestEntry(Path filePath, int attribIndex) {
+    }
+
+    private static String vertexKey(long call, int attribIndex) {
+        return call + ":" + attribIndex;
     }
 }
