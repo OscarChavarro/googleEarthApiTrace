@@ -14,6 +14,7 @@ public final class CameraProcessor {
     private static final Pattern DRAW_ARRAYS_PATTERN = Pattern.compile("\\bglDrawArrays\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
     private static final Pattern DRAW_MODE_VALUE_PATTERN = Pattern.compile("mode\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern DRAW_COUNT_VALUE_PATTERN = Pattern.compile("count\\s*=\\s*([0-9]+)");
 
     private CameraProcessor() {
     }
@@ -170,6 +171,8 @@ public final class CameraProcessor {
         double[] currentModelView = null;
         double[] lastSceneProjection = null;
         double[] lastSceneModelView = null;
+        int bestCount = -1;
+        double bestFar = -1.0;
 
         for (String line : lines) {
             Matcher matrixModeMatcher = MATRIX_MODE_LINE_PATTERN.matcher(line);
@@ -193,27 +196,53 @@ public final class CameraProcessor {
                 continue;
             }
 
-            if (isSceneGeometryDrawCall(line) && isPerspectiveProjection(currentProjection)) {
-                lastSceneProjection = currentProjection == null ? null : currentProjection.clone();
-                lastSceneModelView = currentModelView == null ? null : currentModelView.clone();
+            int count = extractSceneDrawCount(line);
+            if (count >= 0 && isPerspectiveProjection(currentProjection)) {
+                double far = estimateFarPlane(currentProjection);
+                if (count > bestCount || (count == bestCount && far > bestFar)) {
+                    bestCount = count;
+                    bestFar = far;
+                    lastSceneProjection = currentProjection == null ? null : currentProjection.clone();
+                    lastSceneModelView = currentModelView == null ? null : currentModelView.clone();
+                }
             }
         }
 
         return new SceneMatrices(lastSceneProjection, lastSceneModelView);
     }
 
-    private static boolean isSceneGeometryDrawCall(String line) {
+    private static int extractSceneDrawCount(String line) {
         Matcher arraysMatcher = DRAW_ARRAYS_PATTERN.matcher(line);
         if (arraysMatcher.find()) {
             String mode = extractToken(DRAW_MODE_VALUE_PATTERN, arraysMatcher.group(1));
-            return "GL_TRIANGLE_STRIP".equals(mode) || "GL_TRIANGLES".equals(mode);
+            if (!"GL_TRIANGLE_STRIP".equals(mode) && !"GL_TRIANGLES".equals(mode)) {
+                return -1;
+            }
+            String count = extractToken(DRAW_COUNT_VALUE_PATTERN, arraysMatcher.group(1));
+            return parsePositiveInt(count);
         }
         Matcher elementsMatcher = DRAW_ELEMENTS_PATTERN.matcher(line);
         if (elementsMatcher.find()) {
             String mode = extractToken(DRAW_MODE_VALUE_PATTERN, elementsMatcher.group(1));
-            return "GL_TRIANGLE_STRIP".equals(mode) || "GL_TRIANGLES".equals(mode);
+            if (!"GL_TRIANGLE_STRIP".equals(mode) && !"GL_TRIANGLES".equals(mode)) {
+                return -1;
+            }
+            String count = extractToken(DRAW_COUNT_VALUE_PATTERN, elementsMatcher.group(1));
+            return parsePositiveInt(count);
         }
-        return false;
+        return -1;
+    }
+
+    private static int parsePositiveInt(String value) {
+        if (value == null) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        }
+        catch (NumberFormatException ex) {
+            return -1;
+        }
     }
 
     private static boolean isPerspectiveProjection(double[] m) {
@@ -221,6 +250,22 @@ public final class CameraProcessor {
             return false;
         }
         return Math.abs(m[11] + 1.0) < 1.0e-6 && Math.abs(m[15]) < 1.0e-6;
+    }
+
+    private static double estimateFarPlane(double[] projectionMatrix) {
+        if (projectionMatrix == null || projectionMatrix.length != 16) {
+            return -1.0;
+        }
+        double m10 = projectionMatrix[10];
+        double m14 = projectionMatrix[14];
+        if (Math.abs(m10 + 1.0) <= 1.0e-12) {
+            return -1.0;
+        }
+        double far = Math.abs(m14 / (m10 + 1.0));
+        if (!isFinite(far)) {
+            return -1.0;
+        }
+        return far;
     }
 
     private static double[] parseMatrix4(String args) {

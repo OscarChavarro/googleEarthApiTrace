@@ -6,7 +6,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -40,7 +40,7 @@ final class TilesProcessor {
     }
 
     static List<TileInstance> processFrameCalls(int frameId, String normalizedContent, Path frameDirectory) {
-        Map<Integer, TileBuilder> tilesByTextureId = new HashMap<>();
+        Map<TileKey, TileBuilder> tilesByKey = new LinkedHashMap<>();
         ManifestProcessor.ManifestIndex manifest = ManifestProcessor.loadManifestIndex(frameDirectory);
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
@@ -54,12 +54,18 @@ final class TilesProcessor {
         int currentTexCoordStride = 0;
         boolean textureMatrixMode = false;
         double[] currentTextureMatrix = TextureProcessor.identityTextureMatrix();
+        boolean projectionMatrixMode = false;
+        boolean modelViewMatrixMode = false;
+        double[] currentProjectionMatrix = null;
+        double[] currentModelViewMatrix = null;
 
         for (String line : lines) {
             Matcher matrixModeMatcher = MATRIX_MODE_LINE_PATTERN.matcher(line);
             if (matrixModeMatcher.find()) {
                 String mode = extractToken(MATRIX_MODE_VALUE_PATTERN, matrixModeMatcher.group(1));
                 textureMatrixMode = "GL_TEXTURE".equals(mode);
+                projectionMatrixMode = "GL_PROJECTION".equals(mode);
+                modelViewMatrixMode = "GL_MODELVIEW".equals(mode);
                 continue;
             }
 
@@ -77,6 +83,18 @@ final class TilesProcessor {
                     double[] parsed = TextureProcessor.parseMatrix4(loadMatrixMatcher.group(1));
                     if (parsed != null) {
                         currentTextureMatrix = parsed;
+                    }
+                }
+                if (projectionMatrixMode) {
+                    double[] parsed = TextureProcessor.parseMatrix4(loadMatrixMatcher.group(1));
+                    if (parsed != null) {
+                        currentProjectionMatrix = parsed;
+                    }
+                }
+                if (modelViewMatrixMode) {
+                    double[] parsed = TextureProcessor.parseMatrix4(loadMatrixMatcher.group(1));
+                    if (parsed != null) {
+                        currentModelViewMatrix = parsed;
                     }
                 }
                 continue;
@@ -141,14 +159,14 @@ final class TilesProcessor {
             int[] drawIndices = loadUnsignedShortBlob(indicesPath, count);
             if (drawIndices == null || drawIndices.length == 0) {
                 String reason = classifyBlobFailure(drawArgs.contains("indices = NULL"), indicesPath, "index");
-                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, 0, true, reason);
                 }
                 continue;
             }
             if (currentPositionVertexAttribCall == null && vertexAttribExportCallCount <= 0) {
-                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, "null blob");
                 }
@@ -157,7 +175,7 @@ final class TilesProcessor {
             Path vertexPath = ManifestProcessor.resolveVertexBlobPath(frameDirectory, manifest, currentPositionVertexAttribCall, vertexAttribExportCallCount, 0);
             byte[] positionBlob = loadBlob(vertexPath);
             if (positionBlob == null || positionBlob.length == 0) {
-                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
                 String reason = classifyBlobFailure(false, vertexPath, "vertex");
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, reason);
@@ -166,7 +184,7 @@ final class TilesProcessor {
             }
             int vertexArraySize = estimateVertexArraySize(positionBlob, currentVertexSize, currentVertexStride);
             if (vertexArraySize <= 0) {
-                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, "zero array length blob");
                 }
@@ -174,25 +192,21 @@ final class TilesProcessor {
             }
             TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
             if (candidate == null) {
-                TileBuilder skippedBuilder = tilesByTextureId.get(lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, true, "invalid geometry data");
                 }
                 continue;
             }
-            TileBuilder builder = tilesByTextureId.get(lastTextureId);
+            TileKey key = new TileKey(lastTextureId, matrixSignature(currentProjectionMatrix), matrixSignature(currentModelViewMatrix));
+            TileBuilder builder = tilesByKey.get(key);
             if (builder == null) {
-                final int textureIdForTile = lastTextureId;
-                int tileNumber = TextureProcessor.getOrCreateTileNumber(
-                    tilesByTextureId,
-                    textureIdForTile,
-                    n -> new TileBuilder(textureIdForTile, n),
-                    TileBuilder::tileNumber
+                builder = new TileBuilder(
+                    lastTextureId,
+                    currentProjectionMatrix,
+                    currentModelViewMatrix
                 );
-                builder = tilesByTextureId.get(lastTextureId);
-                if (builder == null) {
-                    continue;
-                }
+                tilesByKey.put(key, builder);
             }
             Path texCoordPath = ManifestProcessor.resolveVertexBlobPath(frameDirectory, manifest, currentTexCoordVertexAttribCall, -1, 3);
             byte[] texCoordBlob = loadBlob(texCoordPath);
@@ -212,11 +226,34 @@ final class TilesProcessor {
             builder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, false, "");
         }
 
-        List<TileInstance> tiles = new ArrayList<>(tilesByTextureId.size());
-        for (TileBuilder builder : tilesByTextureId.values()) {
+        List<TileInstance> tiles = new ArrayList<>(tilesByKey.size());
+        for (TileBuilder builder : tilesByKey.values()) {
             tiles.add(builder.build());
         }
         return tiles;
+    }
+
+    private static TileBuilder findLastTileByTexture(Map<TileKey, TileBuilder> tilesByKey, int textureId) {
+        TileBuilder out = null;
+        for (Map.Entry<TileKey, TileBuilder> e : tilesByKey.entrySet()) {
+            if (e.getKey().textureId == textureId) {
+                out = e.getValue();
+            }
+        }
+        return out;
+    }
+
+    private static String matrixSignature(double[] m) {
+        if (m == null || m.length != 16) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(16 * 12);
+        for (int i = 0; i < 16; i++) {
+            double q = Math.rint(m[i] * 10000.0) / 10000.0;
+            if (i > 0) sb.append('|');
+            sb.append(q);
+        }
+        return sb.toString();
     }
 
     private static String classifyBlobFailure(boolean isNullPointerInTrace, Path path, String blobKind) {
@@ -331,9 +368,12 @@ final class TilesProcessor {
     private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {
     }
 
+    private record TileKey(int textureId, String projectionSignature, String modelViewSignature) {}
+
     private static final class TileBuilder {
         private final int textureId;
-        private final int tileNumber;
+        private final double[] projectionMatrix;
+        private final double[] modelViewMatrix;
         private final List<List<Vector3D>> strips = new ArrayList<>();
         private final List<List<Vector3D>> stripTexCoords = new ArrayList<>();
         private final List<Vector3D> flatPoints = new ArrayList<>();
@@ -347,13 +387,10 @@ final class TilesProcessor {
         private Vector3D min;
         private Vector3D max;
 
-        private TileBuilder(int textureId, int tileNumber) {
+        private TileBuilder(int textureId, double[] projectionMatrix, double[] modelViewMatrix) {
             this.textureId = textureId;
-            this.tileNumber = tileNumber;
-        }
-
-        private int tileNumber() {
-            return tileNumber;
+            this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
+            this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
         }
 
         private void noteDraw(String primitive, int parserCall, long glCall, int vertexArraySize, int indexArraySize, boolean skipped, String skipReason) {
@@ -388,7 +425,27 @@ final class TilesProcessor {
         }
 
         private TileInstance build() {
-            return new TileInstance(textureId, null, null, null, null, min, max, flatPoints, strips, stripTexCoords, primitive, parserCall, glCall, vertexArraySize, indexArraySize, skipped, skipReason);
+            return new TileInstance(
+                textureId,
+                null,
+                null,
+                null,
+                null,
+                min,
+                max,
+                flatPoints,
+                strips,
+                stripTexCoords,
+                primitive,
+                parserCall,
+                glCall,
+                vertexArraySize,
+                indexArraySize,
+                skipped,
+                skipReason,
+                projectionMatrix,
+                modelViewMatrix
+            );
         }
     }
 

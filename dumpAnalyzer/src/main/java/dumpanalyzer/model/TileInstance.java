@@ -22,6 +22,8 @@ public final class TileInstance {
     private final int indexArraySize;
     private final boolean skipped;
     private final String skipReason;
+    private final double[] projectionMatrix;
+    private final double[] modelViewMatrix;
 
     public TileInstance(
         int contentId,
@@ -40,7 +42,9 @@ public final class TileInstance {
         int vertexArraySize,
         int indexArraySize,
         boolean skipped,
-        String skipReason
+        String skipReason,
+        double[] projectionMatrix,
+        double[] modelViewMatrix
     ) {
         this.contentId = contentId;
         this.southNeighbor = southNeighbor;
@@ -59,6 +63,8 @@ public final class TileInstance {
         this.indexArraySize = indexArraySize;
         this.skipped = skipped;
         this.skipReason = skipReason == null ? "" : skipReason;
+        this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
+        this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
     public int getContentId() {
@@ -134,5 +140,13 @@ public final class TileInstance {
 
     public String getSkipReason() {
         return skipReason;
+    }
+
+    public double[] getProjectionMatrix() {
+        return projectionMatrix == null ? null : projectionMatrix.clone();
+    }
+
+    public double[] getModelViewMatrix() {
+        return modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 }

@@ -24,7 +24,7 @@ public final class DumpAnalyzerModel {
         new RendererConfigurationController(rendererConfiguration);
     private final Camera viewingCamera = new Camera();
     private final Camera googleCamera = new Camera();
-    private volatile boolean useGoogleCameraAsView;
+    private volatile boolean useGoogleCameraAsView = true;
 
     public DumpAnalyzerModel() {
         rendererConfiguration.setWires(false);
@@ -140,6 +140,23 @@ public final class DumpAnalyzerModel {
         clampSelection();
         updateGoogleCameraFromSelection();
         notifyListeners();
+    }
+
+    public void selectFirstFrameWithTiles() {
+        List<Frame> frames = snapshotFrames();
+        if (frames.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < frames.size(); i++) {
+            if (!frames.get(i).getTiles().isEmpty()) {
+                selectedFrameIndex.set(i);
+                selectedTileIndex.set(-1);
+                clampSelection();
+                updateGoogleCameraFromSelection();
+                notifyListeners();
+                return;
+            }
+        }
     }
 
     public RendererConfiguration getRendererConfiguration() {

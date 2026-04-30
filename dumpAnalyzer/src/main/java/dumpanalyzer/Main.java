@@ -75,6 +75,8 @@ public class Main {
             joinOrFail(worker, "worker");
         }
 
+        model.selectFirstFrameWithTiles();
+
         putLogMessage(logQueue, LOG_POISON);
         joinOrFail(loggerThread, "logger");
 
