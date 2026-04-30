@@ -1,12 +1,15 @@
 package dumpanalyzer.model;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import dumpanalyzer.parser.CameraProcessor;
 import vsdk.toolkit.common.RendererConfiguration;
+import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
@@ -19,11 +22,16 @@ public final class DumpAnalyzerModel {
     private final RendererConfiguration rendererConfiguration = new RendererConfiguration();
     private final RendererConfigurationController rendererConfigurationController =
         new RendererConfigurationController(rendererConfiguration);
+    private final Camera viewingCamera = new Camera();
+    private final Camera googleCamera = new Camera();
+    private volatile boolean useGoogleCameraAsView;
 
     public DumpAnalyzerModel() {
         rendererConfiguration.setWires(false);
         rendererConfiguration.setBoundingVolume(true);
         rendererConfiguration.setTexture(true);
+        viewingCamera.setName("ViewingCamera");
+        googleCamera.setName("GoogleCamera");
     }
 
     public void addListener(Runnable listener) {
@@ -33,6 +41,7 @@ public final class DumpAnalyzerModel {
     public void addFrame(Frame frame) {
         framesById.put(frame.getId(), frame);
         clampSelection();
+        updateGoogleCameraFromSelection();
         notifyListeners();
     }
 
@@ -46,6 +55,27 @@ public final class DumpAnalyzerModel {
 
     public List<Frame> snapshotFrames() {
         return new ArrayList<>(framesById.values());
+    }
+
+    public Camera getViewingCamera() {
+        return viewingCamera;
+    }
+
+    public Camera getGoogleCamera() {
+        return googleCamera;
+    }
+
+    public Camera getActiveCamera() {
+        return useGoogleCameraAsView ? googleCamera : viewingCamera;
+    }
+
+    public boolean isUsingGoogleCameraAsView() {
+        return useGoogleCameraAsView;
+    }
+
+    public void toggleActiveCamera() {
+        useGoogleCameraAsView = !useGoogleCameraAsView;
+        notifyListeners();
     }
 
     public HudState snapshotHudState() {
@@ -89,6 +119,26 @@ public final class DumpAnalyzerModel {
     public void selectNextTile() {
         selectedTileIndex.incrementAndGet();
         clampSelection();
+        notifyListeners();
+    }
+
+    public void setSelectedFrameIndex(int frameIndex) {
+        selectedFrameIndex.set(Math.max(0, frameIndex));
+        clampSelection();
+        updateGoogleCameraFromSelection();
+        notifyListeners();
+    }
+
+    public void setSelectedFrameById(int frameId) {
+        List<Integer> ids = new ArrayList<>(framesById.keySet());
+        Collections.sort(ids);
+        int idx = ids.indexOf(frameId);
+        if (idx < 0) {
+            return;
+        }
+        selectedFrameIndex.set(idx);
+        clampSelection();
+        updateGoogleCameraFromSelection();
         notifyListeners();
     }
 
@@ -142,11 +192,23 @@ public final class DumpAnalyzerModel {
             if (!frames.get(idx).getTiles().isEmpty()) {
                 selectedFrameIndex.set(idx);
                 clampSelection();
+                updateGoogleCameraFromSelection();
                 notifyListeners();
                 return;
             }
             idx += direction;
         }
+    }
+
+    private void updateGoogleCameraFromSelection() {
+        List<Frame> frames = snapshotFrames();
+        if (frames.isEmpty()) {
+            return;
+        }
+        int frameIdx = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
+        Frame selected = frames.get(frameIdx);
+        CameraProcessor.applyProjectionMatrixToCamera(googleCamera, selected.getProjectionMatrix());
+        CameraProcessor.applyModelViewMatrixToCamera(googleCamera, selected.getModelViewMatrix());
     }
 
     private void notifyListeners() {

@@ -53,6 +53,7 @@ public final class KeyboardInteractionTechnique implements KeyListener {
             }
             case KeyEvent.VK_3 -> model.selectPreviousTile();
             case KeyEvent.VK_4 -> model.selectNextTile();
+            case KeyEvent.VK_C -> model.toggleActiveCamera();
             default -> {
                 if (model.processRendererConfigurationKey(event)) {
                     repaintAction.run();

@@ -35,14 +35,21 @@ public class TraceProcessor {
         }
         catch (IOException e) {
             FatalErrorHandler.fail(filePath, "Cannot read file: " + e.getMessage());
-            return new Frame(frame, List.of());
+            return new Frame(frame, List.of(), null, null);
         }
 
         String normalized = LogicalLineNormalizer.normalize(content);
         parseOrFail(filePath, normalized);
         functionCounter.addFromContent(normalized);
 
-        return new Frame(frame, TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent()));
+        double[] projectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
+        double[] modelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
+        return new Frame(
+            frame,
+            TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent()),
+            projectionMatrix,
+            modelViewMatrix
+        );
     }
 
     private static void enqueueLog(BlockingQueue<String> logQueue, String message) {

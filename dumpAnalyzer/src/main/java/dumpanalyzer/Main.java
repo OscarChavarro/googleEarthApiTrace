@@ -29,9 +29,11 @@ public class Main {
     private static final DefaultPrettyPrinter JSON_PRETTY_PRINTER = createPrettyPrinter();
 
     public static void main(String[] args) {
+        RuntimeConfig config = parseArgs(args);
         int workerCount = Runtime.getRuntime().availableProcessors();
 
         DumpAnalyzerModel model = new DumpAnalyzerModel();
+        model.setSelectedFrameIndex(config.startFrame());
         TexturePathScanner.scanRecursive(OUTPUT_ROOT, model);
 
         FunctionCounter counter = new FunctionCounter();
@@ -42,8 +44,11 @@ public class Main {
             .filter(task -> task.frame() >= 0)
             .toList();
 
-        Thread rendererThread = createRendererThread(model);
-        rendererThread.start();
+        Thread rendererThread = null;
+        if (!config.offline()) {
+            rendererThread = createRendererThread(model);
+            rendererThread.start();
+        }
 
         BlockingQueue<FrameTask> frameQueue = new LinkedBlockingQueue<>();
         BlockingQueue<String> logQueue = new LinkedBlockingQueue<>();
@@ -75,6 +80,11 @@ public class Main {
 
         counter.printSorted();
         writeFrames(model.snapshotFrames());
+
+        if (config.offline()) {
+            model.setSelectedFrameById(config.startFrame());
+            renderOffline(model, config);
+        }
     }
 
     private static Thread createRendererThread(DumpAnalyzerModel model) {
@@ -84,6 +94,11 @@ public class Main {
                 installInteractionTechniques(model, canvas, cameraController, closeAction, repaintAction)
             );
         }, "jogl4-renderer");
+    }
+
+    private static void renderOffline(DumpAnalyzerModel model, RuntimeConfig config) {
+        Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, () -> {});
+        renderer.startOffscreen(config.outputPath(), config.width(), config.height());
     }
 
     private static void installInteractionTechniques(
@@ -227,4 +242,47 @@ public class Main {
 
     private record FrameTask(int frame, String filename) {
     }
+
+    private static RuntimeConfig parseArgs(String[] args) {
+        boolean offline = false;
+        int startFrame = 48;
+        int width = 1280;
+        int height = 720;
+        String outputPath = "/tmp/vitral/testsuite/_APITests/_JOGL4PbufferExample/src/output.png";
+
+        for (int i = 0; i < args.length; i++) {
+            String a = args[i];
+            if ("--offline".equals(a)) {
+                offline = true;
+                continue;
+            }
+            if ("--start-frame".equals(a) && i + 1 < args.length) {
+                startFrame = safeParseInt(args[++i], startFrame);
+                continue;
+            }
+            if ("--width".equals(a) && i + 1 < args.length) {
+                width = Math.max(1, safeParseInt(args[++i], width));
+                continue;
+            }
+            if ("--height".equals(a) && i + 1 < args.length) {
+                height = Math.max(1, safeParseInt(args[++i], height));
+                continue;
+            }
+            if ("--output".equals(a) && i + 1 < args.length) {
+                outputPath = args[++i];
+            }
+        }
+        return new RuntimeConfig(offline, startFrame, width, height, outputPath);
+    }
+
+    private static int safeParseInt(String s, int fallback) {
+        try {
+            return Integer.parseInt(s);
+        }
+        catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private record RuntimeConfig(boolean offline, int startFrame, int width, int height, String outputPath) {}
 }

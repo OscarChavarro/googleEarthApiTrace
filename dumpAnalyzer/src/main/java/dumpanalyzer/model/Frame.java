@@ -9,12 +9,16 @@ import java.util.Objects;
 public final class Frame implements Comparable<Frame> {
     private final int id;
     private final List<TileInstance> tiles;
+    private final double[] projectionMatrix;
+    private final double[] modelViewMatrix;
 
-    public Frame(int id, List<TileInstance> tiles) {
+    public Frame(int id, List<TileInstance> tiles, double[] projectionMatrix, double[] modelViewMatrix) {
         this.id = id;
         List<TileInstance> copy = new ArrayList<>(tiles);
         copy.sort(Comparator.comparingInt(TileInstance::getContentId));
         this.tiles = Collections.unmodifiableList(copy);
+        this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
+        this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
     public int getId() {
@@ -23,6 +27,14 @@ public final class Frame implements Comparable<Frame> {
 
     public List<TileInstance> getTiles() {
         return tiles;
+    }
+
+    public double[] getProjectionMatrix() {
+        return projectionMatrix == null ? null : projectionMatrix.clone();
+    }
+
+    public double[] getModelViewMatrix() {
+        return modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
     @Override

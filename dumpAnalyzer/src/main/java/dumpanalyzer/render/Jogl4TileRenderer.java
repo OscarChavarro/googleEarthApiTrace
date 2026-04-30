@@ -27,6 +27,7 @@ final class Jogl4TileRenderer {
         GL2 gl2,
         TileInstance tile,
         Matrix4x4 projection,
+        double[] frameModelViewMatrix,
         boolean drawAabb,
         DumpAnalyzerModel model,
         Jogl4HudRenderer hudRenderer,
@@ -71,7 +72,16 @@ final class Jogl4TileRenderer {
         gl2.glLoadMatrixf(mvp, 0);
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
         gl2.glPushMatrix();
-        gl2.glLoadIdentity();
+        if (frameModelViewMatrix != null && frameModelViewMatrix.length == 16) {
+            float[] mv = new float[16];
+            for (int i = 0; i < 16; i++) {
+                mv[i] = (float)frameModelViewMatrix[i];
+            }
+            gl2.glLoadMatrixf(mv, 0);
+        }
+        else {
+            gl2.glLoadIdentity();
+        }
         if (quality.isSurfacesSet()) {
             gl2.glDisable(GL2.GL_LIGHTING);
             gl2.glEnable(GL2.GL_DEPTH_TEST);

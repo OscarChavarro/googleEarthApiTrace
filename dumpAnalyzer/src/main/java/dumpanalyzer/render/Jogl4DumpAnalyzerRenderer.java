@@ -2,16 +2,21 @@ package dumpanalyzer.render;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.List;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 
+import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.GLCapabilities;
+import com.jogamp.opengl.GLDrawableFactory;
+import com.jogamp.opengl.GLOffscreenAutoDrawable;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
@@ -22,6 +27,8 @@ import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBImageUncompressed;
 import vsdk.toolkit.render.jogl.Jogl4CameraRenderer;
 import vsdk.toolkit.render.jogl.Jogl4MatrixRenderer;
 import vsdk.toolkit.render.jogl.Jogl4MinMaxRenderer;
@@ -34,11 +41,14 @@ public class Jogl4DumpAnalyzerRenderer implements
     private final Runnable shutdownHook;
     private final DumpAnalyzerModel model;
     private final Jogl4HudRenderer hudRenderer;
-    private final Camera camera;
+    private final Camera viewingCamera;
     private final CameraControllerOrbiter cameraController;
     private volatile boolean closing;
     private GLCanvas canvas;
     private JFrame frame;
+    private boolean offlineMode;
+    private boolean offlineCaptureDone;
+    private String offlineOutputPath;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
     private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
@@ -52,9 +62,8 @@ public class Jogl4DumpAnalyzerRenderer implements
         this.model = model;
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
-        this.camera = new Camera();
-        this.camera.setName("ViewingCamera");
-        this.cameraController = new CameraControllerOrbiter(camera);
+        this.viewingCamera = model.getViewingCamera();
+        this.cameraController = new CameraControllerOrbiter(viewingCamera);
         this.cameraController.setDeltaMovement(0.2);
     }
 
@@ -98,24 +107,62 @@ public class Jogl4DumpAnalyzerRenderer implements
         canvas.display();
     }
 
+    public void startOffscreen(String outputPath, int width, int height) {
+        if (!Jogl4Renderer.verifyOpenGLAvailability()) {
+            System.out.println("Can not start OpenGL/JOGL renderer.");
+            return;
+        }
+        offlineMode = true;
+        offlineCaptureDone = false;
+        offlineOutputPath = outputPath;
+
+        GLProfile profile = GLProfile.get(GLProfile.GL4bc);
+        GLCapabilities caps = new GLCapabilities(profile);
+        caps.setDoubleBuffered(false);
+
+        GLDrawableFactory creator = GLDrawableFactory.getFactory(profile);
+        GLOffscreenAutoDrawable pbuffer = creator.createOffscreenAutoDrawable(
+            null, caps, null, Math.max(1, width), Math.max(1, height)
+        );
+        pbuffer.addGLEventListener(this);
+        pbuffer.display();
+    }
+
     @Override
     public void display(GLAutoDrawable drawable) {
         DumpAnalyzerModel.HudState state = model.snapshotHudState();
         List<Frame> frames = model.snapshotFrames();
-        recenterCameraIfSelectionChanged(state, frames);
+        if (model.isUsingGoogleCameraAsView()) {
+            recenterCameraIfSelectionChanged(state, frames);
+        }
         GL4 gl = drawable.getGL().getGL4();
         gl.glEnable(GL4.GL_DEPTH_TEST);
         gl.glClearColor(0, 0, 0, 1);
         gl.glClear(GL4.GL_COLOR_BUFFER_BIT | GL4.GL_DEPTH_BUFFER_BIT);
-        Matrix4x4 projection = Jogl4CameraRenderer.activate(gl, camera);
-        drawObjectsGL(gl, projection);
+        Camera activeCamera = model.getActiveCamera();
+        // Use only camera view-volume projection. Geometry already carries trace modelview.
+        Matrix4x4 projection = activeCamera.calculateViewVolumeMatrix();
+        drawObjectsGL(gl, projection, model.isUsingGoogleCameraAsView());
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
-            drawSelectedTile(gl, drawable.getGL().getGL2(), frames.get(state.selectedFrameIndex()), state.selectedTileIndex(), projection);
+            drawSelectedTile(
+                gl,
+                drawable.getGL().getGL2(),
+                frames.get(state.selectedFrameIndex()),
+                state.selectedTileIndex(),
+                projection,
+                model.isUsingGoogleCameraAsView()
+            );
         }
         String hudTexturePath = model.getRendererConfiguration().isTextureSet()
             ? null
             : model.getTexturePath(state.selectedTextureId());
-        hudRenderer.render(drawable, state, camera, hudTexturePath);
+        if (!offlineMode) {
+            hudRenderer.render(drawable, state, activeCamera, hudTexturePath);
+        }
+        if (offlineMode && !offlineCaptureDone) {
+            captureOffscreen(drawable, gl);
+            offlineCaptureDone = true;
+        }
     }
 
     private void recenterCameraIfSelectionChanged(DumpAnalyzerModel.HudState state, List<Frame> frames) {
@@ -134,20 +181,19 @@ public class Jogl4DumpAnalyzerRenderer implements
         AabbStats frameStats = computeAabbStats(frameData);
         if (tileIndex == -1) {
             recenterCameraToAllTiles(frameData, frameStats);
-            logSelectedTile(frameData, tileIndex);
             return;
         }
         if (tileIndex < 0 || tileIndex >= frameData.getTiles().size()) {
             return;
         }
         TileInstance tile = frameData.getTiles().get(tileIndex);
-        logSelectedTile(frameData, tileIndex);
-        if (!isValidAndConsistentAabb(tile.getMin(), tile.getMax(), frameStats)) {
+        Vector3D[] transformed = transformAabb(tile.getMin(), tile.getMax(), frameData.getModelViewMatrix());
+        if (!isValidAndConsistentAabb(transformed[0], transformed[1], frameStats)) {
             return;
         }
 
-        Vector3D min = tile.getMin();
-        Vector3D max = tile.getMax();
+        Vector3D min = transformed[0];
+        Vector3D max = transformed[1];
         Vector3D center = new Vector3D(
             (min.x() + max.x()) * 0.5,
             (min.y() + max.y()) * 0.5,
@@ -165,16 +211,32 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         cameraController.setPointOfInterest(center);
-        camera.setPosition(newPosition);
-        camera.setFocusedPositionMaintainingOrthogonality(center);
+        viewingCamera.setPosition(newPosition);
+        viewingCamera.setFocusedPositionMaintainingOrthogonality(center);
         setSafePlanes(distance);
     }
 
-    private void drawObjectsGL(GL4 gl, Matrix4x4 projection) {
-        Jogl4MatrixRenderer.draw(gl, projection, Matrix4x4.identityMatrix());
+    private void drawObjectsGL(GL4 gl, Matrix4x4 projection, boolean useGoogleCameraView) {
+        Matrix4x4 helperProjection = projection;
+        if (!useGoogleCameraView) {
+            Matrix4x4 view = viewingCamera.calculateTransformationMatrix();
+            helperProjection = projection.multiply(view);
+        }
+        Jogl4MatrixRenderer.draw(gl, helperProjection, Matrix4x4.identityMatrix());
+        Camera googleCamera = model.getGoogleCamera();
+        if (googleCamera != null) {
+            Jogl4CameraRenderer.draw(gl, googleCamera, helperProjection);
+        }
     }
 
-    private void drawSelectedTile(GL4 gl, GL2 gl2, Frame frameData, int selectedTileIndex, Matrix4x4 projection) {
+    private void drawSelectedTile(
+        GL4 gl,
+        GL2 gl2,
+        Frame frameData,
+        int selectedTileIndex,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView
+    ) {
         if (!model.getRendererConfiguration().isTextureSet()) {
             gl2.glActiveTexture(GL2.GL_TEXTURE0);
             gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
@@ -184,7 +246,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (selectedTileIndex == -1) {
             int tileOrdinal = 0;
             for (TileInstance tile : frameData.getTiles()) {
-                drawTileWireframe(gl, gl2, frameData.getId(), tileOrdinal, tile, projection, false);
+                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, useGoogleCameraView);
                 tileOrdinal++;
             }
             return;
@@ -193,42 +255,61 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex);
-        drawTileWireframe(gl, gl2, frameData.getId(), selectedTileIndex, tile, projection, true);
+        drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, true, useGoogleCameraView);
     }
 
     private void drawTileWireframe(
         GL4 gl,
         GL2 gl2,
-        int frameId,
+        Frame frameData,
         int tileIndex,
         TileInstance tile,
         Matrix4x4 projection,
-        boolean drawAabb
+        boolean drawAabb,
+        boolean useGoogleCameraView
     ) {
-        Jogl4TileRenderer.drawTile(gl, gl2, tile, projection, drawAabb, model, hudRenderer, camera);
+        double[] combinedModelView = frameData.getModelViewMatrix();
+        if (!useGoogleCameraView) {
+            double[] viewModelView = viewingCamera.calculateTransformationMatrix().exportToDoubleArrayColumnOrder();
+            combinedModelView = multiplyColumnMajor(viewModelView, combinedModelView);
+        }
+        Jogl4TileRenderer.drawTile(
+            gl,
+            gl2,
+            tile,
+            projection,
+            combinedModelView,
+            drawAabb,
+            model,
+            hudRenderer,
+            model.getActiveCamera()
+        );
     }
 
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
         Vector3D min = null;
         Vector3D max = null;
         for (TileInstance tile : frameData.getTiles()) {
-            if (!isValidAndConsistentAabb(tile.getMin(), tile.getMax(), frameStats)) {
+            Vector3D[] transformed = transformAabb(tile.getMin(), tile.getMax(), frameData.getModelViewMatrix());
+            Vector3D tileMin = transformed[0];
+            Vector3D tileMax = transformed[1];
+            if (!isValidAndConsistentAabb(tileMin, tileMax, frameStats)) {
                 continue;
             }
             if (min == null) {
-                min = tile.getMin();
-                max = tile.getMax();
+                min = tileMin;
+                max = tileMax;
                 continue;
             }
             min = new Vector3D(
-                Math.min(min.x(), tile.getMin().x()),
-                Math.min(min.y(), tile.getMin().y()),
-                Math.min(min.z(), tile.getMin().z())
+                Math.min(min.x(), tileMin.x()),
+                Math.min(min.y(), tileMin.y()),
+                Math.min(min.z(), tileMin.z())
             );
             max = new Vector3D(
-                Math.max(max.x(), tile.getMax().x()),
-                Math.max(max.y(), tile.getMax().y()),
-                Math.max(max.z(), tile.getMax().z())
+                Math.max(max.x(), tileMax.x()),
+                Math.max(max.y(), tileMax.y()),
+                Math.max(max.z(), tileMax.z())
             );
         }
         if (min == null || max == null) {
@@ -251,13 +332,13 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         cameraController.setPointOfInterest(center);
-        camera.setPosition(newPosition);
-        camera.setFocusedPositionMaintainingOrthogonality(center);
+        viewingCamera.setPosition(newPosition);
+        viewingCamera.setFocusedPositionMaintainingOrthogonality(center);
         setSafePlanes(distance);
     }
 
     private Vector3D safeFront() {
-        Vector3D raw = camera.getFront();
+        Vector3D raw = viewingCamera.getFront();
         if (raw == null || !isFiniteVector(raw)) {
             return DEFAULT_FRONT;
         }
@@ -277,36 +358,8 @@ public class Jogl4DumpAnalyzerRenderer implements
         d = Math.max(1e-3, d);
         double near = Math.max(1e-4, d / 10.0);
         double far = Math.max(near + 1e-3, d * 3.0);
-        camera.setNearPlaneDistance(near);
-        camera.setFarPlaneDistance(far);
-    }
-
-    private void logSelectedTile(Frame frameData, int tileIndex) {
-        if (frameData == null || tileIndex < 0 || tileIndex >= frameData.getTiles().size()) {
-            return;
-        }
-        TileInstance tile = frameData.getTiles().get(tileIndex);
-        String base =
-            "[dumpAnalyzer] Frame " + frameData.getId() +
-            ", Tile " + tileIndex +
-            ", Call: " + tile.getGlCall() +
-            ", Primitive " + tile.getPrimitive() +
-            ", ParserCall " + tile.getParserCall() +
-            "";
-        if (tile.isSkipped()) {
-            String reason = tile.getSkipReason();
-            if (reason == null || reason.isBlank()) {
-                reason = "unknown";
-            }
-            System.out.println(base + ", Skipped true, Reason " + reason);
-        }
-        else {
-            System.out.println(
-                base +
-                ", VertexArraySize " + tile.getVertexArraySize() +
-                ", IndexArraySize " + tile.getIndexArraySize()
-            );
-        }
+        viewingCamera.setNearPlaneDistance(near);
+        viewingCamera.setFarPlaneDistance(far);
     }
 
     private AabbStats computeAabbStats(Frame frameData) {
@@ -315,8 +368,9 @@ public class Jogl4DumpAnalyzerRenderer implements
         double sumDiagonal = 0.0;
         int count = 0;
         for (TileInstance tile : frameData.getTiles()) {
-            Vector3D min = tile.getMin();
-            Vector3D max = tile.getMax();
+            Vector3D[] transformed = transformAabb(tile.getMin(), tile.getMax(), frameData.getModelViewMatrix());
+            Vector3D min = transformed[0];
+            Vector3D max = transformed[1];
             if (!isValidAabb(min, max)) {
                 continue;
             }
@@ -377,6 +431,46 @@ public class Jogl4DumpAnalyzerRenderer implements
         return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 
+    private static Vector3D[] transformAabb(Vector3D min, Vector3D max, double[] modelViewMatrix) {
+        if (min == null || max == null || modelViewMatrix == null || modelViewMatrix.length != 16) {
+            return new Vector3D[] { min, max };
+        }
+        Vector3D[] corners = new Vector3D[] {
+            new Vector3D(min.x(), min.y(), min.z()),
+            new Vector3D(max.x(), min.y(), min.z()),
+            new Vector3D(min.x(), max.y(), min.z()),
+            new Vector3D(max.x(), max.y(), min.z()),
+            new Vector3D(min.x(), min.y(), max.z()),
+            new Vector3D(max.x(), min.y(), max.z()),
+            new Vector3D(min.x(), max.y(), max.z()),
+            new Vector3D(max.x(), max.y(), max.z())
+        };
+        Vector3D t0 = transformPoint(modelViewMatrix, corners[0]);
+        double minX = t0.x(), minY = t0.y(), minZ = t0.z();
+        double maxX = t0.x(), maxY = t0.y(), maxZ = t0.z();
+        for (int i = 1; i < corners.length; i++) {
+            Vector3D t = transformPoint(modelViewMatrix, corners[i]);
+            minX = Math.min(minX, t.x());
+            minY = Math.min(minY, t.y());
+            minZ = Math.min(minZ, t.z());
+            maxX = Math.max(maxX, t.x());
+            maxY = Math.max(maxY, t.y());
+            maxZ = Math.max(maxZ, t.z());
+        }
+        return new Vector3D[] { new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ) };
+    }
+
+    private static Vector3D transformPoint(double[] m, Vector3D p) {
+        double x = m[0] * p.x() + m[4] * p.y() + m[8] * p.z() + m[12];
+        double y = m[1] * p.x() + m[5] * p.y() + m[9] * p.z() + m[13];
+        double z = m[2] * p.x() + m[6] * p.y() + m[10] * p.z() + m[14];
+        double w = m[3] * p.x() + m[7] * p.y() + m[11] * p.z() + m[15];
+        if (Math.abs(w) > 1.0e-12) {
+            return new Vector3D(x / w, y / w, z / w);
+        }
+        return new Vector3D(x, y, z);
+    }
+
     private record AabbStats(double minDiagonal, double maxDiagonal, double averageDiagonal, int count) {
         private static final AabbStats EMPTY = new AabbStats(0.0, 0.0, 0.0, 0);
 
@@ -410,7 +504,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     public void reshape(GLAutoDrawable drawable, int x, int y, int width, int height) {
         GL4 gl = drawable.getGL().getGL4();
         gl.glViewport(0, 0, width, height);
-        camera.updateViewportResize(width, height);
+        viewingCamera.updateViewportResize(width, height);
     }
 
     private void requestRedraw() {
@@ -427,5 +521,50 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (frame != null) frame.dispose();
 
         shutdownHook.run();
+    }
+
+    private void captureOffscreen(GLAutoDrawable drawable, GL4 gl) {
+        int width = Math.max(1, drawable.getSurfaceWidth());
+        int height = Math.max(1, drawable.getSurfaceHeight());
+        ByteBuffer bb = ByteBuffer.allocateDirect(3 * width * height);
+        gl.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1);
+        gl.glReadPixels(0, 0, width, height, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, bb);
+
+        RGBImageUncompressed image = new RGBImageUncompressed();
+        image.init(width, height);
+        int pos = 0;
+        for (int y = height - 1; y >= 0; y--) {
+            for (int x = 0; x < width; x++) {
+                image.putPixel(x, y, bb.get(pos), bb.get(pos + 1), bb.get(pos + 2));
+                pos += 3;
+            }
+        }
+        File out = new File(offlineOutputPath == null || offlineOutputPath.isBlank()
+            ? "output.png"
+            : offlineOutputPath);
+        ImagePersistence.exportPNG(out, image);
+        if (drawable instanceof GLOffscreenAutoDrawable offscreen) {
+            offscreen.destroy();
+        }
+    }
+
+    private static double[] multiplyColumnMajor(double[] a, double[] b) {
+        if (a == null || a.length != 16) {
+            return b;
+        }
+        if (b == null || b.length != 16) {
+            return a;
+        }
+        double[] out = new double[16];
+        for (int col = 0; col < 4; col++) {
+            for (int row = 0; row < 4; row++) {
+                out[col * 4 + row] =
+                    a[0 * 4 + row] * b[col * 4 + 0] +
+                    a[1 * 4 + row] * b[col * 4 + 1] +
+                    a[2 * 4 + row] * b[col * 4 + 2] +
+                    a[3 * 4 + row] * b[col * 4 + 3];
+            }
+        }
+        return out;
     }
 }
