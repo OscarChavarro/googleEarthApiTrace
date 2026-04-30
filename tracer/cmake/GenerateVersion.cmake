@@ -8,7 +8,7 @@ if ("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
         set (APITRACE_VERSION "git-${GIT_SHORT_SHA} $ENV{GITHUB_SERVER_URL}/$ENV{GITHUB_REPOSITORY}/actions/runs/$ENV{GITHUB_RUN_ID}")
     endif ()
 elseif (GIT_EXECUTABLE)
-    get_filename_component (SRC_DIR ${SRC} DIRECTORY)
+    get_filename_component (SRC_DIR ${CMAKE_CURRENT_LIST_DIR} DIRECTORY)
     # Generate a git-describe version string from Git repository tags
     execute_process (
         COMMAND "${GIT_EXECUTABLE}" describe --tags --dirty --match "*"
@@ -28,4 +28,7 @@ if (NOT DEFINED APITRACE_VERSION)
 endif ()
 
 # propagate version into header
-configure_file (${SRC} ${DST} @ONLY)
+file (WRITE ${DST}
+"#pragma once
+#define APITRACE_VERSION \"${APITRACE_VERSION}\"
+")
