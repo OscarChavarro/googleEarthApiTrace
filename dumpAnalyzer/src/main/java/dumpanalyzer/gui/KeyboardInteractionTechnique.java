@@ -43,6 +43,10 @@ public final class KeyboardInteractionTechnique implements KeyListener {
         char keyChar = e.getKeyChar();
         if (keyChar == 't') {
             event.keycode = vsdk.toolkit.gui.KeyEvent.KEY_F8;
+            if (model.processRendererConfigurationKey(event)) {
+                repaintAction.run();
+                return;
+            }
         }
         switch (e.getKeyCode()) {
             case KeyEvent.VK_ESCAPE -> closeAction.run();
@@ -55,6 +59,11 @@ public final class KeyboardInteractionTechnique implements KeyListener {
             case KeyEvent.VK_3 -> model.selectPreviousTile();
             case KeyEvent.VK_4 -> model.selectNextTile();
             case KeyEvent.VK_C -> model.toggleActiveCamera();
+            case KeyEvent.VK_F4 -> {
+                if (model.processRendererConfigurationKey(event)) {
+                    repaintAction.run();
+                }
+            }
             case KeyEvent.VK_T -> {
                 if (keyChar == 'T') {
                     model.toggleShowGuiTextures();

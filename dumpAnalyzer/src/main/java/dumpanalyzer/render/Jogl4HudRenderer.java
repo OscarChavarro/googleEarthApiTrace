@@ -6,6 +6,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.jogamp.opengl.GL2;
@@ -36,7 +37,14 @@ public final class Jogl4HudRenderer {
         Jogl4ImageRenderer.dispose(gl);
     }
 
-    public void render(GLAutoDrawable drawable, DumpAnalyzerModel model, DumpAnalyzerModel.HudState state, Camera camera, String texturePath) {
+    public void render(
+        GLAutoDrawable drawable,
+        DumpAnalyzerModel model,
+        DumpAnalyzerModel.HudState state,
+        Camera camera,
+        String texturePath,
+        List<ScreenLabel> aabbLabels
+    ) {
         initializeIfNeeded();
 
         GL2 gl = drawable.getGL().getGL2();
@@ -70,15 +78,27 @@ public final class Jogl4HudRenderer {
                 h - 70
             );
             textRenderer.draw(
-                "Selected tile [3, 4]: " + state.selectedTileIndex() + "/" + Math.max(-1, state.tilesInSelectedFrame() - 1),
+                "Selected tile [3, 4]: "
+                    + (state.selectedTileIndex() == DumpAnalyzerModel.SELECT_ALL_TILES ? "ALL" : state.selectedTileIndex())
+                    + "/"
+                    + Math.max(DumpAnalyzerModel.SELECT_ALL_TILES, state.tilesInSelectedFrame() - 1),
                 20,
                 h - 100
             );
-            textRenderer.draw(
-                "Texture: " + state.selectedTextureId(),
-                Math.max(20, w - 200),
-                h - 40
-            );
+            if (state.selectedTileIndex() != DumpAnalyzerModel.SELECT_ALL_TILES) {
+                textRenderer.draw(
+                    "Texture: " + state.selectedTextureId(),
+                    Math.max(20, w - 200),
+                    h - 40
+                );
+            }
+            if (aabbLabels != null && !aabbLabels.isEmpty()) {
+                textRenderer.setColor(Color.YELLOW);
+                for (ScreenLabel label : aabbLabels) {
+                    textRenderer.draw(label.text(), label.x(), label.y());
+                }
+                textRenderer.setColor(Color.WHITE);
+            }
             textRenderer.endRendering();
             drawSelectedTexturePreview(gl4, model, camera, texturePath);
         }
@@ -229,5 +249,8 @@ public final class Jogl4HudRenderer {
     }
 
     private record TextureResident(String path, Image image, int width, int height, int glTextureId, long bytesAssigned) {
+    }
+
+    public record ScreenLabel(int x, int y, String text) {
     }
 }

@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.io.File;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.swing.JFrame;
@@ -52,6 +53,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
     private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
+    private static final Vector3D WORLD_ORIGIN = new Vector3D(0.0, 0.0, 0.0);
     private static final double MAX_ABS_COORD = 1.0e6;
     private static final double MIN_DIAGONAL = 1.0e-6;
     private static final double MAX_DIAGONAL = 1.0e6;
@@ -143,14 +145,24 @@ public class Jogl4DumpAnalyzerRenderer implements
         // Use only camera view-volume projection. Geometry already carries trace modelview.
         Matrix4x4 projection = activeCamera.calculateViewVolumeMatrix();
         drawObjectsGL(gl, projection, model.isUsingGoogleCameraAsView());
+        List<Jogl4HudRenderer.ScreenLabel> aabbLabels = List.of();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
+            Frame selectedFrame = frames.get(state.selectedFrameIndex());
             drawSelectedTile(
                 gl,
                 drawable.getGL().getGL2(),
-                frames.get(state.selectedFrameIndex()),
+                selectedFrame,
                 state.selectedTileIndex(),
                 projection,
                 model.isUsingGoogleCameraAsView()
+            );
+            aabbLabels = buildAabbLabelsForHud(
+                selectedFrame,
+                state.selectedTileIndex(),
+                projection,
+                model.isUsingGoogleCameraAsView(),
+                drawable.getSurfaceWidth(),
+                drawable.getSurfaceHeight()
             );
         }
         String hudTexturePath = null;
@@ -163,7 +175,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             );
         }
         if (!offlineMode) {
-            hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath);
+            hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath, aabbLabels);
         }
         if (offlineMode && !offlineCaptureDone) {
             captureOffscreen(drawable, gl);
@@ -185,7 +197,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
         Frame frameData = frames.get(frameIndex);
         AabbStats frameStats = computeAabbStats(frameData);
-        if (tileIndex == -1) {
+        if (tileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             recenterCameraToAllTiles(frameData, frameStats);
             return;
         }
@@ -202,11 +214,6 @@ public class Jogl4DumpAnalyzerRenderer implements
 
         Vector3D min = transformed[0];
         Vector3D max = transformed[1];
-        Vector3D center = new Vector3D(
-            (min.x() + max.x()) * 0.5,
-            (min.y() + max.y()) * 0.5,
-            (min.z() + max.z()) * 0.5
-        );
         double dx = max.x() - min.x();
         double dy = max.y() - min.y();
         double dz = max.z() - min.z();
@@ -214,13 +221,13 @@ public class Jogl4DumpAnalyzerRenderer implements
         double distance = Math.max(1e-6, 1.5 * diagonal);
 
         Vector3D front = safeFront();
-        Vector3D newPosition = center.subtract(front.multiply(distance));
+        Vector3D newPosition = WORLD_ORIGIN.subtract(front.multiply(distance));
         if (!isFiniteVector(newPosition) || !isFinite(distance)) {
             return;
         }
-        cameraController.setPointOfInterest(center);
+        cameraController.setPointOfInterest(WORLD_ORIGIN);
         viewingCamera.setPosition(newPosition);
-        viewingCamera.setFocusedPositionMaintainingOrthogonality(center);
+        viewingCamera.setFocusedPositionMaintainingOrthogonality(WORLD_ORIGIN);
         setSafePlanes(distance);
     }
 
@@ -251,10 +258,10 @@ public class Jogl4DumpAnalyzerRenderer implements
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
 
-        if (selectedTileIndex == -1) {
+        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             int tileOrdinal = 0;
             for (TileInstance tile : frameData.getTiles()) {
-                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, useGoogleCameraView);
+                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, true, useGoogleCameraView);
                 tileOrdinal++;
             }
             return;
@@ -296,6 +303,108 @@ public class Jogl4DumpAnalyzerRenderer implements
         );
     }
 
+    private List<Jogl4HudRenderer.ScreenLabel> buildAabbLabelsForHud(
+        Frame frameData,
+        int selectedTileIndex,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView,
+        int viewportWidth,
+        int viewportHeight
+    ) {
+        if (!model.getRendererConfiguration().isBoundingVolumeSet()) {
+            return List.of();
+        }
+        if (frameData == null || viewportWidth <= 0 || viewportHeight <= 0) {
+            return List.of();
+        }
+        List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
+        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
+            for (TileInstance tile : frameData.getTiles()) {
+                appendAabbLabel(labels, frameData, tile, projection, useGoogleCameraView, viewportWidth, viewportHeight);
+            }
+            return labels;
+        }
+        if (selectedTileIndex < 0 || selectedTileIndex >= frameData.getTiles().size()) {
+            return labels;
+        }
+        appendAabbLabel(
+            labels,
+            frameData,
+            frameData.getTiles().get(selectedTileIndex),
+            projection,
+            useGoogleCameraView,
+            viewportWidth,
+            viewportHeight
+        );
+        return labels;
+    }
+
+    private void appendAabbLabel(
+        List<Jogl4HudRenderer.ScreenLabel> labels,
+        Frame frameData,
+        TileInstance tile,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView,
+        int viewportWidth,
+        int viewportHeight
+    ) {
+        if (tile == null || tile.getMin() == null || tile.getMax() == null) {
+            return;
+        }
+        Vector3D center = new Vector3D(
+            (tile.getMin().x() + tile.getMax().x()) * 0.5,
+            (tile.getMin().y() + tile.getMax().y()) * 0.5,
+            (tile.getMin().z() + tile.getMax().z()) * 0.5
+        );
+        double[] modelView = CoordinatesTransforms.geometryModelView(useGoogleCameraView, viewingCamera, frameData);
+        if (useGoogleCameraView && tile.getModelViewMatrix() != null && tile.getModelViewMatrix().length == 16) {
+            modelView = tile.getModelViewMatrix();
+        }
+        int[] pixel = projectToViewportPixel(center, modelView, projection, viewportWidth, viewportHeight);
+        if (pixel == null) {
+            return;
+        }
+        labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(tile.getContentId())));
+    }
+
+    private static int[] projectToViewportPixel(
+        Vector3D p,
+        double[] modelView,
+        Matrix4x4 projection,
+        int viewportWidth,
+        int viewportHeight
+    ) {
+        if (p == null || modelView == null || modelView.length != 16 || projection == null) {
+            return null;
+        }
+        double ex = modelView[0] * p.x() + modelView[4] * p.y() + modelView[8] * p.z() + modelView[12];
+        double ey = modelView[1] * p.x() + modelView[5] * p.y() + modelView[9] * p.z() + modelView[13];
+        double ez = modelView[2] * p.x() + modelView[6] * p.y() + modelView[10] * p.z() + modelView[14];
+        double ew = modelView[3] * p.x() + modelView[7] * p.y() + modelView[11] * p.z() + modelView[15];
+
+        double[] proj = projection.exportToDoubleArrayColumnOrder();
+        if (proj == null || proj.length != 16) {
+            return null;
+        }
+        double cx = proj[0] * ex + proj[4] * ey + proj[8] * ez + proj[12] * ew;
+        double cy = proj[1] * ex + proj[5] * ey + proj[9] * ez + proj[13] * ew;
+        double cw = proj[3] * ex + proj[7] * ey + proj[11] * ez + proj[15] * ew;
+        if (Math.abs(cw) < 1e-12) {
+            return null;
+        }
+        double ndcX = cx / cw;
+        double ndcY = cy / cw;
+        if (!Double.isFinite(ndcX) || !Double.isFinite(ndcY)) {
+            return null;
+        }
+        int px = (int)Math.round((ndcX * 0.5 + 0.5) * (viewportWidth - 1));
+        int py = (int)Math.round((ndcY * 0.5 + 0.5) * (viewportHeight - 1));
+        if (px < 0 || px >= viewportWidth || py < 0 || py >= viewportHeight) {
+            return null;
+        }
+        return new int[] { px, py };
+    }
+
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
         Vector3D min = null;
         Vector3D max = null;
@@ -327,11 +436,6 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (min == null || max == null) {
             return;
         }
-        Vector3D center = new Vector3D(
-            (min.x() + max.x()) * 0.5,
-            (min.y() + max.y()) * 0.5,
-            (min.z() + max.z()) * 0.5
-        );
         double dx = max.x() - min.x();
         double dy = max.y() - min.y();
         double dz = max.z() - min.z();
@@ -339,13 +443,13 @@ public class Jogl4DumpAnalyzerRenderer implements
         double distance = Math.max(1e-6, 1.5 * diagonal);
 
         Vector3D front = safeFront();
-        Vector3D newPosition = center.subtract(front.multiply(distance));
+        Vector3D newPosition = WORLD_ORIGIN.subtract(front.multiply(distance));
         if (!isFiniteVector(newPosition) || !isFinite(distance)) {
             return;
         }
-        cameraController.setPointOfInterest(center);
+        cameraController.setPointOfInterest(WORLD_ORIGIN);
         viewingCamera.setPosition(newPosition);
-        viewingCamera.setFocusedPositionMaintainingOrthogonality(center);
+        viewingCamera.setFocusedPositionMaintainingOrthogonality(WORLD_ORIGIN);
         setSafePlanes(distance);
     }
 

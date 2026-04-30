@@ -11,7 +11,6 @@ import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.Camera;
-import vsdk.toolkit.render.jogl.Jogl4MinMaxRenderer;
 
 final class Jogl4TileRenderer {
     private static final float SURFACE_POLYGON_OFFSET_FACTOR = 1.0f;
@@ -34,9 +33,6 @@ final class Jogl4TileRenderer {
         Jogl4HudRenderer hudRenderer,
         Camera camera
     ) {
-        if (!model.isShowGuiTextures() && !model.isTexture256x256(frameId, tile.getContentId())) {
-            return;
-        }
         RendererConfiguration quality = model.getRendererConfiguration();
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
@@ -49,25 +45,6 @@ final class Jogl4TileRenderer {
             }
             else {
                 textured = false;
-            }
-        }
-        if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
-            if (textured) {
-                gl2.glActiveTexture(GL2.GL_TEXTURE0);
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-                gl2.glDisable(GL2.GL_TEXTURE_2D);
-            }
-            gl2.glDisable(GL2.GL_LIGHTING);
-            gl2.glColor3d(1.0, 1.0, 0.0);
-            double[] mm = {
-                tile.getMin().x(), tile.getMin().y(), tile.getMin().z(),
-                tile.getMax().x(), tile.getMax().y(), tile.getMax().z()
-            };
-            Jogl4MinMaxRenderer.draw(gl, mm, camera);
-            if (textured && activeTextureId > 0) {
-                gl2.glActiveTexture(GL2.GL_TEXTURE0);
-                gl2.glEnable(GL2.GL_TEXTURE_2D);
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, activeTextureId);
             }
         }
         float[] mvp = projection.exportToFloatArrayColumnOrder();
@@ -85,6 +62,54 @@ final class Jogl4TileRenderer {
         }
         else {
             gl2.glLoadIdentity();
+        }
+        if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
+            if (textured) {
+                gl2.glActiveTexture(GL2.GL_TEXTURE0);
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+            }
+            gl2.glDisable(GL2.GL_LIGHTING);
+            gl2.glEnable(GL2.GL_DEPTH_TEST);
+            gl2.glDepthMask(false);
+            gl2.glDepthFunc(GL2.GL_LEQUAL);
+            gl2.glColor3d(1.0, 1.0, 0.0);
+            gl2.glLineWidth(2.0f);
+
+            Vector3D min = tile.getMin();
+            Vector3D max = tile.getMax();
+            double x0 = min.x();
+            double y0 = min.y();
+            double z0 = min.z();
+            double x1 = max.x();
+            double y1 = max.y();
+            double z1 = max.z();
+
+            gl2.glBegin(GL2.GL_LINES);
+            // Bottom rectangle
+            gl2.glVertex3d(x0, y0, z0); gl2.glVertex3d(x1, y0, z0);
+            gl2.glVertex3d(x1, y0, z0); gl2.glVertex3d(x1, y1, z0);
+            gl2.glVertex3d(x1, y1, z0); gl2.glVertex3d(x0, y1, z0);
+            gl2.glVertex3d(x0, y1, z0); gl2.glVertex3d(x0, y0, z0);
+            // Top rectangle
+            gl2.glVertex3d(x0, y0, z1); gl2.glVertex3d(x1, y0, z1);
+            gl2.glVertex3d(x1, y0, z1); gl2.glVertex3d(x1, y1, z1);
+            gl2.glVertex3d(x1, y1, z1); gl2.glVertex3d(x0, y1, z1);
+            gl2.glVertex3d(x0, y1, z1); gl2.glVertex3d(x0, y0, z1);
+            // Vertical edges
+            gl2.glVertex3d(x0, y0, z0); gl2.glVertex3d(x0, y0, z1);
+            gl2.glVertex3d(x1, y0, z0); gl2.glVertex3d(x1, y0, z1);
+            gl2.glVertex3d(x1, y1, z0); gl2.glVertex3d(x1, y1, z1);
+            gl2.glVertex3d(x0, y1, z0); gl2.glVertex3d(x0, y1, z1);
+            gl2.glEnd();
+
+            gl2.glDepthMask(true);
+            gl2.glDepthFunc(GL2.GL_LESS);
+            if (textured && activeTextureId > 0) {
+                gl2.glActiveTexture(GL2.GL_TEXTURE0);
+                gl2.glEnable(GL2.GL_TEXTURE_2D);
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, activeTextureId);
+            }
         }
         if (quality.isSurfacesSet()) {
             gl2.glDisable(GL2.GL_LIGHTING);

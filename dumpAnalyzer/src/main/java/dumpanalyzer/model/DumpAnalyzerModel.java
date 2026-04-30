@@ -19,6 +19,7 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class DumpAnalyzerModel {
     public static final long GPU_RAM_TEXTURE_LIMIT = 10L * 1024L * 1024L * 1024L;
+    public static final int SELECT_ALL_TILES = -1;
 
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();
     private final ConcurrentHashMap<Integer, ConcurrentSkipListMap<Integer, String>> texturePathByIdAndFrame = new ConcurrentHashMap<>();
@@ -37,7 +38,7 @@ public final class DumpAnalyzerModel {
 
     public DumpAnalyzerModel() {
         rendererConfiguration.setWires(false);
-        rendererConfiguration.setBoundingVolume(true);
+        rendererConfiguration.setBoundingVolume(false);
         rendererConfiguration.setTexture(true);
         viewingCamera.setName("ViewingCamera");
         googleCamera.setName("GoogleCamera");
@@ -148,7 +149,7 @@ public final class DumpAnalyzerModel {
         int processed = frames.size();
 
         if (processed == 0) {
-            return new HudState(0, 0, -1, 0, 0);
+            return new HudState(0, 0, SELECT_ALL_TILES, 0, 0);
         }
 
         int frameIdx = clamp(selectedFrameIndex.get(), 0, processed - 1);
@@ -156,7 +157,7 @@ public final class DumpAnalyzerModel {
 
         Frame selectedFrame = frames.get(frameIdx);
         int tileCount = selectedFrame.getTiles().size();
-        int tileIdx = tileCount == 0 ? -1 : clamp(selectedTileIndex.get(), -1, tileCount - 1);
+        int tileIdx = tileCount == 0 ? SELECT_ALL_TILES : clamp(selectedTileIndex.get(), SELECT_ALL_TILES, tileCount - 1);
         selectedTileIndex.set(tileIdx);
 
         int selectedTextureId = 0;
@@ -215,7 +216,7 @@ public final class DumpAnalyzerModel {
         for (int i = 0; i < frames.size(); i++) {
             if (!frames.get(i).getTiles().isEmpty()) {
                 selectedFrameIndex.set(i);
-                selectedTileIndex.set(-1);
+                selectedTileIndex.set(SELECT_ALL_TILES);
                 clampSelection();
                 updateGoogleCameraFromSelection();
                 notifyListeners();
@@ -240,7 +241,7 @@ public final class DumpAnalyzerModel {
         int processed = framesById.size();
         if (processed <= 0) {
             selectedFrameIndex.set(0);
-            selectedTileIndex.set(-1);
+            selectedTileIndex.set(SELECT_ALL_TILES);
             return;
         }
 
@@ -251,10 +252,10 @@ public final class DumpAnalyzerModel {
         Frame selectedFrame = frames.get(frameIdx);
         int tiles = selectedFrame.getTiles().size();
         if (tiles <= 0) {
-            selectedTileIndex.set(-1);
+            selectedTileIndex.set(SELECT_ALL_TILES);
         }
         else {
-            selectedTileIndex.set(clamp(selectedTileIndex.get(), -1, tiles - 1));
+            selectedTileIndex.set(clamp(selectedTileIndex.get(), SELECT_ALL_TILES, tiles - 1));
         }
     }
 
