@@ -40,7 +40,8 @@ public final class KeyboardInteractionTechnique implements KeyListener {
     @Override
     public void keyPressed(KeyEvent e) {
         vsdk.toolkit.gui.KeyEvent event = AwtSystem.awt2vsdkEvent(e);
-        if (event.keycode == vsdk.toolkit.gui.KeyEvent.KEY_t || event.keycode == vsdk.toolkit.gui.KeyEvent.KEY_T) {
+        char keyChar = e.getKeyChar();
+        if (keyChar == 't') {
             event.keycode = vsdk.toolkit.gui.KeyEvent.KEY_F8;
         }
         switch (e.getKeyCode()) {
@@ -54,6 +55,12 @@ public final class KeyboardInteractionTechnique implements KeyListener {
             case KeyEvent.VK_3 -> model.selectPreviousTile();
             case KeyEvent.VK_4 -> model.selectNextTile();
             case KeyEvent.VK_C -> model.toggleActiveCamera();
+            case KeyEvent.VK_T -> {
+                if (keyChar == 'T') {
+                    model.toggleShowGuiTextures();
+                    repaintAction.run();
+                }
+            }
             default -> {
                 if (model.processRendererConfigurationKey(event)) {
                     repaintAction.run();

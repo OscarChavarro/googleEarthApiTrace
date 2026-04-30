@@ -1,5 +1,7 @@
 package dumpanalyzer.model;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -8,6 +10,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import dumpanalyzer.parser.CameraProcessor;
+import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.gui.KeyEvent;
@@ -16,6 +19,7 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 public final class DumpAnalyzerModel {
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();
     private final ConcurrentHashMap<Integer, String> texturePathById = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Boolean> textureIs256ById = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final AtomicInteger selectedFrameIndex = new AtomicInteger(48);
     private final AtomicInteger selectedTileIndex = new AtomicInteger(1);
@@ -25,6 +29,7 @@ public final class DumpAnalyzerModel {
     private final Camera viewingCamera = new Camera();
     private final Camera googleCamera = new Camera();
     private volatile boolean useGoogleCameraAsView = true;
+    private volatile boolean showGuiTextures = true;
 
     public DumpAnalyzerModel() {
         rendererConfiguration.setWires(false);
@@ -47,6 +52,7 @@ public final class DumpAnalyzerModel {
 
     public void registerTexturePath(int textureId, String absolutePath) {
         texturePathById.putIfAbsent(textureId, absolutePath);
+        textureIs256ById.remove(textureId);
     }
 
     public String getTexturePath(int textureId) {
@@ -71,6 +77,25 @@ public final class DumpAnalyzerModel {
 
     public boolean isUsingGoogleCameraAsView() {
         return useGoogleCameraAsView;
+    }
+
+    public boolean isShowGuiTextures() {
+        return showGuiTextures;
+    }
+
+    public void toggleShowGuiTextures() {
+        showGuiTextures = !showGuiTextures;
+        notifyListeners();
+    }
+
+    public boolean isTexture256x256(int textureId) {
+        Boolean cached = textureIs256ById.get(textureId);
+        if (cached != null) {
+            return cached;
+        }
+        boolean is256 = readTextureSize256x256(texturePathById.get(textureId));
+        textureIs256ById.putIfAbsent(textureId, is256);
+        return is256;
     }
 
     public void toggleActiveCamera() {
@@ -231,6 +256,20 @@ public final class DumpAnalyzerModel {
     private void notifyListeners() {
         for (Runnable listener : listeners) {
             listener.run();
+        }
+    }
+
+    private static boolean readTextureSize256x256(String texturePath) {
+        if (texturePath == null || texturePath.isBlank()) {
+            return false;
+        }
+        try {
+            var image = ImagePersistence.importRGB(new File(texturePath));
+            return image != null && image.getXSize() == 256 && image.getYSize() == 256;
+        } catch (IOException e) {
+            return false;
+        } catch (Exception e) {
+            return false;
         }
     }
 

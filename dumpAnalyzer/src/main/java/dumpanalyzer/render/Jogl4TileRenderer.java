@@ -33,6 +33,9 @@ final class Jogl4TileRenderer {
         Jogl4HudRenderer hudRenderer,
         Camera camera
     ) {
+        if (!model.isShowGuiTextures() && !model.isTexture256x256(tile.getContentId())) {
+            return;
+        }
         RendererConfiguration quality = model.getRendererConfiguration();
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
