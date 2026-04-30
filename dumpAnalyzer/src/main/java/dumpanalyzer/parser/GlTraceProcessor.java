@@ -8,9 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.BlockingQueue;
@@ -27,6 +29,8 @@ import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 
 public class GlTraceProcessor {
+    private static final String GL_TRIANGLE_STRIP = "GL_TRIANGLE_STRIP";
+    private static final String GL_TRIANGLES = "GL_TRIANGLES";
     private static final Pattern BIND_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglBindTexture\\s*\\((.*)\\)");
     private static final Pattern VERTEX_ATTRIB_LINE_PATTERN = Pattern.compile("\\bglVertexAttribPointer\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_LINE_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
@@ -71,6 +75,7 @@ public class GlTraceProcessor {
 
     private static List<TileInstance> processFrameCalls(String normalizedContent, Path frameDirectory) {
         Map<Integer, TileBuilder> tilesByTextureId = new HashMap<>();
+        Set<String> warned = new HashSet<>();
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
         int vertexAttribCallCount = 0;
@@ -85,6 +90,9 @@ public class GlTraceProcessor {
                 Integer textureId = extractInt(TEXTURE_VALUE_PATTERN, bindMatcher.group(1));
                 if (textureId != null) {
                     lastTextureId = textureId;
+                }
+                else {
+                    warnOnce(warned, "Malformed glBindTexture call. Texture id missing.");
                 }
                 continue;
             }
@@ -114,6 +122,7 @@ public class GlTraceProcessor {
 
             drawCount++;
             if (lastTextureId < 0) {
+                warnOnce(warned, "Skipping draw: no bound texture id.");
                 continue;
             }
 
@@ -121,21 +130,56 @@ public class GlTraceProcessor {
             String mode = extractToken(DRAW_MODE_PATTERN, drawArgs);
             Integer count = extractInt(DRAW_COUNT_PATTERN, drawArgs);
             String type = extractToken(DRAW_TYPE_PATTERN, drawArgs);
-            if (!"GL_TRIANGLE_STRIP".equals(mode) || !"GL_UNSIGNED_SHORT".equals(type) || count == null || count <= 0) {
+            if (mode == null || type == null || count == null) {
+                warnOnce(warned, "Skipping draw: malformed glDrawElements arguments.");
+                continue;
+            }
+            if ((!GL_TRIANGLE_STRIP.equals(mode) && !GL_TRIANGLES.equals(mode)) || !"GL_UNSIGNED_SHORT".equals(type) || count == null || count <= 0) {
+                if (!GL_TRIANGLE_STRIP.equals(mode) && !GL_TRIANGLES.equals(mode)) {
+                    warnOnce(warned, "Skipping draw: unsupported draw mode " + mode + ".");
+                }
+                else if (!"GL_UNSIGNED_SHORT".equals(type)) {
+                    warnOnce(warned, "Skipping draw: unsupported index type " + type + ".");
+                }
+                else {
+                    warnOnce(warned, "Skipping draw: invalid index count.");
+                }
                 continue;
             }
 
-            int[] drawIndices = loadUnsignedShortBlob(frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin"), count);
-            if (currentPositionVertexAttribId == null) {
+            Path indicesPath = frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin");
+            int[] drawIndices = loadUnsignedShortBlob(indicesPath, count);
+            if (drawIndices == null || drawIndices.length == 0) {
+                if (drawArgs.contains("indices = NULL")) {
+                    warnOnce(warned, "Skipping draw: indices come from element buffer and blob is unavailable.");
+                }
+                else {
+                    warnOnce(warned, "Skipping draw: missing index blob " + indicesPath.getFileName() + ".");
+                }
                 continue;
             }
-            byte[] positionBlob = loadBlob(frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + currentPositionVertexAttribId + ".bin"));
+            if (currentPositionVertexAttribId == null) {
+                warnOnce(warned, "Skipping draw: position vertex attribute is unavailable.");
+                continue;
+            }
+            Path vertexPath = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + currentPositionVertexAttribId + ".bin");
+            byte[] positionBlob = loadBlob(vertexPath);
+            if (positionBlob == null || positionBlob.length == 0) {
+                warnOnce(warned, "Skipping draw: missing vertex blob " + vertexPath.getFileName() + ".");
+                continue;
+            }
             TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
             if (candidate == null) {
+                warnOnce(warned, "Skipping draw: invalid geometry data.");
                 continue;
             }
             TileBuilder builder = tilesByTextureId.computeIfAbsent(lastTextureId, TileBuilder::new);
-            builder.addStrip(candidate.points(), candidate.min(), candidate.max());
+            if (GL_TRIANGLES.equals(mode)) {
+                addTrianglesAsStrips(builder, candidate.points(), warned);
+            }
+            else {
+                builder.addStrip(candidate.points(), candidate.min(), candidate.max());
+            }
         }
         List<TileInstance> tiles = new ArrayList<>(tilesByTextureId.size());
         for (TileBuilder builder : tilesByTextureId.values()) {
@@ -207,6 +251,55 @@ public class GlTraceProcessor {
         return new TileGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), points);
     }
 
+    private static void addTrianglesAsStrips(TileBuilder builder, List<Vector3D> points, Set<String> warned) {
+        if (builder == null || points == null || points.size() < 3) {
+            return;
+        }
+        if ((points.size() % 3) != 0) {
+            warnOnce(warned, "GL_TRIANGLES point list is not divisible by 3. Truncating trailing points.");
+        }
+        int triangleCount = points.size() / 3;
+        for (int i = 0; i < triangleCount; i++) {
+            int base = i * 3;
+            List<Vector3D> triangle = List.of(
+                points.get(base),
+                points.get(base + 1),
+                points.get(base + 2)
+            );
+            Vector3D min = minOf(triangle);
+            Vector3D max = maxOf(triangle);
+            builder.addStrip(triangle, min, max);
+        }
+    }
+
+    private static Vector3D minOf(List<Vector3D> points) {
+        Vector3D p0 = points.get(0);
+        double minX = p0.x();
+        double minY = p0.y();
+        double minZ = p0.z();
+        for (int i = 1; i < points.size(); i++) {
+            Vector3D p = points.get(i);
+            minX = Math.min(minX, p.x());
+            minY = Math.min(minY, p.y());
+            minZ = Math.min(minZ, p.z());
+        }
+        return new Vector3D(minX, minY, minZ);
+    }
+
+    private static Vector3D maxOf(List<Vector3D> points) {
+        Vector3D p0 = points.get(0);
+        double maxX = p0.x();
+        double maxY = p0.y();
+        double maxZ = p0.z();
+        for (int i = 1; i < points.size(); i++) {
+            Vector3D p = points.get(i);
+            maxX = Math.max(maxX, p.x());
+            maxY = Math.max(maxY, p.y());
+            maxZ = Math.max(maxZ, p.z());
+        }
+        return new Vector3D(maxX, maxY, maxZ);
+    }
+
     private static int[] loadUnsignedShortBlob(Path path, int maxCount) {
         byte[] data;
         try {
@@ -252,6 +345,12 @@ public class GlTraceProcessor {
         lexer.addErrorListener(fatalListener);
         parser.addErrorListener(fatalListener);
         parser.traceFile();
+    }
+
+    private static void warnOnce(Set<String> warned, String message) {
+        if (warned.add(message)) {
+            System.out.println("[dumpAnalyzer] " + message);
+        }
     }
 
     private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {

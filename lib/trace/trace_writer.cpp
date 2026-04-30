@@ -65,6 +65,7 @@ namespace trace {
 
 static const int THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT = 0x83F0;
 static const int THE_GL_TRIANGLE_STRIP = 0x0005;
+static const int THE_GL_TRIANGLES = 0x0004;
 static const int THE_GL_UNSIGNED_SHORT = 0x1403;
 static const int THE_GL_ARRAY_BUFFER = 0x8892;
 static const int THE_GL_ELEMENT_ARRAY_BUFFER = 0x8893;
@@ -141,7 +142,7 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
         return;
     }
 
-    if (THE_DrawElementMode != THE_GL_TRIANGLE_STRIP || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
+    if ((THE_DrawElementMode != THE_GL_TRIANGLE_STRIP && THE_DrawElementMode != THE_GL_TRIANGLES) || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
         return;
     }
 

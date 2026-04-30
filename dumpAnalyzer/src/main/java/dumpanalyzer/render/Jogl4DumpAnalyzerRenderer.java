@@ -8,6 +8,7 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.util.Arrays;
 import java.util.List;
 
 import javax.swing.JFrame;
@@ -57,6 +58,13 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final float SURFACE_POLYGON_OFFSET_UNITS = 1.0f;
     private static final float POINT_POLYGON_OFFSET_FACTOR = -2.0f;
     private static final float POINT_POLYGON_OFFSET_UNITS = -2.0f;
+    private static final boolean TRACE_TILE_MATRICES = true;
+    private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
+    private static final double MAX_ABS_COORD = 1.0e6;
+    private static final double MIN_DIAGONAL = 1.0e-6;
+    private static final double MAX_DIAGONAL = 1.0e6;
+    private static final double DIAGONAL_MIN_RATIO = 1.0e-3;
+    private static final double DIAGONAL_MAX_RATIO = 1.0e3;
 
     public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
         this.model = model;
@@ -141,15 +149,16 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         Frame frameData = frames.get(frameIndex - 1);
+        AabbStats frameStats = computeAabbStats(frameData);
         if (tileIndex == 0) {
-            recenterCameraToAllTiles(frameData);
+            recenterCameraToAllTiles(frameData, frameStats);
             return;
         }
         if (tileIndex < 0 || tileIndex > frameData.getTiles().size()) {
             return;
         }
         TileInstance tile = frameData.getTiles().get(tileIndex - 1);
-        if (tile.getMin() == null || tile.getMax() == null) {
+        if (!isValidAndConsistentAabb(tile.getMin(), tile.getMax(), frameStats)) {
             return;
         }
 
@@ -166,13 +175,15 @@ public class Jogl4DumpAnalyzerRenderer implements
         double diagonal = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double distance = Math.max(1e-6, 1.5 * diagonal);
 
-        Vector3D front = camera.getFront().normalized();
+        Vector3D front = safeFront();
         Vector3D newPosition = center.subtract(front.multiply(distance));
+        if (!isFiniteVector(newPosition) || !isFinite(distance)) {
+            return;
+        }
         cameraController.setPointOfInterest(center);
         camera.setPosition(newPosition);
         camera.setFocusedPositionMaintainingOrthogonality(center);
-        camera.setNearPlaneDistance(Math.max(1e-6, distance / 10.0));
-        camera.setFarPlaneDistance(Math.max(1e-5, distance * 3.0));
+        setSafePlanes(distance);
     }
 
     private void drawObjectsGL(GL4 gl, Matrix4x4 projection) {
@@ -180,9 +191,16 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private void drawSelectedTile(GL4 gl, GL2 gl2, Frame frameData, int selectedTileIndex1Based, Matrix4x4 projection) {
+        // Scene geometry must be rendered without texture state.
+        gl2.glActiveTexture(GL2.GL_TEXTURE0);
+        gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+
         if (selectedTileIndex1Based == 0) {
+            int tileOrdinal = 1;
             for (TileInstance tile : frameData.getTiles()) {
-                drawTileWireframe(gl, gl2, tile, projection, false);
+                drawTileWireframe(gl, gl2, frameData.getId(), tileOrdinal, tile, projection, false);
+                tileOrdinal++;
             }
             return;
         }
@@ -190,10 +208,18 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex1Based - 1);
-        drawTileWireframe(gl, gl2, tile, projection, true);
+        drawTileWireframe(gl, gl2, frameData.getId(), selectedTileIndex1Based, tile, projection, true);
     }
 
-    private void drawTileWireframe(GL4 gl, GL2 gl2, TileInstance tile, Matrix4x4 projection, boolean drawAabb) {
+    private void drawTileWireframe(
+        GL4 gl,
+        GL2 gl2,
+        int frameId,
+        int tileIndex1Based,
+        TileInstance tile,
+        Matrix4x4 projection,
+        boolean drawAabb
+    ) {
         RendererConfiguration quality = model.getRendererConfiguration();
         if (drawAabb && quality.isBoundingVolumeSet() && tile.getMin() != null && tile.getMax() != null) {
             double[] mm = {
@@ -209,6 +235,19 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
         gl2.glPushMatrix();
         gl2.glLoadIdentity();
+        if (TRACE_TILE_MATRICES) {
+            float[] modelView = new float[16];
+            float[] projectionMatrix = new float[16];
+            gl2.glGetFloatv(GL2.GL_MODELVIEW_MATRIX, modelView, 0);
+            gl2.glGetFloatv(GL2.GL_PROJECTION_MATRIX, projectionMatrix, 0);
+            System.out.println(
+                "[dumpAnalyzer] Frame " + frameId +
+                ", Tile " + tileIndex1Based +
+                ", Texture " + tile.getContentId() +
+                ": MODELVIEW=" + Arrays.toString(modelView) +
+                " PROJECTION=" + Arrays.toString(projectionMatrix)
+            );
+        }
 
         if (quality.isSurfacesSet()) {
             gl2.glDisable(GL2.GL_LIGHTING);
@@ -275,11 +314,11 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
     }
 
-    private void recenterCameraToAllTiles(Frame frameData) {
+    private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
         Vector3D min = null;
         Vector3D max = null;
         for (TileInstance tile : frameData.getTiles()) {
-            if (tile.getMin() == null || tile.getMax() == null) {
+            if (!isValidAndConsistentAabb(tile.getMin(), tile.getMax(), frameStats)) {
                 continue;
             }
             if (min == null) {
@@ -312,13 +351,116 @@ public class Jogl4DumpAnalyzerRenderer implements
         double diagonal = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double distance = Math.max(1e-6, 1.5 * diagonal);
 
-        Vector3D front = camera.getFront().normalized();
+        Vector3D front = safeFront();
         Vector3D newPosition = center.subtract(front.multiply(distance));
+        if (!isFiniteVector(newPosition) || !isFinite(distance)) {
+            return;
+        }
         cameraController.setPointOfInterest(center);
         camera.setPosition(newPosition);
         camera.setFocusedPositionMaintainingOrthogonality(center);
-        camera.setNearPlaneDistance(Math.max(1e-6, distance / 10.0));
-        camera.setFarPlaneDistance(Math.max(1e-5, distance * 3.0));
+        setSafePlanes(distance);
+    }
+
+    private Vector3D safeFront() {
+        Vector3D raw = camera.getFront();
+        if (raw == null || !isFiniteVector(raw)) {
+            return DEFAULT_FRONT;
+        }
+        double len = raw.length();
+        if (!isFinite(len) || len < 1e-12) {
+            return DEFAULT_FRONT;
+        }
+        Vector3D n = raw.normalized();
+        if (!isFiniteVector(n)) {
+            return DEFAULT_FRONT;
+        }
+        return n;
+    }
+
+    private void setSafePlanes(double distance) {
+        double d = isFinite(distance) ? distance : 1.0;
+        d = Math.max(1e-3, d);
+        double near = Math.max(1e-4, d / 10.0);
+        double far = Math.max(near + 1e-3, d * 3.0);
+        camera.setNearPlaneDistance(near);
+        camera.setFarPlaneDistance(far);
+    }
+
+    private AabbStats computeAabbStats(Frame frameData) {
+        double minDiagonal = Double.POSITIVE_INFINITY;
+        double maxDiagonal = 0.0;
+        double sumDiagonal = 0.0;
+        int count = 0;
+        for (TileInstance tile : frameData.getTiles()) {
+            Vector3D min = tile.getMin();
+            Vector3D max = tile.getMax();
+            if (!isValidAabb(min, max)) {
+                continue;
+            }
+            double diag = diagonal(min, max);
+            minDiagonal = Math.min(minDiagonal, diag);
+            maxDiagonal = Math.max(maxDiagonal, diag);
+            sumDiagonal += diag;
+            count++;
+        }
+        if (count <= 0) {
+            return AabbStats.EMPTY;
+        }
+        return new AabbStats(minDiagonal, maxDiagonal, sumDiagonal / count, count);
+    }
+
+    private boolean isValidAndConsistentAabb(Vector3D min, Vector3D max, AabbStats frameStats) {
+        if (!isValidAabb(min, max)) {
+            return false;
+        }
+        double diag = diagonal(min, max);
+        if (!frameStats.hasValues()) {
+            return true;
+        }
+        double lower = Math.max(MIN_DIAGONAL, frameStats.averageDiagonal() * DIAGONAL_MIN_RATIO);
+        double upper = Math.min(MAX_DIAGONAL, frameStats.averageDiagonal() * DIAGONAL_MAX_RATIO);
+        return diag >= lower && diag <= upper;
+    }
+
+    private static boolean isValidAabb(Vector3D min, Vector3D max) {
+        if (!isFiniteVector(min) || !isFiniteVector(max)) {
+            return false;
+        }
+        if (Math.abs(min.x()) > MAX_ABS_COORD || Math.abs(min.y()) > MAX_ABS_COORD || Math.abs(min.z()) > MAX_ABS_COORD) {
+            return false;
+        }
+        if (Math.abs(max.x()) > MAX_ABS_COORD || Math.abs(max.y()) > MAX_ABS_COORD || Math.abs(max.z()) > MAX_ABS_COORD) {
+            return false;
+        }
+        if (min.x() > max.x() || min.y() > max.y() || min.z() > max.z()) {
+            return false;
+        }
+        double diagonal = diagonal(min, max);
+        return isFinite(diagonal) && diagonal >= MIN_DIAGONAL && diagonal <= MAX_DIAGONAL;
+    }
+
+    private static double diagonal(Vector3D min, Vector3D max) {
+        double dx = max.x() - min.x();
+        double dy = max.y() - min.y();
+        double dz = max.z() - min.z();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    private static boolean isFiniteVector(Vector3D v) {
+        return v != null && isFinite(v.x()) && isFinite(v.y()) && isFinite(v.z());
+    }
+
+    private static boolean isFinite(double value) {
+        return !Double.isNaN(value) && !Double.isInfinite(value);
+    }
+
+    private record AabbStats(double minDiagonal, double maxDiagonal, double averageDiagonal, int count) {
+        private static final AabbStats EMPTY = new AabbStats(0.0, 0.0, 0.0, 0);
+
+        private boolean hasValues() {
+            return count > 0 && isFinite(averageDiagonal) && averageDiagonal > 0.0;
+        }
     }
 
     @Override

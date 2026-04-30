@@ -23,6 +23,7 @@ public final class DumpAnalyzerModel {
     public DumpAnalyzerModel() {
         rendererConfiguration.setWires(true);
         rendererConfiguration.setBoundingVolume(true);
+        rendererConfiguration.setTexture(false);
     }
 
     public void addListener(Runnable listener) {
