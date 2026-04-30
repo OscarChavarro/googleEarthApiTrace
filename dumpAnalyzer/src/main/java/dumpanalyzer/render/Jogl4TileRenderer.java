@@ -26,6 +26,7 @@ final class Jogl4TileRenderer {
         GL4 gl,
         GL2 gl2,
         TileInstance tile,
+        int frameId,
         Matrix4x4 projection,
         double[] frameModelViewMatrix,
         boolean drawAabb,
@@ -33,14 +34,14 @@ final class Jogl4TileRenderer {
         Jogl4HudRenderer hudRenderer,
         Camera camera
     ) {
-        if (!model.isShowGuiTextures() && !model.isTexture256x256(tile.getContentId())) {
+        if (!model.isShowGuiTextures() && !model.isTexture256x256(frameId, tile.getContentId())) {
             return;
         }
         RendererConfiguration quality = model.getRendererConfiguration();
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
         if (textured) {
-            activeTextureId = hudRenderer.activateTexture(gl, model.getTexturePath(tile.getContentId()));
+            activeTextureId = hudRenderer.activateTexture(gl, model.getTexturePath(frameId, tile.getContentId()));
             if (activeTextureId > 0) {
                 gl2.glActiveTexture(GL2.GL_TEXTURE0);
                 gl2.glEnable(GL2.GL_TEXTURE_2D);

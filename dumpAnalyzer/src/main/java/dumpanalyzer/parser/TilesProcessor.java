@@ -6,6 +6,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,12 +20,15 @@ final class TilesProcessor {
     private static final String GL_TRIANGLE_STRIP = "GL_TRIANGLE_STRIP";
     private static final String GL_TRIANGLES = "GL_TRIANGLES";
     private static final Pattern BIND_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglBindTexture\\s*\\((.*)\\)");
+    private static final Pattern ACTIVE_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglActiveTextureARB\\s*\\((.*)\\)");
     private static final Pattern VERTEX_ATTRIB_LINE_PATTERN = Pattern.compile("\\bglVertexAttribPointer\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_LINE_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
     private static final Pattern MATRIX_MODE_LINE_PATTERN = Pattern.compile("\\bglMatrixMode\\s*\\((.*)\\)");
     private static final Pattern LOAD_IDENTITY_LINE_PATTERN = Pattern.compile("\\bglLoadIdentity\\s*\\((.*)\\)");
     private static final Pattern LOAD_MATRIXF_LINE_PATTERN = Pattern.compile("\\bglLoadMatrixf\\s*\\((.*)\\)");
     private static final Pattern TEXTURE_VALUE_PATTERN = Pattern.compile("texture\\s*=\\s*(\\d+)");
+    private static final Pattern TEXTURE_TARGET_PATTERN = Pattern.compile("target\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern ACTIVE_TEXTURE_VALUE_PATTERN = Pattern.compile("texture\\s*=\\s*GL_TEXTURE(\\d+)");
     private static final Pattern MATRIX_MODE_VALUE_PATTERN = Pattern.compile("mode\\s*=\\s*([A-Z0-9_]+)");
     private static final Pattern ATTRIB_INDEX_PATTERN = Pattern.compile("index\\s*=\\s*(\\d+)");
     private static final Pattern ATTRIB_SIZE_PATTERN = Pattern.compile("size\\s*=\\s*(\\d+)");
@@ -45,7 +49,8 @@ final class TilesProcessor {
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
         int vertexAttribExportCallCount = 0;
-        int lastTextureId = -1;
+        int activeTextureUnit = 0;
+        Map<Integer, Integer> boundTexture2DByUnit = new HashMap<>();
         Long currentPositionVertexAttribCall = null;
         int currentVertexSize = 3;
         int currentVertexStride = 0;
@@ -101,10 +106,19 @@ final class TilesProcessor {
             }
 
             Matcher bindMatcher = BIND_TEXTURE_LINE_PATTERN.matcher(line);
+            Matcher activeTextureMatcher = ACTIVE_TEXTURE_LINE_PATTERN.matcher(line);
+            if (activeTextureMatcher.find()) {
+                Integer unit = extractInt(ACTIVE_TEXTURE_VALUE_PATTERN, activeTextureMatcher.group(1));
+                if (unit != null && unit >= 0) {
+                    activeTextureUnit = unit;
+                }
+                continue;
+            }
             if (bindMatcher.find()) {
+                String target = extractToken(TEXTURE_TARGET_PATTERN, bindMatcher.group(1));
                 Integer textureId = extractInt(TEXTURE_VALUE_PATTERN, bindMatcher.group(1));
-                if (textureId != null) {
-                    lastTextureId = textureId;
+                if ("GL_TEXTURE_2D".equals(target) && textureId != null) {
+                    boundTexture2DByUnit.put(activeTextureUnit, textureId);
                 }
                 continue;
             }
@@ -140,7 +154,11 @@ final class TilesProcessor {
 
             drawCount++;
             long glCallNumber = extractGlCallNumber(line);
-            if (lastTextureId < 0) {
+            Integer boundTextureId = boundTexture2DByUnit.get(0);
+            if (boundTextureId == null) {
+                boundTextureId = boundTexture2DByUnit.get(activeTextureUnit);
+            }
+            if (boundTextureId == null || boundTextureId < 0) {
                 continue;
             }
 
@@ -159,14 +177,14 @@ final class TilesProcessor {
             int[] drawIndices = loadUnsignedShortBlob(indicesPath, count);
             if (drawIndices == null || drawIndices.length == 0) {
                 String reason = classifyBlobFailure(drawArgs.contains("indices = NULL"), indicesPath, "index");
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, 0, true, reason);
                 }
                 continue;
             }
             if (currentPositionVertexAttribCall == null && vertexAttribExportCallCount <= 0) {
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, "null blob");
                 }
@@ -175,7 +193,7 @@ final class TilesProcessor {
             Path vertexPath = ManifestProcessor.resolveVertexBlobPath(frameDirectory, manifest, currentPositionVertexAttribCall, vertexAttribExportCallCount, 0);
             byte[] positionBlob = loadBlob(vertexPath);
             if (positionBlob == null || positionBlob.length == 0) {
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
                 String reason = classifyBlobFailure(false, vertexPath, "vertex");
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, reason);
@@ -184,7 +202,7 @@ final class TilesProcessor {
             }
             int vertexArraySize = estimateVertexArraySize(positionBlob, currentVertexSize, currentVertexStride);
             if (vertexArraySize <= 0) {
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, drawIndices.length, true, "zero array length blob");
                 }
@@ -192,17 +210,17 @@ final class TilesProcessor {
             }
             TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
             if (candidate == null) {
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, lastTextureId);
+                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
                 if (skippedBuilder != null) {
                     skippedBuilder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, true, "invalid geometry data");
                 }
                 continue;
             }
-            TileKey key = new TileKey(lastTextureId, matrixSignature(currentProjectionMatrix), matrixSignature(currentModelViewMatrix));
+            TileKey key = new TileKey(boundTextureId, matrixSignature(currentProjectionMatrix), matrixSignature(currentModelViewMatrix));
             TileBuilder builder = tilesByKey.get(key);
             if (builder == null) {
                 builder = new TileBuilder(
-                    lastTextureId,
+                    boundTextureId,
                     currentProjectionMatrix,
                     currentModelViewMatrix
                 );

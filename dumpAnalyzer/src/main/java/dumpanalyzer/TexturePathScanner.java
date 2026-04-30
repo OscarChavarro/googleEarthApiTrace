@@ -37,7 +37,17 @@ public final class TexturePathScanner {
         if (!matcher.matches()) {
             return;
         }
+        Path parent = path.getParent();
+        if (parent == null || parent.getFileName() == null) {
+            return;
+        }
+        int frameId;
+        try {
+            frameId = Integer.parseInt(parent.getFileName().toString());
+        } catch (NumberFormatException ex) {
+            return;
+        }
         int textureId = Integer.parseInt(matcher.group(1));
-        model.registerTexturePath(textureId, path.toAbsolutePath().toString());
+        model.registerTexturePath(frameId, textureId, path.toAbsolutePath().toString());
     }
 }

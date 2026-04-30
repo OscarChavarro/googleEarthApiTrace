@@ -18,8 +18,8 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class DumpAnalyzerModel {
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();
-    private final ConcurrentHashMap<Integer, String> texturePathById = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, Boolean> textureIs256ById = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, ConcurrentSkipListMap<Integer, String>> texturePathByIdAndFrame = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> textureIs256ByPath = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final AtomicInteger selectedFrameIndex = new AtomicInteger(48);
     private final AtomicInteger selectedTileIndex = new AtomicInteger(1);
@@ -50,13 +50,27 @@ public final class DumpAnalyzerModel {
         notifyListeners();
     }
 
-    public void registerTexturePath(int textureId, String absolutePath) {
-        texturePathById.putIfAbsent(textureId, absolutePath);
-        textureIs256ById.remove(textureId);
+    public void registerTexturePath(int frameId, int textureId, String absolutePath) {
+        texturePathByIdAndFrame
+            .computeIfAbsent(textureId, ignored -> new ConcurrentSkipListMap<>())
+            .put(frameId, absolutePath);
+        textureIs256ByPath.remove(absolutePath);
     }
 
-    public String getTexturePath(int textureId) {
-        return texturePathById.get(textureId);
+    public String getTexturePath(int frameId, int textureId) {
+        ConcurrentSkipListMap<Integer, String> byFrame = texturePathByIdAndFrame.get(textureId);
+        if (byFrame == null || byFrame.isEmpty()) {
+            return null;
+        }
+        String exact = byFrame.get(frameId);
+        if (exact != null) {
+            return exact;
+        }
+        var floor = byFrame.floorEntry(frameId);
+        if (floor != null) {
+            return floor.getValue();
+        }
+        return byFrame.firstEntry().getValue();
     }
 
     public List<Frame> snapshotFrames() {
@@ -88,13 +102,17 @@ public final class DumpAnalyzerModel {
         notifyListeners();
     }
 
-    public boolean isTexture256x256(int textureId) {
-        Boolean cached = textureIs256ById.get(textureId);
+    public boolean isTexture256x256(int frameId, int textureId) {
+        String texturePath = getTexturePath(frameId, textureId);
+        if (texturePath == null) {
+            return false;
+        }
+        Boolean cached = textureIs256ByPath.get(texturePath);
         if (cached != null) {
             return cached;
         }
-        boolean is256 = readTextureSize256x256(texturePathById.get(textureId));
-        textureIs256ById.putIfAbsent(textureId, is256);
+        boolean is256 = readTextureSize256x256(texturePath);
+        textureIs256ByPath.putIfAbsent(texturePath, is256);
         return is256;
     }
 

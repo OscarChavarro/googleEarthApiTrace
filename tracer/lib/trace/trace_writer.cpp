@@ -87,7 +87,7 @@ static const int THE_GL_UNSIGNED_SHORT = 0x1403;
 static const int THE_GL_FLOAT = 0x1406;
 static const int THE_GL_ARRAY_BUFFER = 0x8892;
 static const int THE_GL_ELEMENT_ARRAY_BUFFER = 0x8893;
-static std::unordered_map<int, bool> g_exportedTextureIds;
+static std::unordered_map<unsigned long long, bool> g_exportedTextureKeys;
 static std::unordered_map<int, unsigned long long> g_drawElementCountByFrame;
 static std::unordered_map<int, unsigned long long> g_vertexAttribPointerCountByFrame;
 static std::unordered_map<int, unsigned long long> g_bufferDataUpdateCountByFrame;
@@ -283,7 +283,8 @@ static void exportPlain(const void *ptr, size_t size, int id) {
         return;
     }
 
-    if (g_exportedTextureIds.find(id) != g_exportedTextureIds.end()) {
+    unsigned long long exportKey = ((unsigned long long)(unsigned int)THE_FrameNumber << 32) | (unsigned int)id;
+    if (g_exportedTextureKeys.find(exportKey) != g_exportedTextureKeys.end()) {
         return;
     }
 
@@ -307,7 +308,7 @@ static void exportPlain(const void *ptr, size_t size, int id) {
             writeDssHeader(f, THE_TextureWidth, THE_TextureHeight, size);
             fwrite(ptr, 1, size, f);
             fclose(f);
-            g_exportedTextureIds[id] = true;
+            g_exportedTextureKeys[exportKey] = true;
         }
         return;
     }
@@ -319,7 +320,7 @@ static void exportPlain(const void *ptr, size_t size, int id) {
     char pngPath[512];
     snprintf(pngPath, sizeof(pngPath), "%s/%dx%d_%d.png", frameDir, THE_TextureWidth, THE_TextureHeight, id);
     if (writePngFile(pngPath, THE_TextureWidth, THE_TextureHeight, rgba.data())) {
-        g_exportedTextureIds[id] = true;
+        g_exportedTextureKeys[exportKey] = true;
     }
 }
 

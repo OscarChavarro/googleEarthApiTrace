@@ -153,9 +153,15 @@ public class Jogl4DumpAnalyzerRenderer implements
                 model.isUsingGoogleCameraAsView()
             );
         }
-        String hudTexturePath = model.getRendererConfiguration().isTextureSet()
-            ? null
-            : model.getTexturePath(state.selectedTextureId());
+        String hudTexturePath = null;
+        if (!model.getRendererConfiguration().isTextureSet()
+            && state.selectedFrameIndex() >= 0
+            && state.selectedFrameIndex() < frames.size()) {
+            hudTexturePath = model.getTexturePath(
+                frames.get(state.selectedFrameIndex()).getId(),
+                state.selectedTextureId()
+            );
+        }
         if (!offlineMode) {
             hudRenderer.render(drawable, state, activeCamera, hudTexturePath);
         }
@@ -280,6 +286,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             gl,
             gl2,
             tile,
+            frameData.getId(),
             projection,
             combinedModelView,
             drawAabb,

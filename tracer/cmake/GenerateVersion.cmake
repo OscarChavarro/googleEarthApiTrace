@@ -23,8 +23,7 @@ elseif (GIT_EXECUTABLE)
 endif ()
 
 if (NOT DEFINED APITRACE_VERSION)
-    set (APITRACE_VERSION 0.0-unknown)
-    message (WARNING "Failed to determine APITRACE_VERSION. Using default version \"${APITRACE_VERSION}\".")
+    set (APITRACE_VERSION 0.666-googleEarthTracer)
 endif ()
 
 # propagate version into header

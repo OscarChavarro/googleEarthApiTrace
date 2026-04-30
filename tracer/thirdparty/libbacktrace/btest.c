@@ -47,9 +47,19 @@ POSSIBILITY OF SUCH DAMAGE.  */
 
 #include "testlib.h"
 
+#if defined(__has_attribute)
+# if __has_attribute(optnone)
+#  define BACKTRACE_OPTNONE __attribute__ ((optnone))
+# else
+#  define BACKTRACE_OPTNONE
+# endif
+#else
+# define BACKTRACE_OPTNONE
+#endif
+
 /* Test the backtrace function with non-inlined functions.  */
 
-static int test1 (void) __attribute__ ((noinline, noclone, optnone, unused));
+static int test1 (void) __attribute__ ((noinline, noclone, unused)) BACKTRACE_OPTNONE;
 static int f2 (int) __attribute__ ((noinline, noclone));
 static int f3 (int, int) __attribute__ ((noinline, noclone));
 
@@ -163,7 +173,7 @@ f13 (int f1line, int f2line)
 
 /* Test the backtrace_simple function with non-inlined functions.  */
 
-static int test3 (void) __attribute__ ((noinline, noclone, optnone, unused));
+static int test3 (void) __attribute__ ((noinline, noclone, unused)) BACKTRACE_OPTNONE;
 static int f22 (int) __attribute__ ((noinline, noclone));
 static int f23 (int, int) __attribute__ ((noinline, noclone));
 

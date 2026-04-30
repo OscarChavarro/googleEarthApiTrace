@@ -12,7 +12,8 @@ if (WIN32 OR APPLE)
     message (FATAL_ERROR "This trimmed tree supports Linux builds for apitrace/glxtrace/egltrace only.")
 endif ()
 
-set (CMAKE_INTERPROCEDURAL_OPTIMIZATION True)
+option (ENABLE_LTO "Enable link-time optimization (IPO/LTO)" OFF)
+set (CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ENABLE_LTO})
 
 option (ENABLE_CLI "Enable command line interface." ON)
 option (ENABLE_X11 "Enable X11 support." ON)
