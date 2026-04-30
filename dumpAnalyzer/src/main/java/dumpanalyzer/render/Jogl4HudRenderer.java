@@ -4,10 +4,6 @@ import java.awt.Color;
 import java.awt.Font;
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
@@ -17,20 +13,15 @@ import dumpanalyzer.model.DumpAnalyzerModel;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.io.image.ImagePersistence;
-import vsdk.toolkit.media.RGBImage;
+import vsdk.toolkit.media.Image;
 import vsdk.toolkit.render.jogl.Jogl4ImageRenderer;
 
 public final class Jogl4HudRenderer {
-    private static final int GL_COMPRESSED_RGBA_S3TC_DXT1_EXT = 0x83F1;
-    private static final int GL_COMPRESSED_RGBA_S3TC_DXT3_EXT = 0x83F2;
-    private static final int GL_COMPRESSED_RGBA_S3TC_DXT5_EXT = 0x83F3;
     private TextRenderer textRenderer;
     private String loadedTexturePath;
-    private int loadedTextureGlId;
     private int loadedTextureWidth;
     private int loadedTextureHeight;
-    private RGBImage loadedRgbImage;
-    private boolean loadedTextureFromDds;
+    private Image loadedImage;
 
     public void initializeIfNeeded() {
         if (textRenderer == null) {
@@ -117,119 +108,42 @@ public final class Jogl4HudRenderer {
             loadedTexturePath = texturePath;
             loadTexture(gl, texturePath);
         }
-        if (loadedRgbImage != null) {
-            int textureId = Jogl4ImageRenderer.activate(gl, loadedRgbImage);
-            if (textureId > 0) {
-                loadedTextureGlId = textureId;
-                loadedTextureWidth = loadedRgbImage.getXSize();
-                loadedTextureHeight = loadedRgbImage.getYSize();
-                loadedTextureFromDds = false;
-            }
-        }
-        if (loadedTextureGlId == 0 || loadedTextureWidth <= 0 || loadedTextureHeight <= 0) {
+        int textureId = loadedImage == null ? 0 : Jogl4ImageRenderer.activate(gl, loadedImage);
+        if (textureId <= 0 || loadedTextureWidth <= 0 || loadedTextureHeight <= 0) {
             return 0;
         }
-        return loadedTextureGlId;
+        return textureId;
     }
 
     private void loadTexture(GL4 gl, String texturePath) {
-        String lower = texturePath.toLowerCase();
-        if (lower.endsWith(".png")) {
-            loadPngTexture(texturePath);
-            return;
-        }
-        loadDdsTexture(gl, texturePath);
-    }
-
-    private void loadPngTexture(String texturePath) {
         try {
-            loadedRgbImage = ImagePersistence.importRGB(new File(texturePath));
-            if (loadedRgbImage != null) {
-                loadedTextureWidth = loadedRgbImage.getXSize();
-                loadedTextureHeight = loadedRgbImage.getYSize();
+            loadedImage = ImagePersistence.importRGB(new File(texturePath));
+            if (loadedImage != null) {
+                loadedTextureWidth = loadedImage.getXSize();
+                loadedTextureHeight = loadedImage.getYSize();
             }
-        } catch (Exception e) {
-            loadedRgbImage = null;
-        }
-    }
-
-    private void loadDdsTexture(GL4 gl, String texturePath) {
-        byte[] data;
-        try {
-            data = Files.readAllBytes(Path.of(texturePath));
         } catch (IOException e) {
-            return;
+            loadedImage = null;
+        } catch (Exception e) {
+            loadedImage = null;
         }
-        if (data.length < 128) {
-            return;
-        }
-        ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
-        int magic = bb.getInt(0);
-        if (magic != 0x20534444) { // "DDS "
-            return;
-        }
-        int height = bb.getInt(12);
-        int width = bb.getInt(16);
-        int fourCC = bb.getInt(84);
-        int internalFormat;
-        if (fourCC == 0x31545844) { // DXT1
-            internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-        }
-        else if (fourCC == 0x33545844) { // DXT3
-            internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-        }
-        else if (fourCC == 0x35545844) { // DXT5
-            internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-        }
-        else {
-            return;
-        }
-
-        int imageSize = data.length - 128;
-        if (width <= 0 || height <= 0 || imageSize <= 0) {
-            return;
-        }
-
-        int[] ids = new int[1];
-        gl.glGenTextures(1, ids, 0);
-        int textureId = ids[0];
-        if (textureId == 0) {
-            return;
-        }
-
-        ByteBuffer payload = ByteBuffer.wrap(data, 128, imageSize);
-        gl.glBindTexture(GL4.GL_TEXTURE_2D, textureId);
-        gl.glTexParameteri(GL4.GL_TEXTURE_2D, GL4.GL_TEXTURE_MAG_FILTER, GL4.GL_LINEAR);
-        gl.glTexParameteri(GL4.GL_TEXTURE_2D, GL4.GL_TEXTURE_MIN_FILTER, GL4.GL_LINEAR);
-        gl.glTexParameteri(GL4.GL_TEXTURE_2D, GL4.GL_TEXTURE_WRAP_S, GL4.GL_CLAMP_TO_EDGE);
-        gl.glTexParameteri(GL4.GL_TEXTURE_2D, GL4.GL_TEXTURE_WRAP_T, GL4.GL_CLAMP_TO_EDGE);
-        gl.glCompressedTexImage2D(GL4.GL_TEXTURE_2D, 0, internalFormat, width, height, 0, imageSize, payload);
-        gl.glBindTexture(GL4.GL_TEXTURE_2D, 0);
-
-        loadedTextureGlId = textureId;
-        loadedTextureWidth = width;
-        loadedTextureHeight = height;
-        loadedTextureFromDds = true;
     }
 
     private void unloadTexture(GL4 gl) {
-        if (loadedRgbImage != null) {
-            Jogl4ImageRenderer.unload(gl, loadedRgbImage);
-            loadedRgbImage = null;
+        if (loadedImage != null) {
+            Jogl4ImageRenderer.unload(gl, loadedImage);
+            loadedImage = null;
         }
-        if (loadedTextureGlId != 0 && loadedTextureFromDds) {
-            gl.glBindTexture(GL4.GL_TEXTURE_2D, 0);
-            int[] ids = new int[] { loadedTextureGlId };
-            gl.glDeleteTextures(1, ids, 0);
-        }
-        loadedTextureGlId = 0;
         loadedTextureWidth = 0;
         loadedTextureHeight = 0;
-        loadedTextureFromDds = false;
     }
 
     private void drawTextureOn2DWindowScaled(GL4 gl, Camera c, int x, int y, double scale, double alpha) {
-        if (c == null || scale <= 0.0 || loadedTextureGlId == 0) {
+        if (c == null || scale <= 0.0 || loadedImage == null) {
+            return;
+        }
+        int textureId = Jogl4ImageRenderer.activate(gl, loadedImage);
+        if (textureId <= 0) {
             return;
         }
         int width = (int)Math.round(loadedTextureWidth * scale);
@@ -253,7 +167,7 @@ public final class Jogl4HudRenderer {
         };
         Jogl4ImageRenderer.drawTexturedQuad(
             gl,
-            loadedTextureGlId,
+            textureId,
             Matrix4x4.identityMatrix(),
             positions,
             uv,
