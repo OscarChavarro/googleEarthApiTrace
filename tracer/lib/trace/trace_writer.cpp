@@ -32,9 +32,15 @@
 #include <stdint.h>
 #include <wchar.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <deque>
+#include <condition_variable>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <png.h>
 
 #include "os.hpp"
@@ -88,6 +94,8 @@ static const int THE_GL_FLOAT = 0x1406;
 static const int THE_GL_ARRAY_BUFFER = 0x8892;
 static const int THE_GL_ELEMENT_ARRAY_BUFFER = 0x8893;
 static std::unordered_map<unsigned long long, bool> g_exportedTextureKeys;
+static std::unordered_set<unsigned long long> g_pendingTextureKeys;
+static std::mutex g_textureExportMutex;
 static std::unordered_map<int, unsigned long long> g_drawElementCountByFrame;
 static std::unordered_map<int, unsigned long long> g_vertexAttribPointerCountByFrame;
 static std::unordered_map<int, unsigned long long> g_bufferDataUpdateCountByFrame;
@@ -278,14 +286,184 @@ static bool decodeToRgba(const void *ptr, size_t size, int width, int height, in
     return true;
 }
 
+struct PngExportJob {
+    unsigned long long exportKey;
+    int frameNumber;
+    int textureWidth;
+    int textureHeight;
+    int textureFormat;
+    int textureType;
+    int textureId;
+    std::vector<uint8_t> blob;
+};
+
+class AsyncPngExporter {
+public:
+    AsyncPngExporter() : m_stopping(false) {
+        const int workerCount = chooseWorkerCount();
+        m_maxQueueSize = chooseMaxQueueSize();
+        for (int i = 0; i < workerCount; ++i) {
+            m_workers.emplace_back(&AsyncPngExporter::workerLoop, this);
+        }
+    }
+
+    ~AsyncPngExporter() {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_stopping = true;
+        }
+        m_cv.notify_all();
+        for (std::thread &t : m_workers) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+    }
+
+    bool enqueue(PngExportJob &&job) {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        if (m_stopping) {
+            return false;
+        }
+        while (m_jobs.size() >= m_maxQueueSize && !m_stopping) {
+            m_cvNotFull.wait(lock);
+        }
+        if (m_stopping) {
+            return false;
+        }
+        m_jobs.emplace_back(std::move(job));
+        lock.unlock();
+        m_cv.notify_one();
+        return true;
+    }
+
+private:
+    static int chooseWorkerCount() {
+        const char *env = getenv("TRACE_PNG_THREADS");
+        if (env && *env) {
+            char *end = nullptr;
+            unsigned long parsed = strtoul(env, &end, 10);
+            if (end != env && parsed > 0ul) {
+                if (parsed > 256ul) {
+                    parsed = 256ul;
+                }
+                if (parsed < 1ul) {
+                    parsed = 1ul;
+                }
+                return (int)parsed;
+            }
+        }
+
+        long cpuCount = sysconf(_SC_NPROCESSORS_ONLN);
+        if (cpuCount <= 0) {
+            cpuCount = 4;
+        }
+        int capped = (int)cpuCount;
+        if (capped > 12) {
+            capped = 12;
+        }
+        if (capped < 2) {
+            capped = 2;
+        }
+        return capped;
+    }
+
+    static size_t chooseMaxQueueSize() {
+        const char *env = getenv("TRACE_PNG_QUEUE");
+        if (!env || !*env) {
+            return 128u;
+        }
+        char *end = nullptr;
+        unsigned long parsed = strtoul(env, &end, 10);
+        if (end == env || parsed == 0ul) {
+            return 128u;
+        }
+        if (parsed > 4096ul) {
+            parsed = 4096ul;
+        }
+        return (size_t)parsed;
+    }
+
+    static bool writeJobPng(const PngExportJob &job) {
+        std::vector<uint8_t> rgba;
+        if (!decodeToRgba(
+                job.blob.data(),
+                job.blob.size(),
+                job.textureWidth,
+                job.textureHeight,
+                job.textureFormat,
+                job.textureType,
+                rgba)) {
+            return false;
+        }
+
+        struct stat st = {0};
+        if (stat("/tmp/output", &st) == -1) {
+            mkdir("/tmp/output", 0755);
+        }
+
+        char frameDir[256];
+        snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", job.frameNumber);
+        if (stat(frameDir, &st) == -1) {
+            mkdir(frameDir, 0755);
+        }
+
+        char pngPath[512];
+        snprintf(pngPath, sizeof(pngPath), "%s/%dx%d_%d.png", frameDir, job.textureWidth, job.textureHeight, job.textureId);
+        return writePngFile(pngPath, job.textureWidth, job.textureHeight, rgba.data());
+    }
+
+    void workerLoop() {
+        for (;;) {
+            PngExportJob job;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_cv.wait(lock, [&]() { return m_stopping || !m_jobs.empty(); });
+                if (m_stopping && m_jobs.empty()) {
+                    return;
+                }
+                job = std::move(m_jobs.front());
+                m_jobs.pop_front();
+                m_cvNotFull.notify_one();
+            }
+
+            const bool ok = writeJobPng(job);
+            std::lock_guard<std::mutex> exportLock(g_textureExportMutex);
+            g_pendingTextureKeys.erase(job.exportKey);
+            if (ok) {
+                g_exportedTextureKeys[job.exportKey] = true;
+            }
+        }
+    }
+
+    bool m_stopping;
+    size_t m_maxQueueSize;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::condition_variable m_cvNotFull;
+    std::deque<PngExportJob> m_jobs;
+    std::vector<std::thread> m_workers;
+};
+
+static AsyncPngExporter &getAsyncPngExporter() {
+    static AsyncPngExporter exporter;
+    return exporter;
+}
+
 static void exportPlain(const void *ptr, size_t size, int id) {
     if (THE_TextureWidth <= 0 || THE_TextureHeight <= 0 || id <= 0) {
         return;
     }
 
     unsigned long long exportKey = ((unsigned long long)(unsigned int)THE_FrameNumber << 32) | (unsigned int)id;
-    if (g_exportedTextureKeys.find(exportKey) != g_exportedTextureKeys.end()) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(g_textureExportMutex);
+        if (g_exportedTextureKeys.find(exportKey) != g_exportedTextureKeys.end()) {
+            return;
+        }
+        if (g_pendingTextureKeys.find(exportKey) != g_pendingTextureKeys.end()) {
+            return;
+        }
     }
 
     struct stat st = {0};
@@ -308,19 +486,32 @@ static void exportPlain(const void *ptr, size_t size, int id) {
             writeDssHeader(f, THE_TextureWidth, THE_TextureHeight, size);
             fwrite(ptr, 1, size, f);
             fclose(f);
+            std::lock_guard<std::mutex> lock(g_textureExportMutex);
             g_exportedTextureKeys[exportKey] = true;
         }
         return;
     }
-
-    std::vector<uint8_t> rgba;
-    if (!decodeToRgba(ptr, size, THE_TextureWidth, THE_TextureHeight, THE_TextureFormat, THE_TextureType, rgba)) {
+    if (THE_TextureType != THE_GL_UNSIGNED_BYTE) {
         return;
     }
-    char pngPath[512];
-    snprintf(pngPath, sizeof(pngPath), "%s/%dx%d_%d.png", frameDir, THE_TextureWidth, THE_TextureHeight, id);
-    if (writePngFile(pngPath, THE_TextureWidth, THE_TextureHeight, rgba.data())) {
-        g_exportedTextureKeys[exportKey] = true;
+
+    PngExportJob job;
+    job.exportKey = exportKey;
+    job.frameNumber = THE_FrameNumber;
+    job.textureWidth = THE_TextureWidth;
+    job.textureHeight = THE_TextureHeight;
+    job.textureFormat = THE_TextureFormat;
+    job.textureType = THE_TextureType;
+    job.textureId = id;
+    job.blob.assign((const uint8_t *)ptr, (const uint8_t *)ptr + size);
+
+    {
+        std::lock_guard<std::mutex> lock(g_textureExportMutex);
+        g_pendingTextureKeys.insert(exportKey);
+    }
+    if (!getAsyncPngExporter().enqueue(std::move(job))) {
+        std::lock_guard<std::mutex> lock(g_textureExportMutex);
+        g_pendingTextureKeys.erase(exportKey);
     }
 }
 
