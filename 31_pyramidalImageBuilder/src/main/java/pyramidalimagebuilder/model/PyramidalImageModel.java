@@ -6,9 +6,6 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.jgrapht.Graph;
-import org.jgrapht.graph.DefaultDirectedGraph;
-import org.jgrapht.graph.DefaultEdge;
 import pyramidalimagebuilder.config.Configuration;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
@@ -21,8 +18,6 @@ public final class PyramidalImageModel {
     private final Camera viewingCamera = new Camera();
     private final RendererConfiguration renderingConfiguration = new RendererConfiguration();
     private final List<TileInstance> tileInstances = new ArrayList<>();
-    private final List<TileInstance> mergedTileInstances = new ArrayList<>();
-    private Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
     private final List<TileMatrix> tileMatrices = new ArrayList<>();
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
@@ -52,29 +47,6 @@ public final class PyramidalImageModel {
 
     public List<TileInstance> getTileInstances() {
         return Collections.unmodifiableList(tileInstances);
-    }
-
-    public void setMergedTileInstances(List<TileInstance> tiles) {
-        mergedTileInstances.clear();
-        if (tiles != null) {
-            mergedTileInstances.addAll(tiles);
-        }
-    }
-
-    public List<TileInstance> getMergedTileInstances() {
-        return Collections.unmodifiableList(mergedTileInstances);
-    }
-
-    public void setMergedTileGraph(Graph<TileInstance, DefaultEdge> graph) {
-        if (graph == null) {
-            this.mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
-            return;
-        }
-        this.mergedTileGraph = graph;
-    }
-
-    public Graph<TileInstance, DefaultEdge> getMergedTileGraph() {
-        return mergedTileGraph;
     }
 
     public void setTileMatrices(List<TileMatrix> tileMatrices) {

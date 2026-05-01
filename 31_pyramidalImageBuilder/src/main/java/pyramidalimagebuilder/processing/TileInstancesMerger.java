@@ -43,15 +43,9 @@ public final class TileInstancesMerger {
         List<FrameComponentSelection> deDuplicated = removeConsecutiveDuplicateTileSets(selectedByFrame);
 
         List<TileMatrix> tileMatrices = new ArrayList<>();
-        List<TileInstance> mergedFromSelectedComponents = new ArrayList<>();
-        Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
         for (FrameComponentSelection frameSelection : deDuplicated) {
             tileMatrices.add(graphToTileMatrixConvertor.convert(frameSelection.component()));
-            appendSubgraph(frameSelection.component(), mergedFromSelectedComponents, mergedTileGraph);
         }
-
-        model.setMergedTileInstances(mergedFromSelectedComponents);
-        model.setMergedTileGraph(mergedTileGraph);
         model.setTileMatrices(tileMatrices);
     }
 
@@ -148,36 +142,6 @@ public final class TileInstancesMerger {
             }
         }
         return subgraph;
-    }
-
-    private static void appendSubgraph(
-        Graph<TileInstance, DefaultEdge> source,
-        List<TileInstance> mergedInstancesOutput,
-        Graph<TileInstance, DefaultEdge> mergedGraphOutput
-    ) {
-        for (TileInstance vertex : source.vertexSet()) {
-            mergedInstancesOutput.add(vertex);
-            mergedGraphOutput.addVertex(vertex);
-        }
-        for (DefaultEdge edge : source.edgeSet()) {
-            TileInstance from = source.getEdgeSource(edge);
-            TileInstance to = source.getEdgeTarget(edge);
-            if (!mergedGraphOutput.containsEdge(from, to)) {
-                mergedGraphOutput.addEdge(from, to);
-            }
-        }
-    }
-
-    private static int frameIdOf(TileMatrix matrix) {
-        if (matrix == null || matrix.getGraph() == null || matrix.getGraph().vertexSet().isEmpty()) {
-            return Integer.MAX_VALUE;
-        }
-        return matrix.getGraph()
-            .vertexSet()
-            .stream()
-            .mapToInt(TileInstance::getFrameId)
-            .min()
-            .orElse(Integer.MAX_VALUE);
     }
 
     private static List<FrameComponentSelection> removeConsecutiveDuplicateTileSets(
