@@ -17,6 +17,7 @@ public final class NeighborDetector {
     private static final double LOG2_CLUSTER_TOLERANCE = 0.20;
     private static final double MAX_ORTHOGONAL_RATIO = 0.70;
     private static final double CLUSTER_NEIGHBOR_DISTANCE_FACTOR = 2.5;
+    private static final double VIEWPORT_INNER_MARGIN_RATIO = 0.10;
 
     private NeighborDetector() {
     }
@@ -59,7 +60,7 @@ public final class NeighborDetector {
                 aabb.setColor(color);
             }
         }
-        computeNeighborsByCluster(frame, clusters);
+        computeNeighborsByCluster(frame, clusters, viewportWidth, viewportHeight);
     }
 
     private static List<ScaleCluster> clusterByApparentXWidth(
@@ -200,11 +201,15 @@ public final class NeighborDetector {
         return new Color(r, g, b);
     }
 
-    private static void computeNeighborsByCluster(Frame frame, List<ScaleCluster> clusters) {
+    private static void computeNeighborsByCluster(Frame frame, List<ScaleCluster> clusters, int viewportWidth, int viewportHeight) {
         List<TileInstance> tiles = frame.getTiles();
         if (tiles.isEmpty() || clusters.isEmpty()) {
             return;
         }
+        double minCenterX = (viewportWidth - 1) * VIEWPORT_INNER_MARGIN_RATIO;
+        double maxCenterX = (viewportWidth - 1) * (1.0 - VIEWPORT_INNER_MARGIN_RATIO);
+        double minCenterY = (viewportHeight - 1) * VIEWPORT_INNER_MARGIN_RATIO;
+        double maxCenterY = (viewportHeight - 1) * (1.0 - VIEWPORT_INNER_MARGIN_RATIO);
 
         for (ScaleCluster cluster : clusters) {
             List<NeighborProbe> probes = new ArrayList<>();
@@ -223,6 +228,9 @@ public final class NeighborDetector {
                 }
                 double cx = (minX + maxX) * 0.5;
                 double cy = (minY + maxY) * 0.5;
+                if (cx <= minCenterX || cx >= maxCenterX || cy <= minCenterY || cy >= maxCenterY) {
+                    continue;
+                }
                 double dx = Math.abs((double)maxX - (double)minX);
                 double dy = Math.abs((double)maxY - (double)minY);
                 double diag = Math.sqrt(dx * dx + dy * dy);
