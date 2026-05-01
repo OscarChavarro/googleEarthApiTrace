@@ -18,7 +18,6 @@ import org.antlr.v4.runtime.Recognizer;
 
 import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.Frame;
-import dumpanalyzer.processing.NeighborDetector;
 
 public class TraceProcessor {
     private final FunctionCounter functionCounter;
@@ -46,14 +45,12 @@ public class TraceProcessor {
 
         double[] projectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
         double[] modelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
-        Frame parsedFrame = new Frame(
+        return new Frame(
             frame,
             TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent()),
             projectionMatrix,
             modelViewMatrix
         );
-        NeighborDetector.populateNeighbors(parsedFrame);
-        return parsedFrame;
     }
 
     private static void enqueueLog(BlockingQueue<String> logQueue, String message) {

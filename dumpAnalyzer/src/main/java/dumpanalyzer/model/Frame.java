@@ -66,7 +66,13 @@ public final class Frame implements Comparable<Frame> {
             if (tile == null || tile.getMin() == null || tile.getMax() == null) {
                 continue;
             }
-            out.add(new AxisAlignedBoundingBox(tile.getMin(), tile.getMax(), tile.getContentId(), tile.getModelViewMatrix()));
+            out.add(new AxisAlignedBoundingBox(
+                tile.getMin(),
+                tile.getMax(),
+                tile.getContentId(),
+                tile.getModelViewMatrix(),
+                tile.getPoints()
+            ));
         }
         return out;
     }

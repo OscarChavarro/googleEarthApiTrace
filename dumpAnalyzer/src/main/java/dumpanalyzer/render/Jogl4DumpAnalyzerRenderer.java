@@ -153,7 +153,19 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
             Frame selectedFrame = frames.get(state.selectedFrameIndex());
             if (state.selectedFrameIndex() != lastProcessedFrameIndex) {
-                NeighborDetector.populateNeighbors(selectedFrame);
+                double[] frameModelView = CoordinatesTransforms.geometryModelView(
+                    model.isUsingGoogleCameraAsView(),
+                    viewingCamera,
+                    selectedFrame
+                );
+                NeighborDetector.populateNeighbors(
+                    selectedFrame,
+                    projection,
+                    drawable.getSurfaceWidth(),
+                    drawable.getSurfaceHeight(),
+                    frameModelView,
+                    model.isUsingGoogleCameraAsView()
+                );
                 lastProcessedFrameIndex = state.selectedFrameIndex();
             }
             drawSelectedTile(
