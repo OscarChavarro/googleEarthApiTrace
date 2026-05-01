@@ -10,9 +10,9 @@ import java.util.HashMap;
 import java.util.Map;
 import pyramidalimagebuilder.config.Configuration;
 import pyramidalimagebuilder.model.PyramidalImageModel;
-import pyramidalimagebuilder.model.RenderingConfiguration;
 import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileMatrix;
+import vsdk.toolkit.common.RendererConfiguration;
 
 public final class Jogl4TileMatrixRenderer {
     private final Map<String, TextureResident> residentsByTexturePath = new HashMap<>();
@@ -20,7 +20,7 @@ public final class Jogl4TileMatrixRenderer {
     public void draw(
         GL2 gl2,
         TileMatrix matrix,
-        RenderingConfiguration renderingConfiguration,
+        RendererConfiguration renderingConfiguration,
         PyramidalImageModel model
     ) {
         if (gl2 == null || matrix == null || matrix.getM() == null || renderingConfiguration == null || model == null) {
@@ -30,16 +30,20 @@ public final class Jogl4TileMatrixRenderer {
         if (M.length == 0 || M[0].length == 0) {
             return;
         }
+        double dx = M[0].length;
+        double dy = M.length;
+        double offsetX = -dx / 2.0;
+        double offsetY = dy / 2.0;
 
         if (renderingConfiguration.isSurfacesSet()) {
             gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
             gl2.glPolygonOffset(4.0f, 4.0f);
             if (renderingConfiguration.isTextureSet()) {
-                drawTexturedSurfaces(gl2, M, renderingConfiguration, model);
+                drawTexturedSurfaces(gl2, M, renderingConfiguration, model, offsetX, offsetY);
             } else {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
                 gl2.glDisable(GL2.GL_TEXTURE_2D);
-                drawFlatSurfaces(gl2, M, renderingConfiguration);
+                drawFlatSurfaces(gl2, M, renderingConfiguration, offsetX, offsetY);
             }
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
@@ -55,8 +59,8 @@ public final class Jogl4TileMatrixRenderer {
                     if (M[row][col] == null) {
                         continue;
                     }
-                    double x0 = col;
-                    double y0 = -row;
+                    double x0 = col + offsetX;
+                    double y0 = -row + offsetY;
                     double x1 = x0 + 1.0;
                     double y1 = y0 - 1.0;
                     gl2.glVertex3d(x0, y0, 0.0); gl2.glVertex3d(x1, y0, 0.0);
@@ -80,8 +84,8 @@ public final class Jogl4TileMatrixRenderer {
                     if (M[row][col] == null) {
                         continue;
                     }
-                    double x0 = col;
-                    double y0 = -row;
+                    double x0 = col + offsetX;
+                    double y0 = -row + offsetY;
                     double x1 = x0 + 1.0;
                     double y1 = y0 - 1.0;
                     gl2.glVertex3d(x0, y0, 0.0);
@@ -95,7 +99,13 @@ public final class Jogl4TileMatrixRenderer {
         }
     }
 
-    private void drawFlatSurfaces(GL2 gl2, TileInstance[][] M, RenderingConfiguration renderingConfiguration) {
+    private void drawFlatSurfaces(
+        GL2 gl2,
+        TileInstance[][] M,
+        RendererConfiguration renderingConfiguration,
+        double offsetX,
+        double offsetY
+    ) {
         if (renderingConfiguration.isWiresSet()) {
             gl2.glColor3d(0.5, 0.5, 0.5);
         } else {
@@ -107,8 +117,8 @@ public final class Jogl4TileMatrixRenderer {
                 if (M[row][col] == null) {
                     continue;
                 }
-                double x0 = col;
-                double y0 = -row;
+                double x0 = col + offsetX;
+                double y0 = -row + offsetY;
                 double x1 = x0 + 1.0;
                 double y1 = y0 - 1.0;
                 gl2.glVertex3d(x0, y0, 0.0);
@@ -123,8 +133,10 @@ public final class Jogl4TileMatrixRenderer {
     private void drawTexturedSurfaces(
         GL2 gl2,
         TileInstance[][] M,
-        RenderingConfiguration renderingConfiguration,
-        PyramidalImageModel model
+        RendererConfiguration renderingConfiguration,
+        PyramidalImageModel model,
+        double offsetX,
+        double offsetY
     ) {
         gl2.glEnable(GL2.GL_TEXTURE_2D);
         int lastBound = -1;
@@ -135,8 +147,8 @@ public final class Jogl4TileMatrixRenderer {
                     continue;
                 }
                 TextureResident resident = acquireTexture(gl2, model, tile.getTextureFile());
-                double x0 = col;
-                double y0 = -row;
+                double x0 = col + offsetX;
+                double y0 = -row + offsetY;
                 double x1 = x0 + 1.0;
                 double y1 = y0 - 1.0;
 
@@ -165,12 +177,14 @@ public final class Jogl4TileMatrixRenderer {
                 float t0 = tc.bottom();
                 float s1 = tc.right();
                 float t1 = tc.top();
+                float v0 = 1.0f - t0;
+                float v1 = 1.0f - t1;
 
                 gl2.glBegin(GL2.GL_QUADS);
-                gl2.glTexCoord2f(s0, t0); gl2.glVertex3d(x0, y0, 0.0);
-                gl2.glTexCoord2f(s1, t0); gl2.glVertex3d(x1, y0, 0.0);
-                gl2.glTexCoord2f(s1, t1); gl2.glVertex3d(x1, y1, 0.0);
-                gl2.glTexCoord2f(s0, t1); gl2.glVertex3d(x0, y1, 0.0);
+                gl2.glTexCoord2f(s0, v0); gl2.glVertex3d(x0, y0, 0.0);
+                gl2.glTexCoord2f(s1, v0); gl2.glVertex3d(x1, y0, 0.0);
+                gl2.glTexCoord2f(s1, v1); gl2.glVertex3d(x1, y1, 0.0);
+                gl2.glTexCoord2f(s0, v1); gl2.glVertex3d(x0, y1, 0.0);
                 gl2.glEnd();
             }
         }

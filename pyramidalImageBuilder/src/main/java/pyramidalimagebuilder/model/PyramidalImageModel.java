@@ -9,11 +9,17 @@ import java.util.Set;
 import org.jgrapht.Graph;
 import org.jgrapht.graph.DefaultDirectedGraph;
 import org.jgrapht.graph.DefaultEdge;
+import pyramidalimagebuilder.config.Configuration;
+import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 
 public final class PyramidalImageModel {
+    private static final double IMAGE_BORDER_THRESHOLD_MIN = 0.0;
+    private static final double IMAGE_BORDER_THRESHOLD_MAX = 100000.0;
+    private static final double IMAGE_BORDER_THRESHOLD_STEP = 1000.0;
+
     private final Camera viewingCamera = new Camera();
-    private final RenderingConfiguration renderingConfiguration = new RenderingConfiguration();
+    private final RendererConfiguration renderingConfiguration = new RendererConfiguration();
     private final List<TileInstance> tileInstances = new ArrayList<>();
     private final List<TileInstance> mergedTileInstances = new ArrayList<>();
     private Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
@@ -22,16 +28,18 @@ public final class PyramidalImageModel {
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedTileMatrixIndex = 0;
+    private double imageBorderThreshold = Configuration.INITIAL_IMAGE_BORDER_THRESHOLD;
 
     public PyramidalImageModel() {
         viewingCamera.setName("OrbiterCamera");
+        renderingConfiguration.setWires(false);
     }
 
     public Camera getViewingCamera() {
         return viewingCamera;
     }
 
-    public RenderingConfiguration getRenderingConfiguration() {
+    public RendererConfiguration getRenderingConfiguration() {
         return renderingConfiguration;
     }
 
@@ -158,5 +166,26 @@ public final class PyramidalImageModel {
         }
         residentTexturesFifo.removeFirstOccurrence(texturePath);
         gpuTextureBytesAssigned = Math.max(0L, gpuTextureBytesAssigned - Math.max(0L, bytes));
+    }
+
+    public synchronized double getImageBorderThreshold() {
+        return imageBorderThreshold;
+    }
+
+    public synchronized boolean decreaseImageBorderThreshold() {
+        return setImageBorderThreshold(imageBorderThreshold - IMAGE_BORDER_THRESHOLD_STEP);
+    }
+
+    public synchronized boolean increaseImageBorderThreshold() {
+        return setImageBorderThreshold(imageBorderThreshold + IMAGE_BORDER_THRESHOLD_STEP);
+    }
+
+    private boolean setImageBorderThreshold(double value) {
+        double clamped = Math.max(IMAGE_BORDER_THRESHOLD_MIN, Math.min(IMAGE_BORDER_THRESHOLD_MAX, value));
+        if (Double.compare(clamped, imageBorderThreshold) == 0) {
+            return false;
+        }
+        imageBorderThreshold = clamped;
+        return true;
     }
 }

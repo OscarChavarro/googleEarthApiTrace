@@ -19,14 +19,14 @@ public class Main {
     public static void main(String[] args) {
         PyramidalImageModel model = new PyramidalImageModel();
 
-        // Stage 1: read tile instances from trace session.
         TraceSessionReader traceSessionReader = new TraceSessionReader();
-        model.setTileInstances(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));
-
-        // Stage 2: merge tile instances using neighbor hints consistency.
         TileInstancesMerger tileInstancesMerger = new TileInstancesMerger();
-        tileInstancesMerger.execute(model);
-        System.out.println("TileMatrix size (columns x rows): " + model.selectedTileMatrixSizeText());
+        Runnable reloadTileMatrices = () -> {
+            model.setTileInstances(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));
+            tileInstancesMerger.execute(model);
+            System.out.println("TileMatrix size (columns x rows): " + model.selectedTileMatrixSizeText());
+        };
+        reloadTileMatrices.run();
 
         Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
         GLCanvas canvas = renderer.createCanvas();
@@ -48,7 +48,8 @@ public class Main {
             model,
             frame::dispose,
             cameraController,
-            canvas::display
+            canvas::display,
+            reloadTileMatrices
         );
         canvas.addMouseListener(mouse);
         canvas.addMouseMotionListener(mouse);
