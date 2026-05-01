@@ -8,12 +8,15 @@ import java.util.Random;
 
 import dumpanalyzer.model.AxisAlignedBoundingBox;
 import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class NeighborDetector {
     private static final double MIN_SIZE = 1e-12;
     private static final double LOG2_CLUSTER_TOLERANCE = 0.20;
+    private static final double MAX_ORTHOGONAL_RATIO = 0.70;
+    private static final double CLUSTER_NEIGHBOR_DISTANCE_FACTOR = 2.5;
 
     private NeighborDetector() {
     }
@@ -33,6 +36,14 @@ public final class NeighborDetector {
         if (aabbs.isEmpty()) {
             return;
         }
+        for (TileInstance tile : frame.getTiles()) {
+            tile.setDetectedNeighbors(
+                TileInstance.NO_NEIGHBOR,
+                TileInstance.NO_NEIGHBOR,
+                TileInstance.NO_NEIGHBOR,
+                TileInstance.NO_NEIGHBOR
+            );
+        }
         List<ScaleCluster> clusters = clusterByApparentXWidth(
             aabbs,
             projection,
@@ -48,6 +59,7 @@ public final class NeighborDetector {
                 aabb.setColor(color);
             }
         }
+        computeNeighborsByCluster(frame, clusters);
     }
 
     private static List<ScaleCluster> clusterByApparentXWidth(
@@ -188,33 +200,109 @@ public final class NeighborDetector {
         return new Color(r, g, b);
     }
 
-    private static final class ScaleCluster {
-        private final double log2RepresentativeX;
-        private final double log2RepresentativeY;
-        private final List<AxisAlignedBoundingBox> items = new ArrayList<>();
-
-        private ScaleCluster(double log2RepresentativeX, double log2RepresentativeY) {
-            this.log2RepresentativeX = log2RepresentativeX;
-            this.log2RepresentativeY = log2RepresentativeY;
+    private static void computeNeighborsByCluster(Frame frame, List<ScaleCluster> clusters) {
+        List<TileInstance> tiles = frame.getTiles();
+        if (tiles.isEmpty() || clusters.isEmpty()) {
+            return;
         }
 
-        private double log2RepresentativeX() {
-            return log2RepresentativeX;
-        }
-
-        private double log2RepresentativeY() {
-            return log2RepresentativeY;
-        }
-
-        private List<AxisAlignedBoundingBox> items() {
-            return items;
-        }
-
-        private void add(AxisAlignedBoundingBox aabb) {
-            items.add(aabb);
+        for (ScaleCluster cluster : clusters) {
+            List<NeighborProbe> probes = new ArrayList<>();
+            double diagonalSum = 0.0;
+            for (AxisAlignedBoundingBox aabb : cluster.items()) {
+                Integer minX = aabb.getProjectedMinX();
+                Integer minY = aabb.getProjectedMinY();
+                Integer maxX = aabb.getProjectedMaxX();
+                Integer maxY = aabb.getProjectedMaxY();
+                int tileIndex = aabb.getSourceTileIndex();
+                if (minX == null || minY == null || maxX == null || maxY == null) {
+                    continue;
+                }
+                if (tileIndex < 0 || tileIndex >= tiles.size()) {
+                    continue;
+                }
+                double cx = (minX + maxX) * 0.5;
+                double cy = (minY + maxY) * 0.5;
+                double dx = Math.abs((double)maxX - (double)minX);
+                double dy = Math.abs((double)maxY - (double)minY);
+                double diag = Math.sqrt(dx * dx + dy * dy);
+                if (!(diag > MIN_SIZE)) {
+                    continue;
+                }
+                diagonalSum += diag;
+                probes.add(new NeighborProbe(tileIndex, new Vector3D(cx, cy, 0.0), diag));
+            }
+            if (probes.size() < 2) {
+                continue;
+            }
+            double avgDiag = diagonalSum / probes.size();
+            double maxNeighborDistance = avgDiag * CLUSTER_NEIGHBOR_DISTANCE_FACTOR;
+            for (NeighborProbe source : probes) {
+                int south = findBestNeighbor(source, probes, maxNeighborDistance, Direction.SOUTH);
+                int north = findBestNeighbor(source, probes, maxNeighborDistance, Direction.NORTH);
+                int east = findBestNeighbor(source, probes, maxNeighborDistance, Direction.EAST);
+                int west = findBestNeighbor(source, probes, maxNeighborDistance, Direction.WEST);
+                tiles.get(source.tileIndex()).setDetectedNeighbors(south, north, east, west);
+            }
         }
     }
 
-    private record Size2D(double deltaX, double deltaY) {
+    private static int findBestNeighbor(
+        NeighborProbe source,
+        List<NeighborProbe> probes,
+        double maxNeighborDistance,
+        Direction direction
+    ) {
+        int bestIndex = TileInstance.NO_NEIGHBOR;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (NeighborProbe target : probes) {
+            if (source.tileIndex() == target.tileIndex()) {
+                continue;
+            }
+            Vector3D delta = target.center().subtract(source.center());
+            double ax = delta.x();
+            double ay = delta.y();
+            double distance = Math.sqrt(ax * ax + ay * ay);
+            if (!(distance > MIN_SIZE) || distance > maxNeighborDistance) {
+                continue;
+            }
+            double along;
+            double orth;
+            switch (direction) {
+                case EAST -> {
+                    along = ax;
+                    orth = Math.abs(ay);
+                }
+                case WEST -> {
+                    along = -ax;
+                    orth = Math.abs(ay);
+                }
+                case NORTH -> {
+                    along = ay;
+                    orth = Math.abs(ax);
+                }
+                case SOUTH -> {
+                    along = -ay;
+                    orth = Math.abs(ax);
+                }
+                default -> {
+                    along = -1.0;
+                    orth = Double.POSITIVE_INFINITY;
+                }
+            }
+            if (!(along > MIN_SIZE)) {
+                continue;
+            }
+            if (orth / along > MAX_ORTHOGONAL_RATIO) {
+                continue;
+            }
+            double score = along + orth * 1.8;
+            if (score < bestScore) {
+                bestScore = score;
+                bestIndex = target.tileIndex();
+            }
+        }
+        return bestIndex;
     }
+
 }

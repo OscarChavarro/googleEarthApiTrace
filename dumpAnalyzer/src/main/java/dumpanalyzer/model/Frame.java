@@ -62,7 +62,8 @@ public final class Frame implements Comparable<Frame> {
 
     private static List<AxisAlignedBoundingBox> buildAabbsFromTiles(List<TileInstance> tiles) {
         List<AxisAlignedBoundingBox> out = new ArrayList<>(tiles.size());
-        for (TileInstance tile : tiles) {
+        for (int i = 0; i < tiles.size(); i++) {
+            TileInstance tile = tiles.get(i);
             if (tile == null || tile.getMin() == null || tile.getMax() == null) {
                 continue;
             }
@@ -70,6 +71,7 @@ public final class Frame implements Comparable<Frame> {
                 tile.getMin(),
                 tile.getMax(),
                 tile.getContentId(),
+                i,
                 tile.getModelViewMatrix(),
                 tile.getPoints()
             ));

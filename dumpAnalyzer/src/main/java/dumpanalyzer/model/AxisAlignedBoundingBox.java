@@ -8,6 +8,7 @@ public final class AxisAlignedBoundingBox {
     private final Vector3D min;
     private final Vector3D max;
     private final int textureId;
+    private final int sourceTileIndex;
     private final double[] modelViewMatrix;
     private final List<Vector3D> geometryPoints;
     private volatile Color color = Color.YELLOW;
@@ -20,12 +21,14 @@ public final class AxisAlignedBoundingBox {
         Vector3D min,
         Vector3D max,
         int textureId,
+        int sourceTileIndex,
         double[] modelViewMatrix,
         List<Vector3D> geometryPoints
     ) {
         this.min = min == null ? null : Vector3D.copyOf(min);
         this.max = max == null ? null : Vector3D.copyOf(max);
         this.textureId = textureId;
+        this.sourceTileIndex = sourceTileIndex;
         this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
         this.geometryPoints = geometryPoints == null ? List.of() : List.copyOf(geometryPoints);
     }
@@ -40,6 +43,10 @@ public final class AxisAlignedBoundingBox {
 
     public int getTextureId() {
         return textureId;
+    }
+
+    public int getSourceTileIndex() {
+        return sourceTileIndex;
     }
 
     public double[] getModelViewMatrix() {

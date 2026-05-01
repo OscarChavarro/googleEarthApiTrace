@@ -5,6 +5,8 @@ import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class TileInstance {
+    public static final int NO_NEIGHBOR = -1;
+
     private final int contentId;
     private final Integer southNeighbor;
     private final Integer northNeighbor;
@@ -24,6 +26,10 @@ public final class TileInstance {
     private final String skipReason;
     private final double[] projectionMatrix;
     private final double[] modelViewMatrix;
+    private volatile int detectedSouthNeighborIndex = NO_NEIGHBOR;
+    private volatile int detectedNorthNeighborIndex = NO_NEIGHBOR;
+    private volatile int detectedEastNeighborIndex = NO_NEIGHBOR;
+    private volatile int detectedWestNeighborIndex = NO_NEIGHBOR;
 
     public TileInstance(
         int contentId,
@@ -72,19 +78,31 @@ public final class TileInstance {
     }
 
     public Integer getSouthNeighbor() {
-        return southNeighbor;
+        if (southNeighbor != null) {
+            return southNeighbor;
+        }
+        return detectedSouthNeighborIndex;
     }
 
     public Integer getNorthNeighbor() {
-        return northNeighbor;
+        if (northNeighbor != null) {
+            return northNeighbor;
+        }
+        return detectedNorthNeighborIndex;
     }
 
     public Integer getEastNeighbor() {
-        return eastNeighbor;
+        if (eastNeighbor != null) {
+            return eastNeighbor;
+        }
+        return detectedEastNeighborIndex;
     }
 
     public Integer getWestNeighbor() {
-        return westNeighbor;
+        if (westNeighbor != null) {
+            return westNeighbor;
+        }
+        return detectedWestNeighborIndex;
     }
 
     public Vector3D getMin() {
@@ -148,5 +166,32 @@ public final class TileInstance {
 
     public double[] getModelViewMatrix() {
         return modelViewMatrix == null ? null : modelViewMatrix.clone();
+    }
+
+    @JsonIgnore
+    public int getDetectedSouthNeighborIndex() {
+        return detectedSouthNeighborIndex;
+    }
+
+    @JsonIgnore
+    public int getDetectedNorthNeighborIndex() {
+        return detectedNorthNeighborIndex;
+    }
+
+    @JsonIgnore
+    public int getDetectedEastNeighborIndex() {
+        return detectedEastNeighborIndex;
+    }
+
+    @JsonIgnore
+    public int getDetectedWestNeighborIndex() {
+        return detectedWestNeighborIndex;
+    }
+
+    public void setDetectedNeighbors(int south, int north, int east, int west) {
+        this.detectedSouthNeighborIndex = south;
+        this.detectedNorthNeighborIndex = north;
+        this.detectedEastNeighborIndex = east;
+        this.detectedWestNeighborIndex = west;
     }
 }

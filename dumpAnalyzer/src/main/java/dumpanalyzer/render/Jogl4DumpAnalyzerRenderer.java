@@ -24,7 +24,6 @@ import com.jogamp.opengl.awt.GLCanvas;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
-import dumpanalyzer.processing.NeighborDetector;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
@@ -44,6 +43,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private final DumpAnalyzerModel model;
     private final Jogl4HudRenderer hudRenderer;
     private final Jogl4AxisAlignedBoundingBoxRenderer axisAlignedBoundingBoxRenderer;
+    private final Jogl4NeighborhoodRenderer neighborhoodRenderer;
     private final Camera viewingCamera;
     private final CameraControllerOrbiter cameraController;
     private volatile boolean closing;
@@ -54,7 +54,6 @@ public class Jogl4DumpAnalyzerRenderer implements
     private String offlineOutputPath;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
-    private int lastProcessedFrameIndex = -1;
     private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
     private static final Vector3D WORLD_ORIGIN = new Vector3D(0.0, 0.0, 0.0);
     private static final double MAX_ABS_COORD = 1.0e6;
@@ -68,6 +67,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
         this.axisAlignedBoundingBoxRenderer = new Jogl4AxisAlignedBoundingBoxRenderer();
+        this.neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
         this.viewingCamera = model.getViewingCamera();
         this.cameraController = new CameraControllerOrbiter(viewingCamera);
         this.cameraController.setDeltaMovement(0.2);
@@ -152,22 +152,6 @@ public class Jogl4DumpAnalyzerRenderer implements
         List<Jogl4HudRenderer.ScreenLabel> aabbLabels = List.of();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
             Frame selectedFrame = frames.get(state.selectedFrameIndex());
-            if (state.selectedFrameIndex() != lastProcessedFrameIndex) {
-                double[] frameModelView = CoordinatesTransforms.geometryModelView(
-                    model.isUsingGoogleCameraAsView(),
-                    viewingCamera,
-                    selectedFrame
-                );
-                NeighborDetector.populateNeighbors(
-                    selectedFrame,
-                    projection,
-                    drawable.getSurfaceWidth(),
-                    drawable.getSurfaceHeight(),
-                    frameModelView,
-                    model.isUsingGoogleCameraAsView()
-                );
-                lastProcessedFrameIndex = state.selectedFrameIndex();
-            }
             drawSelectedTile(
                 gl,
                 drawable.getGL().getGL2(),
@@ -176,6 +160,18 @@ public class Jogl4DumpAnalyzerRenderer implements
                 projection,
                 model.isUsingGoogleCameraAsView()
             );
+            if (model.getRendererConfiguration().isBoundingVolumeSet()) {
+                neighborhoodRenderer.drawForSelection(
+                    drawable.getGL().getGL2(),
+                    selectedFrame,
+                    state.selectedTileIndex(),
+                    projection,
+                    model.isUsingGoogleCameraAsView(),
+                    viewingCamera,
+                    drawable.getSurfaceWidth(),
+                    drawable.getSurfaceHeight()
+                );
+            }
             aabbLabels = buildAabbLabelsForHud(
                 selectedFrame,
                 state.selectedTileIndex(),

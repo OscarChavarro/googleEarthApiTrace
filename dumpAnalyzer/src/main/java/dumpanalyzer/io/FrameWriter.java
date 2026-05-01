@@ -18,13 +18,17 @@ public final class FrameWriter {
 
     public static void writeFrames(Path outputRoot, List<Frame> frames) {
         for (Frame frame : frames) {
-            Path frameDir = outputRoot.resolve(String.format("%05d", frame.getId()));
-            Path frameFile = frameDir.resolve("frame.json");
-            try {
-                JSON_MAPPER.writer(JSON_PRETTY_PRINTER).writeValue(frameFile.toFile(), frame);
-            } catch (IOException e) {
-                FatalErrorHandler.fail(frameFile, "Cannot write frame file: " + e.getMessage());
-            }
+            writeFrame(outputRoot, frame);
+        }
+    }
+
+    public static void writeFrame(Path outputRoot, Frame frame) {
+        Path frameDir = outputRoot.resolve(String.format("%05d", frame.getId()));
+        Path frameFile = frameDir.resolve("frame.json");
+        try {
+            JSON_MAPPER.writer(JSON_PRETTY_PRINTER).writeValue(frameFile.toFile(), frame);
+        } catch (IOException e) {
+            FatalErrorHandler.fail(frameFile, "Cannot write frame file: " + e.getMessage());
         }
     }
 

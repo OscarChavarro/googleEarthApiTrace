@@ -7,8 +7,12 @@ import dumpanalyzer.io.FrameWriter;
 import dumpanalyzer.gui.MouseInteractionTechnique;
 import dumpanalyzer.io.TracedModelReader;
 import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.Frame;
 import dumpanalyzer.options.CommandLineOptions;
+import dumpanalyzer.processing.NeighborDetector;
 import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
+import java.util.List;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public class Main {
@@ -20,13 +24,13 @@ public class Main {
         model.setSelectedFrameIndex(config.startFrame());
         TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, Configuration.MAX_FRAME);
         tracedModelReader.importInto(model, workerCount);
+        preprocessNeighborsAndExport(model.snapshotFrames(), config.width(), config.height());
 
         Thread rendererThread = null;
         if (!config.offline()) {
             rendererThread = createRendererThread(model);
             rendererThread.start();
         }
-        FrameWriter.writeFrames(Configuration.OUTPUT_ROOT, model.snapshotFrames());
 
         if (config.offline()) {
             model.setSelectedFrameById(config.startFrame());
@@ -74,6 +78,36 @@ public class Main {
 
     private static void shutdownNow() {
         System.exit(0);
+    }
+
+    private static void preprocessNeighborsAndExport(List<Frame> frames, int viewportWidth, int viewportHeight) {
+        if (frames == null || frames.isEmpty()) {
+            return;
+        }
+        int width = Math.max(1, viewportWidth);
+        int height = Math.max(1, viewportHeight);
+        for (Frame frame : frames) {
+            Matrix4x4 projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
+            if (projection == null) {
+                projection = Matrix4x4.identityMatrix();
+            }
+            double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
+            NeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
+        }
+        FrameWriter.writeFrames(Configuration.OUTPUT_ROOT, frames);
+    }
+
+    private static Matrix4x4 matrixFromColumnMajor(double[] m) {
+        if (m == null || m.length != 16) {
+            return null;
+        }
+        Matrix4x4 out = new Matrix4x4();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                out = out.withVal(row, col, m[col * 4 + row]);
+            }
+        }
+        return out;
     }
 
 }
