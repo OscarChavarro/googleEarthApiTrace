@@ -74,7 +74,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         gl2.glLoadMatrixf(view.exportToFloatArrayColumnOrder(), 0);
 
         TileMatrix selected = model.getSelectedTileMatrix();
-        tileMatrixRenderer.draw(gl2, selected, model.getRenderingConfiguration());
+        tileMatrixRenderer.draw(gl2, selected, model.getRenderingConfiguration(), model);
         drawCoordinateFrame(gl2);
         drawHud(drawable);
     }

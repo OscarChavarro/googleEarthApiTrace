@@ -9,6 +9,7 @@ import javax.swing.WindowConstants;
 import pyramidalimagebuilder.config.Configuration;
 import pyramidalimagebuilder.gui.KeyboardInteractionTechniques;
 import pyramidalimagebuilder.gui.MouseOrbiterInteraction;
+import pyramidalimagebuilder.io.TexturePathScanner;
 import pyramidalimagebuilder.io.TraceSessionReader;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.processing.TileInstancesMerger;
@@ -20,6 +21,8 @@ public class Main {
         PyramidalImageModel model = new PyramidalImageModel();
 
         // Stage 1: read tile instances from trace session.
+        TexturePathScanner texturePathScanner = new TexturePathScanner();
+        texturePathScanner.scanRecursive(Path.of(Configuration.INPUT_PATH), model);
         TraceSessionReader traceSessionReader = new TraceSessionReader();
         model.setTileInstances(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));
 

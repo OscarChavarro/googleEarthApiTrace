@@ -1,13 +1,29 @@
 package pyramidalimagebuilder.render;
 
 import com.jogamp.opengl.GL2;
+import com.jogamp.opengl.util.texture.Texture;
+import com.jogamp.opengl.util.texture.TextureCoords;
+import com.jogamp.opengl.util.texture.TextureIO;
+import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import pyramidalimagebuilder.config.Configuration;
+import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.model.RenderingConfiguration;
 import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileMatrix;
 
 public final class Jogl4TileMatrixRenderer {
-    public void draw(GL2 gl2, TileMatrix matrix, RenderingConfiguration renderingConfiguration) {
-        if (gl2 == null || matrix == null || matrix.getM() == null || renderingConfiguration == null) {
+    private final Map<Integer, TextureResident> residentsByTextureId = new HashMap<>();
+
+    public void draw(
+        GL2 gl2,
+        TileMatrix matrix,
+        RenderingConfiguration renderingConfiguration,
+        PyramidalImageModel model
+    ) {
+        if (gl2 == null || matrix == null || matrix.getM() == null || renderingConfiguration == null || model == null) {
             return;
         }
         TileInstance[][] M = matrix.getM();
@@ -18,28 +34,13 @@ public final class Jogl4TileMatrixRenderer {
         if (renderingConfiguration.isSurfacesSet()) {
             gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
             gl2.glPolygonOffset(4.0f, 4.0f);
-            if (renderingConfiguration.isWiresSet()) {
-                gl2.glColor3d(0.5, 0.5, 0.5);
+            if (renderingConfiguration.isTextureSet()) {
+                drawTexturedSurfaces(gl2, M, renderingConfiguration, model);
             } else {
-                gl2.glColor3d(1.0, 1.0, 1.0);
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+                drawFlatSurfaces(gl2, M, renderingConfiguration);
             }
-            gl2.glBegin(GL2.GL_QUADS);
-            for (int row = 0; row < M.length; row++) {
-                for (int col = 0; col < M[row].length; col++) {
-                    if (M[row][col] == null) {
-                        continue;
-                    }
-                    double x0 = col;
-                    double y0 = -row;
-                    double x1 = x0 + 1.0;
-                    double y1 = y0 - 1.0;
-                    gl2.glVertex3d(x0, y0, 0.0);
-                    gl2.glVertex3d(x1, y0, 0.0);
-                    gl2.glVertex3d(x1, y1, 0.0);
-                    gl2.glVertex3d(x0, y1, 0.0);
-                }
-            }
-            gl2.glEnd();
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
 
@@ -92,5 +93,142 @@ public final class Jogl4TileMatrixRenderer {
             gl2.glEnd();
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_POINT);
         }
+    }
+
+    private void drawFlatSurfaces(GL2 gl2, TileInstance[][] M, RenderingConfiguration renderingConfiguration) {
+        if (renderingConfiguration.isWiresSet()) {
+            gl2.glColor3d(0.5, 0.5, 0.5);
+        } else {
+            gl2.glColor3d(1.0, 1.0, 1.0);
+        }
+        gl2.glBegin(GL2.GL_QUADS);
+        for (int row = 0; row < M.length; row++) {
+            for (int col = 0; col < M[row].length; col++) {
+                if (M[row][col] == null) {
+                    continue;
+                }
+                double x0 = col;
+                double y0 = -row;
+                double x1 = x0 + 1.0;
+                double y1 = y0 - 1.0;
+                gl2.glVertex3d(x0, y0, 0.0);
+                gl2.glVertex3d(x1, y0, 0.0);
+                gl2.glVertex3d(x1, y1, 0.0);
+                gl2.glVertex3d(x0, y1, 0.0);
+            }
+        }
+        gl2.glEnd();
+    }
+
+    private void drawTexturedSurfaces(
+        GL2 gl2,
+        TileInstance[][] M,
+        RenderingConfiguration renderingConfiguration,
+        PyramidalImageModel model
+    ) {
+        gl2.glEnable(GL2.GL_TEXTURE_2D);
+        int lastBound = -1;
+        for (int row = 0; row < M.length; row++) {
+            for (int col = 0; col < M[row].length; col++) {
+                TileInstance tile = M[row][col];
+                if (tile == null) {
+                    continue;
+                }
+                TextureResident resident = acquireTexture(gl2, model, tile.getTileId());
+                double x0 = col;
+                double y0 = -row;
+                double x1 = x0 + 1.0;
+                double y1 = y0 - 1.0;
+
+                if (resident == null || resident.texture() == null) {
+                    gl2.glDisable(GL2.GL_TEXTURE_2D);
+                    gl2.glColor3d(0.5, 0.5, 0.5);
+                    gl2.glBegin(GL2.GL_QUADS);
+                    gl2.glVertex3d(x0, y0, 0.0);
+                    gl2.glVertex3d(x1, y0, 0.0);
+                    gl2.glVertex3d(x1, y1, 0.0);
+                    gl2.glVertex3d(x0, y1, 0.0);
+                    gl2.glEnd();
+                    gl2.glEnable(GL2.GL_TEXTURE_2D);
+                    lastBound = -1;
+                    continue;
+                }
+
+                int texId = resident.texture().getTextureObject(gl2);
+                if (texId != lastBound) {
+                    resident.texture().bind(gl2);
+                    lastBound = texId;
+                }
+                gl2.glColor3d(1.0, 1.0, 1.0);
+                TextureCoords tc = resident.texture().getImageTexCoords();
+                float s0 = tc.left();
+                float t0 = tc.bottom();
+                float s1 = tc.right();
+                float t1 = tc.top();
+
+                gl2.glBegin(GL2.GL_QUADS);
+                gl2.glTexCoord2f(s0, t0); gl2.glVertex3d(x0, y0, 0.0);
+                gl2.glTexCoord2f(s1, t0); gl2.glVertex3d(x1, y0, 0.0);
+                gl2.glTexCoord2f(s1, t1); gl2.glVertex3d(x1, y1, 0.0);
+                gl2.glTexCoord2f(s0, t1); gl2.glVertex3d(x0, y1, 0.0);
+                gl2.glEnd();
+            }
+        }
+        gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+    }
+
+    private TextureResident acquireTexture(GL2 gl2, PyramidalImageModel model, int textureId) {
+        TextureResident resident = residentsByTextureId.get(textureId);
+        if (resident != null) {
+            return resident;
+        }
+
+        String path = model.getTexturePath(textureId);
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        Texture texture;
+        try {
+            texture = TextureIO.newTexture(new File(path), true);
+        }
+        catch (IOException ex) {
+            return null;
+        }
+        if (texture == null) {
+            return null;
+        }
+
+        long bytes = texture.getEstimatedMemorySize();
+        if (bytes <= 0L) {
+            int w = Math.max(1, texture.getImageWidth());
+            int h = Math.max(1, texture.getImageHeight());
+            bytes = (long)w * (long)h * 4L;
+        }
+
+        residentsByTextureId.put(textureId, new TextureResident(texture, bytes));
+        model.markTextureResident(textureId, bytes);
+        enforceTextureBudget(gl2, model);
+        return residentsByTextureId.get(textureId);
+    }
+
+    private void enforceTextureBudget(GL2 gl2, PyramidalImageModel model) {
+        while (model.getGpuTextureBytesAssigned() > Configuration.MAX_GPU_TEXTURE_MEMORY) {
+            Integer oldest = model.popOldestResidentTextureId();
+            if (oldest == null) {
+                return;
+            }
+            TextureResident resident = residentsByTextureId.remove(oldest);
+            if (resident == null) {
+                continue;
+            }
+            if (resident.texture() != null) {
+                resident.texture().destroy(gl2);
+            }
+            model.unmarkTextureResident(oldest, resident.bytesAssigned());
+        }
+    }
+
+    private record TextureResident(Texture texture, long bytesAssigned) {
     }
 }
