@@ -1,10 +1,10 @@
-package dumpanalyzer;
+package dumpanalyzer.io.parser;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public final class LogicalLineNormalizer {
-    private LogicalLineNormalizer() {
+public final class LogicalLineProcessor {
+    private LogicalLineProcessor() {
     }
 
     public static String normalize(String rawContent) {

@@ -1,5 +1,6 @@
-package dumpanalyzer.parser;
+package dumpanalyzer.io.parser;
 
+import dumpanalyzer.parser.GlTraceLexer;
 import java.util.LinkedHashMap;
 import java.util.Map;
 

@@ -27,7 +27,7 @@ Parsing/lexing failures are treated as fatal:
 - `src/java/GlTraceProcessor.java`: per-frame processing and ANTLR parse execution.
 - `src/java/LogicalLineNormalizer.java`: converts physical lines to logical lines.
 - `src/java/FunctionCounter.java`: global function token counting.
-- `src/java/FatalErrorHandler.java`: fatal error reporting and exit.
+- `src/main/java/dumpanalyzer/logger/FatalErrorHandler.java`: fatal error reporting and exit.
 - `src/main/antlr/GlTrace.g4`: ANTLR grammar for trace lines.
 
 ## Requirements

@@ -13,6 +13,7 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.util.awt.TextRenderer;
+import dumpanalyzer.config.Configuration;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
@@ -178,7 +179,7 @@ public final class Jogl4HudRenderer {
             return;
         }
         while (!residentsFifo.isEmpty()
-            && model.getGpuRamTextureBytesAssigned() + incomingBytes > DumpAnalyzerModel.GPU_RAM_TEXTURE_LIMIT) {
+            && model.getGpuRamTextureBytesAssigned() + incomingBytes > Configuration.GPU_RAM_TEXTURE_LIMIT) {
             evictOldest(gl, model);
         }
     }

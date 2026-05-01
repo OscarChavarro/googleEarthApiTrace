@@ -1,5 +1,7 @@
-package dumpanalyzer.parser;
+package dumpanalyzer.io.parser;
 
+import dumpanalyzer.parser.GlTraceLexer;
+import dumpanalyzer.parser.GlTraceParser;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -14,8 +16,7 @@ import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 
-import dumpanalyzer.FatalErrorHandler;
-import dumpanalyzer.LogicalLineNormalizer;
+import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.Frame;
 
 public class TraceProcessor {
@@ -38,7 +39,7 @@ public class TraceProcessor {
             return new Frame(frame, List.of(), null, null);
         }
 
-        String normalized = LogicalLineNormalizer.normalize(content);
+        String normalized = LogicalLineProcessor.normalize(content);
         parseOrFail(filePath, normalized);
         functionCounter.addFromContent(normalized);
 

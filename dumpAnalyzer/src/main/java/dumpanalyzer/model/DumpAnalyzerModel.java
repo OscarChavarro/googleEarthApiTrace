@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import dumpanalyzer.parser.CameraProcessor;
+import dumpanalyzer.io.parser.CameraProcessor;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
@@ -18,7 +18,6 @@ import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class DumpAnalyzerModel {
-    public static final long GPU_RAM_TEXTURE_LIMIT = 10L * 1024L * 1024L * 1024L;
     public static final int SELECT_ALL_TILES = -1;
 
     private final ConcurrentSkipListMap<Integer, Frame> framesById = new ConcurrentSkipListMap<>();

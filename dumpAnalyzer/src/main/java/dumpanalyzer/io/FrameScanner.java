@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.io;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
+import dumpanalyzer.logger.FatalErrorHandler;
 
 public class FrameScanner {
     private final Path outputRoot;

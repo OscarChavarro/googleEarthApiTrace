@@ -1,0 +1,79 @@
+package dumpanalyzer.options;
+
+public final class CommandLineOptions {
+    private final boolean offline;
+    private final int startFrame;
+    private final int width;
+    private final int height;
+    private final String outputPath;
+
+    private CommandLineOptions(boolean offline, int startFrame, int width, int height, String outputPath) {
+        this.offline = offline;
+        this.startFrame = startFrame;
+        this.width = width;
+        this.height = height;
+        this.outputPath = outputPath;
+    }
+
+    public static CommandLineOptions parseArgs(String[] args) {
+        boolean offline = false;
+        int startFrame = 48;
+        int width = 1280;
+        int height = 720;
+        String outputPath = "/tmp/vitral/testsuite/_APITests/_JOGL4PbufferExample/src/output.png";
+
+        for (int i = 0; i < args.length; i++) {
+            String a = args[i];
+            if ("--offline".equals(a)) {
+                offline = true;
+                continue;
+            }
+            if ("--start-frame".equals(a) && i + 1 < args.length) {
+                startFrame = safeParseInt(args[++i], startFrame);
+                continue;
+            }
+            if ("--width".equals(a) && i + 1 < args.length) {
+                width = Math.max(1, safeParseInt(args[++i], width));
+                continue;
+            }
+            if ("--height".equals(a) && i + 1 < args.length) {
+                height = Math.max(1, safeParseInt(args[++i], height));
+                continue;
+            }
+            if ("--output".equals(a) && i + 1 < args.length) {
+                outputPath = args[++i];
+            }
+        }
+
+        return new CommandLineOptions(offline, startFrame, width, height, outputPath);
+    }
+
+    public boolean offline() {
+        return offline;
+    }
+
+    public int startFrame() {
+        return startFrame;
+    }
+
+    public int width() {
+        return width;
+    }
+
+    public int height() {
+        return height;
+    }
+
+    public String outputPath() {
+        return outputPath;
+    }
+
+    private static int safeParseInt(String s, int fallback) {
+        try {
+            return Integer.parseInt(s);
+        }
+        catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+}

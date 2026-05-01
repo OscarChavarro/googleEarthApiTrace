@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.io;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.DumpAnalyzerModel;
 
 public final class TexturePathScanner {

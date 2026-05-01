@@ -1,4 +1,4 @@
-package dumpanalyzer;
+package dumpanalyzer.logger;
 
 import java.nio.file.Path;
 

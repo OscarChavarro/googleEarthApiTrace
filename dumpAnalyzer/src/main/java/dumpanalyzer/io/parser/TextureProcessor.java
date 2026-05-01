@@ -1,4 +1,4 @@
-package dumpanalyzer.parser;
+package dumpanalyzer.io.parser;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
