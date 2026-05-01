@@ -31,7 +31,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
     public GLCanvas createCanvas() {
         GLProfile profile = GLProfile.get(GLProfile.GL4bc);
         GLCapabilities caps = new GLCapabilities(profile);
-        caps.setDepthBits(24);
+        caps.setDepthBits(64);
         GLCanvas canvas = new GLCanvas(caps);
         canvas.addGLEventListener(this);
         return canvas;
@@ -74,7 +74,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         gl2.glLoadMatrixf(view.exportToFloatArrayColumnOrder(), 0);
 
         TileMatrix selected = model.getSelectedTileMatrix();
-        tileMatrixRenderer.draw(gl2, selected);
+        tileMatrixRenderer.draw(gl2, selected, model.getRenderingConfiguration());
         drawCoordinateFrame(gl2);
         drawHud(drawable);
     }
@@ -111,12 +111,26 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         int total = model.getTileMatrices().size();
         String selectionText = total <= 0 || selected < 0 ? "0/0" : (selected + 1) + "/" + total;
         String text = "Selected set [1, 2]: " + selectionText;
+        int tilesInCurrent = 0;
+        TileMatrix selectedMatrix = model.getSelectedTileMatrix();
+        if (selectedMatrix != null && selectedMatrix.getGraph() != null) {
+            tilesInCurrent = selectedMatrix.getGraph().vertexSet().size();
+        }
+        int totalTiles = 0;
+        for (TileMatrix matrix : model.getTileMatrices()) {
+            if (matrix == null || matrix.getGraph() == null) {
+                continue;
+            }
+            totalTiles += matrix.getGraph().vertexSet().size();
+        }
+        String stats = "Tiles in current matrix: " + tilesInCurrent + ", total tiles: " + totalTiles;
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
         drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(w, h);
         hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
         hudTextRenderer.draw(text, 16, h - 28);
+        hudTextRenderer.draw(stats, 16, h - 50);
         hudTextRenderer.endRendering();
         drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
     }

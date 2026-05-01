@@ -10,6 +10,7 @@ import vsdk.toolkit.environment.Camera;
 
 public final class PyramidalImageModel {
     private final Camera viewingCamera = new Camera();
+    private final RenderingConfiguration renderingConfiguration = new RenderingConfiguration();
     private final List<TileInstance> tileInstances = new ArrayList<>();
     private final List<TileInstance> mergedTileInstances = new ArrayList<>();
     private Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
@@ -22,6 +23,10 @@ public final class PyramidalImageModel {
 
     public Camera getViewingCamera() {
         return viewingCamera;
+    }
+
+    public RenderingConfiguration getRenderingConfiguration() {
+        return renderingConfiguration;
     }
 
     public void setTileInstances(List<TileInstance> tiles) {
