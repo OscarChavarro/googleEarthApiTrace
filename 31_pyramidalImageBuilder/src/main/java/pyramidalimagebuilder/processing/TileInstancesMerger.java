@@ -28,7 +28,7 @@ public final class TileInstancesMerger {
         List<TileInstance> tilesWithNoAmbiguousNeighbors = buildMergedTileInstancesFilteredByAmbigousNeighbors(model.getTileInstances());
         model.setMergedTileInstances(tilesWithNoAmbiguousNeighbors);
 
-        ImageBorderFilterer.filter(tilesWithNoAmbiguousNeighbors, model.getImageBorderThreshold());
+        //ImageBorderFilterer.filter(tilesWithNoAmbiguousNeighbors, model.getImageBorderThreshold());
 
         Graph<TileInstance, DefaultEdge> hintsGraph = hintsGraphBuilder.build(tilesWithNoAmbiguousNeighbors);
         model.setMergedTileGraph(hintsGraph);

@@ -19,7 +19,7 @@ public class Main {
     public static void main(String[] args) {
         PyramidalImageModel model = new PyramidalImageModel();
 
-        TraceSessionReader traceSessionReader = new TraceSessionReader();
+        TraceSessionReader traceSessionReader = new TraceSessionReader(model);
         TileInstancesMerger tileInstancesMerger = new TileInstancesMerger();
         Runnable reloadTileMatrices = () -> {
             model.setTileInstances(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));

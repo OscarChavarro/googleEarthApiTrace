@@ -67,13 +67,6 @@ public class ImageBorderFilterer {
         }
         MutableTileNeighbors target = tileById.get(neighborId);
         double distance = estimateBorderDistance(source, target, direction, imageCache);
-        System.out.println(
-            "ImageBorderFilterer: sourceTileId=" + source.tileId
-                + " targetTileId=" + neighborId
-                + " direction=" + direction
-                + " distance=" + distance
-                + " threshold=" + imageBorderThreshold
-        );
         if (distance > imageBorderThreshold) {
             clearDirection(source, direction);
             if (target != null) {

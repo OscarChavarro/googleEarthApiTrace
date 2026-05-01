@@ -129,6 +129,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         }
         String stats = "Tiles in current matrix: " + tilesInCurrent + ", total tiles: " + totalTiles;
         String thresholdText = "Image border distance threshold [3, 4]: " + model.getImageBorderThreshold();
+        String lastFrameText = "Last frame to include: " + model.getLastFrameToInclude();
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
         drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
@@ -137,6 +138,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         hudTextRenderer.draw(text, 16, h - 28);
         hudTextRenderer.draw(stats, 16, h - 50);
         hudTextRenderer.draw(thresholdText, 16, h - 72);
+        hudTextRenderer.draw(lastFrameText, 16, h - 94);
         if (model.getRenderingConfiguration().isBoundingVolumeSet()) {
             List<ScreenLabel> labels = buildTextureLabels(selectedMatrix, projection, view, w, h);
             for (ScreenLabel label : labels) {

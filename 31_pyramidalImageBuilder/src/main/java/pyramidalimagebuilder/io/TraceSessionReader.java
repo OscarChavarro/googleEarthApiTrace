@@ -7,10 +7,17 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
+import pyramidalimagebuilder.config.Configuration;
+import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.model.TileInstance;
 
 public final class TraceSessionReader {
     private static final Pattern NUMERIC_DIR = Pattern.compile("\\d+");
+    private final PyramidalImageModel model;
+
+    public TraceSessionReader(PyramidalImageModel model) {
+        this.model = model;
+    }
 
     public List<TileInstance> readSession(Path inputRoot) {
         if (inputRoot == null || !Files.isDirectory(inputRoot)) {
@@ -24,6 +31,12 @@ public final class TraceSessionReader {
             stream
                 .filter(Files::isDirectory)
                 .filter(dir -> NUMERIC_DIR.matcher(dir.getFileName().toString()).matches())
+                .filter(dir -> {
+                        int frameNumber = Integer.parseInt(dir.getFileName().toString());
+                        return frameNumber >= Configuration.START_FROM_FRAME
+                            && frameNumber <= model.getLastFrameToInclude();
+                    }
+                )
                 .sorted(Comparator.comparing(dir -> dir.getFileName().toString()))
                 .forEach(dir -> {
                     Path frameJson = dir.resolve("frame.json");
