@@ -53,6 +53,21 @@ gradle run
 
 The application always processes `/tmp/output` in the current implementation.
 
+## Execution Modes
+
+The program supports two execution modes:
+
+- Interactive mode: runs the JOGL viewer and lets you inspect tiles, AABBs, and neighborhood links visually.
+- Offline mode: renders one frame directly to an image file without opening the interactive window.
+
+Helper scripts:
+
+- `./run.sh` runs the interactive mode (`gradle run`).
+- `./runOffline.sh` runs offline mode and exports frame `00003` to `output/frame0003.png`.
+
+Besides visual debugging of the neighborhood calculation, neighbor values are also exported into per-frame files under the input directory tree `/tmp/output/<frame>/`.
+Note: the current file format is `frame.json`.
+
 # Recognized OpenGL API calls
 
 | Category | Functions |

@@ -48,8 +48,15 @@ public class Main {
     }
 
     private static void renderOffline(DumpAnalyzerModel model, CommandLineOptions config) {
-        Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, () -> {});
-        renderer.startOffscreen(config.outputPath(), config.width(), config.height());
+        try {
+            Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, () -> {});
+            renderer.startOffscreen(config.outputPath(), config.width(), config.height());
+        }
+        catch (Throwable t) {
+            System.out.println(
+                "Warning: Offline image export is not available because there is no access to a graphics system."
+            );
+        }
     }
 
     private static void installInteractionTechniques(
