@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,23 +26,30 @@ public final class TileInstancesMerger {
             return;
         }
         Map<Integer, List<TileInstance>> byFrame = groupByFrame(model.getTileInstances());
-        List<TileMatrix> tileMatrices = new ArrayList<>();
-        List<TileInstance> mergedFromSelectedComponents = new ArrayList<>();
-        Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
+        List<FrameComponentSelection> selectedByFrame = new ArrayList<>();
 
         for (Map.Entry<Integer, List<TileInstance>> frameEntry : byFrame.entrySet()) {
             List<TileInstance> mergedFrameTiles =
                 buildMergedTileInstancesFilteredByAmbigousNeighbors(frameEntry.getValue());
             Graph<TileInstance, DefaultEdge> frameHintsGraph = hintsGraphBuilder.build(mergedFrameTiles);
-            Graph<TileInstance, DefaultEdge> firstConnectedComponent = firstConnectedComponent(frameHintsGraph);
-            if (firstConnectedComponent == null || firstConnectedComponent.vertexSet().isEmpty()) {
+            Graph<TileInstance, DefaultEdge> largestConnectedComponent = largestConnectedComponent(frameHintsGraph);
+            if (largestConnectedComponent == null || largestConnectedComponent.vertexSet().size() <= 1) {
                 continue;
             }
-            tileMatrices.add(graphToTileMatrixConvertor.convert(firstConnectedComponent));
-            appendSubgraph(firstConnectedComponent, mergedFromSelectedComponents, mergedTileGraph);
+            selectedByFrame.add(new FrameComponentSelection(frameEntry.getKey(), largestConnectedComponent));
         }
 
-        tileMatrices.sort(Comparator.comparingInt(TileInstancesMerger::frameIdOf));
+        selectedByFrame.sort(Comparator.comparingInt(FrameComponentSelection::frameId));
+        List<FrameComponentSelection> deDuplicated = removeConsecutiveDuplicateTileSets(selectedByFrame);
+
+        List<TileMatrix> tileMatrices = new ArrayList<>();
+        List<TileInstance> mergedFromSelectedComponents = new ArrayList<>();
+        Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
+        for (FrameComponentSelection frameSelection : deDuplicated) {
+            tileMatrices.add(graphToTileMatrixConvertor.convert(frameSelection.component()));
+            appendSubgraph(frameSelection.component(), mergedFromSelectedComponents, mergedTileGraph);
+        }
+
         model.setMergedTileInstances(mergedFromSelectedComponents);
         model.setMergedTileGraph(mergedTileGraph);
         model.setTileMatrices(tileMatrices);
@@ -93,7 +101,7 @@ public final class TileInstancesMerger {
         return merged;
     }
 
-    private Graph<TileInstance, DefaultEdge> firstConnectedComponent(Graph<TileInstance, DefaultEdge> graph) {
+    private Graph<TileInstance, DefaultEdge> largestConnectedComponent(Graph<TileInstance, DefaultEdge> graph) {
         if (graph == null || graph.vertexSet().isEmpty()) {
             return null;
         }
@@ -104,7 +112,23 @@ public final class TileInstancesMerger {
         if (groups.isEmpty()) {
             return null;
         }
-        return buildSubgraph(graph, groups.get(0));
+        Set<TileInstance> largest = groups.stream()
+            .max((a, b) -> {
+                int bySize = Integer.compare(a.size(), b.size());
+                if (bySize != 0) {
+                    return bySize;
+                }
+                return Integer.compare(minTileId(b), minTileId(a));
+            })
+            .orElse(null);
+        if (largest == null) {
+            return null;
+        }
+        return buildSubgraph(graph, largest);
+    }
+
+    private static int minTileId(Set<TileInstance> group) {
+        return group.stream().mapToInt(TileInstance::getTileId).min().orElse(Integer.MAX_VALUE);
     }
 
     private static Graph<TileInstance, DefaultEdge> buildSubgraph(
@@ -156,6 +180,35 @@ public final class TileInstancesMerger {
             .orElse(Integer.MAX_VALUE);
     }
 
+    private static List<FrameComponentSelection> removeConsecutiveDuplicateTileSets(
+        List<FrameComponentSelection> source
+    ) {
+        List<FrameComponentSelection> out = new ArrayList<>();
+        Set<Integer> previousTileIds = null;
+        for (FrameComponentSelection selection : source) {
+            Set<Integer> currentTileIds = tileIdSet(selection.component());
+            if (previousTileIds != null && previousTileIds.equals(currentTileIds)) {
+                continue;
+            }
+            out.add(selection);
+            previousTileIds = currentTileIds;
+        }
+        return out;
+    }
+
+    private static Set<Integer> tileIdSet(Graph<TileInstance, DefaultEdge> graph) {
+        Set<Integer> out = new LinkedHashSet<>();
+        if (graph == null) {
+            return out;
+        }
+        for (TileInstance tile : graph.vertexSet()) {
+            if (tile != null) {
+                out.add(tile.getTileId());
+            }
+        }
+        return out;
+    }
+
     private static Integer mergeNeighbor(List<TileInstance> appearances, NeighborDirection neighborDirection) {
         Set<Integer> distinctByDirection = new HashSet<>();
         for (TileInstance tile : appearances) {
@@ -183,5 +236,11 @@ public final class TileInstancesMerger {
             }
         }
         return null;
+    }
+
+    private record FrameComponentSelection(
+        int frameId,
+        Graph<TileInstance, DefaultEdge> component
+    ) {
     }
 }
