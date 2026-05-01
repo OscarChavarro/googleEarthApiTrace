@@ -115,7 +115,9 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         int selected = model.getSelectedTileMatrixIndex();
         int total = model.getTileMatrices().size();
         String selectionText = total <= 0 || selected < 0 ? "0/0" : (selected + 1) + "/" + total;
-        String text = "Selected set [1, 2]: " + selectionText;
+        int selectedFrame = selectedFrameId(selectedMatrix);
+        String frameText = selectedFrame < 0 ? "n/a" : Integer.toString(selectedFrame);
+        String text = "Selected frame matrix [1, 2]: " + selectionText + " (frame " + frameText + ")";
         int tilesInCurrent = 0;
         if (selectedMatrix != null && selectedMatrix.getGraph() != null) {
             tilesInCurrent = selectedMatrix.getGraph().vertexSet().size();
@@ -129,7 +131,6 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         }
         String stats = "Tiles in current matrix: " + tilesInCurrent + ", total tiles: " + totalTiles;
         String thresholdText = "Image border distance threshold [3, 4]: " + model.getImageBorderThreshold();
-        String lastFrameText = "Last frame to include: " + model.getLastFrameToInclude();
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
         drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
@@ -138,7 +139,6 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         hudTextRenderer.draw(text, 16, h - 28);
         hudTextRenderer.draw(stats, 16, h - 50);
         hudTextRenderer.draw(thresholdText, 16, h - 72);
-        hudTextRenderer.draw(lastFrameText, 16, h - 94);
         if (model.getRenderingConfiguration().isBoundingVolumeSet()) {
             List<ScreenLabel> labels = buildTextureLabels(selectedMatrix, projection, view, w, h);
             for (ScreenLabel label : labels) {
@@ -238,5 +238,15 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
     }
 
     private record ScreenLabel(String text, int x, int y) {
+    }
+
+    private static int selectedFrameId(TileMatrix matrix) {
+        if (matrix == null || matrix.getGraph() == null || matrix.getGraph().vertexSet().isEmpty()) {
+            return -1;
+        }
+        return matrix.getGraph().vertexSet().stream()
+            .mapToInt(TileInstance::getFrameId)
+            .min()
+            .orElse(-1);
     }
 }

@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,17 +24,38 @@ public final class TileInstancesMerger {
         if (model == null || model.getTileInstances().isEmpty()) {
             return;
         }
-        List<TileInstance> tilesWithNoAmbiguousNeighbors = buildMergedTileInstancesFilteredByAmbigousNeighbors(model.getTileInstances());
-        model.setMergedTileInstances(tilesWithNoAmbiguousNeighbors);
+        Map<Integer, List<TileInstance>> byFrame = groupByFrame(model.getTileInstances());
+        List<TileMatrix> tileMatrices = new ArrayList<>();
+        List<TileInstance> mergedFromSelectedComponents = new ArrayList<>();
+        Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
 
-        //ImageBorderFilterer.filter(tilesWithNoAmbiguousNeighbors, model.getImageBorderThreshold());
+        for (Map.Entry<Integer, List<TileInstance>> frameEntry : byFrame.entrySet()) {
+            List<TileInstance> mergedFrameTiles =
+                buildMergedTileInstancesFilteredByAmbigousNeighbors(frameEntry.getValue());
+            Graph<TileInstance, DefaultEdge> frameHintsGraph = hintsGraphBuilder.build(mergedFrameTiles);
+            Graph<TileInstance, DefaultEdge> firstConnectedComponent = firstConnectedComponent(frameHintsGraph);
+            if (firstConnectedComponent == null || firstConnectedComponent.vertexSet().isEmpty()) {
+                continue;
+            }
+            tileMatrices.add(graphToTileMatrixConvertor.convert(firstConnectedComponent));
+            appendSubgraph(firstConnectedComponent, mergedFromSelectedComponents, mergedTileGraph);
+        }
 
-        Graph<TileInstance, DefaultEdge> hintsGraph = hintsGraphBuilder.build(tilesWithNoAmbiguousNeighbors);
-        model.setMergedTileGraph(hintsGraph);
-
-        Set<Graph<TileInstance, DefaultEdge>> components = splitConnectedComponents(hintsGraph);
-        List<TileMatrix> tileMatrices = buildTileMatrices(components);
+        tileMatrices.sort(Comparator.comparingInt(TileInstancesMerger::frameIdOf));
+        model.setMergedTileInstances(mergedFromSelectedComponents);
+        model.setMergedTileGraph(mergedTileGraph);
         model.setTileMatrices(tileMatrices);
+    }
+
+    private static Map<Integer, List<TileInstance>> groupByFrame(List<TileInstance> source) {
+        Map<Integer, List<TileInstance>> byFrame = new HashMap<>();
+        for (TileInstance tile : source) {
+            if (tile == null || tile.getTileId() < 0 || tile.getFrameId() < 0) {
+                continue;
+            }
+            byFrame.computeIfAbsent(tile.getFrameId(), ignored -> new ArrayList<>()).add(tile);
+        }
+        return byFrame;
     }
 
     private List<TileInstance> buildMergedTileInstancesFilteredByAmbigousNeighbors(List<TileInstance> source) {
@@ -73,45 +93,67 @@ public final class TileInstancesMerger {
         return merged;
     }
 
-    public Set<Graph<TileInstance, DefaultEdge>> splitConnectedComponents(
-        Graph<TileInstance, DefaultEdge> graph
-    ) {
-        Set<Graph<TileInstance, DefaultEdge>> components = new LinkedHashSet<>();
+    private Graph<TileInstance, DefaultEdge> firstConnectedComponent(Graph<TileInstance, DefaultEdge> graph) {
         if (graph == null || graph.vertexSet().isEmpty()) {
-            return components;
+            return null;
         }
 
         ConnectivityInspector<TileInstance, DefaultEdge> inspector =
             new ConnectivityInspector<>(new AsUndirectedGraph<>(graph));
         List<Set<TileInstance>> groups = inspector.connectedSets();
-        for (Set<TileInstance> group : groups) {
-            Graph<TileInstance, DefaultEdge> subgraph = new DefaultDirectedGraph<>(DefaultEdge.class);
-            for (TileInstance vertex : group) {
-                subgraph.addVertex(vertex);
-            }
-            for (TileInstance source : group) {
-                for (DefaultEdge edge : graph.outgoingEdgesOf(source)) {
-                    TileInstance target = graph.getEdgeTarget(edge);
-                    if (group.contains(target) && !subgraph.containsEdge(source, target)) {
-                        subgraph.addEdge(source, target);
-                    }
-                }
-            }
-            components.add(subgraph);
+        if (groups.isEmpty()) {
+            return null;
         }
-        return components;
+        return buildSubgraph(graph, groups.get(0));
     }
 
-    private List<TileMatrix> buildTileMatrices(Set<Graph<TileInstance, DefaultEdge>> components) {
-        List<TileMatrix> out = new ArrayList<>();
-        for (Graph<TileInstance, DefaultEdge> component : components) {
-            out.add(graphToTileMatrixConvertor.convert(component));
+    private static Graph<TileInstance, DefaultEdge> buildSubgraph(
+        Graph<TileInstance, DefaultEdge> graph,
+        Set<TileInstance> group
+    ) {
+        Graph<TileInstance, DefaultEdge> subgraph = new DefaultDirectedGraph<>(DefaultEdge.class);
+        for (TileInstance vertex : group) {
+            subgraph.addVertex(vertex);
         }
-        out.sort((a, b) -> Integer.compare(
-            b.getGraph() == null ? 0 : b.getGraph().vertexSet().size(),
-            a.getGraph() == null ? 0 : a.getGraph().vertexSet().size()
-        ));
-        return out;
+        for (TileInstance source : group) {
+            for (DefaultEdge edge : graph.outgoingEdgesOf(source)) {
+                TileInstance target = graph.getEdgeTarget(edge);
+                if (group.contains(target) && !subgraph.containsEdge(source, target)) {
+                    subgraph.addEdge(source, target);
+                }
+            }
+        }
+        return subgraph;
+    }
+
+    private static void appendSubgraph(
+        Graph<TileInstance, DefaultEdge> source,
+        List<TileInstance> mergedInstancesOutput,
+        Graph<TileInstance, DefaultEdge> mergedGraphOutput
+    ) {
+        for (TileInstance vertex : source.vertexSet()) {
+            mergedInstancesOutput.add(vertex);
+            mergedGraphOutput.addVertex(vertex);
+        }
+        for (DefaultEdge edge : source.edgeSet()) {
+            TileInstance from = source.getEdgeSource(edge);
+            TileInstance to = source.getEdgeTarget(edge);
+            if (!mergedGraphOutput.containsEdge(from, to)) {
+                mergedGraphOutput.addEdge(from, to);
+            }
+        }
+    }
+
+    private static int frameIdOf(TileMatrix matrix) {
+        if (matrix == null || matrix.getGraph() == null || matrix.getGraph().vertexSet().isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+        return matrix.getGraph()
+            .vertexSet()
+            .stream()
+            .mapToInt(TileInstance::getFrameId)
+            .min()
+            .orElse(Integer.MAX_VALUE);
     }
 
     private static Integer mergeNeighbor(List<TileInstance> appearances, NeighborDirection neighborDirection) {

@@ -29,7 +29,6 @@ public final class PyramidalImageModel {
     private long gpuTextureBytesAssigned = 0L;
     private int selectedTileMatrixIndex = 0;
     private double imageBorderThreshold = Configuration.INITIAL_IMAGE_BORDER_THRESHOLD;
-    private int lastFrameToInclude = Configuration.START_FROM_FRAME;
 
     public PyramidalImageModel() {
         viewingCamera.setName("OrbiterCamera");
@@ -88,14 +87,6 @@ public final class PyramidalImageModel {
 
     public List<TileMatrix> getTileMatrices() {
         return Collections.unmodifiableList(tileMatrices);
-    }
-
-    public void setLastFrameToInclude(int newValue) {
-        this.lastFrameToInclude = newValue;
-    }
-
-    public int getLastFrameToInclude() {
-        return this.lastFrameToInclude;
     }
 
     public int getSelectedTileMatrixIndex() {

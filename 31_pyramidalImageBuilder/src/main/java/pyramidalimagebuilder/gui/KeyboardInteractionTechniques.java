@@ -69,50 +69,6 @@ public final class KeyboardInteractionTechniques implements KeyListener {
                     }
                 }
             }
-            case KeyEvent.KEY_3 -> {
-                if (model.decreaseImageBorderThreshold()) {
-                    System.out.println("Image border distance threshold: " + model.getImageBorderThreshold());
-                    if (reloadMatricesAction != null) {
-                        reloadMatricesAction.run();
-                    }
-                    if (repaintAction != null) {
-                        repaintAction.run();
-                    }
-                }
-            }
-            case KeyEvent.KEY_4 -> {
-                if (model.increaseImageBorderThreshold()) {
-                    System.out.println("Image border distance threshold: " + model.getImageBorderThreshold());
-                    if (reloadMatricesAction != null) {
-                        reloadMatricesAction.run();
-                    }
-                    if (repaintAction != null) {
-                        repaintAction.run();
-                    }
-                }
-            }
-            case KeyEvent.KEY_5 -> {
-                int val = model.getLastFrameToInclude() - 1;
-                if (val < Configuration.START_FROM_FRAME) {
-                    val = Configuration.START_FROM_FRAME;
-                }
-                model.setLastFrameToInclude(val);
-                if (reloadMatricesAction != null) {
-                    reloadMatricesAction.run();
-                }
-                if (repaintAction != null) {
-                    repaintAction.run();
-                }
-            }
-            case KeyEvent.KEY_6 -> {
-                model.setLastFrameToInclude(model.getLastFrameToInclude() + 1);
-                if (reloadMatricesAction != null) {
-                    reloadMatricesAction.run();
-                }
-                if (repaintAction != null) {
-                    repaintAction.run();
-                }
-            }
             default -> {
                 if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
                     if (repaintAction != null) {

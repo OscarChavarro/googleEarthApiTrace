@@ -33,8 +33,7 @@ public final class TraceSessionReader {
                 .filter(dir -> NUMERIC_DIR.matcher(dir.getFileName().toString()).matches())
                 .filter(dir -> {
                         int frameNumber = Integer.parseInt(dir.getFileName().toString());
-                        return frameNumber >= Configuration.START_FROM_FRAME
-                            && frameNumber <= model.getLastFrameToInclude();
+                        return frameNumber >= Configuration.START_FROM_FRAME;
                     }
                 )
                 .sorted(Comparator.comparing(dir -> dir.getFileName().toString()))
