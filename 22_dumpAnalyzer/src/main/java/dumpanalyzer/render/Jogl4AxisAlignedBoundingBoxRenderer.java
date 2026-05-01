@@ -21,33 +21,8 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         boolean useGoogleCameraView,
         Camera viewingCamera
     ) {
-        if (frameData == null) {
-            return;
-        }
-        float[] mvp = projection.exportToFloatArrayColumnOrder();
-        gl2.glMatrixMode(GL2.GL_PROJECTION);
-        gl2.glPushMatrix();
-        gl2.glLoadMatrixf(mvp, 0);
-        List<AxisAlignedBoundingBox> aabbs = frameData.getAxisAlignedBoundingBoxes();
-        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
-            for (AxisAlignedBoundingBox aabb : aabbs) {
-                drawAabb(gl2, aabb, frameData, useGoogleCameraView, viewingCamera);
-            }
-            gl2.glMatrixMode(GL2.GL_PROJECTION);
-            gl2.glPopMatrix();
-            gl2.glMatrixMode(GL2.GL_MODELVIEW);
-            return;
-        }
-        if (selectedTileIndex < 0 || selectedTileIndex >= aabbs.size()) {
-            gl2.glMatrixMode(GL2.GL_PROJECTION);
-            gl2.glPopMatrix();
-            gl2.glMatrixMode(GL2.GL_MODELVIEW);
-            return;
-        }
-        drawAabb(gl2, aabbs.get(selectedTileIndex), frameData, useGoogleCameraView, viewingCamera);
-        gl2.glMatrixMode(GL2.GL_PROJECTION);
-        gl2.glPopMatrix();
-        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        // Intentionally disabled: keep tile texture labels and neighbor arrows visible
+        // without rendering AABB wireframe boxes.
     }
 
     public List<Jogl4HudRenderer.ScreenLabel> buildLabelsForSelection(

@@ -6,6 +6,7 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class TileInstance {
     public static final int NO_NEIGHBOR = -1;
+    private static final double FULL_RESOLUTION_TOLERANCE = 1e-3;
 
     private final int contentId;
     private volatile String textureFile;
@@ -204,5 +205,39 @@ public final class TileInstance {
         this.detectedNorthNeighborIndex = north;
         this.detectedEastNeighborIndex = east;
         this.detectedWestNeighborIndex = west;
+    }
+
+    public boolean isFullResolutionWithRespectToTexture() {
+        if (stripTexCoords.isEmpty()) {
+            return false;
+        }
+        boolean hasAny = false;
+        double minU = Double.POSITIVE_INFINITY;
+        double maxU = Double.NEGATIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        double maxV = Double.NEGATIVE_INFINITY;
+
+        for (List<Vector3D> strip : stripTexCoords) {
+            if (strip == null || strip.isEmpty()) {
+                continue;
+            }
+            for (Vector3D uv : strip) {
+                if (uv == null || !Double.isFinite(uv.x()) || !Double.isFinite(uv.y())) {
+                    continue;
+                }
+                hasAny = true;
+                minU = Math.min(minU, uv.x());
+                maxU = Math.max(maxU, uv.x());
+                minV = Math.min(minV, uv.y());
+                maxV = Math.max(maxV, uv.y());
+            }
+        }
+        if (!hasAny) {
+            return false;
+        }
+
+        boolean coversU = minU <= FULL_RESOLUTION_TOLERANCE && maxU >= (1.0 - FULL_RESOLUTION_TOLERANCE);
+        boolean coversV = minV <= FULL_RESOLUTION_TOLERANCE && maxV >= (1.0 - FULL_RESOLUTION_TOLERANCE);
+        return coversU && coversV;
     }
 }

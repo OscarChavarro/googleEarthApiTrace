@@ -34,6 +34,8 @@ final class Jogl4TileRenderer {
         Camera camera
     ) {
         RendererConfiguration quality = model.getRendererConfiguration();
+        boolean fullResolution = tile.isFullResolutionWithRespectToTexture();
+        boolean forceRedWires = !fullResolution;
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
         if (textured) {
@@ -97,7 +99,7 @@ final class Jogl4TileRenderer {
             }
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
-        if (quality.isWiresSet()) {
+        if (quality.isWiresSet() || forceRedWires) {
             if (textured) {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
                 gl2.glDisable(GL2.GL_TEXTURE_2D);
@@ -106,7 +108,12 @@ final class Jogl4TileRenderer {
             gl2.glEnable(GL2.GL_DEPTH_TEST);
             gl2.glDepthMask(false);
             gl2.glDepthFunc(GL2.GL_LEQUAL);
-            gl2.glColor3d(1.0, 1.0, 1.0);
+            if (forceRedWires) {
+                gl2.glColor3d(1.0, 0.0, 0.0);
+            }
+            else {
+                gl2.glColor3d(1.0, 1.0, 1.0);
+            }
             gl2.glLineWidth(1.0f);
             for (List<Vector3D> strip : tile.getStrips()) {
                 if (strip.size() < 2) {

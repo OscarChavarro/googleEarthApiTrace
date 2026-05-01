@@ -17,7 +17,7 @@ public final class NeighborDetector {
     private static final double LOG2_CLUSTER_TOLERANCE = 0.20;
     private static final double MAX_ORTHOGONAL_RATIO = 0.70;
     private static final double CLUSTER_NEIGHBOR_DISTANCE_FACTOR = 2.5;
-    private static final double VIEWPORT_INNER_MARGIN_RATIO = 0.10;
+    private static final double CENTER_DISTANCE_DIAGONAL_FACTOR = 1.3;
 
     private NeighborDetector() {
     }
@@ -206,11 +206,6 @@ public final class NeighborDetector {
         if (tiles.isEmpty() || clusters.isEmpty()) {
             return;
         }
-        double minCenterX = (viewportWidth - 1) * VIEWPORT_INNER_MARGIN_RATIO;
-        double maxCenterX = (viewportWidth - 1) * (1.0 - VIEWPORT_INNER_MARGIN_RATIO);
-        double minCenterY = (viewportHeight - 1) * VIEWPORT_INNER_MARGIN_RATIO;
-        double maxCenterY = (viewportHeight - 1) * (1.0 - VIEWPORT_INNER_MARGIN_RATIO);
-
         for (ScaleCluster cluster : clusters) {
             List<NeighborProbe> probes = new ArrayList<>();
             double diagonalSum = 0.0;
@@ -226,11 +221,11 @@ public final class NeighborDetector {
                 if (tileIndex < 0 || tileIndex >= tiles.size()) {
                     continue;
                 }
-                double cx = (minX + maxX) * 0.5;
-                double cy = (minY + maxY) * 0.5;
-                if (cx <= minCenterX || cx >= maxCenterX || cy <= minCenterY || cy >= maxCenterY) {
+                if (!tiles.get(tileIndex).isFullResolutionWithRespectToTexture()) {
                     continue;
                 }
+                double cx = (minX + maxX) * 0.5;
+                double cy = (minY + maxY) * 0.5;
                 double dx = Math.abs((double)maxX - (double)minX);
                 double dy = Math.abs((double)maxY - (double)minY);
                 double diag = Math.sqrt(dx * dx + dy * dy);
@@ -272,6 +267,10 @@ public final class NeighborDetector {
             double ay = delta.y();
             double distance = Math.sqrt(ax * ax + ay * ay);
             if (!(distance > MIN_SIZE) || distance > maxNeighborDistance) {
+                continue;
+            }
+            double pairDiagonal = Math.max(source.diagonal(), target.diagonal());
+            if (!(pairDiagonal > MIN_SIZE) || distance > CENTER_DISTANCE_DIAGONAL_FACTOR * pairDiagonal) {
                 continue;
             }
             double along;
