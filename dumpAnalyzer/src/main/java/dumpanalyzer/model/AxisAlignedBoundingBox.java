@@ -1,5 +1,6 @@
 package dumpanalyzer.model;
 
+import java.awt.Color;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class AxisAlignedBoundingBox {
@@ -7,6 +8,7 @@ public final class AxisAlignedBoundingBox {
     private final Vector3D max;
     private final int textureId;
     private final double[] modelViewMatrix;
+    private volatile Color color = Color.YELLOW;
 
     public AxisAlignedBoundingBox(Vector3D min, Vector3D max, int textureId, double[] modelViewMatrix) {
         this.min = min == null ? null : Vector3D.copyOf(min);
@@ -29,5 +31,13 @@ public final class AxisAlignedBoundingBox {
 
     public double[] getModelViewMatrix() {
         return modelViewMatrix == null ? null : modelViewMatrix.clone();
+    }
+
+    public Color getColor() {
+        return color;
+    }
+
+    public void setColor(Color color) {
+        this.color = color == null ? Color.YELLOW : color;
     }
 }

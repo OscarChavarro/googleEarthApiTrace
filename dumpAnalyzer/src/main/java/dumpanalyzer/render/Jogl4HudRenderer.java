@@ -94,8 +94,9 @@ public final class Jogl4HudRenderer {
                 );
             }
             if (aabbLabels != null && !aabbLabels.isEmpty()) {
-                textRenderer.setColor(Color.YELLOW);
                 for (ScreenLabel label : aabbLabels) {
+                    Color c = label.color() == null ? Color.YELLOW : label.color();
+                    textRenderer.setColor(c);
                     textRenderer.draw(label.text(), label.x(), label.y());
                 }
                 textRenderer.setColor(Color.WHITE);
@@ -252,6 +253,6 @@ public final class Jogl4HudRenderer {
     private record TextureResident(String path, Image image, int width, int height, int glTextureId, long bytesAssigned) {
     }
 
-    public record ScreenLabel(int x, int y, String text) {
+    public record ScreenLabel(int x, int y, String text, Color color) {
     }
 }

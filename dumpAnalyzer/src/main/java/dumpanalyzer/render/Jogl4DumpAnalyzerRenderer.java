@@ -24,6 +24,7 @@ import com.jogamp.opengl.awt.GLCanvas;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
+import dumpanalyzer.processing.NeighborDetector;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
@@ -53,6 +54,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private String offlineOutputPath;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
+    private int lastProcessedFrameIndex = -1;
     private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
     private static final Vector3D WORLD_ORIGIN = new Vector3D(0.0, 0.0, 0.0);
     private static final double MAX_ABS_COORD = 1.0e6;
@@ -150,6 +152,10 @@ public class Jogl4DumpAnalyzerRenderer implements
         List<Jogl4HudRenderer.ScreenLabel> aabbLabels = List.of();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
             Frame selectedFrame = frames.get(state.selectedFrameIndex());
+            if (state.selectedFrameIndex() != lastProcessedFrameIndex) {
+                NeighborDetector.populateNeighbors(selectedFrame);
+                lastProcessedFrameIndex = state.selectedFrameIndex();
+            }
             drawSelectedTile(
                 gl,
                 drawable.getGL().getGL2(),

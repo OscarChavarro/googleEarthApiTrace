@@ -1,5 +1,6 @@
 package dumpanalyzer.render;
 
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -110,7 +111,8 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         gl2.glEnable(GL2.GL_DEPTH_TEST);
         gl2.glDepthMask(false);
         gl2.glDepthFunc(GL2.GL_LEQUAL);
-        gl2.glColor3d(1.0, 1.0, 0.0);
+        Color c = aabb.getColor();
+        gl2.glColor3d(c.getRed() / 255.0, c.getGreen() / 255.0, c.getBlue() / 255.0);
         gl2.glLineWidth(2.0f);
 
         Vector3D min = aabb.getMin();
@@ -168,7 +170,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         if (pixel == null) {
             return;
         }
-        labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(aabb.getTextureId())));
+        labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(aabb.getTextureId()), aabb.getColor()));
     }
 
     private static int[] projectToViewportPixel(
