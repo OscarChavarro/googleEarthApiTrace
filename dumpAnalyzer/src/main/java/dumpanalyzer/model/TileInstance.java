@@ -8,6 +8,7 @@ public final class TileInstance {
     public static final int NO_NEIGHBOR = -1;
 
     private final int contentId;
+    private volatile String textureFile;
     private final Integer southNeighbor;
     private final Integer northNeighbor;
     private final Integer eastNeighbor;
@@ -33,6 +34,7 @@ public final class TileInstance {
 
     public TileInstance(
         int contentId,
+        String textureFile,
         Integer southNeighbor,
         Integer northNeighbor,
         Integer eastNeighbor,
@@ -53,6 +55,7 @@ public final class TileInstance {
         double[] modelViewMatrix
     ) {
         this.contentId = contentId;
+        this.textureFile = textureFile;
         this.southNeighbor = southNeighbor;
         this.northNeighbor = northNeighbor;
         this.eastNeighbor = eastNeighbor;
@@ -75,6 +78,14 @@ public final class TileInstance {
 
     public int getContentId() {
         return contentId;
+    }
+
+    public String getTextureFile() {
+        return textureFile;
+    }
+
+    public void setTextureFile(String textureFile) {
+        this.textureFile = textureFile;
     }
 
     public Integer getSouthNeighbor() {

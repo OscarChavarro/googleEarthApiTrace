@@ -8,6 +8,7 @@ import dumpanalyzer.gui.MouseInteractionTechnique;
 import dumpanalyzer.io.TracedModelReader;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.options.CommandLineOptions;
 import dumpanalyzer.processing.NeighborDetector;
 import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
@@ -24,7 +25,7 @@ public class Main {
         model.setSelectedFrameIndex(config.startFrame());
         TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, Configuration.MAX_FRAME);
         tracedModelReader.importInto(model, workerCount);
-        preprocessNeighborsAndExport(model.snapshotFrames(), config.width(), config.height());
+        preprocessNeighborsAndExport(model, model.snapshotFrames(), config.width(), config.height());
 
         Thread rendererThread = null;
         if (!config.offline()) {
@@ -87,13 +88,27 @@ public class Main {
         System.exit(0);
     }
 
-    private static void preprocessNeighborsAndExport(List<Frame> frames, int viewportWidth, int viewportHeight) {
+    private static void preprocessNeighborsAndExport(
+        DumpAnalyzerModel model,
+        List<Frame> frames,
+        int viewportWidth,
+        int viewportHeight
+    ) {
         if (frames == null || frames.isEmpty()) {
             return;
         }
         int width = Math.max(1, viewportWidth);
         int height = Math.max(1, viewportHeight);
         for (Frame frame : frames) {
+            if (frame != null) {
+                for (TileInstance tile : frame.getTiles()) {
+                    if (tile == null) {
+                        continue;
+                    }
+                    String texturePath = model.getTexturePath(frame.getId(), tile.getContentId());
+                    tile.setTextureFile(texturePath);
+                }
+            }
             Matrix4x4 projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
             if (projection == null) {
                 projection = Matrix4x4.identityMatrix();

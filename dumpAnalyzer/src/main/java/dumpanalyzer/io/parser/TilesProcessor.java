@@ -449,6 +449,7 @@ final class TilesProcessor {
                 null,
                 null,
                 null,
+                null,
                 min,
                 max,
                 flatPoints,

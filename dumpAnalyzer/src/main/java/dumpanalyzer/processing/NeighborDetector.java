@@ -230,7 +230,7 @@ public final class NeighborDetector {
                     continue;
                 }
                 diagonalSum += diag;
-                probes.add(new NeighborProbe(tileIndex, new Vector3D(cx, cy, 0.0), diag));
+                probes.add(new NeighborProbe(tileIndex, tiles.get(tileIndex).getContentId(), new Vector3D(cx, cy, 0.0), diag));
             }
             if (probes.size() < 2) {
                 continue;
@@ -253,7 +253,7 @@ public final class NeighborDetector {
         double maxNeighborDistance,
         Direction direction
     ) {
-        int bestIndex = TileInstance.NO_NEIGHBOR;
+        int bestContentId = TileInstance.NO_NEIGHBOR;
         double bestScore = Double.POSITIVE_INFINITY;
         for (NeighborProbe target : probes) {
             if (source.tileIndex() == target.tileIndex()) {
@@ -299,10 +299,10 @@ public final class NeighborDetector {
             double score = along + orth * 1.8;
             if (score < bestScore) {
                 bestScore = score;
-                bestIndex = target.tileIndex();
+                bestContentId = target.contentId();
             }
         }
-        return bestIndex;
+        return bestContentId;
     }
 
 }
