@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,13 +56,14 @@ public final class TileInstancesMerger {
                 .min(Comparator.comparingInt(TileInstance::getFrameId))
                 .map(TileInstance::getFrameId)
                 .orElse(-1);
+            String textureFile = mergeTextureFile(appearances);
 
             Integer south = mergeNeighbor(appearances, Direction.SOUTH);
             Integer north = mergeNeighbor(appearances, Direction.NORTH);
             Integer east = mergeNeighbor(appearances, Direction.EAST);
             Integer west = mergeNeighbor(appearances, Direction.WEST);
 
-            merged.add(new TileInstance(tileId, representativeFrameId, south, north, east, west));
+            merged.add(new TileInstance(tileId, representativeFrameId, textureFile, south, north, east, west));
         }
 
         merged.sort(Comparator.comparingInt(TileInstance::getTileId));
@@ -230,7 +232,7 @@ public final class TileInstancesMerger {
     }
 
     private static Integer mergeNeighbor(List<TileInstance> appearances, Direction direction) {
-        Integer fixed = null;
+        Set<Integer> distinctByDirection = new HashSet<>();
         for (TileInstance tile : appearances) {
             Integer candidate = switch (direction) {
                 case SOUTH -> tile.getSouthNeighbor();
@@ -238,18 +240,24 @@ public final class TileInstancesMerger {
                 case EAST -> tile.getEastNeighbor();
                 case WEST -> tile.getWestNeighbor();
             };
-            if (candidate == null) {
-                continue;
-            }
-            if (fixed == null) {
-                fixed = candidate;
-                continue;
-            }
-            if (!fixed.equals(candidate)) {
-                return null;
+            if (candidate != null) {
+                distinctByDirection.add(candidate);
             }
         }
-        return fixed;
+        if (distinctByDirection.size() != 1) {
+            return null;
+        }
+        return distinctByDirection.iterator().next();
+    }
+
+    private static String mergeTextureFile(List<TileInstance> appearances) {
+        for (TileInstance tile : appearances) {
+            String path = tile.getTextureFile();
+            if (path != null && !path.isBlank()) {
+                return path;
+            }
+        }
+        return null;
     }
 
     public enum Direction {

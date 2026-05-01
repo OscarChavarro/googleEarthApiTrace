@@ -22,11 +22,12 @@ public final class TileInstanceReader {
         List<TileInstance> result = new ArrayList<>(tiles.size());
         for (JsonNode tile : tiles) {
             int tileId = tile.path("contentId").asInt(-1);
+            String textureFile = nullableText(tile.get("textureFile"));
             Integer south = nullableNeighbor(tile.get("southNeighbor"));
             Integer north = nullableNeighbor(tile.get("northNeighbor"));
             Integer east = nullableNeighbor(tile.get("eastNeighbor"));
             Integer west = nullableNeighbor(tile.get("westNeighbor"));
-            result.add(new TileInstance(tileId, frameId, south, north, east, west));
+            result.add(new TileInstance(tileId, frameId, textureFile, south, north, east, west));
         }
         return result;
     }
@@ -40,5 +41,16 @@ public final class TileInstanceReader {
             return null;
         }
         return value;
+    }
+
+    private static String nullableText(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String text = node.asText(null);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return text;
     }
 }

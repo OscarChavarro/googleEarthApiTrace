@@ -3,10 +3,8 @@ package pyramidalimagebuilder.model;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.ArrayDeque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.jgrapht.Graph;
 import org.jgrapht.graph.DefaultDirectedGraph;
@@ -20,10 +18,8 @@ public final class PyramidalImageModel {
     private final List<TileInstance> mergedTileInstances = new ArrayList<>();
     private Graph<TileInstance, DefaultEdge> mergedTileGraph = new DefaultDirectedGraph<>(DefaultEdge.class);
     private final List<TileMatrix> tileMatrices = new ArrayList<>();
-    private final Map<Integer, String> texturePathById = new HashMap<>();
-    private final Map<Integer, Integer> textureFirstFrameById = new HashMap<>();
-    private final Set<Integer> residentTextureIds = new HashSet<>();
-    private final ArrayDeque<Integer> residentTexturesFifo = new ArrayDeque<>();
+    private final Set<String> residentTexturePaths = new HashSet<>();
+    private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedTileMatrixIndex = 0;
 
@@ -132,50 +128,35 @@ public final class PyramidalImageModel {
         return cols + " x " + rows;
     }
 
-    public synchronized void registerTexturePath(int frameId, int textureId, String absolutePath) {
-        if (textureId < 0 || absolutePath == null || absolutePath.isBlank()) {
-            return;
-        }
-        Integer currentFirst = textureFirstFrameById.get(textureId);
-        if (currentFirst == null || frameId < currentFirst) {
-            textureFirstFrameById.put(textureId, frameId);
-            texturePathById.put(textureId, absolutePath);
-        }
-    }
-
-    public synchronized String getTexturePath(int textureId) {
-        return texturePathById.get(textureId);
-    }
-
     public synchronized long getGpuTextureBytesAssigned() {
         return gpuTextureBytesAssigned;
     }
 
-    public synchronized boolean markTextureResident(int textureId, long bytes) {
-        if (textureId < 0 || bytes <= 0L || residentTextureIds.contains(textureId)) {
+    public synchronized boolean markTextureResident(String texturePath, long bytes) {
+        if (texturePath == null || texturePath.isBlank() || bytes <= 0L || residentTexturePaths.contains(texturePath)) {
             return false;
         }
-        residentTextureIds.add(textureId);
-        residentTexturesFifo.addLast(textureId);
+        residentTexturePaths.add(texturePath);
+        residentTexturesFifo.addLast(texturePath);
         gpuTextureBytesAssigned += bytes;
         return true;
     }
 
-    public synchronized Integer popOldestResidentTextureId() {
+    public synchronized String popOldestResidentTexturePath() {
         while (!residentTexturesFifo.isEmpty()) {
-            int textureId = residentTexturesFifo.pollFirst();
-            if (residentTextureIds.contains(textureId)) {
-                return textureId;
+            String texturePath = residentTexturesFifo.pollFirst();
+            if (residentTexturePaths.contains(texturePath)) {
+                return texturePath;
             }
         }
         return null;
     }
 
-    public synchronized void unmarkTextureResident(int textureId, long bytes) {
-        if (!residentTextureIds.remove(textureId)) {
+    public synchronized void unmarkTextureResident(String texturePath, long bytes) {
+        if (texturePath == null || !residentTexturePaths.remove(texturePath)) {
             return;
         }
-        residentTexturesFifo.removeFirstOccurrence(textureId);
+        residentTexturesFifo.removeFirstOccurrence(texturePath);
         gpuTextureBytesAssigned = Math.max(0L, gpuTextureBytesAssigned - Math.max(0L, bytes));
     }
 }

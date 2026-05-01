@@ -15,7 +15,7 @@ import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileMatrix;
 
 public final class Jogl4TileMatrixRenderer {
-    private final Map<Integer, TextureResident> residentsByTextureId = new HashMap<>();
+    private final Map<String, TextureResident> residentsByTexturePath = new HashMap<>();
 
     public void draw(
         GL2 gl2,
@@ -134,7 +134,7 @@ public final class Jogl4TileMatrixRenderer {
                 if (tile == null) {
                     continue;
                 }
-                TextureResident resident = acquireTexture(gl2, model, tile.getTileId());
+                TextureResident resident = acquireTexture(gl2, model, tile.getTextureFile());
                 double x0 = col;
                 double y0 = -row;
                 double x1 = x0 + 1.0;
@@ -178,19 +178,18 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glDisable(GL2.GL_TEXTURE_2D);
     }
 
-    private TextureResident acquireTexture(GL2 gl2, PyramidalImageModel model, int textureId) {
-        TextureResident resident = residentsByTextureId.get(textureId);
+    private TextureResident acquireTexture(GL2 gl2, PyramidalImageModel model, String texturePath) {
+        TextureResident resident = residentsByTexturePath.get(texturePath);
         if (resident != null) {
             return resident;
         }
 
-        String path = model.getTexturePath(textureId);
-        if (path == null || path.isBlank()) {
+        if (texturePath == null || texturePath.isBlank()) {
             return null;
         }
         Texture texture;
         try {
-            texture = TextureIO.newTexture(new File(path), true);
+            texture = TextureIO.newTexture(new File(texturePath), true);
         }
         catch (IOException ex) {
             return null;
@@ -206,19 +205,19 @@ public final class Jogl4TileMatrixRenderer {
             bytes = (long)w * (long)h * 4L;
         }
 
-        residentsByTextureId.put(textureId, new TextureResident(texture, bytes));
-        model.markTextureResident(textureId, bytes);
+        residentsByTexturePath.put(texturePath, new TextureResident(texture, bytes));
+        model.markTextureResident(texturePath, bytes);
         enforceTextureBudget(gl2, model);
-        return residentsByTextureId.get(textureId);
+        return residentsByTexturePath.get(texturePath);
     }
 
     private void enforceTextureBudget(GL2 gl2, PyramidalImageModel model) {
         while (model.getGpuTextureBytesAssigned() > Configuration.MAX_GPU_TEXTURE_MEMORY) {
-            Integer oldest = model.popOldestResidentTextureId();
+            String oldest = model.popOldestResidentTexturePath();
             if (oldest == null) {
                 return;
             }
-            TextureResident resident = residentsByTextureId.remove(oldest);
+            TextureResident resident = residentsByTexturePath.remove(oldest);
             if (resident == null) {
                 continue;
             }

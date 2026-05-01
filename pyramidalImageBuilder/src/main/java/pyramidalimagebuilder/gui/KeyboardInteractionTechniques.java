@@ -4,21 +4,25 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import vsdk.toolkit.gui.AwtSystem;
+import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
     private final PyramidalImageModel model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
+    private final CameraControllerOrbiter cameraController;
     private final RendererConfigurationController renderingConfigurationController;
 
     public KeyboardInteractionTechniques(
         PyramidalImageModel model,
         Runnable closeAction,
+        CameraControllerOrbiter cameraController,
         Runnable repaintAction
     ) {
         this.model = model;
         this.closeAction = closeAction;
+        this.cameraController = cameraController;
         this.repaintAction = repaintAction;
         this.renderingConfigurationController = model == null
             ? null
@@ -59,11 +63,22 @@ public final class KeyboardInteractionTechniques implements KeyListener {
                     repaintAction.run();
                 }
             }
+            return;
+        }
+        if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
+            if (repaintAction != null) {
+                repaintAction.run();
+            }
         }
     }
 
     @Override
     public void keyReleased(KeyEvent e) {
+        if (cameraController != null && cameraController.processKeyReleasedEvent(AwtSystem.awt2vsdkEvent(e))) {
+            if (repaintAction != null) {
+                repaintAction.run();
+            }
+        }
     }
 
     @Override
