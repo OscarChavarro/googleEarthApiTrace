@@ -42,6 +42,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private final Runnable shutdownHook;
     private final DumpAnalyzerModel model;
     private final Jogl4HudRenderer hudRenderer;
+    private final Jogl4AxisAlignedBoundingBoxRenderer axisAlignedBoundingBoxRenderer;
     private final Camera viewingCamera;
     private final CameraControllerOrbiter cameraController;
     private volatile boolean closing;
@@ -64,6 +65,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         this.model = model;
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
+        this.axisAlignedBoundingBoxRenderer = new Jogl4AxisAlignedBoundingBoxRenderer();
         this.viewingCamera = model.getViewingCamera();
         this.cameraController = new CameraControllerOrbiter(viewingCamera);
         this.cameraController.setDeltaMovement(0.2);
@@ -261,8 +263,18 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             int tileOrdinal = 0;
             for (TileInstance tile : frameData.getTiles()) {
-                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, true, useGoogleCameraView);
+                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, useGoogleCameraView);
                 tileOrdinal++;
+            }
+            if (model.getRendererConfiguration().isBoundingVolumeSet()) {
+                axisAlignedBoundingBoxRenderer.drawForSelection(
+                    gl2,
+                    frameData,
+                    selectedTileIndex,
+                    projection,
+                    useGoogleCameraView,
+                    viewingCamera
+                );
             }
             return;
         }
@@ -270,7 +282,17 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex);
-        drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, true, useGoogleCameraView);
+        drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, false, useGoogleCameraView);
+        if (model.getRendererConfiguration().isBoundingVolumeSet()) {
+            axisAlignedBoundingBoxRenderer.drawForSelection(
+                gl2,
+                frameData,
+                selectedTileIndex,
+                projection,
+                useGoogleCameraView,
+                viewingCamera
+            );
+        }
     }
 
     private void drawTileWireframe(
@@ -314,95 +336,15 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (!model.getRendererConfiguration().isBoundingVolumeSet()) {
             return List.of();
         }
-        if (frameData == null || viewportWidth <= 0 || viewportHeight <= 0) {
-            return List.of();
-        }
-        List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
-        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
-            for (TileInstance tile : frameData.getTiles()) {
-                appendAabbLabel(labels, frameData, tile, projection, useGoogleCameraView, viewportWidth, viewportHeight);
-            }
-            return labels;
-        }
-        if (selectedTileIndex < 0 || selectedTileIndex >= frameData.getTiles().size()) {
-            return labels;
-        }
-        appendAabbLabel(
-            labels,
+        return axisAlignedBoundingBoxRenderer.buildLabelsForSelection(
             frameData,
-            frameData.getTiles().get(selectedTileIndex),
+            selectedTileIndex,
             projection,
             useGoogleCameraView,
+            viewingCamera,
             viewportWidth,
             viewportHeight
         );
-        return labels;
-    }
-
-    private void appendAabbLabel(
-        List<Jogl4HudRenderer.ScreenLabel> labels,
-        Frame frameData,
-        TileInstance tile,
-        Matrix4x4 projection,
-        boolean useGoogleCameraView,
-        int viewportWidth,
-        int viewportHeight
-    ) {
-        if (tile == null || tile.getMin() == null || tile.getMax() == null) {
-            return;
-        }
-        Vector3D center = new Vector3D(
-            (tile.getMin().x() + tile.getMax().x()) * 0.5,
-            (tile.getMin().y() + tile.getMax().y()) * 0.5,
-            (tile.getMin().z() + tile.getMax().z()) * 0.5
-        );
-        double[] modelView = CoordinatesTransforms.geometryModelView(useGoogleCameraView, viewingCamera, frameData);
-        if (useGoogleCameraView && tile.getModelViewMatrix() != null && tile.getModelViewMatrix().length == 16) {
-            modelView = tile.getModelViewMatrix();
-        }
-        int[] pixel = projectToViewportPixel(center, modelView, projection, viewportWidth, viewportHeight);
-        if (pixel == null) {
-            return;
-        }
-        labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(tile.getContentId())));
-    }
-
-    private static int[] projectToViewportPixel(
-        Vector3D p,
-        double[] modelView,
-        Matrix4x4 projection,
-        int viewportWidth,
-        int viewportHeight
-    ) {
-        if (p == null || modelView == null || modelView.length != 16 || projection == null) {
-            return null;
-        }
-        double ex = modelView[0] * p.x() + modelView[4] * p.y() + modelView[8] * p.z() + modelView[12];
-        double ey = modelView[1] * p.x() + modelView[5] * p.y() + modelView[9] * p.z() + modelView[13];
-        double ez = modelView[2] * p.x() + modelView[6] * p.y() + modelView[10] * p.z() + modelView[14];
-        double ew = modelView[3] * p.x() + modelView[7] * p.y() + modelView[11] * p.z() + modelView[15];
-
-        double[] proj = projection.exportToDoubleArrayColumnOrder();
-        if (proj == null || proj.length != 16) {
-            return null;
-        }
-        double cx = proj[0] * ex + proj[4] * ey + proj[8] * ez + proj[12] * ew;
-        double cy = proj[1] * ex + proj[5] * ey + proj[9] * ez + proj[13] * ew;
-        double cw = proj[3] * ex + proj[7] * ey + proj[11] * ez + proj[15] * ew;
-        if (Math.abs(cw) < 1e-12) {
-            return null;
-        }
-        double ndcX = cx / cw;
-        double ndcY = cy / cw;
-        if (!Double.isFinite(ndcX) || !Double.isFinite(ndcY)) {
-            return null;
-        }
-        int px = (int)Math.round((ndcX * 0.5 + 0.5) * (viewportWidth - 1));
-        int py = (int)Math.round((ndcY * 0.5 + 0.5) * (viewportHeight - 1));
-        if (px < 0 || px >= viewportWidth || py < 0 || py >= viewportHeight) {
-            return null;
-        }
-        return new int[] { px, py };
     }
 
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {

@@ -9,6 +9,7 @@ import java.util.Objects;
 public final class Frame implements Comparable<Frame> {
     private final int id;
     private final List<TileInstance> tiles;
+    private final List<AxisAlignedBoundingBox> axisAlignedBoundingBoxes;
     private final double[] projectionMatrix;
     private final double[] modelViewMatrix;
 
@@ -17,6 +18,7 @@ public final class Frame implements Comparable<Frame> {
         List<TileInstance> copy = new ArrayList<>(tiles);
         copy.sort(Comparator.comparingInt(TileInstance::getContentId));
         this.tiles = Collections.unmodifiableList(copy);
+        this.axisAlignedBoundingBoxes = Collections.unmodifiableList(buildAabbsFromTiles(copy));
         this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
         this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
@@ -27,6 +29,10 @@ public final class Frame implements Comparable<Frame> {
 
     public List<TileInstance> getTiles() {
         return tiles;
+    }
+
+    public List<AxisAlignedBoundingBox> getAxisAlignedBoundingBoxes() {
+        return axisAlignedBoundingBoxes;
     }
 
     public double[] getProjectionMatrix() {
@@ -52,5 +58,16 @@ public final class Frame implements Comparable<Frame> {
     @Override
     public int hashCode() {
         return Objects.hash(id);
+    }
+
+    private static List<AxisAlignedBoundingBox> buildAabbsFromTiles(List<TileInstance> tiles) {
+        List<AxisAlignedBoundingBox> out = new ArrayList<>(tiles.size());
+        for (TileInstance tile : tiles) {
+            if (tile == null || tile.getMin() == null || tile.getMax() == null) {
+                continue;
+            }
+            out.add(new AxisAlignedBoundingBox(tile.getMin(), tile.getMax(), tile.getContentId(), tile.getModelViewMatrix()));
+        }
+        return out;
     }
 }
