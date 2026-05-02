@@ -1,7 +1,6 @@
 package pyramidalimagebuilder.gui;
 
 import java.awt.event.KeyListener;
-import pyramidalimagebuilder.config.Configuration;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 
 import vsdk.toolkit.gui.KeyEvent;
@@ -37,6 +36,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     @Override
     public void keyPressed(java.awt.event.KeyEvent e) {
         KeyEvent event = AwtSystem.awt2vsdkEvent(e);
+        char keyChar = e.getKeyChar();
 
         if (event.keycode == KeyEvent.KEY_ESC && closeAction != null) {
             closeAction.run();
@@ -52,28 +52,41 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             }
             return;
         }
+        if (keyChar == 't') {
+            event.keycode = KeyEvent.KEY_F8;
+            if (renderingConfigurationController != null
+                && renderingConfigurationController.processKeyPressedEvent(event)) {
+                if (repaintAction != null) repaintAction.run();
+                return;
+            }
+        }
+
         switch (event.keycode) {
             case KeyEvent.KEY_1 -> {
-                if (model.selectPreviousTileMatrix()) {
-                    System.out.println("TileMatrix size (columns x rows): " + model.selectedTileMatrixSizeText());
-                    if (repaintAction != null) {
-                        repaintAction.run();
-                    }
+                if (model.selectPreviousFrame()) {
+                    if (repaintAction != null) repaintAction.run();
                 }
             }
             case KeyEvent.KEY_2 -> {
-                if (model.selectNextTileMatrix()) {
-                    System.out.println("TileMatrix size (columns x rows): " + model.selectedTileMatrixSizeText());
-                    if (repaintAction != null) {
-                        repaintAction.run();
-                    }
+                if (model.selectNextFrame()) {
+                    if (repaintAction != null) repaintAction.run();
+                }
+            }
+            case KeyEvent.KEY_3 -> {
+                if (model.selectPreviousTile() && repaintAction != null) repaintAction.run();
+            }
+            case KeyEvent.KEY_4 -> {
+                if (model.selectNextTile() && repaintAction != null) repaintAction.run();
+            }
+            case KeyEvent.KEY_T -> {
+                if (keyChar == 'T') {
+                    if (reloadMatricesAction != null) reloadMatricesAction.run();
+                    if (repaintAction != null) repaintAction.run();
                 }
             }
             default -> {
                 if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
-                    if (repaintAction != null) {
-                        repaintAction.run();
-                    }
+                    if (repaintAction != null) repaintAction.run();
                 }
             }
         }

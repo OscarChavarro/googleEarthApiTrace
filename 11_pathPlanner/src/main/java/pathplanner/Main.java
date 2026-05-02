@@ -11,8 +11,8 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
-            System.err.println("Uso: gradle run --args=\"<generador> <lat> <lon> <distancia_paso_m> <distancia_maxima_m>\"");
-            System.err.println("Generadores soportados: spiral, zigzag");
+            System.err.println("Usage: gradle run --args=\"<generator> <lat> <lon> <step_distance_m> <max_distance_m>\"");
+            System.err.println("Supported generators: spiral, zigzag");
             System.exit(1);
         }
 
@@ -22,10 +22,10 @@ public class Main {
         double stepMeters = Double.parseDouble(args[3]);
         double maxDistanceMeters = Double.parseDouble(args[4]);
         if (stepMeters <= 0.0) {
-            throw new IllegalArgumentException("La distancia debe ser positiva.");
+            throw new IllegalArgumentException("Step distance must be positive.");
         }
         if (maxDistanceMeters <= 0.0) {
-            throw new IllegalArgumentException("La distancia máxima debe ser positiva.");
+            throw new IllegalArgumentException("Maximum distance must be positive.");
         }
 
         CurveGenerator curveGenerator = buildGenerator(generatorName);
@@ -36,7 +36,7 @@ public class Main {
         List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, 2.0 * stepMeters);
         kmzPersistance.updateKml(KML_PATH, TURTLE_FOLDER_NAME, TURTLE_STYLE_ID, curve, markerPoints);
 
-        System.out.println("Curva turtle generada con " + curve.size() + " vértices y " + markerPoints.size() + " puntos z en " + KML_PATH);
+        System.out.println("Generated turtle curve with " + curve.size() + " vertices and " + markerPoints.size() + " z-points in " + KML_PATH);
     }
 
     private static CurveGenerator buildGenerator(String generatorName) {
@@ -46,6 +46,6 @@ public class Main {
         if (GENERATOR_ZIGZAG.equalsIgnoreCase(generatorName)) {
             return new ZigzagGenerator();
         }
-        throw new IllegalArgumentException("Generador no soportado: " + generatorName + ". Usa: spiral o zigzag");
+        throw new IllegalArgumentException("Unsupported generator: " + generatorName + ". Use: spiral or zigzag");
     }
 }

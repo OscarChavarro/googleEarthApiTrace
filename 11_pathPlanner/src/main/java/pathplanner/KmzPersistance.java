@@ -22,7 +22,7 @@ final class KmzPersistance {
     void updateKml(String kmlPath, String turtleFolderName, String turtleStyleId, List<Point> points, List<Point> markerPoints) throws Exception {
         File file = new File(kmlPath);
         if (!file.exists()) {
-            throw new IllegalStateException("No existe el archivo KML: " + kmlPath);
+            throw new IllegalStateException("KML file does not exist: " + kmlPath);
         }
 
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
@@ -32,7 +32,7 @@ final class KmzPersistance {
 
         Element documentElement = findFirstElementByLocalName(doc.getDocumentElement(), "Document");
         if (documentElement == null) {
-            throw new IllegalStateException("KML inválido: no se encontró nodo Document");
+            throw new IllegalStateException("Invalid KML: Document node was not found");
         }
 
         removeFolderByName(documentElement, turtleFolderName);

@@ -1,29 +1,25 @@
 package pyramidalimagebuilder.model;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import pyramidalimagebuilder.config.Configuration;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 
 public final class PyramidalImageModel {
-    private static final double IMAGE_BORDER_THRESHOLD_MIN = 0.0;
-    private static final double IMAGE_BORDER_THRESHOLD_MAX = 100000.0;
-    private static final double IMAGE_BORDER_THRESHOLD_STEP = 1000.0;
+    public static final int SELECT_ALL_TILES = -1;
 
     private final Camera viewingCamera = new Camera();
     private final RendererConfiguration renderingConfiguration = new RendererConfiguration();
-    private final List<TileInstance> tileInstances = new ArrayList<>();
-    private final List<TileMatrix> tileMatrices = new ArrayList<>();
+    private final List<FrameData> frames = new ArrayList<>();
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private long gpuTextureBytesAssigned = 0L;
-    private int selectedTileMatrixIndex = 0;
-    private double imageBorderThreshold = Configuration.INITIAL_IMAGE_BORDER_THRESHOLD;
+    private int selectedFrameIndex = 0;
+    private int selectedTileIndex = SELECT_ALL_TILES;
 
     public PyramidalImageModel() {
         viewingCamera.setName("OrbiterCamera");
@@ -38,74 +34,102 @@ public final class PyramidalImageModel {
         return renderingConfiguration;
     }
 
-    public void setTileInstances(List<TileInstance> tiles) {
-        tileInstances.clear();
-        if (tiles != null) {
-            tileInstances.addAll(tiles);
+    public void setFrames(List<FrameData> loadedFrames) {
+        frames.clear();
+        if (loadedFrames != null) {
+            frames.addAll(loadedFrames);
         }
+        selectedFrameIndex = 0;
+        selectedTileIndex = SELECT_ALL_TILES;
+        applyCameraForSelectedFrame();
     }
 
-    public List<TileInstance> getTileInstances() {
-        return Collections.unmodifiableList(tileInstances);
+    public List<FrameData> getFrames() {
+        return Collections.unmodifiableList(frames);
     }
 
-    public void setTileMatrices(List<TileMatrix> tileMatrices) {
-        this.tileMatrices.clear();
-        if (tileMatrices != null) {
-            this.tileMatrices.addAll(tileMatrices);
-        }
-        selectedTileMatrixIndex = 0;
-    }
-
-    public List<TileMatrix> getTileMatrices() {
-        return Collections.unmodifiableList(tileMatrices);
-    }
-
-    public int getSelectedTileMatrixIndex() {
-        if (tileMatrices.isEmpty()) {
+    public int getSelectedFrameIndex() {
+        if (frames.isEmpty()) {
             return -1;
         }
-        if (selectedTileMatrixIndex < 0) {
-            selectedTileMatrixIndex = 0;
-        }
-        if (selectedTileMatrixIndex >= tileMatrices.size()) {
-            selectedTileMatrixIndex = tileMatrices.size() - 1;
-        }
-        return selectedTileMatrixIndex;
+        selectedFrameIndex = clamp(selectedFrameIndex, 0, frames.size() - 1);
+        return selectedFrameIndex;
     }
 
-    public TileMatrix getSelectedTileMatrix() {
-        int idx = getSelectedTileMatrixIndex();
+    public int getSelectedTileIndex() {
+        FrameData frame = getSelectedFrame();
+        if (frame == null || frame.getTiles().isEmpty()) {
+            selectedTileIndex = SELECT_ALL_TILES;
+            return selectedTileIndex;
+        }
+        selectedTileIndex = clamp(selectedTileIndex, SELECT_ALL_TILES, frame.getTiles().size() - 1);
+        return selectedTileIndex;
+    }
+
+    public FrameData getSelectedFrame() {
+        int idx = getSelectedFrameIndex();
         if (idx < 0) {
             return null;
         }
-        return tileMatrices.get(idx);
+        return frames.get(idx);
     }
 
-    public boolean selectPreviousTileMatrix() {
-        if (tileMatrices.isEmpty() || selectedTileMatrixIndex <= 0) {
+    public boolean selectPreviousFrame() {
+        if (frames.isEmpty() || selectedFrameIndex <= 0) {
             return false;
         }
-        selectedTileMatrixIndex--;
+        selectedFrameIndex--;
+        selectedTileIndex = SELECT_ALL_TILES;
+        applyCameraForSelectedFrame();
         return true;
     }
 
-    public boolean selectNextTileMatrix() {
-        if (tileMatrices.isEmpty() || selectedTileMatrixIndex >= tileMatrices.size() - 1) {
+    public boolean selectNextFrame() {
+        if (frames.isEmpty() || selectedFrameIndex >= frames.size() - 1) {
             return false;
         }
-        selectedTileMatrixIndex++;
+        selectedFrameIndex++;
+        selectedTileIndex = SELECT_ALL_TILES;
+        applyCameraForSelectedFrame();
         return true;
     }
 
-    public String selectedTileMatrixSizeText() {
-        TileMatrix selected = getSelectedTileMatrix();
-        if (selected == null || selected.getM() == null || selected.getM().length == 0) {
-            return "0 x 0";
+    public boolean selectPreviousTile() {
+        FrameData frame = getSelectedFrame();
+        if (frame == null || frame.getTiles().isEmpty()) {
+            return false;
         }
-        int rows = selected.getM().length;
-        int cols = selected.getM()[0].length;
-        return cols + " x " + rows;
+        if (selectedTileIndex <= SELECT_ALL_TILES) {
+            selectedTileIndex = frame.getTiles().size() - 1;
+            return true;
+        }
+        selectedTileIndex--;
+        return true;
+    }
+
+    public boolean selectNextTile() {
+        FrameData frame = getSelectedFrame();
+        if (frame == null || frame.getTiles().isEmpty()) {
+            return false;
+        }
+        if (selectedTileIndex >= frame.getTiles().size() - 1) {
+            selectedTileIndex = SELECT_ALL_TILES;
+            return true;
+        }
+        selectedTileIndex++;
+        return true;
+    }
+
+    private void applyCameraForSelectedFrame() {
+        FrameData selected = getSelectedFrame();
+        if (selected == null || selected.getCameraState() == null) {
+            return;
+        }
+        selected.getCameraState().applyTo(viewingCamera);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     public synchronized long getGpuTextureBytesAssigned() {
@@ -138,26 +162,5 @@ public final class PyramidalImageModel {
         }
         residentTexturesFifo.removeFirstOccurrence(texturePath);
         gpuTextureBytesAssigned = Math.max(0L, gpuTextureBytesAssigned - Math.max(0L, bytes));
-    }
-
-    public synchronized double getImageBorderThreshold() {
-        return imageBorderThreshold;
-    }
-
-    public synchronized boolean decreaseImageBorderThreshold() {
-        return setImageBorderThreshold(imageBorderThreshold - IMAGE_BORDER_THRESHOLD_STEP);
-    }
-
-    public synchronized boolean increaseImageBorderThreshold() {
-        return setImageBorderThreshold(imageBorderThreshold + IMAGE_BORDER_THRESHOLD_STEP);
-    }
-
-    private boolean setImageBorderThreshold(double value) {
-        double clamped = Math.max(IMAGE_BORDER_THRESHOLD_MIN, Math.min(IMAGE_BORDER_THRESHOLD_MAX, value));
-        if (Double.compare(clamped, imageBorderThreshold) == 0) {
-            return false;
-        }
-        imageBorderThreshold = clamped;
-        return true;
     }
 }

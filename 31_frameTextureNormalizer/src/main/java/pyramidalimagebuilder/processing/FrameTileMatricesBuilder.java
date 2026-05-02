@@ -3,7 +3,6 @@ package pyramidalimagebuilder.processing;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -13,25 +12,22 @@ import org.jgrapht.alg.connectivity.ConnectivityInspector;
 import org.jgrapht.graph.AsUndirectedGraph;
 import org.jgrapht.graph.DefaultDirectedGraph;
 import org.jgrapht.graph.DefaultEdge;
-import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileMatrix;
 
-public final class TileInstancesMerger {
+public final class FrameTileMatricesBuilder {
     private final HintGraphFromTileInstancesBuilder hintsGraphBuilder = new HintGraphFromTileInstancesBuilder();
     private final HintGraphToTileMatrixConvertor graphToTileMatrixConvertor = new HintGraphToTileMatrixConvertor();
 
-    public void execute(PyramidalImageModel model) {
-        if (model == null || model.getTileInstances().isEmpty()) {
-            return;
+    public List<TileMatrix> build(List<TileInstance> source) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
         }
-        Map<Integer, List<TileInstance>> byFrame = groupByFrame(model.getTileInstances());
+        Map<Integer, List<TileInstance>> byFrame = groupByFrame(source);
         List<FrameComponentSelection> selectedByFrame = new ArrayList<>();
 
         for (Map.Entry<Integer, List<TileInstance>> frameEntry : byFrame.entrySet()) {
-            List<TileInstance> mergedFrameTiles =
-                buildMergedTileInstancesFilteredByAmbigousNeighbors(frameEntry.getValue());
-            Graph<TileInstance, DefaultEdge> frameHintsGraph = hintsGraphBuilder.build(mergedFrameTiles);
+            Graph<TileInstance, DefaultEdge> frameHintsGraph = hintsGraphBuilder.build(frameEntry.getValue());
             Graph<TileInstance, DefaultEdge> largestConnectedComponent = largestConnectedComponent(frameHintsGraph);
             if (largestConnectedComponent == null || largestConnectedComponent.vertexSet().size() <= 1) {
                 continue;
@@ -46,7 +42,7 @@ public final class TileInstancesMerger {
         for (FrameComponentSelection frameSelection : deDuplicated) {
             tileMatrices.add(graphToTileMatrixConvertor.convert(frameSelection.component()));
         }
-        model.setTileMatrices(tileMatrices);
+        return tileMatrices;
     }
 
     private static Map<Integer, List<TileInstance>> groupByFrame(List<TileInstance> source) {
@@ -58,41 +54,6 @@ public final class TileInstancesMerger {
             byFrame.computeIfAbsent(tile.getFrameId(), ignored -> new ArrayList<>()).add(tile);
         }
         return byFrame;
-    }
-
-    private List<TileInstance> buildMergedTileInstancesFilteredByAmbigousNeighbors(List<TileInstance> source) {
-        Map<Integer, List<TileInstance>> byTileId = new HashMap<>();
-        for (TileInstance tile : source) {
-            if (tile == null || tile.getTileId() < 0) {
-                continue;
-            }
-            byTileId.computeIfAbsent(tile.getTileId(), ignored -> new ArrayList<>()).add(tile);
-        }
-
-        List<TileInstance> merged = new ArrayList<>(byTileId.size());
-        for (Map.Entry<Integer, List<TileInstance>> entry : byTileId.entrySet()) {
-            int tileId = entry.getKey();
-            List<TileInstance> appearances = entry.getValue();
-            if (appearances.isEmpty()) {
-                continue;
-            }
-
-            int representativeFrameId = appearances.stream()
-                .min(Comparator.comparingInt(TileInstance::getFrameId))
-                .map(TileInstance::getFrameId)
-                .orElse(-1);
-            String textureFile = mergeTextureFile(appearances);
-
-            Integer south = mergeNeighbor(appearances, NeighborDirection.SOUTH);
-            Integer north = mergeNeighbor(appearances, NeighborDirection.NORTH);
-            Integer east = mergeNeighbor(appearances, NeighborDirection.EAST);
-            Integer west = mergeNeighbor(appearances, NeighborDirection.WEST);
-
-            merged.add(new TileInstance(tileId, representativeFrameId, textureFile, south, north, east, west));
-        }
-
-        merged.sort(Comparator.comparingInt(TileInstance::getTileId));
-        return merged;
     }
 
     private Graph<TileInstance, DefaultEdge> largestConnectedComponent(Graph<TileInstance, DefaultEdge> graph) {
@@ -171,35 +132,6 @@ public final class TileInstancesMerger {
             }
         }
         return out;
-    }
-
-    private static Integer mergeNeighbor(List<TileInstance> appearances, NeighborDirection neighborDirection) {
-        Set<Integer> distinctByDirection = new HashSet<>();
-        for (TileInstance tile : appearances) {
-            Integer candidate = switch (neighborDirection) {
-                case SOUTH -> tile.getSouthNeighbor();
-                case NORTH -> tile.getNorthNeighbor();
-                case EAST -> tile.getEastNeighbor();
-                case WEST -> tile.getWestNeighbor();
-            };
-            if (candidate != null) {
-                distinctByDirection.add(candidate);
-            }
-        }
-        if (distinctByDirection.size() != 1) {
-            return null;
-        }
-        return distinctByDirection.iterator().next();
-    }
-
-    private static String mergeTextureFile(List<TileInstance> appearances) {
-        for (TileInstance tile : appearances) {
-            String path = tile.getTextureFile();
-            if (path != null && !path.isBlank()) {
-                return path;
-            }
-        }
-        return null;
     }
 
     private record FrameComponentSelection(

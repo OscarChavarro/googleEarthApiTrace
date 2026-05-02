@@ -33,6 +33,7 @@ public final class Frame implements Comparable<Frame> {
         return tiles;
     }
 
+    @JsonIgnore
     public List<AxisAlignedBoundingBox> getAxisAlignedBoundingBoxes() {
         return axisAlignedBoundingBoxes;
     }

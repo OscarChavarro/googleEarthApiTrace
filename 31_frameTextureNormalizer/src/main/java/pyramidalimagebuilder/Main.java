@@ -11,7 +11,6 @@ import pyramidalimagebuilder.gui.KeyboardInteractionTechniques;
 import pyramidalimagebuilder.gui.MouseOrbiterInteraction;
 import pyramidalimagebuilder.io.TraceSessionReader;
 import pyramidalimagebuilder.model.PyramidalImageModel;
-import pyramidalimagebuilder.processing.TileInstancesMerger;
 import pyramidalimagebuilder.render.Jogl4PyramidalImageBuilderRenderer;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -19,12 +18,10 @@ public class Main {
     public static void main(String[] args) {
         PyramidalImageModel model = new PyramidalImageModel();
 
-        TraceSessionReader traceSessionReader = new TraceSessionReader(model);
-        TileInstancesMerger tileInstancesMerger = new TileInstancesMerger();
+        TraceSessionReader traceSessionReader = new TraceSessionReader();
         Runnable reloadTileMatrices = () -> {
-            model.setTileInstances(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));
-            tileInstancesMerger.execute(model);
-            System.out.println("TileMatrix size (columns x rows): " + model.selectedTileMatrixSizeText());
+            model.setFrames(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));
+            System.out.println("Loaded frames: " + model.getFrames().size());
         };
         reloadTileMatrices.run();
 

@@ -137,7 +137,7 @@ final class Geodesy {
                 return new InverseResult(distance, initialBearing);
             }
         }
-        throw new IllegalStateException("No convergió la inversa geodésica en WGS84.");
+        throw new IllegalStateException("WGS84 inverse geodesic did not converge.");
     }
 
     static double distanceWgs84Meters(Point p1, Point p2) {

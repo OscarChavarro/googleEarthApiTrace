@@ -21,7 +21,7 @@ import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
 
 public class GoogleEarthController {
-    private static final long CONTINUE_DELAY_SECONDS = 5;
+    private static final long CONTINUE_DELAY_SECONDS = 10;
     private static final long KEY_HOLD_MILLIS = 400;
     private static final long BETWEEN_KEYS_MILLIS = 1000;
 

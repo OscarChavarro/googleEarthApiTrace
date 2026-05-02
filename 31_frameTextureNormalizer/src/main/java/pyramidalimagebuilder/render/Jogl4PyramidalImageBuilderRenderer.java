@@ -10,21 +10,17 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
 import pyramidalimagebuilder.gui.MouseOrbiterInteraction;
+import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
-import pyramidalimagebuilder.model.TileInstance;
-import pyramidalimagebuilder.model.TileMatrix;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener {
     private final PyramidalImageModel model;
     private final CameraControllerOrbiter cameraController;
-    private final Jogl4TileMatrixRenderer tileMatrixRenderer = new Jogl4TileMatrixRenderer();
+    private final Jogl4TileMatrixRenderer tileRenderer = new Jogl4TileMatrixRenderer();
+    private final Jogl4NeighborhoodRenderer neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
     private TextRenderer hudTextRenderer;
 
     public Jogl4PyramidalImageBuilderRenderer(PyramidalImageModel model) {
@@ -70,18 +66,42 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         gl.glClearColor(0.05f, 0.06f, 0.08f, 1.0f);
         gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
 
+        FrameData selected = model.getSelectedFrame();
+        if (selected == null) {
+            drawHud(drawable, 0, 0, -1, -1);
+            return;
+        }
+
         Matrix4x4 projection = model.getViewingCamera().calculateViewVolumeMatrix();
-        Matrix4x4 view = model.getViewingCamera().calculateTransformationMatrix();
+        float[] modelViewForDraw = toFloat16(
+            selected.getCameraState() == null ? null : selected.getCameraState().getModelViewMatrix()
+        );
+        if (modelViewForDraw == null) {
+            modelViewForDraw = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
+        }
 
         gl2.glMatrixMode(GL2.GL_PROJECTION);
         gl2.glLoadMatrixf(projection.exportToFloatArrayColumnOrder(), 0);
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
-        gl2.glLoadMatrixf(view.exportToFloatArrayColumnOrder(), 0);
+        gl2.glLoadMatrixf(modelViewForDraw, 0);
 
-        TileMatrix selected = model.getSelectedTileMatrix();
-        tileMatrixRenderer.draw(gl2, selected, model.getRenderingConfiguration(), model);
-        drawCoordinateFrame(gl2);
-        drawHud(drawable, selected, projection, view);
+        tileRenderer.draw(
+            gl2,
+            selected.getTiles(),
+            model.getRenderingConfiguration(),
+            model,
+            model.getSelectedTileIndex()
+        );
+        if (model.getRenderingConfiguration().isBoundingVolumeSet()) {
+            neighborhoodRenderer.drawForSelection(gl2, selected.getTiles(), model.getSelectedTileIndex());
+        }
+        drawHud(
+            drawable,
+            model.getSelectedFrameIndex() + 1,
+            model.getFrames().size(),
+            selected.getId(),
+            model.getSelectedTileIndex()
+        );
     }
 
     @Override
@@ -89,164 +109,33 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         MouseOrbiterInteraction.processReshape(drawable.getGL().getGL4(), model.getViewingCamera(), width, height);
     }
 
-    private static void drawCoordinateFrame(GL2 gl2) {
-        gl2.glLineWidth(2.5f);
-        gl2.glBegin(GL2.GL_LINES);
-
-        gl2.glColor3d(1.0, 0.2, 0.2);
-        gl2.glVertex3d(0.0, 0.0, 0.0);
-        gl2.glVertex3d(1.5, 0.0, 0.0);
-
-        gl2.glColor3d(0.2, 1.0, 0.2);
-        gl2.glVertex3d(0.0, 0.0, 0.0);
-        gl2.glVertex3d(0.0, 1.5, 0.0);
-
-        gl2.glColor3d(0.2, 0.6, 1.0);
-        gl2.glVertex3d(0.0, 0.0, 0.0);
-        gl2.glVertex3d(0.0, 0.0, 1.5);
-
-        gl2.glEnd();
-    }
-
-    private void drawHud(GLAutoDrawable drawable, TileMatrix selectedMatrix, Matrix4x4 projection, Matrix4x4 view) {
+    private void drawHud(GLAutoDrawable drawable, int selectedFrameOneBased, int totalFrames, int frameId, int selectedTileIndex) {
         if (hudTextRenderer == null) {
             return;
         }
-        int selected = model.getSelectedTileMatrixIndex();
-        int total = model.getTileMatrices().size();
-        String selectionText = total <= 0 || selected < 0 ? "0/0" : (selected + 1) + "/" + total;
-        int selectedFrame = selectedFrameId(selectedMatrix);
-        String frameText = selectedFrame < 0 ? "n/a" : Integer.toString(selectedFrame);
-        String text = "Selected frame matrix [1, 2]: " + selectionText + " (frame " + frameText + ")";
-        int tilesInCurrent = 0;
-        if (selectedMatrix != null && selectedMatrix.getGraph() != null) {
-            tilesInCurrent = selectedMatrix.getGraph().vertexSet().size();
-        }
-        int totalTiles = 0;
-        for (TileMatrix matrix : model.getTileMatrices()) {
-            if (matrix == null || matrix.getGraph() == null) {
-                continue;
-            }
-            totalTiles += matrix.getGraph().vertexSet().size();
-        }
-        String stats = "Tiles in current matrix: " + tilesInCurrent + ", total tiles: " + totalTiles;
-        String thresholdText = "Image border distance threshold [3, 4]: " + model.getImageBorderThreshold();
+        String frameText = frameId < 0 ? "n/a" : Integer.toString(frameId);
+        String selection = totalFrames <= 0 ? "0/0" : selectedFrameOneBased + "/" + totalFrames;
+        String tileText = selectedTileIndex == PyramidalImageModel.SELECT_ALL_TILES ? "ALL" : Integer.toString(selectedTileIndex);
+
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
         drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(w, h);
         hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
-        hudTextRenderer.draw(text, 16, h - 28);
-        hudTextRenderer.draw(stats, 16, h - 50);
-        hudTextRenderer.draw(thresholdText, 16, h - 72);
-        if (model.getRenderingConfiguration().isBoundingVolumeSet()) {
-            List<ScreenLabel> labels = buildTextureLabels(selectedMatrix, projection, view, w, h);
-            for (ScreenLabel label : labels) {
-                hudTextRenderer.draw(label.text(), label.x(), label.y());
-            }
-        }
+        hudTextRenderer.draw("Frame [1,2]: " + selection + " (id " + frameText + ")", 16, h - 28);
+        hudTextRenderer.draw("Tile [3,4]: " + tileText, 16, h - 50);
         hudTextRenderer.endRendering();
         drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
     }
 
-    private List<ScreenLabel> buildTextureLabels(
-        TileMatrix selectedMatrix,
-        Matrix4x4 projection,
-        Matrix4x4 view,
-        int viewportWidth,
-        int viewportHeight
-    ) {
-        List<ScreenLabel> labels = new ArrayList<>();
-        if (selectedMatrix == null || selectedMatrix.getM() == null) {
-            return labels;
-        }
-        TileInstance[][] matrix = selectedMatrix.getM();
-        for (int row = 0; row < matrix.length; row++) {
-            for (int col = 0; col < matrix[row].length; col++) {
-                TileInstance tile = matrix[row][col];
-                if (tile == null) {
-                    continue;
-                }
-                String textureNumber = textureNumberFromFilename(tile.getTextureFile());
-                if (textureNumber == null || textureNumber.isBlank()) {
-                    continue;
-                }
-                Vector3D center = new Vector3D(col + 0.5, -row - 0.5, 0.0);
-                int[] pixel = projectToViewportPixel(center, view, projection, viewportWidth, viewportHeight);
-                if (pixel == null) {
-                    continue;
-                }
-                labels.add(new ScreenLabel(textureNumber, pixel[0], pixel[1]));
-            }
-        }
-        return labels;
-    }
-
-    private static String textureNumberFromFilename(String textureImageFilename) {
-        if (textureImageFilename == null || textureImageFilename.isBlank()) {
+    private static float[] toFloat16(double[] values) {
+        if (values == null || values.length != 16) {
             return null;
         }
-        String name = new File(textureImageFilename).getName();
-        if (name.startsWith("256x256_")) {
-            name = name.substring("256x256_".length());
+        float[] out = new float[16];
+        for (int i = 0; i < 16; i++) {
+            out[i] = (float)values[i];
         }
-        if (name.endsWith(".png")) {
-            name = name.substring(0, name.length() - ".png".length());
-        }
-        return name;
-    }
-
-    private static int[] projectToViewportPixel(
-        Vector3D p,
-        Matrix4x4 view,
-        Matrix4x4 projection,
-        int viewportWidth,
-        int viewportHeight
-    ) {
-        if (p == null || view == null || projection == null || viewportWidth <= 0 || viewportHeight <= 0) {
-            return null;
-        }
-        double[] model = view.exportToDoubleArrayColumnOrder();
-        double[] proj = projection.exportToDoubleArrayColumnOrder();
-        if (model == null || model.length != 16 || proj == null || proj.length != 16) {
-            return null;
-        }
-        double vx = p.x();
-        double vy = p.y();
-        double vz = p.z();
-
-        double cx = model[0] * vx + model[4] * vy + model[8] * vz + model[12];
-        double cy = model[1] * vx + model[5] * vy + model[9] * vz + model[13];
-        double cz = model[2] * vx + model[6] * vy + model[10] * vz + model[14];
-        double cw = model[3] * vx + model[7] * vy + model[11] * vz + model[15];
-
-        double qx = proj[0] * cx + proj[4] * cy + proj[8] * cz + proj[12] * cw;
-        double qy = proj[1] * cx + proj[5] * cy + proj[9] * cz + proj[13] * cw;
-        double qw = proj[3] * cx + proj[7] * cy + proj[11] * cz + proj[15] * cw;
-        if (Math.abs(qw) < 1.0e-12) {
-            return null;
-        }
-
-        double ndcX = qx / qw;
-        double ndcY = qy / qw;
-        int px = (int)Math.round((ndcX * 0.5 + 0.5) * (viewportWidth - 1));
-        int py = (int)Math.round((ndcY * 0.5 + 0.5) * (viewportHeight - 1));
-        if (px < 0 || px >= viewportWidth || py < 0 || py >= viewportHeight) {
-            return null;
-        }
-        return new int[] {px, py};
-    }
-
-    private record ScreenLabel(String text, int x, int y) {
-    }
-
-    private static int selectedFrameId(TileMatrix matrix) {
-        if (matrix == null || matrix.getGraph() == null || matrix.getGraph().vertexSet().isEmpty()) {
-            return -1;
-        }
-        return matrix.getGraph().vertexSet().stream()
-            .mapToInt(TileInstance::getFrameId)
-            .min()
-            .orElse(-1);
+        return out;
     }
 }
