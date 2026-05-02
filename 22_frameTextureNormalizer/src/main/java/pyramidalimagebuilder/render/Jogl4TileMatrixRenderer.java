@@ -57,6 +57,24 @@ public final class Jogl4TileMatrixRenderer {
                 drawPoints(gl2, tiles.get(i));
             }
         }
+        drawIncorrectMappingWires(gl2, tiles, selectedTileIndex);
+    }
+
+    private void drawIncorrectMappingWires(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glColor3d(1.0, 0.0, 0.0);
+        gl2.glLineWidth(2.5f);
+        for (int i = 0; i < tiles.size(); i++) {
+            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                continue;
+            }
+            TileInstance tile = tiles.get(i);
+            if (tile == null || !tile.isIncorrectMatrixMapping()) {
+                continue;
+            }
+            drawWire(gl2, tile);
+        }
+        gl2.glLineWidth(1.0f);
     }
 
     private void drawSurfaces(

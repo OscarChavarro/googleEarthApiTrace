@@ -1,16 +1,15 @@
 package pyramidalimagebuilder;
 
-import java.nio.file.Path;
-import pyramidalimagebuilder.config.Configuration;
+import java.util.List;
+
+import pyramidalimagebuilder.io.FrameReader;
 import pyramidalimagebuilder.io.TraceSessionReader;
-import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.processing.DuplicatedTextureFilenameMapper;
 import pyramidalimagebuilder.processing.Sha256SignatureGenerator;
 import pyramidalimagebuilder.processing.TileFiltererByGeometricNullNeighbors;
 import pyramidalimagebuilder.processing.TileMatrixProcessor;
 import pyramidalimagebuilder.processing.TileTextureNormalizer;
-import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
@@ -20,7 +19,7 @@ public class Main {
         TileFiltererByGeometricNullNeighbors tileFilterer = new TileFiltererByGeometricNullNeighbors();
 
         System.out.print("Loading traced frames... ");
-        Runnable reloadTileMatrices = loadTracedFrames(traceSessionReader, tileFilterer, model);
+        Runnable reloadTileMatrices = FrameReader.loadTracedFrames(traceSessionReader, tileFilterer, model);
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -40,26 +39,4 @@ public class Main {
 
         InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
     }
-
-    private static Runnable loadTracedFrames(
-        TraceSessionReader traceSessionReader,
-        TileFiltererByGeometricNullNeighbors tileFilterer,
-        PyramidalImageModel model
-    ) {
-        Runnable reloadTileMatrices = () -> {
-            List<FrameData> loaded = traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH));
-            List<FrameData> filtered = loaded.stream()
-                .map(frame -> new FrameData(
-                    frame.getId(),
-                    tileFilterer.filter(frame.getTiles(), model.getViewingCamera()),
-                    frame.getCameraState()
-                ))
-                .toList();
-            model.setFrames(filtered);
-            System.out.println("Loaded frames: " + model.getFrames().size());
-        };
-        reloadTileMatrices.run();
-        return reloadTileMatrices;
-    }
-
 }

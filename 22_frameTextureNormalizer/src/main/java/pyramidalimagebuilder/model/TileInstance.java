@@ -13,6 +13,7 @@ public final class TileInstance {
     private final TriangleStripGeometry triangleStrip;
     private final Integer matrixI;
     private final Integer matrixJ;
+    private final boolean incorrectMatrixMapping;
 
     public TileInstance(
         int tileId,
@@ -24,7 +25,19 @@ public final class TileInstance {
         Integer westNeighbor,
         TriangleStripGeometry triangleStrip
     ) {
-        this(tileId, frameId, textureFile, southNeighbor, northNeighbor, eastNeighbor, westNeighbor, triangleStrip, null, null);
+        this(
+            tileId,
+            frameId,
+            textureFile,
+            southNeighbor,
+            northNeighbor,
+            eastNeighbor,
+            westNeighbor,
+            triangleStrip,
+            null,
+            null,
+            false
+        );
     }
 
     public TileInstance(
@@ -39,6 +52,34 @@ public final class TileInstance {
         Integer matrixI,
         Integer matrixJ
     ) {
+        this(
+            tileId,
+            frameId,
+            textureFile,
+            southNeighbor,
+            northNeighbor,
+            eastNeighbor,
+            westNeighbor,
+            triangleStrip,
+            matrixI,
+            matrixJ,
+            false
+        );
+    }
+
+    public TileInstance(
+        int tileId,
+        int frameId,
+        String textureFile,
+        Integer southNeighbor,
+        Integer northNeighbor,
+        Integer eastNeighbor,
+        Integer westNeighbor,
+        TriangleStripGeometry triangleStrip,
+        Integer matrixI,
+        Integer matrixJ,
+        boolean incorrectMatrixMapping
+    ) {
         this.tileId = tileId;
         this.frameId = frameId;
         this.textureFile = textureFile;
@@ -49,6 +90,7 @@ public final class TileInstance {
         this.triangleStrip = triangleStrip;
         this.matrixI = matrixI;
         this.matrixJ = matrixJ;
+        this.incorrectMatrixMapping = incorrectMatrixMapping;
     }
 
     public int getTileId() {
@@ -89,6 +131,10 @@ public final class TileInstance {
 
     public Integer getMatrixJ() {
         return matrixJ;
+    }
+
+    public boolean isIncorrectMatrixMapping() {
+        return incorrectMatrixMapping;
     }
 
     public record TriangleStripGeometry(int vertexCount, List<TriangleStripVertex> vertices) {}

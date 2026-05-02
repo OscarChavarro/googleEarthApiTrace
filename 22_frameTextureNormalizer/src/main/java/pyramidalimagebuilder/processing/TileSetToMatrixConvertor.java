@@ -13,6 +13,8 @@ import pyramidalimagebuilder.model.TileMatrix;
 import pyramidalimagebuilder.model.TileMatrix.TileCoord;
 
 public final class TileSetToMatrixConvertor {
+    private final Set<Integer> lastConflictingTileIds = new HashSet<>();
+
     private record Coord(int i, int j) {
     }
 
@@ -36,6 +38,7 @@ public final class TileSetToMatrixConvertor {
     }
 
     public TileMatrix convert(FrameData frameData) {
+        lastConflictingTileIds.clear();
         if (frameData == null || frameData.getTiles() == null || frameData.getTiles().isEmpty()) {
             return new TileMatrix(frameData == null ? -1 : frameData.getId(), 0, 0, List.of());
         }
@@ -48,7 +51,7 @@ public final class TileSetToMatrixConvertor {
         }
 
         Map<Integer, Coord> coordsByTileId = new HashMap<>();
-        Set<Coord> usedCoords = new HashSet<>();
+        Map<Coord, Integer> ownerByCoord = new HashMap<>();
         int nextComponentStartJ = 0;
 
         for (TileInstance seed : frameData.getTiles()) {
@@ -56,7 +59,7 @@ public final class TileSetToMatrixConvertor {
                 continue;
             }
             Coord componentOrigin = new Coord(0, nextComponentStartJ);
-            if (!assignComponent(seed.getTileId(), componentOrigin, byId, coordsByTileId, usedCoords)) {
+            if (!assignComponent(seed.getTileId(), componentOrigin, byId, coordsByTileId, ownerByCoord)) {
                 return null;
             }
             nextComponentStartJ = componentMaxJ(coordsByTileId) + 2;
@@ -96,11 +99,11 @@ public final class TileSetToMatrixConvertor {
         Coord seedCoord,
         Map<Integer, TileInstance> byId,
         Map<Integer, Coord> coordsByTileId,
-        Set<Coord> usedCoords
+        Map<Coord, Integer> ownerByCoord
     ) {
         ArrayDeque<Integer> stack = new ArrayDeque<>();
         coordsByTileId.put(seedTileId, seedCoord);
-        usedCoords.add(seedCoord);
+        ownerByCoord.put(seedCoord, seedTileId);
         stack.push(seedTileId);
 
         while (!stack.isEmpty()) {
@@ -114,16 +117,16 @@ public final class TileSetToMatrixConvertor {
                 return false;
             }
 
-            if (!assignNeighbor(tile.getNorthNeighbor(), Direction.NORTH, base, byId, coordsByTileId, usedCoords, stack)) {
+            if (!assignNeighbor(currentId, tile.getNorthNeighbor(), Direction.NORTH, base, byId, coordsByTileId, ownerByCoord, stack)) {
                 return false;
             }
-            if (!assignNeighbor(tile.getSouthNeighbor(), Direction.SOUTH, base, byId, coordsByTileId, usedCoords, stack)) {
+            if (!assignNeighbor(currentId, tile.getSouthNeighbor(), Direction.SOUTH, base, byId, coordsByTileId, ownerByCoord, stack)) {
                 return false;
             }
-            if (!assignNeighbor(tile.getEastNeighbor(), Direction.EAST, base, byId, coordsByTileId, usedCoords, stack)) {
+            if (!assignNeighbor(currentId, tile.getEastNeighbor(), Direction.EAST, base, byId, coordsByTileId, ownerByCoord, stack)) {
                 return false;
             }
-            if (!assignNeighbor(tile.getWestNeighbor(), Direction.WEST, base, byId, coordsByTileId, usedCoords, stack)) {
+            if (!assignNeighbor(currentId, tile.getWestNeighbor(), Direction.WEST, base, byId, coordsByTileId, ownerByCoord, stack)) {
                 return false;
             }
         }
@@ -131,12 +134,13 @@ public final class TileSetToMatrixConvertor {
     }
 
     private boolean assignNeighbor(
+        int currentId,
         Integer neighborId,
         Direction direction,
         Coord from,
         Map<Integer, TileInstance> byId,
         Map<Integer, Coord> coordsByTileId,
-        Set<Coord> usedCoords,
+        Map<Coord, Integer> ownerByCoord,
         ArrayDeque<Integer> stack
     ) {
         if (neighborId == null || !byId.containsKey(neighborId)) {
@@ -145,15 +149,21 @@ public final class TileSetToMatrixConvertor {
         Coord expected = direction.move(from);
         Coord assigned = coordsByTileId.get(neighborId);
         if (assigned == null) {
-            if (usedCoords.contains(expected)) {
+            Integer owner = ownerByCoord.get(expected);
+            if (owner != null && owner != neighborId) {
+                registerConflict(neighborId, owner);
                 return false;
             }
             coordsByTileId.put(neighborId, expected);
-            usedCoords.add(expected);
+            ownerByCoord.put(expected, neighborId);
             stack.push(neighborId);
             return true;
         }
-        return assigned.i == expected.i && assigned.j == expected.j;
+        if (assigned.i != expected.i || assigned.j != expected.j) {
+            registerConflict(currentId, neighborId);
+            return false;
+        }
+        return true;
     }
 
     private static int componentMaxJ(Map<Integer, Coord> coordsByTileId) {
@@ -164,5 +174,18 @@ public final class TileSetToMatrixConvertor {
             }
         }
         return maxJ == Integer.MIN_VALUE ? 0 : maxJ;
+    }
+
+    public Set<Integer> getLastConflictingTileIds() {
+        return Set.copyOf(lastConflictingTileIds);
+    }
+
+    private void registerConflict(Integer a, Integer b) {
+        if (a != null) {
+            lastConflictingTileIds.add(a);
+        }
+        if (b != null) {
+            lastConflictingTileIds.add(b);
+        }
     }
 }

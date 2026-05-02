@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import pyramidalimagebuilder.io.MatrixWriter;
 import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.TileInstance;
@@ -25,10 +26,12 @@ public final class TileMatrixProcessor {
             TileMatrix matrix = convertor.convert(frame);
             if (matrix == null) {
                 frame.setWithMatrixErrors(true);
+                Set<Integer> conflictIds = convertor.getLastConflictingTileIds();
+                List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(frame.getTiles(), conflictIds);
                 System.out.println(
                     "Matrix conversion failed for frame id " + frame.getId() + " (conflicting tile coordinates)"
                 );
-                out.add(frame);
+                out.add(new FrameData(frame.getId(), flaggedTiles, frame.getCameraState(), true));
                 continue;
             }
             List<TileInstance> tilesWithCoords = applyMatrixCoordinates(frame.getTiles(), matrix);
@@ -67,7 +70,35 @@ public final class TileMatrixProcessor {
                 tile.getWestNeighbor(),
                 tile.getTriangleStrip(),
                 c == null ? null : c.i(),
-                c == null ? null : c.j()
+                c == null ? null : c.j(),
+                tile.isIncorrectMatrixMapping()
+            ));
+        }
+        return out;
+    }
+
+    private List<TileInstance> markIncorrectMatrixMappings(List<TileInstance> tiles, Set<Integer> conflictIds) {
+        if (tiles == null || tiles.isEmpty()) {
+            return List.of();
+        }
+        List<TileInstance> out = new ArrayList<>(tiles.size());
+        for (TileInstance tile : tiles) {
+            if (tile == null) {
+                continue;
+            }
+            boolean incorrect = conflictIds != null && conflictIds.contains(tile.getTileId());
+            out.add(new TileInstance(
+                tile.getTileId(),
+                tile.getFrameId(),
+                tile.getTextureFile(),
+                tile.getSouthNeighbor(),
+                tile.getNorthNeighbor(),
+                tile.getEastNeighbor(),
+                tile.getWestNeighbor(),
+                tile.getTriangleStrip(),
+                tile.getMatrixI(),
+                tile.getMatrixJ(),
+                incorrect
             ));
         }
         return out;
