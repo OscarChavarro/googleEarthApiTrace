@@ -172,10 +172,12 @@ public final class TileInstance {
         return skipReason;
     }
 
+    @JsonIgnore
     public double[] getProjectionMatrix() {
         return projectionMatrix == null ? null : projectionMatrix.clone();
     }
 
+    @JsonIgnore
     public double[] getModelViewMatrix() {
         return modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
@@ -240,4 +242,28 @@ public final class TileInstance {
         boolean coversV = minV <= FULL_RESOLUTION_TOLERANCE && maxV >= (1.0 - FULL_RESOLUTION_TOLERANCE);
         return coversU && coversV;
     }
+
+    public TriangleStripGeometry getTriangleStrip() {
+        if (skipped || !"GL_TRIANGLE_STRIP".equals(primitive)) {
+            return null;
+        }
+        if (strips.size() != 1 || stripTexCoords.size() != 1) {
+            return null;
+        }
+        List<Vector3D> strip = strips.get(0);
+        List<Vector3D> uv = stripTexCoords.get(0);
+        if (strip == null || uv == null || strip.size() < 3 || strip.size() != uv.size()) {
+            return null;
+        }
+        List<TriangleStripVertex> vertices = new java.util.ArrayList<>(strip.size());
+        for (int i = 0; i < strip.size(); i++) {
+            Vector3D p = strip.get(i);
+            Vector3D t = uv.get(i);
+            vertices.add(new TriangleStripVertex(p.x(), p.y(), p.z(), t.x(), t.y()));
+        }
+        return new TriangleStripGeometry(vertices.size(), List.copyOf(vertices));
+    }
+
+    public record TriangleStripGeometry(int vertexCount, List<TriangleStripVertex> vertices) {}
+    public record TriangleStripVertex(double x, double y, double z, double u, double v) {}
 }

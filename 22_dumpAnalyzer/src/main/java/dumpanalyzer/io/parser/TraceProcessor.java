@@ -18,6 +18,7 @@ import org.antlr.v4.runtime.Recognizer;
 
 import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.Frame;
+import vsdk.toolkit.environment.Camera;
 
 public class TraceProcessor {
     private final FunctionCounter functionCounter;
@@ -36,20 +37,33 @@ public class TraceProcessor {
         }
         catch (IOException e) {
             FatalErrorHandler.fail(filePath, "Cannot read file: " + e.getMessage());
-            return new Frame(frame, List.of(), null, null);
+            return new Frame(frame, List.of(), null, null, null);
         }
 
         String normalized = LogicalLineProcessor.normalize(content);
         parseOrFail(filePath, normalized);
         functionCounter.addFromContent(normalized);
 
-        double[] projectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
-        double[] modelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
+        List<dumpanalyzer.model.TileInstance> tiles = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
+        dumpanalyzer.model.TileInstance lastTile = tiles.isEmpty() ? null : tiles.get(tiles.size() - 1);
+        double[] projectionMatrix = lastTile == null ? null : lastTile.getProjectionMatrix();
+        double[] modelViewMatrix = lastTile == null ? null : lastTile.getModelViewMatrix();
+        if (projectionMatrix == null) {
+            projectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
+        }
+        if (modelViewMatrix == null) {
+            modelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
+        }
+        Camera googleCamera = new Camera();
+        googleCamera.setName("GoogleCamera");
+        CameraProcessor.applyProjectionMatrixToCamera(googleCamera, projectionMatrix);
+        CameraProcessor.applyModelViewMatrixToCamera(googleCamera, modelViewMatrix);
         return new Frame(
             frame,
-            TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent()),
+            tiles,
             projectionMatrix,
-            modelViewMatrix
+            modelViewMatrix,
+            googleCamera
         );
     }
 

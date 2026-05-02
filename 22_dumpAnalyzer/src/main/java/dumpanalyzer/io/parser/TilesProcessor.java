@@ -443,6 +443,26 @@ final class TilesProcessor {
         }
 
         private TileInstance build() {
+            boolean exportableSimpleStrip =
+                GL_TRIANGLE_STRIP.equals(primitive) &&
+                strips.size() == 1 &&
+                stripTexCoords.size() == 1 &&
+                stripTexCoords.get(0) != null &&
+                stripTexCoords.get(0).size() == strips.get(0).size() &&
+                strips.get(0).size() >= 3;
+            boolean finalSkipped = skipped || !exportableSimpleStrip;
+            String finalSkipReason = skipReason;
+            if (!skipped && !exportableSimpleStrip) {
+                if (!GL_TRIANGLE_STRIP.equals(primitive)) {
+                    finalSkipReason = "unsupported primitive";
+                }
+                else if (strips.size() != 1) {
+                    finalSkipReason = "multiple strips";
+                }
+                else {
+                    finalSkipReason = "invalid strip data";
+                }
+            }
             return new TileInstance(
                 textureId,
                 null,
@@ -460,8 +480,8 @@ final class TilesProcessor {
                 glCall,
                 vertexArraySize,
                 indexArraySize,
-                skipped,
-                skipReason,
+                finalSkipped,
+                finalSkipReason,
                 projectionMatrix,
                 modelViewMatrix
             );
