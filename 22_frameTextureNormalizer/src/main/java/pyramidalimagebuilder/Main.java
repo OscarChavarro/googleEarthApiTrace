@@ -8,11 +8,21 @@ import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.processing.DuplicatedTextureFilenameMapper;
 import pyramidalimagebuilder.processing.Sha256SignatureGenerator;
 import pyramidalimagebuilder.processing.TileFiltererByGeometricNullNeighbors;
-import pyramidalimagebuilder.processing.TileMatrixProcessor;
+import pyramidalimagebuilder.processing.matrix.TileMatrixProcessor;
 import pyramidalimagebuilder.processing.TileTextureNormalizer;
 
 public class Main {
     public static void main(String[] args) {
+        boolean offline = hasArg(args, "--offline");
+        boolean debugMatrix = hasArg(args, "--debug-matrix");
+        String debugFrame = getArgValue(args, "--debug-frame=");
+        if (debugMatrix) {
+            System.setProperty("pib.debug.matrix", "true");
+        }
+        if (debugFrame != null && !debugFrame.isBlank()) {
+            System.setProperty("pib.debug.matrix.frame", debugFrame.trim());
+        }
+
         PyramidalImageModel model = new PyramidalImageModel();
 
         TraceSessionReader traceSessionReader = new TraceSessionReader();
@@ -37,6 +47,35 @@ public class Main {
         ));
         System.out.println("OK");
 
+        if (offline) {
+            System.out.println("Offline mode enabled: skipping interactive GUI.");
+            return;
+        }
+
         InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
+    }
+
+    private static boolean hasArg(String[] args, String flag) {
+        if (args == null || args.length == 0) {
+            return false;
+        }
+        for (String a : args) {
+            if (flag.equals(a)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String getArgValue(String[] args, String prefix) {
+        if (args == null || args.length == 0) {
+            return null;
+        }
+        for (String a : args) {
+            if (a != null && a.startsWith(prefix)) {
+                return a.substring(prefix.length());
+            }
+        }
+        return null;
     }
 }

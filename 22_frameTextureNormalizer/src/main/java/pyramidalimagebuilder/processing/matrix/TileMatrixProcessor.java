@@ -1,4 +1,4 @@
-package pyramidalimagebuilder.processing;
+package pyramidalimagebuilder.processing.matrix;
 
 import java.util.ArrayList;
 import java.util.HashMap;
