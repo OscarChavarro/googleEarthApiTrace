@@ -20,17 +20,12 @@ public final class TraceSessionReader {
     private static final Pattern NUMERIC_DIR = Pattern.compile("\\d+");
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    public List<FrameData> readSession(Path inputRoot) {
+    public List<Path> listFrameDirectories(Path inputRoot) {
         if (inputRoot == null || !Files.isDirectory(inputRoot)) {
             return List.of();
         }
-
-        TileInstanceReader tileReader = new TileInstanceReader();
-        List<FrameData> out = new ArrayList<>();
-        Set<Integer> previousTileIds = null;
-
         try (var stream = Files.list(inputRoot)) {
-            List<Path> frameDirs = stream
+            return stream
                 .filter(Files::isDirectory)
                 .filter(dir -> NUMERIC_DIR.matcher(dir.getFileName().toString()).matches())
                 .filter(dir -> {
@@ -39,33 +34,55 @@ public final class TraceSessionReader {
                 })
                 .sorted(Comparator.comparing(dir -> dir.getFileName().toString()))
                 .toList();
-
-            for (Path dir : frameDirs) {
-                Path frameJson = dir.resolve("frame.json");
-                if (!Files.isRegularFile(frameJson)) {
-                    continue;
-                }
-                try {
-                    JsonNode root = JSON.readTree(frameJson.toFile());
-                    int frameId = root.path("id").asInt(-1);
-                    List<TileInstance> tiles = tileReader.read(root);
-                    if (tiles.size() <= 1) {
-                        continue;
-                    }
-                    GoogleCameraState cameraState = GoogleCameraState.fromFrameJson(root);
-                    Set<Integer> tileIds = tileIdSet(tiles);
-                    if (previousTileIds != null && previousTileIds.equals(tileIds)) {
-                        continue;
-                    }
-                    out.add(new FrameData(frameId, tiles, cameraState));
-                    previousTileIds = tileIds;
-                }
-                catch (IOException ignored) {
-                }
-            }
         }
         catch (IOException ignored) {
             return List.of();
+        }
+    }
+
+    public FrameData readFrameDirectory(Path dir) {
+        if (dir == null) {
+            return null;
+        }
+        Path frameJson = dir.resolve("frame.json");
+        if (!Files.isRegularFile(frameJson)) {
+            return null;
+        }
+        TileInstanceReader tileReader = new TileInstanceReader();
+        try {
+            JsonNode root = JSON.readTree(frameJson.toFile());
+            int frameId = root.path("id").asInt(-1);
+            List<TileInstance> tiles = tileReader.read(root);
+            if (tiles.size() <= 1) {
+                return null;
+            }
+            GoogleCameraState cameraState = GoogleCameraState.fromFrameJson(root);
+            return new FrameData(frameId, tiles, cameraState);
+        }
+        catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    public List<FrameData> readSession(Path inputRoot) {
+        List<Path> frameDirs = listFrameDirectories(inputRoot);
+        if (frameDirs.isEmpty()) {
+            return List.of();
+        }
+        List<FrameData> out = new ArrayList<>();
+        Set<Integer> previousTileIds = null;
+
+        for (Path dir : frameDirs) {
+            FrameData frame = readFrameDirectory(dir);
+            if (frame == null) {
+                continue;
+            }
+            Set<Integer> tileIds = tileIdSet(frame.getTiles());
+            if (previousTileIds != null && previousTileIds.equals(tileIds)) {
+                continue;
+            }
+            out.add(frame);
+            previousTileIds = tileIds;
         }
 
         return out;

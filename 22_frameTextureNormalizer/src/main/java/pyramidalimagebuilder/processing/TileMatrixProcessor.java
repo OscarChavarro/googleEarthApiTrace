@@ -28,9 +28,6 @@ public final class TileMatrixProcessor {
                 frame.setWithMatrixErrors(true);
                 Set<Integer> conflictIds = convertor.getLastConflictingTileIds();
                 List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(frame.getTiles(), conflictIds);
-                System.out.println(
-                    "Matrix conversion failed for frame id " + frame.getId() + " (conflicting tile coordinates)"
-                );
                 out.add(new FrameData(frame.getId(), flaggedTiles, frame.getCameraState(), true));
                 continue;
             }
