@@ -10,15 +10,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.TileInstance;
-import pyramidalimagebuilder.model.TileMatrix;
 
 public final class Sha256SignatureGenerator {
     private Sha256SignatureGenerator() {
     }
 
-    public static void verifyTextureFilesHasSignatureFile(List<TileMatrix> frames) {
-        System.out.println("Starting SHA signature validation");
+    public static void verifyTextureFilesHasSignatureFile(List<FrameData> frames) {
         ConcurrentLinkedQueue<String> pendingPaths = new ConcurrentLinkedQueue<>();
         enqueueUniqueTexturePaths(frames, pendingPaths);
 
@@ -31,19 +30,18 @@ public final class Sha256SignatureGenerator {
         for (Thread worker : workers) {
             join(worker);
         }
-        System.out.println("SHA signatures validated");
     }
 
-    private static void enqueueUniqueTexturePaths(List<TileMatrix> frames, ConcurrentLinkedQueue<String> out) {
+    private static void enqueueUniqueTexturePaths(List<FrameData> frames, ConcurrentLinkedQueue<String> out) {
         if (frames == null || out == null) {
             return;
         }
         Set<String> seen = new HashSet<>();
-        for (TileMatrix frame : frames) {
-            if (frame == null || frame.getGraph() == null) {
+        for (FrameData frame : frames) {
+            if (frame == null || frame.getTiles() == null) {
                 continue;
             }
-            for (TileInstance tile : frame.getGraph().vertexSet()) {
+            for (TileInstance tile : frame.getTiles()) {
                 if (tile == null) {
                     continue;
                 }

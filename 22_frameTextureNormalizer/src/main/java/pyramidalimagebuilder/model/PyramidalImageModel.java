@@ -99,9 +99,12 @@ public final class PyramidalImageModel {
         if (frame == null || frame.getTiles().isEmpty()) {
             return false;
         }
-        if (selectedTileIndex <= SELECT_ALL_TILES) {
-            selectedTileIndex = frame.getTiles().size() - 1;
-            return true;
+        if (selectedTileIndex <= 0) {
+            if (selectedTileIndex < 0) {
+                selectedTileIndex = 0;
+                return true;
+            }
+            return false;
         }
         selectedTileIndex--;
         return true;
@@ -112,9 +115,13 @@ public final class PyramidalImageModel {
         if (frame == null || frame.getTiles().isEmpty()) {
             return false;
         }
-        if (selectedTileIndex >= frame.getTiles().size() - 1) {
-            selectedTileIndex = SELECT_ALL_TILES;
+        int maxTileIndex = frame.getTiles().size() - 1;
+        if (selectedTileIndex < 0) {
+            selectedTileIndex = 0;
             return true;
+        }
+        if (selectedTileIndex >= maxTileIndex) {
+            return false;
         }
         selectedTileIndex++;
         return true;

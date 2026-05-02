@@ -1,12 +1,16 @@
 package pyramidalimagebuilder.gui;
 
+// Java classes
 import java.awt.event.KeyListener;
-import pyramidalimagebuilder.model.PyramidalImageModel;
 
+// Vitral classes
 import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.RendererConfigurationController;
+
+// App classes
+import pyramidalimagebuilder.model.PyramidalImageModel;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
     private final PyramidalImageModel model;
@@ -33,6 +37,10 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             : new RendererConfigurationController(model.getRenderingConfiguration());
     }
 
+    private void redraw() {
+        if (repaintAction != null) repaintAction.run();
+    }
+
     @Override
     public void keyPressed(java.awt.event.KeyEvent e) {
         KeyEvent event = AwtSystem.awt2vsdkEvent(e);
@@ -47,16 +55,14 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (renderingConfigurationController != null
             && renderingConfigurationController.processKeyPressedEvent(event)) {
-            if (repaintAction != null) {
-                repaintAction.run();
-            }
+            redraw();
             return;
         }
         if (keyChar == 't') {
             event.keycode = KeyEvent.KEY_F8;
             if (renderingConfigurationController != null
                 && renderingConfigurationController.processKeyPressedEvent(event)) {
-                if (repaintAction != null) repaintAction.run();
+                redraw();
                 return;
             }
         }
@@ -64,29 +70,23 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         switch (event.keycode) {
             case KeyEvent.KEY_1 -> {
                 if (model.selectPreviousFrame()) {
-                    if (repaintAction != null) repaintAction.run();
+                    redraw();
                 }
             }
             case KeyEvent.KEY_2 -> {
                 if (model.selectNextFrame()) {
-                    if (repaintAction != null) repaintAction.run();
+                    redraw();
                 }
             }
             case KeyEvent.KEY_3 -> {
-                if (model.selectPreviousTile() && repaintAction != null) repaintAction.run();
+                if (model.selectPreviousTile()) redraw();
             }
             case KeyEvent.KEY_4 -> {
-                if (model.selectNextTile() && repaintAction != null) repaintAction.run();
-            }
-            case KeyEvent.KEY_T -> {
-                if (keyChar == 'T') {
-                    if (reloadMatricesAction != null) reloadMatricesAction.run();
-                    if (repaintAction != null) repaintAction.run();
-                }
+                if (model.selectNextTile()) redraw();
             }
             default -> {
                 if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
-                    if (repaintAction != null) repaintAction.run();
+                    redraw();
                 }
             }
         }
@@ -95,9 +95,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     @Override
     public void keyReleased(java.awt.event.KeyEvent e) {
         if (cameraController != null && cameraController.processKeyReleasedEvent(AwtSystem.awt2vsdkEvent(e))) {
-            if (repaintAction != null) {
-                repaintAction.run();
-            }
+            redraw();
         }
     }
 

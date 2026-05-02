@@ -10,20 +10,37 @@ import pyramidalimagebuilder.config.Configuration;
 import pyramidalimagebuilder.gui.KeyboardInteractionTechniques;
 import pyramidalimagebuilder.gui.MouseOrbiterInteraction;
 import pyramidalimagebuilder.io.TraceSessionReader;
+import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
+import pyramidalimagebuilder.processing.Sha256SignatureGenerator;
+import pyramidalimagebuilder.processing.TileFiltererByGeometricNullNeighbors;
 import pyramidalimagebuilder.render.Jogl4PyramidalImageBuilderRenderer;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
+import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
         PyramidalImageModel model = new PyramidalImageModel();
 
         TraceSessionReader traceSessionReader = new TraceSessionReader();
+        TileFiltererByGeometricNullNeighbors tileFilterer = new TileFiltererByGeometricNullNeighbors();
         Runnable reloadTileMatrices = () -> {
-            model.setFrames(traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH)));
+            List<FrameData> loaded = traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH));
+            List<FrameData> filtered = loaded.stream()
+                .map(frame -> new FrameData(
+                    frame.getId(),
+                    tileFilterer.filter(frame.getTiles(), model.getViewingCamera()),
+                    frame.getCameraState()
+                ))
+                .toList();
+            model.setFrames(filtered);
             System.out.println("Loaded frames: " + model.getFrames().size());
         };
         reloadTileMatrices.run();
+
+        System.out.println("Starting SHA signature validation");
+        Sha256SignatureGenerator.verifyTextureFilesHasSignatureFile(model.getFrames());
+        System.out.println("SHA signatures validated");
 
         Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
         GLCanvas canvas = renderer.createCanvas();

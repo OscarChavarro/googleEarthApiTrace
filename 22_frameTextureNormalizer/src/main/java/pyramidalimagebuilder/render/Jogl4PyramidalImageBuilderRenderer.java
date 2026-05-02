@@ -8,11 +8,17 @@ import com.jogamp.opengl.GLCapabilities;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
+import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
+import java.awt.geom.Rectangle2D;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import pyramidalimagebuilder.gui.MouseOrbiterInteraction;
 import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
+import pyramidalimagebuilder.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -20,7 +26,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
     private final PyramidalImageModel model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileRenderer = new Jogl4TileMatrixRenderer();
-    private final Jogl4NeighborhoodRenderer neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
     private TextRenderer hudTextRenderer;
 
     public Jogl4PyramidalImageBuilderRenderer(PyramidalImageModel model) {
@@ -68,7 +74,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
         FrameData selected = model.getSelectedFrame();
         if (selected == null) {
-            drawHud(drawable, 0, 0, -1, -1);
+            drawHud(drawable, 0, 0, -1, -1, 0, null);
             return;
         }
 
@@ -92,15 +98,16 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             model,
             model.getSelectedTileIndex()
         );
-        if (model.getRenderingConfiguration().isBoundingVolumeSet()) {
-            neighborhoodRenderer.drawForSelection(gl2, selected.getTiles(), model.getSelectedTileIndex());
-        }
+        drawTileIdsAtCenter(drawable, gl2, selected.getTiles(), model.getRenderingConfiguration().isBoundingVolumeSet());
+        String selectedTextureId = selectedTextureId(selected.getTiles(), model.getSelectedTileIndex());
         drawHud(
             drawable,
             model.getSelectedFrameIndex() + 1,
             model.getFrames().size(),
             selected.getId(),
-            model.getSelectedTileIndex()
+            model.getSelectedTileIndex(),
+            selected.getTiles().size(),
+            selectedTextureId
         );
     }
 
@@ -109,13 +116,27 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         MouseOrbiterInteraction.processReshape(drawable.getGL().getGL4(), model.getViewingCamera(), width, height);
     }
 
-    private void drawHud(GLAutoDrawable drawable, int selectedFrameOneBased, int totalFrames, int frameId, int selectedTileIndex) {
+    private void drawHud(
+        GLAutoDrawable drawable,
+        int selectedFrameOneBased,
+        int totalFrames,
+        int frameId,
+        int selectedTileIndex,
+        int tileCount,
+        String selectedTextureId
+    ) {
         if (hudTextRenderer == null) {
             return;
         }
         String frameText = frameId < 0 ? "n/a" : Integer.toString(frameId);
         String selection = totalFrames <= 0 ? "0/0" : selectedFrameOneBased + "/" + totalFrames;
-        String tileText = selectedTileIndex == PyramidalImageModel.SELECT_ALL_TILES ? "ALL" : Integer.toString(selectedTileIndex);
+        String tileText;
+        if (tileCount <= 0) {
+            tileText = "0/0";
+        } else {
+            int tileOrdinal = selectedTileIndex < 0 ? 1 : Math.min(selectedTileIndex + 1, tileCount);
+            tileText = tileOrdinal + "/" + tileCount;
+        }
 
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
@@ -124,8 +145,128 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
         hudTextRenderer.draw("Frame [1,2]: " + selection + " (id " + frameText + ")", 16, h - 28);
         hudTextRenderer.draw("Tile [3,4]: " + tileText, 16, h - 50);
+        hudTextRenderer.draw("Texture id: " + (selectedTextureId == null ? "n/a" : selectedTextureId), 16, h - 72);
         hudTextRenderer.endRendering();
         drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
+    }
+
+    private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, List<TileInstance> tiles, boolean enabled) {
+        if (!enabled || hudTextRenderer == null || tiles == null || tiles.isEmpty()) {
+            return;
+        }
+
+        double[] modelView = new double[16];
+        double[] projection = new double[16];
+        int[] viewport = new int[4];
+        gl2.glGetDoublev(GL2.GL_MODELVIEW_MATRIX, modelView, 0);
+        gl2.glGetDoublev(GL2.GL_PROJECTION_MATRIX, projection, 0);
+        gl2.glGetIntegerv(GL2.GL_VIEWPORT, viewport, 0);
+
+        int h = drawable.getSurfaceHeight();
+        GLU glu = GLU.createGLU(gl2);
+
+        drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
+        hudTextRenderer.beginRendering(drawable.getSurfaceWidth(), h);
+        hudTextRenderer.setColor(1.0f, 1.0f, 0.4f, 1.0f);
+
+        for (TileInstance tile : tiles) {
+            if (tile == null) {
+                continue;
+            }
+            String label = extractFrameAndTextureId(tile.getTextureFile());
+            if (label == null) {
+                continue;
+            }
+
+            double[] center = centerOf(tile);
+            if (center == null) {
+                continue;
+            }
+
+            double[] win = new double[3];
+            if (!glu.gluProject(center[0], center[1], center[2], modelView, 0, projection, 0, viewport, 0, win, 0)) {
+                continue;
+            }
+
+            int sx = (int)Math.round(win[0]);
+            int sy = (int)Math.round(win[1]);
+            Rectangle2D bounds = hudTextRenderer.getBounds(label);
+            int centeredX = sx - (int)Math.round(bounds.getWidth() * 0.5);
+            hudTextRenderer.draw(label, centeredX, sy);
+        }
+
+        hudTextRenderer.endRendering();
+        drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
+    }
+
+    private static String extractFrameAndTextureId(String textureFile) {
+        if (textureFile == null || textureFile.isBlank()) {
+            return null;
+        }
+        Matcher m = NUMBER_PATTERN.matcher(textureFile);
+        Integer first = null;
+        Integer last = null;
+        while (m.find()) {
+            int value = Integer.parseInt(m.group(1));
+            if (first == null) {
+                first = value;
+            }
+            last = value;
+        }
+        if (first == null || last == null) {
+            return null;
+        }
+        return first + "/" + last;
+    }
+
+    private static String selectedTextureId(java.util.List<TileInstance> tiles, int selectedTileIndex) {
+        if (tiles == null || selectedTileIndex < 0 || selectedTileIndex >= tiles.size()) {
+            return null;
+        }
+        TileInstance tile = tiles.get(selectedTileIndex);
+        if (tile == null) {
+            return null;
+        }
+        String frameAndTexture = extractFrameAndTextureId(tile.getTextureFile());
+        if (frameAndTexture == null) {
+            return null;
+        }
+        int slash = frameAndTexture.indexOf('/');
+        if (slash < 0 || slash + 1 >= frameAndTexture.length()) {
+            return frameAndTexture;
+        }
+        return frameAndTexture.substring(slash + 1);
+    }
+
+    private static double[] centerOf(TileInstance tile) {
+        TileInstance.TriangleStripGeometry strip = tile.getTriangleStrip();
+        if (strip == null || strip.vertices() == null || strip.vertices().isEmpty()) {
+            return null;
+        }
+
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+
+        for (TileInstance.TriangleStripVertex v : strip.vertices()) {
+            if (v == null) {
+                continue;
+            }
+            if (v.x() < minX) minX = v.x();
+            if (v.y() < minY) minY = v.y();
+            if (v.z() < minZ) minZ = v.z();
+            if (v.x() > maxX) maxX = v.x();
+            if (v.y() > maxY) maxY = v.y();
+            if (v.z() > maxZ) maxZ = v.z();
+        }
+
+        if (!Double.isFinite(minX) || !Double.isFinite(maxX)) {
+            return null;
+        }
+        return new double[] {(minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5};
     }
 
     private static float[] toFloat16(double[] values) {
