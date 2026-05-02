@@ -4,6 +4,8 @@ This repository contains **experimental Linux-only code** to extract Google Eart
 
 The core idea is to observe and process the OpenGL command stream, including large binary payloads (BLOBs) such as textures and geometry-related data.
 
+This work started from a minimal fork of the original `apitrace` tool, which makes this interception-based approach possible: [apitrace on GitHub](https://github.com/apitrace/apitrace).
+
 ## Pipeline Overview
 
 The extraction workflow is split into stages. Each stage has separate codebases, which is why projects are numbered (`01`, `02`, `11`, `12`, `13`, `21`, `22`, and planned `31`, etc.).
@@ -22,42 +24,13 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 
 ## Projects
 
-### 01_tracer
-- README: [01_tracer/README.md](01_tracer/README.md)
-- Minimal `apitrace`-based tracer fork. Keeps writing `.trace` while exporting runtime artifacts per frame, including texture blobs and GL operation logs.
-
-### 02_traceLogSplitter
-- README: _not present_
-- Source summary:
-  - Splits a large GL trace text file into per-frame chunks under `./output/%05d/gl.txt`.
-  - Uses `glXSwapBuffers` as frame boundary.
-  - Includes a utility to compute line statistics (total lines and max line length) for large trace files.
-
-### 11_pathPlanner
-- README: _not present_
-- Source summary:
-  - Generates traversal curves (currently `spiral` and `zigzag`) from a geographic start point.
-  - Computes geodesic point sequences and writes them into Google Earth KML (`myplaces.kml`) as routes plus sampled markers.
-  - Used to plan the area-scanning path before running active tracing sessions.
-
-### 12_fileSystemChangesDetector
-- README: [12_fileSystemChangesDetector/README.md](12_fileSystemChangesDetector/README.md)
-- Watches tracer output folders and reports recent filesystem write activity, so the controller can decide when it is safe to continue navigation.
-
-### 13_googleEarthController
-- README: _not present_
-- Source summary:
-  - Java desktop controller that starts/stops the filesystem detector process.
-  - Monitors detector output and triggers keyboard actions (`DOWN`, `ENTER`) when no new writes are observed for a timeout window.
-  - Simulates user-session progression while adapting speed to tracer activity.
-
-### 21_dumpAnalyzer
-- README: [21_dumpAnalyzer/README.md](21_dumpAnalyzer/README.md)
-- Parses per-frame GL logs (`gl.txt`) and counts/analyses OpenGL calls with ANTLR-based processing.
-
-### 22_frameTextureNormalizer
-- README: [22_frameTextureNormalizer/README.md](22_frameTextureNormalizer/README.md)
-- Consumes frame-level artifacts and performs normalization-oriented preprocessing for later composition workflows.
+- [01_tracer/README.md](01_tracer/README.md): Minimal `apitrace`-based tracer fork. Keeps writing `.trace` while exporting runtime artifacts per frame, including texture blobs and GL operation logs.
+- [02_traceLogSplitter/README.md](02_traceLogSplitter/README.md): Splits large GL trace logs into per-frame `gl.txt` files and includes line-statistics tooling.
+- [11_pathPlanner/README.md](11_pathPlanner/README.md): Generates planned geographic traversal routes (`spiral`/`zigzag`) and writes KML for Google Earth.
+- [12_fileSystemChangesDetector/README.md](12_fileSystemChangesDetector/README.md): Monitors tracer output folder activity with `fanotify` to support safe controller pacing.
+- [13_googleEarthController/README.md](13_googleEarthController/README.md): Automates Google Earth session progression based on detector inactivity.
+- [21_dumpAnalyzer/README.md](21_dumpAnalyzer/README.md): Parses per-frame GL logs (`gl.txt`) and counts/analyses OpenGL calls with ANTLR-based processing.
+- [22_frameTextureNormalizer/README.md](22_frameTextureNormalizer/README.md): Consumes frame-level artifacts and performs normalization-oriented preprocessing for later composition workflows.
 
 ## Notes
 

@@ -1,31 +1,54 @@
 # fileSystemChangesDetector
 
-This utility helps `googleEarthController` decide when to advance.
+`fileSystemChangesDetector` is a Linux utility used by `13_googleEarthController` to decide when Google Earth navigation can continue.
 
-It monitors a target output folder (currently `/tmp/output`) using Linux `fanotify` and prints updates when new files are added.
+It watches a target output directory (typically `/tmp/output`) with `fanotify` and reports new file activity.
 
-## Why this exists
+## Why it exists
 
-While the tracer is still writing image files, the controller should wait.
-
-As long as recent filesystem updates keep happening in the monitored folder, `googleEarthController` treats that as "tracer is still filling images" and does not continue.
-
-If no one writes anything to the monitored folder for some time, `googleEarthController` can continue the interaction.
+The tracer writes texture/frame artifacts asynchronously. While writes are still happening, the controller should not advance. When writes stop for a configured time window, the controller can safely continue.
 
 ## Runtime behavior
 
-- Watches for new entries in the target directory.
-- On each add event, prints:
-  - `Updated at <date>`
-- Date format example:
-  - `2026_05may01_18:48.57`
+- Watches one directory for `FAN_CREATE` and `FAN_MOVED_TO` events.
+- Prints one line per detected update:
+  - `Updated at <timestamp>`
+- Accepts `exit` on stdin for graceful shutdown.
 
-## Run
+## Important privilege requirement (fanotify)
 
-Use:
+Due to `fanotify` privilege limitations, this executable must run with elevated privileges.
+
+In this project workflow, it is expected to be:
+
+- Owned by `root`
+- Marked with the `setuid` (`suid`) bit
+
+Without that, `fanotify_init` can fail with a permission error.
+
+## Set owner and `suid`
+
+From this folder, after building:
+
+```bash
+sudo chown root:root ./build/fileSystemChangesDetector
+sudo chmod 4755 ./build/fileSystemChangesDetector
+```
+
+Optional check:
+
+```bash
+ls -l ./build/fileSystemChangesDetector
+```
+
+You should see owner `root root` and permissions similar to `-rwsr-xr-x`.
+
+## Build and run
+
+From this folder:
 
 ```bash
 ./run.sh
 ```
 
-`run.sh` builds the project and runs the detector with `sudo`, because `fanotify` operations require elevated privileges.
+`run.sh` builds and runs the detector with `sudo`.
