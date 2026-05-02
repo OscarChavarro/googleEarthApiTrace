@@ -3,7 +3,7 @@ package pathplanner;
 import java.util.List;
 
 public class Main {
-    private static final String KML_PATH = "/home/jedilink/.googleearth/myplaces.kml";
+    private static final String KML_PATH = System.getProperty("user.home") + "/.googleearth/myplaces.kml";
     private static final String TURTLE_FOLDER_NAME = "turtle";
     private static final String TURTLE_STYLE_ID = "turtleLineStyle";
     private static final String GENERATOR_SPIRAL = "spiral";
@@ -33,7 +33,7 @@ public class Main {
         KmzPersistance kmzPersistance = new KmzPersistance();
 
         List<Point> curve = curveGenerator.buildTurtleCurve(lat, lon, stepMeters, maxDistanceMeters);
-        List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, 2.0 * stepMeters);
+        List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, stepMeters);
         kmzPersistance.updateKml(KML_PATH, TURTLE_FOLDER_NAME, TURTLE_STYLE_ID, curve, markerPoints);
 
         System.out.println("Generated turtle curve with " + curve.size() + " vertices and " + markerPoints.size() + " z-points in " + KML_PATH);

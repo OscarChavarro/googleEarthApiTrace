@@ -11,10 +11,28 @@ java {
     }
 }
 
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java']
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    destinationDirectory = layout.buildDirectory.dir("classes/java/${name == 'compileTestJava' ? 'test' : 'main'}").get().asFile
+}
+
 application {
     mainClass = 'GoogleEarthController'
 }
 
 repositories {
     mavenCentral()
+}
+
+tasks.named('clean') {
+    delete fileTree('src/main/java') {
+        include '**/*.class'
+    }
 }
