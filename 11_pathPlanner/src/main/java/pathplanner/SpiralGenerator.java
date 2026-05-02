@@ -3,8 +3,9 @@ package pathplanner;
 import java.util.ArrayList;
 import java.util.List;
 
-final class SpiralGenerator {
-    List<Point> buildTurtleCurve(double startLat, double startLon, double stepMeters, double maxDistanceFromStartMeters) {
+final class SpiralGenerator implements CurveGenerator {
+    @Override
+    public List<Point> buildTurtleCurve(double startLat, double startLon, double stepMeters, double maxDistanceFromStartMeters) {
         List<Point> points = new ArrayList<>();
         Point start = new Point(startLat, startLon);
         Point current = start;
