@@ -12,6 +12,7 @@ import pyramidalimagebuilder.config.Configuration;
 import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.model.TileInstance;
+import pyramidalimagebuilder.processing.TileFiltererByConnectedComponents;
 import pyramidalimagebuilder.processing.TileFiltererByGeometricNullNeighbors;
 
 public final class FrameReader {
@@ -20,12 +21,13 @@ public final class FrameReader {
 
     public static Runnable loadTracedFrames(
         TraceSessionReader traceSessionReader,
+        TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileFiltererByGeometricNullNeighbors tileFilterer,
         PyramidalImageModel model
     ) {
         Runnable reloadTileMatrices = () -> {
             List<FrameData> loaded = readFramesParallel(traceSessionReader);
-            List<FrameData> filtered = filterAndDeduplicate(loaded, tileFilterer, model);
+            List<FrameData> filtered = filterAndDeduplicate(loaded, connectedComponentsFilterer, tileFilterer, model);
             model.setFrames(filtered);
         };
         reloadTileMatrices.run();
@@ -119,6 +121,7 @@ public final class FrameReader {
 
     private static List<FrameData> filterAndDeduplicate(
         List<FrameData> loaded,
+        TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileFiltererByGeometricNullNeighbors tileFilterer,
         PyramidalImageModel model
     ) {
@@ -135,7 +138,8 @@ public final class FrameReader {
             if (previousTileIds != null && previousTileIds.equals(tileIds)) {
                 continue;
             }
-            List<TileInstance> filteredTiles = tileFilterer.filter(frame.getTiles(), model.getViewingCamera());
+            List<TileInstance> ccFilteredTiles = connectedComponentsFilterer.filter(frame.getTiles());
+            List<TileInstance> filteredTiles = tileFilterer.filter(ccFilteredTiles, model.getViewingCamera());
             out.add(new FrameData(frame.getId(), filteredTiles, frame.getCameraState(), frame.isWithMatrixErrors()));
             previousTileIds = tileIds;
         }

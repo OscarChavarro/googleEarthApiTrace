@@ -3,19 +3,27 @@ package pyramidalimagebuilder;
 import java.util.List;
 
 import pyramidalimagebuilder.io.FrameReader;
+import pyramidalimagebuilder.io.TileMatrixExporter;
 import pyramidalimagebuilder.io.TraceSessionReader;
 import pyramidalimagebuilder.model.PyramidalImageModel;
+import pyramidalimagebuilder.model.TileMatrix;
+import pyramidalimagebuilder.options.CommandLineOptions;
+import pyramidalimagebuilder.processing.FrameFiltererByTileCount;
+import pyramidalimagebuilder.processing.TileFiltererByConnectedComponents;
 import pyramidalimagebuilder.processing.DuplicatedTextureFilenameMapper;
 import pyramidalimagebuilder.processing.Sha256SignatureGenerator;
 import pyramidalimagebuilder.processing.TileFiltererByGeometricNullNeighbors;
+import pyramidalimagebuilder.processing.TileFilteringByErrored;
+import pyramidalimagebuilder.processing.matrix.TileMatrixFiltererByConsistency;
+import pyramidalimagebuilder.processing.matrix.TileMatrixProcessingResult;
 import pyramidalimagebuilder.processing.matrix.TileMatrixProcessor;
 import pyramidalimagebuilder.processing.TileTextureNormalizer;
 
 public class Main {
     public static void main(String[] args) {
-        boolean offline = hasArg(args, "--offline");
-        boolean debugMatrix = hasArg(args, "--debug-matrix");
-        String debugFrame = getArgValue(args, "--debug-frame=");
+        boolean offline = CommandLineOptions.hasArg(args, "--offline");
+        boolean debugMatrix = CommandLineOptions.hasArg(args, "--debug-matrix");
+        String debugFrame = CommandLineOptions.getArgValue(args, "--debug-frame=");
         if (debugMatrix) {
             System.setProperty("pib.debug.matrix", "true");
         }
@@ -26,10 +34,21 @@ public class Main {
         PyramidalImageModel model = new PyramidalImageModel();
 
         TraceSessionReader traceSessionReader = new TraceSessionReader();
+        TileFiltererByConnectedComponents connectedComponentsFilterer = new TileFiltererByConnectedComponents();
         TileFiltererByGeometricNullNeighbors tileFilterer = new TileFiltererByGeometricNullNeighbors();
+        FrameFiltererByTileCount frameFiltererByTileCount = new FrameFiltererByTileCount();
+        TileFilteringByErrored tileFilteringByErrored = new TileFilteringByErrored();
+        TileMatrixExporter tileMatrixExporter = new TileMatrixExporter();
+        TileMatrixFiltererByConsistency tileMatrixFiltererByConsistency = new TileMatrixFiltererByConsistency();
 
         System.out.print("Loading traced frames... ");
-        Runnable reloadTileMatrices = FrameReader.loadTracedFrames(traceSessionReader, tileFilterer, model);
+        Runnable reloadTileMatrices = FrameReader.loadTracedFrames(
+            traceSessionReader,
+            connectedComponentsFilterer,
+            tileFilterer,
+            model
+        );
+        model.setFrames(frameFiltererByTileCount.keepFramesWithMoreThanTiles(model.getFrames(), 1));
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -42,9 +61,20 @@ public class Main {
 
         System.out.print("Tile texture normalization and matrix conversion... ");
         TileMatrixProcessor tileMatrixProcessor = new TileMatrixProcessor();
-        model.setFrames(tileMatrixProcessor.convertAndExportTileMatrices(
+        TileMatrixProcessingResult matrixResult = tileMatrixProcessor.convertTileMatrices(
             TileTextureNormalizer.normalize(model.getFrames(), duplicatedTextureGroups)
-        ));
+        );
+        System.out.println("OK");
+
+        System.out.print("Filtering matrices by consistency... ");
+        List<TileMatrix> consistentMatrices =
+            tileMatrixFiltererByConsistency.filter(matrixResult.matrices());
+        System.out.println("OK");
+
+        System.out.print("Exporting matrices... ");
+        tileMatrixExporter.export(consistentMatrices);
+        model.setFrames(matrixResult.frames());
+        model.setFrames(tileFilteringByErrored.removeErroredFrames(model.getFrames()));
         System.out.println("OK");
 
         if (offline) {
@@ -53,29 +83,5 @@ public class Main {
         }
 
         InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
-    }
-
-    private static boolean hasArg(String[] args, String flag) {
-        if (args == null || args.length == 0) {
-            return false;
-        }
-        for (String a : args) {
-            if (flag.equals(a)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String getArgValue(String[] args, String prefix) {
-        if (args == null || args.length == 0) {
-            return null;
-        }
-        for (String a : args) {
-            if (a != null && a.startsWith(prefix)) {
-                return a.substring(prefix.length());
-            }
-        }
-        return null;
     }
 }

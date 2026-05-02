@@ -250,7 +250,7 @@ public final class TileSetToMatrixConverter {
         if (fromA != null) {
             return fromA;
         }
-        // Fallback: si desde A no aparece anchor útil, intentar desde B contra A.
+        // Fallback: if no useful anchor is found from A, try scanning from B against A.
         return findShiftScanningRows(b, a, byId);
     }
 
@@ -353,8 +353,8 @@ public final class TileSetToMatrixConverter {
                 idSet.add(c.tileId());
             }
 
-            // Permitir huecos entre bloques, pero cada bloque horizontal conectado
-            // (por east/west) debe ser contiguo internamente.
+            // Allow gaps between blocks, but each horizontally connected block
+            // (via east/west links) must be internally contiguous.
             Set<Integer> visited = new HashSet<>();
             for (MatrixCell start : cells) {
                 if (visited.contains(start.tileId())) {
@@ -473,7 +473,7 @@ public final class TileSetToMatrixConverter {
             return Map.of();
         }
 
-        // Anchor: segmento más grande, conserva la referencia vertical base.
+        // Anchor segment: largest one keeps the base vertical reference.
         int anchorIndex = 0;
         for (int i = 1; i < chunks.size(); i++) {
             if (chunks.get(i).size() > chunks.get(anchorIndex).size()) {
@@ -502,10 +502,10 @@ public final class TileSetToMatrixConverter {
             if (idx == 0) {
                 shiftI = -chunk.minI();
             } else if (chunk.height() >= globalMaxHeight) {
-                // Segmentos de altura completa se alinean al tope.
+                // Full-height segments are aligned to the top.
                 shiftI = -chunk.minI();
             } else {
-                // Segmentos parciales se colocan debajo para no colapsar filas.
+                // Partial segments are placed below to avoid row collapse.
                 shiftI = (currentMaxI + 1) - chunk.minI();
             }
             int shiftJ = nextStartJ - chunk.minJ();

@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import pyramidalimagebuilder.io.MatrixWriter;
 import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileMatrix;
@@ -13,12 +12,13 @@ import pyramidalimagebuilder.model.TileMatrix;
 public final class TileMatrixProcessor {
     private final TileSetToMatrixConverter convertor = new TileSetToMatrixConverter();
 
-    public List<FrameData> convertAndExportTileMatrices(List<FrameData> frames) {
+    public TileMatrixProcessingResult convertTileMatrices(List<FrameData> frames) {
         if (frames == null || frames.isEmpty()) {
-            return List.of();
+            return new TileMatrixProcessingResult(List.of(), List.of());
         }
 
         List<FrameData> out = new ArrayList<>(frames.size());
+        List<TileMatrix> matrices = new ArrayList<>(frames.size());
         for (FrameData frame : frames) {
             if (frame == null) {
                 continue;
@@ -35,9 +35,9 @@ public final class TileMatrixProcessor {
             List<TileInstance> tilesWithCoords = applyMatrixCoordinates(frame.getTiles(), matrix);
             FrameData frameWithMatrix = new FrameData(frame.getId(), tilesWithCoords, frame.getCameraState(), false);
             out.add(frameWithMatrix);
-            MatrixWriter.writeMatrixJson(matrix);
+            matrices.add(matrix);
         }
-        return out;
+        return new TileMatrixProcessingResult(out, matrices);
     }
 
     public List<TileInstance> applyMatrixCoordinates(List<TileInstance> tiles, TileMatrix matrix) {
