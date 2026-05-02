@@ -1,14 +1,18 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
-#include <sys/fanotify.h>
+#include <sys/inotify.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <dirent.h>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <unordered_map>
 
 volatile sig_atomic_t g_running = 1;
 
@@ -50,38 +54,71 @@ installSignalHandlers() {
 }
 
 int
-initializeFanotify(const char* folderPath) {
-    int fanFd = fanotify_init(FAN_CLASS_NOTIF | FAN_CLOEXEC | FAN_REPORT_FID, O_RDONLY | O_CLOEXEC);
-    if (fanFd < 0) {
+addWatchRecursive(
+    int inotifyFd,
+    const std::string& folderPath,
+    std::unordered_map<int, std::string>& wdToPath) {
+    const uint32_t watchMask = IN_CREATE | IN_MOVED_TO;
+    int wd = inotify_add_watch(inotifyFd, folderPath.c_str(), watchMask);
+    if (wd < 0) {
         std::fprintf(
             stderr,
-            "fanotify_init failed: %s (run with root/suid permissions)\n",
+            "inotify_add_watch failed for '%s': %s\n",
+            folderPath.c_str(),
             std::strerror(errno));
-        return -1;
+        return false;
+    }
+    wdToPath[wd] = folderPath;
+
+    DIR* dir = opendir(folderPath.c_str());
+    if (dir == nullptr) {
+        std::fprintf(stderr, "opendir failed for '%s': %s\n", folderPath.c_str(), std::strerror(errno));
+        return false;
     }
 
-    const uint64_t mask = FAN_CREATE | FAN_MOVED_TO;
-    if (fanotify_mark(
-            fanFd,
-            FAN_MARK_ADD | FAN_MARK_ONLYDIR,
-            mask,
-            AT_FDCWD,
-            folderPath) < 0) {
-        std::fprintf(
-            stderr,
-            "fanotify_mark failed for '%s': %s\n",
-            folderPath,
-            std::strerror(errno));
-        close(fanFd);
-        return -1;
+    struct dirent* entry = nullptr;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type != DT_DIR) {
+            continue;
+        }
+
+        if (std::strcmp(entry->d_name, ".") == 0 || std::strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        std::string childPath = folderPath;
+        childPath += "/";
+        childPath += entry->d_name;
+
+        if (!addWatchRecursive(inotifyFd, childPath, wdToPath)) {
+            closedir(dir);
+            return false;
+        }
     }
 
-    return fanFd;
+    closedir(dir);
+    return true;
 }
 
 int
-waitForEvents(int fanFd, bool watchStdin, struct pollfd* fds) {
-    fds[0].fd = fanFd;
+initializeInotify(const char* folderPath, std::unordered_map<int, std::string>& wdToPath) {
+    int inotifyFd = inotify_init1(IN_CLOEXEC);
+    if (inotifyFd < 0) {
+        std::fprintf(stderr, "inotify_init1 failed: %s\n", std::strerror(errno));
+        return -1;
+    }
+
+    if (!addWatchRecursive(inotifyFd, folderPath, wdToPath)) {
+        close(inotifyFd);
+        return -1;
+    }
+
+    return inotifyFd;
+}
+
+int
+waitForEvents(int inotifyFd, bool watchStdin, struct pollfd* fds) {
+    fds[0].fd = inotifyFd;
     fds[0].events = POLLIN;
     fds[0].revents = 0;
 
@@ -125,29 +162,38 @@ processStdin(bool* watchStdin, char* stdinLine, size_t* stdinLen) {
 }
 
 bool
-handleSingleFanotifyEvent(struct fanotify_event_metadata* meta) {
-    if (meta->vers != FANOTIFY_METADATA_VERSION) {
-        std::fprintf(stderr, "Incompatible fanotify metadata version\n");
-        g_running = 0;
-        return false;
-    }
-
-    if (meta->fd >= 0) {
-        close(meta->fd);
-    }
-
-    if (meta->mask & (FAN_CREATE | FAN_MOVED_TO)) {
+handleSingleInotifyEvent(
+    const struct inotify_event* event,
+    std::unordered_map<int, std::string>& wdToPath,
+    int inotifyFd) {
+    if ((event->mask & (IN_CREATE | IN_MOVED_TO)) != 0) {
         char timestamp[64] = {0};
         formatNow(timestamp, sizeof(timestamp));
         std::printf("Updated at %s\n", timestamp);
+
+        if ((event->mask & IN_ISDIR) != 0 && event->len > 0) {
+            auto it = wdToPath.find(event->wd);
+            if (it != wdToPath.end()) {
+                std::string createdDirPath = it->second;
+                createdDirPath += "/";
+                createdDirPath += event->name;
+                if (!addWatchRecursive(inotifyFd, createdDirPath, wdToPath)) {
+                    return false;
+                }
+            }
+        }
     }
 
     return true;
 }
 
 bool
-processFanotifyEvents(int fanFd, char* buffer, size_t bufferSize) {
-    ssize_t bytesRead = read(fanFd, buffer, bufferSize);
+processInotifyEvents(
+    int inotifyFd,
+    char* buffer,
+    size_t bufferSize,
+    std::unordered_map<int, std::string>& wdToPath) {
+    ssize_t bytesRead = read(inotifyFd, buffer, bufferSize);
     if (bytesRead < 0) {
         if (errno == EINTR) {
             return true;
@@ -160,22 +206,23 @@ processFanotifyEvents(int fanFd, char* buffer, size_t bufferSize) {
         return true;
     }
 
-    for (struct fanotify_event_metadata* meta =
-             reinterpret_cast<struct fanotify_event_metadata*>(buffer);
-         FAN_EVENT_OK(meta, static_cast<ssize_t>(bytesRead));
-         meta = FAN_EVENT_NEXT(meta, bytesRead)) {
-        if (!handleSingleFanotifyEvent(meta)) {
+    size_t offset = 0;
+    while (offset + sizeof(struct inotify_event) <= static_cast<size_t>(bytesRead)) {
+        const struct inotify_event* event =
+            reinterpret_cast<const struct inotify_event*>(buffer + offset);
+        if (!handleSingleInotifyEvent(event, wdToPath, inotifyFd)) {
             return false;
         }
+        offset += sizeof(struct inotify_event) + event->len;
     }
 
     return true;
 }
 
 int
-runEventLoop(int fanFd) {
-    constexpr size_t kBufferSize = 4096;
-    alignas(struct fanotify_event_metadata) char buffer[kBufferSize];
+runEventLoop(int inotifyFd, std::unordered_map<int, std::string>& wdToPath) {
+    constexpr size_t kBufferSize = 16 * 1024;
+    alignas(struct inotify_event) char buffer[kBufferSize];
 
     char stdinLine[1024] = {0};
     size_t stdinLen = 0;
@@ -183,7 +230,7 @@ runEventLoop(int fanFd) {
 
     while (g_running) {
         struct pollfd fds[2];
-        int pollResult = waitForEvents(fanFd, watchStdin, fds);
+        int pollResult = waitForEvents(inotifyFd, watchStdin, fds);
 
         if (pollResult < 0) {
             if (errno == EINTR) {
@@ -201,7 +248,7 @@ runEventLoop(int fanFd) {
         }
 
         if ((fds[0].revents & POLLIN) != 0) {
-            if (!processFanotifyEvents(fanFd, buffer, sizeof(buffer))) {
+            if (!processInotifyEvents(inotifyFd, buffer, sizeof(buffer), wdToPath)) {
                 return 1;
             }
         }
@@ -219,12 +266,13 @@ main(int argc, char* argv[]) {
 
     installSignalHandlers();
 
-    int fanFd = initializeFanotify(argv[1]);
-    if (fanFd < 0) {
+    std::unordered_map<int, std::string> wdToPath;
+    int inotifyFd = initializeInotify(argv[1], wdToPath);
+    if (inotifyFd < 0) {
         return 1;
     }
 
-    int result = runEventLoop(fanFd);
-    close(fanFd);
+    int result = runEventLoop(inotifyFd, wdToPath);
+    close(inotifyFd);
     return result;
 }
