@@ -11,7 +11,7 @@ import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileMatrix;
 
 public final class TileMatrixProcessor {
-    private final TileSetToMatrixConvertor convertor = new TileSetToMatrixConvertor();
+    private final TileSetToMatrixConverter convertor = new TileSetToMatrixConverter();
 
     public List<FrameData> convertAndExportTileMatrices(List<FrameData> frames) {
         if (frames == null || frames.isEmpty()) {
@@ -27,7 +27,8 @@ public final class TileMatrixProcessor {
             if (matrix == null) {
                 frame.setWithMatrixErrors(true);
                 Set<Integer> conflictIds = convertor.getLastConflictingTileIds();
-                List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(frame.getTiles(), conflictIds);
+                Map<Integer, MatrixTileCoordinate> partialCoords = convertor.getLastCoordinatesByTileId();
+                List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(frame.getTiles(), conflictIds, partialCoords);
                 out.add(new FrameData(frame.getId(), flaggedTiles, frame.getCameraState(), true));
                 continue;
             }
@@ -74,7 +75,11 @@ public final class TileMatrixProcessor {
         return out;
     }
 
-    private List<TileInstance> markIncorrectMatrixMappings(List<TileInstance> tiles, Set<Integer> conflictIds) {
+    private List<TileInstance> markIncorrectMatrixMappings(
+        List<TileInstance> tiles,
+        Set<Integer> conflictIds,
+        Map<Integer, MatrixTileCoordinate> partialCoords
+    ) {
         if (tiles == null || tiles.isEmpty()) {
             return List.of();
         }
@@ -84,6 +89,7 @@ public final class TileMatrixProcessor {
                 continue;
             }
             boolean incorrect = conflictIds != null && conflictIds.contains(tile.getTileId());
+            MatrixTileCoordinate coord = partialCoords == null ? null : partialCoords.get(tile.getTileId());
             out.add(new TileInstance(
                 tile.getTileId(),
                 tile.getFrameId(),
@@ -93,8 +99,8 @@ public final class TileMatrixProcessor {
                 tile.getEastNeighbor(),
                 tile.getWestNeighbor(),
                 tile.getTriangleStrip(),
-                tile.getMatrixI(),
-                tile.getMatrixJ(),
+                coord == null ? tile.getMatrixI() : coord.i(),
+                coord == null ? tile.getMatrixJ() : coord.j(),
                 incorrect
             ));
         }

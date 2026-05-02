@@ -170,7 +170,6 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
         drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(drawable.getSurfaceWidth(), h);
-        hudTextRenderer.setColor(1.0f, 1.0f, 0.4f, 1.0f);
 
         for (TileInstance tile : tiles) {
             if (tile == null) {
@@ -194,6 +193,11 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             int sx = (int)Math.round(win[0]);
             int sy = (int)Math.round(win[1]);
             String coordsLabel = matrixCoordsLabel(tile);
+            if (coordsLabel == null) {
+                hudTextRenderer.setColor(1.0f, 0.2f, 0.2f, 1.0f);
+            } else {
+                hudTextRenderer.setColor(1.0f, 1.0f, 0.4f, 1.0f);
+            }
             Rectangle2D bounds = hudTextRenderer.getBounds(textureLabel);
             int centeredX = sx - (int)Math.round(bounds.getWidth() * 0.5);
             hudTextRenderer.draw(textureLabel, centeredX, sy);
@@ -249,6 +253,9 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
     private static String matrixCoordsLabel(TileInstance tile) {
         if (tile == null || tile.getMatrixI() == null || tile.getMatrixJ() == null) {
+            return null;
+        }
+        if (tile.getMatrixI() == -1 && tile.getMatrixJ() == -1) {
             return null;
         }
         return "(" + tile.getMatrixI() + ", " + tile.getMatrixJ() + ")";
