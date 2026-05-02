@@ -109,6 +109,9 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             selected.getTiles().size(),
             selectedTextureId
         );
+        if (selected.isWithMatrixErrors()) {
+            drawMatrixErrorOverlay(drawable);
+        }
     }
 
     @Override
@@ -173,8 +176,8 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             if (tile == null) {
                 continue;
             }
-            String label = extractFrameAndTextureId(tile.getTextureFile());
-            if (label == null) {
+            String textureLabel = extractFrameAndTextureId(tile.getTextureFile());
+            if (textureLabel == null) {
                 continue;
             }
 
@@ -190,9 +193,15 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
             int sx = (int)Math.round(win[0]);
             int sy = (int)Math.round(win[1]);
-            Rectangle2D bounds = hudTextRenderer.getBounds(label);
+            String coordsLabel = matrixCoordsLabel(tile);
+            Rectangle2D bounds = hudTextRenderer.getBounds(textureLabel);
             int centeredX = sx - (int)Math.round(bounds.getWidth() * 0.5);
-            hudTextRenderer.draw(label, centeredX, sy);
+            hudTextRenderer.draw(textureLabel, centeredX, sy);
+            if (coordsLabel != null) {
+                Rectangle2D cBounds = hudTextRenderer.getBounds(coordsLabel);
+                int cX = sx - (int)Math.round(cBounds.getWidth() * 0.5);
+                hudTextRenderer.draw(coordsLabel, cX, sy - 18);
+            }
         }
 
         hudTextRenderer.endRendering();
@@ -236,6 +245,31 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             return frameAndTexture;
         }
         return frameAndTexture.substring(slash + 1);
+    }
+
+    private static String matrixCoordsLabel(TileInstance tile) {
+        if (tile == null || tile.getMatrixI() == null || tile.getMatrixJ() == null) {
+            return null;
+        }
+        return "(" + tile.getMatrixI() + ", " + tile.getMatrixJ() + ")";
+    }
+
+    private void drawMatrixErrorOverlay(GLAutoDrawable drawable) {
+        if (hudTextRenderer == null) {
+            return;
+        }
+        int w = drawable.getSurfaceWidth();
+        int h = drawable.getSurfaceHeight();
+        String msg = "MATRIX CONVERSION ERROR IN THIS FRAME";
+        Rectangle2D bounds = hudTextRenderer.getBounds(msg);
+        int x = Math.max(12, (int)Math.round((w - bounds.getWidth()) * 0.5));
+        int y = Math.max(20, (int)Math.round(h * 0.75));
+        drawable.getGL().getGL2().glDisable(GL2.GL_DEPTH_TEST);
+        hudTextRenderer.beginRendering(w, h);
+        hudTextRenderer.setColor(1.0f, 0.1f, 0.1f, 1.0f);
+        hudTextRenderer.draw(msg, x, y);
+        hudTextRenderer.endRendering();
+        drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
     }
 
     private static double[] centerOf(TileInstance tile) {

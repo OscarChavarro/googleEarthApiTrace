@@ -11,6 +11,8 @@ public final class TileInstance {
     private final Integer eastNeighbor;
     private final Integer westNeighbor;
     private final TriangleStripGeometry triangleStrip;
+    private final Integer matrixI;
+    private final Integer matrixJ;
 
     public TileInstance(
         int tileId,
@@ -22,6 +24,21 @@ public final class TileInstance {
         Integer westNeighbor,
         TriangleStripGeometry triangleStrip
     ) {
+        this(tileId, frameId, textureFile, southNeighbor, northNeighbor, eastNeighbor, westNeighbor, triangleStrip, null, null);
+    }
+
+    public TileInstance(
+        int tileId,
+        int frameId,
+        String textureFile,
+        Integer southNeighbor,
+        Integer northNeighbor,
+        Integer eastNeighbor,
+        Integer westNeighbor,
+        TriangleStripGeometry triangleStrip,
+        Integer matrixI,
+        Integer matrixJ
+    ) {
         this.tileId = tileId;
         this.frameId = frameId;
         this.textureFile = textureFile;
@@ -30,6 +47,8 @@ public final class TileInstance {
         this.eastNeighbor = eastNeighbor;
         this.westNeighbor = westNeighbor;
         this.triangleStrip = triangleStrip;
+        this.matrixI = matrixI;
+        this.matrixJ = matrixJ;
     }
 
     public int getTileId() {
@@ -62,6 +81,14 @@ public final class TileInstance {
 
     public TriangleStripGeometry getTriangleStrip() {
         return triangleStrip;
+    }
+
+    public Integer getMatrixI() {
+        return matrixI;
+    }
+
+    public Integer getMatrixJ() {
+        return matrixJ;
     }
 
     public record TriangleStripGeometry(int vertexCount, List<TriangleStripVertex> vertices) {}

@@ -1,23 +1,15 @@
 package pyramidalimagebuilder;
 
-import com.jogamp.opengl.awt.GLCanvas;
-import java.awt.BorderLayout;
-import java.awt.Dimension;
 import java.nio.file.Path;
-import javax.swing.JFrame;
-import javax.swing.WindowConstants;
 import pyramidalimagebuilder.config.Configuration;
-import pyramidalimagebuilder.gui.KeyboardInteractionTechniques;
-import pyramidalimagebuilder.gui.MouseOrbiterInteraction;
 import pyramidalimagebuilder.io.TraceSessionReader;
 import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.processing.DuplicatedTextureFilenameMapper;
 import pyramidalimagebuilder.processing.Sha256SignatureGenerator;
 import pyramidalimagebuilder.processing.TileFiltererByGeometricNullNeighbors;
+import pyramidalimagebuilder.processing.TileMatrixProcessor;
 import pyramidalimagebuilder.processing.TileTextureNormalizer;
-import pyramidalimagebuilder.render.Jogl4PyramidalImageBuilderRenderer;
-import vsdk.toolkit.gui.CameraControllerOrbiter;
 import java.util.List;
 
 public class Main {
@@ -25,9 +17,10 @@ public class Main {
         PyramidalImageModel model = new PyramidalImageModel();
 
         TraceSessionReader traceSessionReader = new TraceSessionReader();
+        TileFiltererByGeometricNullNeighbors tileFilterer = new TileFiltererByGeometricNullNeighbors();
 
         System.out.print("Loading traced frames... ");
-        Runnable reloadTileMatrices = loadTracedFrames(traceSessionReader, model);
+        Runnable reloadTileMatrices = loadTracedFrames(traceSessionReader, tileFilterer, model);
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -38,50 +31,21 @@ public class Main {
         List<List<String>> duplicatedTextureGroups = DuplicatedTextureFilenameMapper.loadOrCreate(model.getFrames());
         System.out.println("OK");
 
-        System.out.print("Tile texture normalization... ");
-        model.setFrames(TileTextureNormalizer.normalize(model.getFrames(), duplicatedTextureGroups));
+        System.out.print("Tile texture normalization and matrix conversion... ");
+        TileMatrixProcessor tileMatrixProcessor = new TileMatrixProcessor();
+        model.setFrames(tileMatrixProcessor.convertAndExportTileMatrices(
+            TileTextureNormalizer.normalize(model.getFrames(), duplicatedTextureGroups)
+        ));
         System.out.println("OK");
 
-        runDesktopGui(model, reloadTileMatrices);
+        InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
     }
 
-    private static void runDesktopGui(PyramidalImageModel model, Runnable reloadTileMatrices) {
-        Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
-        GLCanvas canvas = renderer.createCanvas();
-
-        JFrame frame = new JFrame("pyramidalImageBuilder - Orbiter Skeleton");
-        frame.setLayout(new BorderLayout());
-        frame.add(canvas, BorderLayout.CENTER);
-        frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        frame.setMinimumSize(new Dimension(960, 600));
-        frame.setSize(new Dimension(1280, 720));
-
-        CameraControllerOrbiter cameraController = renderer.getCameraController();
-        MouseOrbiterInteraction mouse = new MouseOrbiterInteraction(
-            cameraController,
-            canvas::display,
-            canvas::requestFocusInWindow
-        );
-        KeyboardInteractionTechniques keyboard = new KeyboardInteractionTechniques(
-                model,
-            frame::dispose,
-            cameraController,
-            canvas::display,
-                reloadTileMatrices
-        );
-        canvas.addMouseListener(mouse);
-        canvas.addMouseMotionListener(mouse);
-        canvas.addMouseWheelListener(mouse);
-        canvas.addKeyListener(keyboard);
-        canvas.setFocusable(true);
-
-        frame.setVisible(true);
-        canvas.requestFocusInWindow();
-        canvas.display();
-    }
-
-    private static Runnable loadTracedFrames(TraceSessionReader traceSessionReader, PyramidalImageModel model) {
-        TileFiltererByGeometricNullNeighbors tileFilterer = new TileFiltererByGeometricNullNeighbors();
+    private static Runnable loadTracedFrames(
+        TraceSessionReader traceSessionReader,
+        TileFiltererByGeometricNullNeighbors tileFilterer,
+        PyramidalImageModel model
+    ) {
         Runnable reloadTileMatrices = () -> {
             List<FrameData> loaded = traceSessionReader.readSession(Path.of(Configuration.INPUT_PATH));
             List<FrameData> filtered = loaded.stream()
@@ -97,4 +61,5 @@ public class Main {
         reloadTileMatrices.run();
         return reloadTileMatrices;
     }
+
 }
