@@ -6,12 +6,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class GoogleEarthController {
-    private static final long CONTINUE_DELAY_SECONDS = 15;
-    private static final long KEY_HOLD_MILLIS = 400;
+    private static final long CONTINUE_DELAY_SECONDS = 5;
+    private static final long KEY_HOLD_MILLIS = 430;
     private static final long BETWEEN_KEYS_MILLIS = 1000;
+    private static final char[] SPINNER_FRAMES = {'-', '/', '|', '\\'};
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final Object timerLock = new Object();
+    private final Object spinnerLock = new Object();
     private final AtomicLong inactivityToken = new AtomicLong(0);
 
     private final DetectorProcessClient detectorClient = new DetectorProcessClient();
@@ -19,6 +21,7 @@ public class GoogleEarthController {
 
     private volatile boolean running;
     private volatile ScheduledFuture<?> inactivityTimer;
+    private int spinnerIndex;
 
     public static void main(String[] args) {
         new GoogleEarthController().run();
@@ -31,6 +34,9 @@ public class GoogleEarthController {
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             stop();
+            if (ui != null) {
+                ui.shutdown();
+            }
             scheduler.shutdownNow();
         }));
 
@@ -55,15 +61,18 @@ public class GoogleEarthController {
         boolean started = detectorClient.start(executable, "/tmp/output", this::onDetectorLine);
         if (!started) {
             running = false;
+            System.out.println("[ERROR] fileSystemChangesDetector could not be executed.");
             return;
         }
 
         running = true;
+        System.out.println("[OK] fileSystemChangesDetector is running.");
         scheduleInactivityCycle();
     }
 
     private void stop() {
         if (!running) {
+            System.out.println("[STEP] Stop requested while controller is idle.");
             detectorClient.stop();
             return;
         }
@@ -72,13 +81,24 @@ public class GoogleEarthController {
         cancelInactivityTimer();
         inactivityToken.incrementAndGet();
         detectorClient.stop();
+        System.out.println("[OK] Navigation session stopped.");
     }
 
     private void onDetectorLine(String line) {
         if (!running) {
             return;
         }
+        printDetectorSpinner();
         scheduleInactivityCycle();
+    }
+
+    private void printDetectorSpinner() {
+        synchronized (spinnerLock) {
+            char frame = SPINNER_FRAMES[spinnerIndex];
+            spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length;
+            System.out.print("\r" + frame + "  ");
+            System.out.flush();
+        }
     }
 
     private void scheduleInactivityCycle() {
@@ -101,6 +121,7 @@ public class GoogleEarthController {
             return;
         }
 
+        System.out.println("!");
         runInteractionSequence(token);
 
         if (isCurrentToken(token)) {
@@ -113,6 +134,11 @@ public class GoogleEarthController {
     }
 
     private void runInteractionSequence(long token) {
+        runBlockingSync();
+        if (!isCurrentToken(token)) {
+            return;
+        }
+
         ui.pressAndHoldKey(java.awt.event.KeyEvent.VK_DOWN, KEY_HOLD_MILLIS);
         if (!isCurrentToken(token)) {
             return;
@@ -131,6 +157,21 @@ public class GoogleEarthController {
         ui.markAdvanceCompleted();
     }
 
+    private void runBlockingSync() {
+        try {
+            Process process = new ProcessBuilder("sync").start();
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                System.err.println("[WARN] sync exited with code " + exitCode + ".");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("[WARN] sync was interrupted.");
+        } catch (Exception e) {
+            System.err.println("[WARN] Could not run sync: " + e.getMessage());
+        }
+    }
+
     private void sleepInterruptibly(long millis) {
         try {
             Thread.sleep(millis);
@@ -140,9 +181,12 @@ public class GoogleEarthController {
     }
 
     private void onQuit() {
+        System.out.println("[STEP] Quit requested.");
         detectorClient.sendExit();
         stop();
+        ui.shutdown();
         scheduler.shutdownNow();
+        System.out.println("[OK] Controller shutdown complete.");
         System.exit(0);
     }
 

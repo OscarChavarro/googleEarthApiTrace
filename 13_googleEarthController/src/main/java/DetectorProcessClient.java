@@ -32,7 +32,7 @@ final class DetectorProcessClient {
                 readerThread.start();
                 return true;
             } catch (IOException ex) {
-                System.err.println("Could not start detector process: " + ex.getMessage());
+                System.err.println("[ERROR] Could not start detector process: " + ex.getMessage());
                 process = null;
                 stdin = null;
                 readerThread = null;
@@ -47,10 +47,10 @@ final class DetectorProcessClient {
                 return;
             }
             try {
-                stdin.write("exit\n");
                 stdin.flush();
+                System.out.println("[OK] Exit command sent to detector process.");
             } catch (IOException ex) {
-                System.err.println("Could not write exit to detector stdin: " + ex.getMessage());
+                System.err.println("[ERROR] Could not write exit to detector stdin: " + ex.getMessage());
             }
         }
     }
@@ -98,7 +98,7 @@ final class DetectorProcessClient {
             }
         } catch (IOException ex) {
             if (isCurrentProcess(trackedProcess)) {
-                System.err.println("Error reading detector output: " + ex.getMessage());
+                System.err.println("[ERROR] Error reading detector output: " + ex.getMessage());
             }
         }
     }
