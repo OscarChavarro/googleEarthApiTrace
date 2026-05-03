@@ -3,13 +3,15 @@ package dumpanalyzer.options;
 public final class CommandLineOptions {
     private final boolean offline;
     private final int startFrame;
+    private final int endFrame;
     private final int width;
     private final int height;
     private final String outputPath;
 
-    private CommandLineOptions(boolean offline, int startFrame, int width, int height, String outputPath) {
+    private CommandLineOptions(boolean offline, int startFrame, int endFrame, int width, int height, String outputPath) {
         this.offline = offline;
         this.startFrame = startFrame;
+        this.endFrame = endFrame;
         this.width = width;
         this.height = height;
         this.outputPath = outputPath;
@@ -18,6 +20,7 @@ public final class CommandLineOptions {
     public static CommandLineOptions parseArgs(String[] args) {
         boolean offline = false;
         int startFrame = 48;
+        int endFrame = 100000;
         int width = 1280;
         int height = 720;
         String outputPath = "/tmp/vitral/testsuite/_APITests/_JOGL4PbufferExample/src/output.png";
@@ -30,6 +33,10 @@ public final class CommandLineOptions {
             }
             if ("--start-frame".equals(a) && i + 1 < args.length) {
                 startFrame = safeParseInt(args[++i], startFrame);
+                continue;
+            }
+            if ("--end-frame".equals(a) && i + 1 < args.length) {
+                endFrame = Math.max(1, safeParseInt(args[++i], endFrame));
                 continue;
             }
             if ("--width".equals(a) && i + 1 < args.length) {
@@ -45,7 +52,7 @@ public final class CommandLineOptions {
             }
         }
 
-        return new CommandLineOptions(offline, startFrame, width, height, outputPath);
+        return new CommandLineOptions(offline, startFrame, endFrame, width, height, outputPath);
     }
 
     public boolean offline() {
@@ -54,6 +61,10 @@ public final class CommandLineOptions {
 
     public int startFrame() {
         return startFrame;
+    }
+
+    public int endFrame() {
+        return endFrame;
     }
 
     public int width() {

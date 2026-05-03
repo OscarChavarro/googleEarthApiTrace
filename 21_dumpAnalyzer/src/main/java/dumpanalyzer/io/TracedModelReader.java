@@ -23,18 +23,17 @@ public final class TracedModelReader {
     private static final String POISON_PATH = "__POISON__";
 
     private final Path outputRoot;
-    private final int maxFrame;
+    private final int endFrameIdInclusive;
 
-    public TracedModelReader(Path outputRoot, int maxFrame) {
+    public TracedModelReader(Path outputRoot, int endFrameIdInclusive) {
         this.outputRoot = outputRoot;
-        this.maxFrame = maxFrame;
+        this.endFrameIdInclusive = endFrameIdInclusive;
     }
 
     public void importInto(DumpAnalyzerModel model) {
         System.out.print("Scanning folders... ");
         System.out.flush();
         List<String> frameDirectories = scanDirectSubdirectories(outputRoot);
-        long problemSize = frameDirectories.size();
         System.out.println("OK");
 
         FunctionCounter counter = new FunctionCounter();
@@ -42,9 +41,15 @@ public final class TracedModelReader {
         TexturePathScanner.scanFrameDirectoriesParallel(frameDirectories, model, workerCount);
 
         List<String> glFilesToProcess = scanGlFilesFromFrameDirectories(frameDirectories);
-        if (maxFrame > 0 && glFilesToProcess.size() > maxFrame) {
-            glFilesToProcess = glFilesToProcess.subList(0, maxFrame);
+        if (endFrameIdInclusive > 0) {
+            glFilesToProcess = glFilesToProcess.stream()
+                .filter(path -> {
+                    int frameId = parseFrameFromGlPath(path);
+                    return frameId > 0 && frameId <= endFrameIdInclusive;
+                })
+                .toList();
         }
+        long problemSize = glFilesToProcess.size();
 
         BlockingQueue<String> frameQueue = new LinkedBlockingQueue<>();
         BlockingQueue<String> logQueue = new LinkedBlockingQueue<>();

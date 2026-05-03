@@ -68,6 +68,25 @@ Helper scripts:
 Besides visual debugging of the neighborhood calculation, neighbor values are also exported into per-frame files under the input directory tree `/tmp/output/<frame>/`.
 Note: the current file format is `frame.json`.
 
+## Command-Line Options
+
+`dumpAnalyzer` supports these runtime options:
+
+- `--offline`: render a single frame to an image and exit (no interactive window).
+- `--start-frame <id>`: initial selected frame id in the viewer/offline run.
+- `--end-frame <id>`: highest frame id to load from `/tmp/output` (inclusive).
+- `--width <px>`: viewport/output width.
+- `--height <px>`: viewport/output height.
+- `--output <path>`: output image path used in offline mode.
+
+### Example: load only first 500 frames
+
+If `/tmp/output` has 9634 frames and you want faster test cycles:
+
+```bash
+gradle run --args="--end-frame 500"
+```
+
 # Recognized OpenGL API calls
 
 | Category | Functions |
