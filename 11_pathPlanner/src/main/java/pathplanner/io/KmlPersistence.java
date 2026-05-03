@@ -1,4 +1,4 @@
-package pathplanner;
+package pathplanner.io;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -15,15 +15,16 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import pathplanner.model.Point;
 
-final class KmzPersistance {
+public final class KmlPersistence {
     private static final String GX_NS = "http://www.google.com/kml/ext/2.2";
     private static final String MARKER_LOOKAT_ALTITUDE = "0";
     private static final String MARKER_LOOKAT_HEADING = "0";
     private static final String MARKER_LOOKAT_TILT = "0";
     private static final String MARKER_LOOKAT_RANGE = "184.6844034672007";
 
-    void updateKml(String kmlPath, String turtleFolderName, String turtleStyleId, List<Point> points, List<Point> markerPoints) throws Exception {
+    public void updateKml(String kmlPath, String turtleFolderName, String turtleStyleId, List<Point> points, List<Point> markerPoints) throws Exception {
         File file = new File(kmlPath);
         if (!file.exists()) {
             throw new IllegalStateException("KML file does not exist: " + kmlPath);

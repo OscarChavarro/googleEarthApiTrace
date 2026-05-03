@@ -1,4 +1,4 @@
-package matrixmerger.processor;
+package matrixmerger.processing;
 
 import java.util.List;
 import matrixmerger.io.TileMatrix;

@@ -1,13 +1,15 @@
-package pathplanner;
+package pathplanner.processing;
 
-final class Geodesy {
+import pathplanner.model.Point;
+
+public final class Geodesy {
     private static final double WGS84_A = 6378137.0;
     private static final double WGS84_F = 1.0 / 298.257223563;
     private static final double WGS84_B = WGS84_A * (1.0 - WGS84_F);
 
     private Geodesy() {}
 
-    static Point moveByMeters(Point start, int dir, double meters) {
+    public static Point moveByMeters(Point start, int dir, double meters) {
         double azimuth;
         if (dir == 0) {
             azimuth = 0.0;
@@ -21,7 +23,7 @@ final class Geodesy {
         return destinationWgs84(start.latDeg(), start.lonDeg(), azimuth, meters);
     }
 
-    static Point destinationWgs84(double latDeg, double lonDeg, double azimuthDeg, double distanceMeters) {
+    public static Point destinationWgs84(double latDeg, double lonDeg, double azimuthDeg, double distanceMeters) {
         double lat1 = Math.toRadians(latDeg);
         double lon1 = Math.toRadians(lonDeg);
         double alpha1 = Math.toRadians(azimuthDeg);
@@ -72,7 +74,7 @@ final class Geodesy {
         return new Point(Math.toDegrees(lat2), Math.toDegrees(normalizeLonRad(lon2)));
     }
 
-    static InverseResult inverseWgs84(Point p1, Point p2) {
+    public static InverseResult inverseWgs84(Point p1, Point p2) {
         double phi1 = Math.toRadians(p1.latDeg());
         double phi2 = Math.toRadians(p2.latDeg());
         double L = Math.toRadians(p2.lonDeg() - p1.lonDeg());
@@ -140,7 +142,7 @@ final class Geodesy {
         throw new IllegalStateException("WGS84 inverse geodesic did not converge.");
     }
 
-    static double distanceWgs84Meters(Point p1, Point p2) {
+    public static double distanceWgs84Meters(Point p1, Point p2) {
         return inverseWgs84(p1, p2).distanceMeters();
     }
 
@@ -150,5 +152,5 @@ final class Geodesy {
         return lonRad;
     }
 
-    record InverseResult(double distanceMeters, double initialBearingDeg) {}
+    public record InverseResult(double distanceMeters, double initialBearingDeg) {}
 }

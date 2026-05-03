@@ -1,6 +1,12 @@
 package pathplanner;
 
 import java.util.List;
+import pathplanner.generators.CurveGenerator;
+import pathplanner.generators.SpiralGenerator;
+import pathplanner.generators.ZigzagGenerator;
+import pathplanner.io.KmlPersistence;
+import pathplanner.model.Point;
+import pathplanner.processing.PointFollower;
 
 public class Main {
     private static final String KML_PATH = System.getProperty("user.home") + "/.googleearth/myplaces.kml";
@@ -30,11 +36,11 @@ public class Main {
 
         CurveGenerator curveGenerator = buildGenerator(generatorName);
         PointFollower pointFollower = new PointFollower();
-        KmzPersistance kmzPersistance = new KmzPersistance();
+        KmlPersistence kmlPersistence = new KmlPersistence();
 
         List<Point> curve = curveGenerator.buildTurtleCurve(lat, lon, stepMeters, maxDistanceMeters);
         List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, stepMeters);
-        kmzPersistance.updateKml(KML_PATH, TURTLE_FOLDER_NAME, TURTLE_STYLE_ID, curve, markerPoints);
+        kmlPersistence.updateKml(KML_PATH, TURTLE_FOLDER_NAME, TURTLE_STYLE_ID, curve, markerPoints);
 
         System.out.println("Generated turtle curve with " + curve.size() + " vertices and " + markerPoints.size() + " z-points in " + KML_PATH);
     }

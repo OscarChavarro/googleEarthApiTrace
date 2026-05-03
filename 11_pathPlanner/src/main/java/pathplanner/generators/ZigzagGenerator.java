@@ -1,9 +1,11 @@
-package pathplanner;
+package pathplanner.generators;
 
 import java.util.ArrayList;
 import java.util.List;
+import pathplanner.model.Point;
+import pathplanner.processing.Geodesy;
 
-final class ZigzagGenerator implements CurveGenerator {
+public final class ZigzagGenerator implements CurveGenerator {
     private static final double LEG_METERS = 2000.0;
     private static final double SHIFT_EAST_METERS = 200.0;
     private static final int CYCLES = 10;

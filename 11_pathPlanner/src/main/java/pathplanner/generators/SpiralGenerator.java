@@ -1,9 +1,11 @@
-package pathplanner;
+package pathplanner.generators;
 
 import java.util.ArrayList;
 import java.util.List;
+import pathplanner.model.Point;
+import pathplanner.processing.Geodesy;
 
-final class SpiralGenerator implements CurveGenerator {
+public final class SpiralGenerator implements CurveGenerator {
     @Override
     public List<Point> buildTurtleCurve(double startLat, double startLon, double stepMeters, double maxDistanceFromStartMeters) {
         List<Point> points = new ArrayList<>();

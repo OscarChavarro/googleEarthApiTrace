@@ -7,8 +7,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import matrixmerger.io.TileMatrix;
-import matrixmerger.processor.FullSetMerger;
-import matrixmerger.processor.MatrixMerger;
+import matrixmerger.processing.FullSetMerger;
+import matrixmerger.processing.MatrixMerger;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 

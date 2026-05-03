@@ -1,10 +1,11 @@
-package pathplanner;
+package pathplanner.processing;
 
 import java.util.ArrayList;
 import java.util.List;
+import pathplanner.model.Point;
 
-final class PointFollower {
-    List<Point> samplePointsOnCurve(List<Point> curvePoints, double maxSpacingMeters) {
+public final class PointFollower {
+    public List<Point> samplePointsOnCurve(List<Point> curvePoints, double maxSpacingMeters) {
         List<Point> out = new ArrayList<>();
         if (curvePoints.isEmpty()) return out;
 
