@@ -1,4 +1,6 @@
 import java.nio.file.Path;
+import java.io.InputStream;
+import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -6,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class GoogleEarthController {
+    private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
     private static final long CONTINUE_DELAY_SECONDS = 5;
     private static final long KEY_HOLD_MILLIS = 430;
     private static final long BETWEEN_KEYS_MILLIS = 1000;
@@ -58,7 +61,7 @@ public class GoogleEarthController {
         }
 
         Path executable = Path.of("..", "12_fileSystemChangesDetector", "build", "fileSystemChangesDetector");
-        boolean started = detectorClient.start(executable, "/tmp/output", this::onDetectorLine);
+        boolean started = detectorClient.start(executable, OUTPUT_DIRECTORY, this::onDetectorLine);
         if (!started) {
             running = false;
             System.out.println("[ERROR] fileSystemChangesDetector could not be executed.");
@@ -197,5 +200,18 @@ public class GoogleEarthController {
                 inactivityTimer = null;
             }
         }
+    }
+
+    private static String loadOutputDirectory() {
+        Properties properties = new Properties();
+        try (InputStream input = GoogleEarthController.class.getClassLoader().getResourceAsStream("application.properties")) {
+            if (input != null) {
+                properties.load(input);
+            }
+        }
+        catch (Exception e) {
+            System.err.println("[WARN] Could not load application.properties: " + e.getMessage());
+        }
+        return properties.getProperty("output.directory", "/tmp/output");
     }
 }

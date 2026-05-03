@@ -15,17 +15,21 @@ import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
+import vsdk.toolkit.gui.feedback.ProgressMonitor;
+import vsdk.toolkit.gui.feedback.ProgressMonitorConsoleLongFormat;
 
 public class Main {
     public static void main(String[] args) {
         CommandLineOptions config = CommandLineOptions.parseArgs(args);
-        int workerCount = Runtime.getRuntime().availableProcessors();
 
         DumpAnalyzerModel model = new DumpAnalyzerModel();
         model.setSelectedFrameIndex(config.startFrame());
         TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, Configuration.MAX_FRAME);
-        tracedModelReader.importInto(model, workerCount);
+        tracedModelReader.importInto(model);
+        System.out.print("\nPreprocessing neighbors: ");
+        System.out.flush();
         preprocessNeighborsAndExport(model, model.snapshotFrames(), config.width(), config.height());
+        System.out.println("OK");
 
         Thread rendererThread = null;
         if (!config.offline()) {
@@ -97,9 +101,12 @@ public class Main {
         if (frames == null || frames.isEmpty()) {
             return;
         }
+        ProgressMonitor progressMonitor = new ProgressMonitorConsoleLongFormat();
+        progressMonitor.begin();
         int width = Math.max(1, viewportWidth);
         int height = Math.max(1, viewportHeight);
-        for (Frame frame : frames) {
+        for (int i = 0; i < frames.size(); i++) {
+            Frame frame = frames.get(i);
             if (frame != null) {
                 for (TileInstance tile : frame.getTiles()) {
                     if (tile == null) {
@@ -115,7 +122,9 @@ public class Main {
             }
             double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
             NeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
+            progressMonitor.update(0, frames.size(), i + 1);
         }
+        progressMonitor.end();
         FrameWriter.writeFrames(Configuration.OUTPUT_ROOT, frames);
     }
 

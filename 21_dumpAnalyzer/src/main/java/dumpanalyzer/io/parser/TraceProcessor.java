@@ -2,6 +2,7 @@ package dumpanalyzer.io.parser;
 
 import dumpanalyzer.parser.GlTraceLexer;
 import dumpanalyzer.parser.GlTraceParser;
+import dumpanalyzer.config.Configuration;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,7 +29,6 @@ public class TraceProcessor {
     }
 
     public Frame processFrame(int frame, String filename, BlockingQueue<String> logQueue) {
-        enqueueLog(logQueue, "Processing frame " + frame + " from file " + filename);
         Path filePath = Paths.get(filename).toAbsolutePath();
 
         String content;
@@ -73,7 +73,7 @@ public class TraceProcessor {
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            FatalErrorHandler.fail(Path.of("/tmp/output"), "Interrupted while queuing log message");
+            FatalErrorHandler.fail(Configuration.OUTPUT_ROOT, "Interrupted while queuing log message");
         }
     }
 

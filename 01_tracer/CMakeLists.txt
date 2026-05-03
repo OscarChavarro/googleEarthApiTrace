@@ -26,6 +26,7 @@ option (ENABLE_STATIC_LIBGCC "Statically link LD_PRELOAD wrappers against libgcc
 option (ENABLE_STATIC_LIBSTDCXX "Statically link LD_PRELOAD wrappers against libstdc++" ON)
 option (ENABLE_STATIC_EXE "Statically link executables" OFF)
 option (BUILD_TESTING "Enable unit tests" OFF)
+set (OUTPUT_DIRECTORY "/tmp/output" CACHE STRING "Directory where extracted blobs are written")
 
 macro (add_compiler_flags)
     string (REPLACE ";" " " _FLAGS "${ARGV}")
@@ -83,6 +84,7 @@ set (CXX_STANDARD_REQUIRED ON)
 add_definitions (
     -D__STDC_LIMIT_MACROS
     -D__STDC_FORMAT_MACROS
+    -DOUTPUT_DIRECTORY="${OUTPUT_DIRECTORY}"
 )
 
 CHECK_CXX_COMPILER_FLAG("-fvisibility=hidden" CXX_COMPILER_FLAG_VISIBILITY)

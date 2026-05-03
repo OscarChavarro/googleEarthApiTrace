@@ -107,11 +107,11 @@ static void appendManifestLine(int frameNumber, const char *line) {
         return;
     }
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", frameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, frameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }
@@ -398,12 +398,12 @@ private:
         }
 
         struct stat st = {0};
-        if (stat("/tmp/output", &st) == -1) {
-            mkdir("/tmp/output", 0755);
+        if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+            mkdir(OUTPUT_DIRECTORY, 0755);
         }
 
         char frameDir[256];
-        snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", job.frameNumber);
+        snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, job.frameNumber);
         if (stat(frameDir, &st) == -1) {
             mkdir(frameDir, 0755);
         }
@@ -467,12 +467,12 @@ static void exportPlain(const void *ptr, size_t size, int id) {
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
 
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
 
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
@@ -533,12 +533,12 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
 
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }
@@ -608,11 +608,11 @@ static void exportVertexPositionsFromVbo(int frameNumber, unsigned long long dra
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", frameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, frameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }
@@ -665,11 +665,11 @@ void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, u
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }
@@ -717,12 +717,12 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
 
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }
@@ -764,11 +764,11 @@ void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribI
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }
@@ -806,12 +806,12 @@ static void exportBufferDataBlob(const void *ptr, size_t size) {
     }
 
     struct stat st = {0};
-    if (stat("/tmp/output", &st) == -1) {
-        mkdir("/tmp/output", 0755);
+    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
+        mkdir(OUTPUT_DIRECTORY, 0755);
     }
 
     char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "/tmp/output/%05d", THE_FrameNumber);
+    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
     if (stat(frameDir, &st) == -1) {
         mkdir(frameDir, 0755);
     }

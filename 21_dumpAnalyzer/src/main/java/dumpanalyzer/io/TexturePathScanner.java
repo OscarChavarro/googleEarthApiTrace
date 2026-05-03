@@ -3,32 +3,96 @@ package dumpanalyzer.io;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Stream;
 import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.DumpAnalyzerModel;
 
 public final class TexturePathScanner {
+    private static final String POISON_PATH = "__POISON__";
     private static final Pattern TEXTURE_NAME_PATTERN = Pattern.compile(".*_(\\d+)\\.(dds|png)$", Pattern.CASE_INSENSITIVE);
 
     private TexturePathScanner() {
     }
 
-    public static void scanRecursive(Path outputRoot, DumpAnalyzerModel model) {
-        if (!Files.isDirectory(outputRoot)) {
+    public static void scanFrameDirectoriesParallel(List<String> frameDirectories, DumpAnalyzerModel model, int workerCount) {
+        if (frameDirectories == null || frameDirectories.isEmpty()) {
             return;
         }
-        try (Stream<Path> paths = Files.walk(outputRoot)) {
-            paths
-                .filter(Files::isRegularFile)
-                .filter(path -> {
-                    String n = path.getFileName().toString().toLowerCase();
-                    return n.endsWith(".dds") || n.endsWith(".png");
-                })
-                .forEach(path -> register(path, model));
-        } catch (IOException e) {
-            FatalErrorHandler.fail(outputRoot, "Failed to recursively scan texture files: " + e.getMessage());
+
+        BlockingQueue<String> queue = new LinkedBlockingQueue<>();
+        for (String frameDirectory : frameDirectories) {
+            putPath(queue, frameDirectory);
+        }
+        for (int i = 0; i < workerCount; i++) {
+            putPath(queue, POISON_PATH);
+        }
+
+        Thread[] workers = new Thread[workerCount];
+        for (int i = 0; i < workerCount; i++) {
+            int workerId = i;
+            workers[i] = new Thread(() -> consumeAndScan(queue, model), "texture-scan-worker-" + workerId);
+            workers[i].start();
+        }
+
+        for (Thread worker : workers) {
+            joinOrFail(worker);
+        }
+    }
+
+    private static void consumeAndScan(BlockingQueue<String> queue, DumpAnalyzerModel model) {
+        while (true) {
+            String frameDirectoryPath = takePath(queue);
+            if (POISON_PATH.equals(frameDirectoryPath)) {
+                return;
+            }
+            Path frameDirectory = Path.of(frameDirectoryPath);
+            if (!Files.isDirectory(frameDirectory)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.walk(frameDirectory)) {
+                paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> {
+                        String n = path.getFileName().toString().toLowerCase();
+                        return n.endsWith(".dds") || n.endsWith(".png");
+                    })
+                    .forEach(path -> register(path, model));
+            } catch (IOException e) {
+                FatalErrorHandler.fail(frameDirectory, "Failed to recursively scan texture files: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void putPath(BlockingQueue<String> queue, String path) {
+        try {
+            queue.put(path);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            FatalErrorHandler.fail(Path.of("."), "Interrupted while producing texture scan queue");
+        }
+    }
+
+    private static String takePath(BlockingQueue<String> queue) {
+        try {
+            return queue.take();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            FatalErrorHandler.fail(Path.of("."), "Interrupted while consuming texture scan queue");
+            return POISON_PATH;
+        }
+    }
+
+    private static void joinOrFail(Thread worker) {
+        try {
+            worker.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            FatalErrorHandler.fail(Path.of("."), "Interrupted while waiting texture scan workers");
         }
     }
 
