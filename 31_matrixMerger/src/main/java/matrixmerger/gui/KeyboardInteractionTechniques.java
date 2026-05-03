@@ -55,6 +55,18 @@ public final class KeyboardInteractionTechniques implements KeyListener {
                 return;
             }
         }
+        if (keyChar == 'm') {
+            if (model.mergeSelectedMatrixWithNext()) {
+                repaintAction.run();
+            }
+            return;
+        }
+        if (keyChar == 'M') {
+            if (model.mergeFullSet()) {
+                repaintAction.run();
+            }
+            return;
+        }
 
         switch (event.keycode) {
             case KeyEvent.KEY_1 -> {

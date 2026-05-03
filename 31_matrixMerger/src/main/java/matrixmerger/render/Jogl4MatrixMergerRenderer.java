@@ -97,12 +97,21 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         int h = drawable.getSurfaceHeight();
         int i = model.getSelectedMatrixOrdinal();
         int total = model.getMatrixCount();
+        boolean hasNext = model.hasNextMatrixForSelection();
+        boolean mergeFailed = model.hasLastMergeFailedForCurrentSelection();
 
         GL2 gl2 = drawable.getGL().getGL2();
         gl2.glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(w, h);
         hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
         hudTextRenderer.draw("Matrix [1, 2]: " + i + "/" + total, 16, h - 28);
+        if (hasNext) {
+            hudTextRenderer.draw("Merge current matrix with next one [m]", 16, h - 50);
+        }
+        if (hasNext && mergeFailed) {
+            hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
+            hudTextRenderer.draw("ERROR: Could not merge with next matrix!", 16, h - 72);
+        }
         hudTextRenderer.endRendering();
         gl2.glEnable(GL2.GL_DEPTH_TEST);
     }

@@ -31,6 +31,7 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 - [13_googleEarthController/README.md](13_googleEarthController/README.md): Automates Google Earth session progression based on detector inactivity.
 - [21_dumpAnalyzer/README.md](21_dumpAnalyzer/README.md): Parses per-frame GL logs (`gl.txt`) and counts/analyses OpenGL calls with ANTLR-based processing.
 - [22_frameTextureNormalizer/README.md](22_frameTextureNormalizer/README.md): Consumes frame-level artifacts and performs normalization-oriented preprocessing for later composition workflows.
+- [31_matrixMerger/README.md](31_matrixMerger/README.md): Loads per-frame tile matrices, visualizes one matrix at a time, and supports interactive/global matrix merging workflows.
 
 ## Notes
 

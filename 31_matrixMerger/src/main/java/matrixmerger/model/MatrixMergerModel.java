@@ -7,6 +7,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import matrixmerger.io.TileMatrix;
+import matrixmerger.processor.FullSetMerger;
+import matrixmerger.processor.MatrixMerger;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 
@@ -16,12 +18,15 @@ public final class MatrixMergerModel {
     private final List<TileMatrix> tileMatrices = new ArrayList<>();
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
+    private final MatrixMerger matrixMerger = new MatrixMerger();
+    private final FullSetMerger fullSetMerger = new FullSetMerger();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedMatrixIndex = 0;
+    private boolean lastMergeFailedForCurrentSelection = false;
 
     public MatrixMergerModel() {
         viewingCamera.setName("OrbiterCamera");
-        renderingConfiguration.setWires(true);
+        renderingConfiguration.setWires(false);
     }
 
     public Camera getViewingCamera() {
@@ -38,6 +43,7 @@ public final class MatrixMergerModel {
             tileMatrices.addAll(matrices);
         }
         selectedMatrixIndex = 0;
+        lastMergeFailedForCurrentSelection = false;
     }
 
     public List<TileMatrix> getTileMatrices() {
@@ -74,6 +80,7 @@ public final class MatrixMergerModel {
             return false;
         }
         selectedMatrixIndex--;
+        lastMergeFailedForCurrentSelection = false;
         return true;
     }
 
@@ -82,7 +89,42 @@ public final class MatrixMergerModel {
             return false;
         }
         selectedMatrixIndex++;
+        lastMergeFailedForCurrentSelection = false;
         return true;
+    }
+
+    public boolean mergeSelectedMatrixWithNext() {
+        int idx = getSelectedMatrixIndex();
+        if (idx < 0 || idx + 1 >= tileMatrices.size()) {
+            lastMergeFailedForCurrentSelection = false;
+            return false;
+        }
+        TileMatrix a = tileMatrices.get(idx);
+        TileMatrix b = tileMatrices.get(idx + 1);
+        if (!matrixMerger.merge(a, b)) {
+            lastMergeFailedForCurrentSelection = true;
+            return false;
+        }
+        tileMatrices.remove(idx + 1);
+        selectedMatrixIndex = Math.max(0, Math.min(idx, tileMatrices.size() - 1));
+        lastMergeFailedForCurrentSelection = false;
+        return true;
+    }
+
+    public boolean hasNextMatrixForSelection() {
+        int idx = getSelectedMatrixIndex();
+        return idx >= 0 && idx + 1 < tileMatrices.size();
+    }
+
+    public boolean hasLastMergeFailedForCurrentSelection() {
+        return lastMergeFailedForCurrentSelection;
+    }
+
+    public boolean mergeFullSet() {
+        boolean merged = fullSetMerger.merge(tileMatrices);
+        selectedMatrixIndex = Math.max(0, Math.min(selectedMatrixIndex, Math.max(0, tileMatrices.size() - 1)));
+        lastMergeFailedForCurrentSelection = false;
+        return merged;
     }
 
     public synchronized long getGpuTextureBytesAssigned() {
