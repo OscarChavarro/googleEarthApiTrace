@@ -10,12 +10,10 @@ import matrixmerger.gui.KeyboardInteractionTechniques;
 import matrixmerger.gui.MouseInteractionTechnique;
 import matrixmerger.model.MatrixMergerModel;
 import matrixmerger.render.Jogl4MatrixMergerRenderer;
-import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 @SuppressWarnings("removal")
 public class InteractiveDebugger extends Applet {
     private final MatrixMergerModel model;
-    private final CameraControllerOrbiter cameraController;
     private final Jogl4MatrixMergerRenderer renderer;
 
     private boolean closing;
@@ -24,13 +22,8 @@ public class InteractiveDebugger extends Applet {
     private GLCanvas canvas;
     private JFrame frame;
 
-    public InteractiveDebugger(
-        MatrixMergerModel model,
-        CameraControllerOrbiter cameraController,
-        Jogl4MatrixMergerRenderer renderer
-    ) {
+    public InteractiveDebugger(MatrixMergerModel model, Jogl4MatrixMergerRenderer renderer) {
         this.model = model;
-        this.cameraController = cameraController;
         this.renderer = renderer;
     }
 
@@ -63,7 +56,7 @@ public class InteractiveDebugger extends Applet {
     private void fillGuiWithCanvas() {
         canvas = renderer.createCanvas();
         mouseInteraction = new MouseInteractionTechnique(
-            model,
+            renderer.getCameraController(),
             canvas::repaint,
             canvas::requestFocusInWindow
         );
@@ -71,8 +64,9 @@ public class InteractiveDebugger extends Applet {
         canvas.addMouseMotionListener(mouseInteraction);
         canvas.addMouseWheelListener(mouseInteraction);
         keyboardInteraction = new KeyboardInteractionTechniques(
+            model,
             this::requestClose,
-            cameraController,
+            renderer.getCameraController(),
             canvas::repaint
         );
         canvas.addKeyListener(keyboardInteraction);

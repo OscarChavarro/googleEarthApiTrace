@@ -1,16 +1,14 @@
 package matrixmerger.io;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TileMatrix {
+public final class TileMatrix {
     private int frameId;
     private int rows;
     private int cols;
     private List<TileCoord> tiles = new ArrayList<>();
-
-    public TileMatrix() {
-    }
 
     public int getFrameId() {
         return frameId;
@@ -44,21 +42,26 @@ public class TileMatrix {
         this.tiles = tiles == null ? new ArrayList<>() : tiles;
     }
 
-    public static class TileCoord {
-        private int tileId;
+    public static final class TileCoord {
+        private String id;
+        @JsonAlias("tileId")
+        private Integer legacyTileId;
         private int i;
         private int j;
         private String textureFile;
 
-        public TileCoord() {
+        public String getId() {
+            if (id != null && !id.isBlank()) {
+                return id;
+            }
+            if (legacyTileId != null) {
+                return Integer.toString(legacyTileId);
+            }
+            return "";
         }
 
-        public int getTileId() {
-            return tileId;
-        }
-
-        public void setTileId(int tileId) {
-            this.tileId = tileId;
+        public void setId(String id) {
+            this.id = id;
         }
 
         public int getI() {

@@ -1,18 +1,15 @@
 package matrixmerger;
 
 import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Properties;
 import matrixmerger.io.MatrixReader;
 import matrixmerger.model.MatrixMergerModel;
 import matrixmerger.render.Jogl4MatrixMergerRenderer;
-import java.nio.file.Path;
-import java.util.Properties;
-import vsdk.toolkit.environment.Camera;
-import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public class Main {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
-
     public static void main(String[] args) {
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
             System.out.println("Can not start OpenGL/JOGL.");
@@ -20,15 +17,13 @@ public class Main {
         }
 
         MatrixMergerModel model = createModel();
-        CameraControllerOrbiter cameraController = new CameraControllerOrbiter(model.getCamera());
         Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
-        InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, cameraController, renderer);
+        InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
         interactiveDebugger.launchDesktop();
     }
 
     private static MatrixMergerModel createModel() {
         MatrixMergerModel model = new MatrixMergerModel();
-        model.setCamera(new Camera());
         model.setTileMatrices(new MatrixReader().readAllFromOutput(Path.of(OUTPUT_DIRECTORY)));
         System.out.println("Loaded matrices: " + model.getTileMatrices().size());
         return model;

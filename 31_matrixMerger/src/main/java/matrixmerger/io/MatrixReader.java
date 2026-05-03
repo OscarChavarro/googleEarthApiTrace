@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 public final class MatrixReader {
@@ -29,20 +30,20 @@ public final class MatrixReader {
         return out;
     }
 
-    private java.util.Optional<TileMatrix> readFromFrameDir(Path frameDir) {
-        Path matrixPath = frameDir.resolve("matrix.txt");
+    private Optional<TileMatrix> readFromFrameDir(Path frameDir) {
+        Path matrixPath = frameDir.resolve("matrix.json");
         if (!Files.isRegularFile(matrixPath)) {
-            matrixPath = frameDir.resolve("matrix.json");
+            matrixPath = frameDir.resolve("matrix.txt");
         }
         if (!Files.isRegularFile(matrixPath)) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         try {
-            return java.util.Optional.of(JSON.readValue(matrixPath.toFile(), TileMatrix.class));
+            return Optional.of(JSON.readValue(matrixPath.toFile(), TileMatrix.class));
         }
         catch (IOException ex) {
             System.out.println("Unable to read " + matrixPath + ": " + ex.getMessage());
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
     }
 }

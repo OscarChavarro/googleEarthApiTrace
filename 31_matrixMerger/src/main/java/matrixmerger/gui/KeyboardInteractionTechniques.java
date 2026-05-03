@@ -1,42 +1,84 @@
 package matrixmerger.gui;
 
 import java.awt.event.KeyListener;
+import matrixmerger.model.MatrixMergerModel;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.KeyEvent;
+import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
+    private final MatrixMergerModel model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
     private final CameraControllerOrbiter cameraController;
+    private final RendererConfigurationController renderingConfigurationController;
 
     public KeyboardInteractionTechniques(
+        MatrixMergerModel model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
         Runnable repaintAction
     ) {
+        this.model = model;
         this.closeAction = closeAction;
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
+        this.renderingConfigurationController = model == null
+            ? null
+            : new RendererConfigurationController(model.getRenderingConfiguration());
     }
 
     @Override
     public void keyPressed(java.awt.event.KeyEvent e) {
         KeyEvent event = AwtSystem.awt2vsdkEvent(e);
+        char keyChar = e.getKeyChar();
+
         if (event.keycode == KeyEvent.KEY_ESC && closeAction != null) {
             closeAction.run();
             return;
         }
-        if (cameraController != null && cameraController.processKeyPressedEvent(event) && repaintAction != null) {
+        if (model == null) {
+            return;
+        }
+
+        if (renderingConfigurationController != null
+            && renderingConfigurationController.processKeyPressedEvent(event)) {
             repaintAction.run();
+            return;
+        }
+        if (keyChar == 't') {
+            event.keycode = KeyEvent.KEY_F8;
+            if (renderingConfigurationController != null
+                && renderingConfigurationController.processKeyPressedEvent(event)) {
+                repaintAction.run();
+                return;
+            }
+        }
+
+        switch (event.keycode) {
+            case KeyEvent.KEY_1 -> {
+                if (model.selectPreviousMatrix()) {
+                    repaintAction.run();
+                }
+            }
+            case KeyEvent.KEY_2 -> {
+                if (model.selectNextMatrix()) {
+                    repaintAction.run();
+                }
+            }
+            default -> {
+                if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
+                    repaintAction.run();
+                }
+            }
         }
     }
 
     @Override
     public void keyReleased(java.awt.event.KeyEvent e) {
         if (cameraController != null
-            && cameraController.processKeyReleasedEvent(AwtSystem.awt2vsdkEvent(e))
-            && repaintAction != null) {
+            && cameraController.processKeyReleasedEvent(AwtSystem.awt2vsdkEvent(e))) {
             repaintAction.run();
         }
     }

@@ -5,7 +5,6 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
-import matrixmerger.model.MatrixMergerModel;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -15,11 +14,11 @@ public final class MouseInteractionTechnique implements MouseListener, MouseMoti
     private final Runnable focusAction;
 
     public MouseInteractionTechnique(
-        MatrixMergerModel model,
+        CameraControllerOrbiter cameraController,
         Runnable repaintAction,
         Runnable focusAction
     ) {
-        this.cameraController = new CameraControllerOrbiter(model.getCamera());
+        this.cameraController = cameraController;
         this.repaintAction = repaintAction;
         this.focusAction = focusAction;
     }
