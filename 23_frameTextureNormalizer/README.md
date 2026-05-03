@@ -1,6 +1,6 @@
 # pyramidalImageBuilder
 
-`pyramidalImageBuilder` is a Java 17 + Gradle utility that consumes preprocessed frame data from `/tmp/output`.
+`pyramidalImageBuilder` is a Java 17 + Gradle utility that consumes preprocessed frame data from `/media/ramdisk/output`.
 
 ## Input
 
@@ -11,8 +11,8 @@ This program expects input produced previously by:
 
 Expected layout example:
 
-- `/tmp/output/00003/frame.json`
-- `/tmp/output/00003/*.png`
+- `/media/ramdisk/output/00003/frame.json`
+- `/media/ramdisk/output/00003/*.png`
 
 ## Output behavior
 

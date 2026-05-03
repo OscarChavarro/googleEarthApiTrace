@@ -8,4 +8,4 @@ cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR"
 cmake --build "$BUILD_DIR" -j
 
 echo "Warning: this command will run with sudo (root privileges) to access fanotify kernel operations."
-exec sudo "$BUILD_DIR/fileSystemChangesDetector" /tmp/output
+exec sudo "$BUILD_DIR/fileSystemChangesDetector" /media/ramdisk/output

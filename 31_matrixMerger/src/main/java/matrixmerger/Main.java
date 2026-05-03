@@ -47,7 +47,7 @@ public class Main {
         catch (Exception e) {
             System.err.println("[WARN] Could not load application.properties: " + e.getMessage());
         }
-        return properties.getProperty("output.directory", "/tmp/output");
+        return properties.getProperty("output.directory", "/media/ramdisk/output");
     }
 
     private static boolean hasArg(String[] args, String flag) {

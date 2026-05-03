@@ -5,7 +5,7 @@ Este directorio contiene un fork mínimo de `apitrace` orientado a captura + exp
 Durante la ejecución, el tracer:
 
 1. Sigue escribiendo el `.trace` estándar.
-2. Exporta blobs/artefactos por frame en `/tmp/output/%05d/`.
+2. Exporta blobs/artefactos por frame en `/media/ramdisk/output/%05d/`.
 
 ## Objetivo de esta variante
 
@@ -33,8 +33,8 @@ La exportación ocurre desde `Writer::writeBlob(...)` cuando hay contexto de tex
 
 Nombre de archivo:
 
-- `/tmp/output/%05d/%dx%d_%d.dds`
-- `/tmp/output/%05d/%dx%d_%d.png`
+- `/media/ramdisk/output/%05d/%dx%d_%d.dds`
+- `/media/ramdisk/output/%05d/%dx%d_%d.png`
 
 Donde `%d` final corresponde a `THE_TextureId`.
 
@@ -52,9 +52,9 @@ Se genera `manifest.txt` por frame con líneas `key=value` describiendo cada exp
 
 ## Layout de salida
 
-- `/tmp/output/%05d/gl.txt`
-- `/tmp/output/%05d/manifest.txt`
-- `/tmp/output/%05d/*.dds|*.png|*.bin|*.meta.txt`
+- `/media/ramdisk/output/%05d/gl.txt`
+- `/media/ramdisk/output/%05d/manifest.txt`
+- `/media/ramdisk/output/%05d/*.dds|*.png|*.bin|*.meta.txt`
 
 ## Variables y runtime flags
 

@@ -1,13 +1,13 @@
 # dumpAnalyzer
 
-`dumpAnalyzer` is a Java 17 + Gradle tool that scans OpenGL trace dumps under `/tmp/output` and counts OpenGL function calls found in each `gl.txt` file.
+`dumpAnalyzer` is a Java 17 + Gradle tool that scans OpenGL trace dumps under `/media/ramdisk/output` and counts OpenGL function calls found in each `gl.txt` file.
 
 ## What It Does
 
-- Scans `/tmp/output` for frame folders named as numbers (for example `00413`).
+- Scans `/media/ramdisk/output` for frame folders named as numbers (for example `00413`).
 - For each frame folder containing `gl.txt`, calls frame processing with:
   - `frame`: numeric value from the folder name (for example `413`)
-  - `filename`: absolute path to the file (for example `/tmp/output/00413/gl.txt`)
+  - `filename`: absolute path to the file (for example `/media/ramdisk/output/00413/gl.txt`)
 - Normalizes multiline logical calls (for example long `glShaderSource` payloads split across multiple physical lines).
 - Parses content with ANTLR grammar (`GlTrace.g4`) tailored to the current trace format.
 - Collects a global map: `OpenGL function name -> total call count` across all frames.
@@ -51,7 +51,7 @@ From the `dumpAnalyzer` directory:
 gradle run
 ```
 
-The application always processes `/tmp/output` in the current implementation.
+The application always processes `/media/ramdisk/output` in the current implementation.
 
 ## Execution Modes
 
@@ -65,7 +65,7 @@ Helper scripts:
 - `./run.sh` runs the interactive mode (`gradle run`).
 - `./runOffline.sh` runs offline mode and exports frame `00003` to `output/frame0003.png`.
 
-Besides visual debugging of the neighborhood calculation, neighbor values are also exported into per-frame files under the input directory tree `/tmp/output/<frame>/`.
+Besides visual debugging of the neighborhood calculation, neighbor values are also exported into per-frame files under the input directory tree `/media/ramdisk/output/<frame>/`.
 Note: the current file format is `frame.json`.
 
 ## Command-Line Options
@@ -74,14 +74,14 @@ Note: the current file format is `frame.json`.
 
 - `--offline`: render a single frame to an image and exit (no interactive window).
 - `--start-frame <id>`: initial selected frame id in the viewer/offline run.
-- `--end-frame <id>`: highest frame id to load from `/tmp/output` (inclusive).
+- `--end-frame <id>`: highest frame id to load from `/media/ramdisk/output` (inclusive).
 - `--width <px>`: viewport/output width.
 - `--height <px>`: viewport/output height.
 - `--output <path>`: output image path used in offline mode.
 
 ### Example: load only first 500 frames
 
-If `/tmp/output` has 9634 frames and you want faster test cycles:
+If `/media/ramdisk/output` has 9634 frames and you want faster test cycles:
 
 ```bash
 gradle run --args="--end-frame 500"

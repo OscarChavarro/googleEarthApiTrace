@@ -2,7 +2,7 @@
 
 `fileSystemChangesDetector` is a Linux utility used by `13_googleEarthController` to decide when Google Earth navigation can continue.
 
-It watches a target output directory (typically `/tmp/output`) with `fanotify` and reports new file activity.
+It watches a target output directory (typically `/media/ramdisk/output`) with `fanotify` and reports new file activity.
 
 ## Why it exists
 

@@ -4,7 +4,7 @@
 
 ## Qué hace
 
-- Lee matrices desde carpetas de frame dentro de `output.directory` (por defecto `/tmp/output`).
+- Lee matrices desde carpetas de frame dentro de `output.directory` (por defecto `/media/ramdisk/output`).
 - Muestra una matriz activa por vez como quads en el plano `Z=0`.
 - Permite navegación de matriz y merges interactivos.
 - Implementa culling por frustum para no pintar quads fuera de cámara.
