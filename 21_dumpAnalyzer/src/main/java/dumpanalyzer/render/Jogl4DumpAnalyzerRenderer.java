@@ -61,6 +61,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final double MAX_DIAGONAL = 1.0e6;
     private static final double DIAGONAL_MIN_RATIO = 1.0e-3;
     private static final double DIAGONAL_MAX_RATIO = 1.0e3;
+    private static final double GOOGLE_PROJECTION_FAR_SCALE = 10.0;
 
     public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
         this.model = model;
@@ -146,8 +147,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl.glClearColor(0, 0, 0, 1);
         gl.glClear(GL4.GL_COLOR_BUFFER_BIT | GL4.GL_DEPTH_BUFFER_BIT);
         Camera activeCamera = model.getActiveCamera();
-        // Use only camera view-volume projection. Geometry already carries trace modelview.
-        Matrix4x4 projection = activeCamera.calculateViewVolumeMatrix();
+        Matrix4x4 projection = projectionForCurrentState(state, frames, activeCamera, model.isUsingGoogleCameraAsView());
         drawObjectsGL(gl, projection, model.isUsingGoogleCameraAsView());
         List<Jogl4HudRenderer.ScreenLabel> aabbLabels = List.of();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
@@ -407,6 +407,72 @@ public class Jogl4DumpAnalyzerRenderer implements
         viewingCamera.setPosition(newPosition);
         viewingCamera.setFocusedPositionMaintainingOrthogonality(WORLD_ORIGIN);
         setSafePlanes(distance);
+    }
+
+    private Matrix4x4 projectionForCurrentState(
+        DumpAnalyzerModel.HudState state,
+        List<Frame> frames,
+        Camera activeCamera,
+        boolean useGoogleCameraView
+    ) {
+        if (useGoogleCameraView) {
+            int frameIndex = state.selectedFrameIndex();
+            if (frameIndex >= 0 && frameIndex < frames.size()) {
+                double[] expandedProjection = expandFarPlane(frames.get(frameIndex).getProjectionMatrix(), GOOGLE_PROJECTION_FAR_SCALE);
+                Matrix4x4 fromFrame = matrixFromColumnMajor(expandedProjection);
+                if (fromFrame != null) {
+                    return fromFrame;
+                }
+            }
+        }
+        // Fallback for viewing camera or missing frame projection.
+        return activeCamera.calculateViewVolumeMatrix();
+    }
+
+    private Matrix4x4 matrixFromColumnMajor(double[] m) {
+        if (m == null || m.length != 16) {
+            return null;
+        }
+        Matrix4x4 out = new Matrix4x4();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                out = out.withVal(row, col, m[col * 4 + row]);
+            }
+        }
+        return out;
+    }
+
+    private double[] expandFarPlane(double[] projectionMatrix, double farScale) {
+        if (projectionMatrix == null || projectionMatrix.length != 16) {
+            return projectionMatrix;
+        }
+        if (!(farScale > 1.0) || !isFinite(farScale)) {
+            return projectionMatrix;
+        }
+        double[] adjusted = projectionMatrix.clone();
+        // Perspective matrix in OpenGL convention.
+        if (Math.abs(adjusted[11] + 1.0) > 1.0e-6 || Math.abs(adjusted[15]) > 1.0e-6) {
+            return adjusted;
+        }
+        double m10 = adjusted[10];
+        double m14 = adjusted[14];
+        if (Math.abs(m10 - 1.0) <= 1.0e-12 || Math.abs(m10 + 1.0) <= 1.0e-12) {
+            return adjusted;
+        }
+
+        double near = Math.abs(m14 / (m10 - 1.0));
+        double far = Math.abs(m14 / (m10 + 1.0));
+        if (!isFinite(near) || !isFinite(far) || near <= 1.0e-9 || far <= near) {
+            return adjusted;
+        }
+        double farExpanded = far * farScale;
+        if (!isFinite(farExpanded) || farExpanded <= near) {
+            return adjusted;
+        }
+
+        adjusted[10] = -((farExpanded + near) / (farExpanded - near));
+        adjusted[14] = -((2.0 * farExpanded * near) / (farExpanded - near));
+        return adjusted;
     }
 
     private Vector3D safeFront() {

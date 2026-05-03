@@ -26,7 +26,7 @@ public class Main {
         model.setSelectedFrameIndex(config.startFrame());
         TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, Configuration.MAX_FRAME);
         tracedModelReader.importInto(model);
-        System.out.print("\nPreprocessing neighbors: ");
+        System.out.print("\nPreprocessing neighbors:\n");
         System.out.flush();
         preprocessNeighborsAndExport(model, model.snapshotFrames(), config.width(), config.height());
         System.out.println("OK");
@@ -101,13 +101,16 @@ public class Main {
         if (frames == null || frames.isEmpty()) {
             return;
         }
-        ProgressMonitor progressMonitor = new ProgressMonitorConsoleLongFormat();
-        progressMonitor.begin();
         int width = Math.max(1, viewportWidth);
         int height = Math.max(1, viewportHeight);
-        for (int i = 0; i < frames.size(); i++) {
-            Frame frame = frames.get(i);
-            if (frame != null) {
+        runStageWithProgress(
+            "Stage 1/3 - Assigning texture file paths to tiles",
+            frames.size(),
+            i -> {
+                Frame frame = frames.get(i);
+                if (frame == null) {
+                    return;
+                }
                 for (TileInstance tile : frame.getTiles()) {
                     if (tile == null) {
                         continue;
@@ -116,16 +119,43 @@ public class Main {
                     tile.setTextureFile(texturePath);
                 }
             }
-            Matrix4x4 projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
-            if (projection == null) {
-                projection = Matrix4x4.identityMatrix();
+        );
+        runStageWithProgress(
+            "Stage 2/3 - Detecting neighbors per frame",
+            frames.size(),
+            i -> {
+                Frame frame = frames.get(i);
+                Matrix4x4 projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
+                if (projection == null) {
+                    projection = Matrix4x4.identityMatrix();
+                }
+                double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
+                NeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
             }
-            double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
-            NeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
-            progressMonitor.update(0, frames.size(), i + 1);
+        );
+        runStageWithProgress(
+            "Stage 3/3 - Writing processed frames to disk",
+            1,
+            i -> FrameWriter.writeFrames(Configuration.OUTPUT_ROOT, frames)
+        );
+    }
+
+    private static void runStageWithProgress(String stageTitle, int totalWorkUnits, IndexedTask task) {
+        int total = Math.max(1, totalWorkUnits);
+        System.out.println(stageTitle + " - started");
+        ProgressMonitor progressMonitor = new ProgressMonitorConsoleLongFormat();
+        progressMonitor.begin();
+        for (int i = 0; i < totalWorkUnits; i++) {
+            task.run(i);
+            progressMonitor.update(0, total, i + 1);
         }
         progressMonitor.end();
-        FrameWriter.writeFrames(Configuration.OUTPUT_ROOT, frames);
+        System.out.println(stageTitle + " - finished");
+    }
+
+    @FunctionalInterface
+    private interface IndexedTask {
+        void run(int index);
     }
 
     private static Matrix4x4 matrixFromColumnMajor(double[] m) {

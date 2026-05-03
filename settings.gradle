@@ -1,0 +1,8 @@
+rootProject.name = 'googleEarthApiTrace'
+
+include '11_pathPlanner'
+include '13_googleEarthController'
+include '21_dumpAnalyzer'
+include '22_frameTextureNormalizer'
+include '31_matrixMerger'
+

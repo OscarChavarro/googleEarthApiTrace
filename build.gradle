@@ -1,0 +1,9 @@
+description = 'Gradle parent project for Java subprojects in googleEarthApiTrace'
+
+allprojects {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+}
+
