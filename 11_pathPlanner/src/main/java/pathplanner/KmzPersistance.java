@@ -18,6 +18,10 @@ import java.util.List;
 
 final class KmzPersistance {
     private static final String GX_NS = "http://www.google.com/kml/ext/2.2";
+    private static final String MARKER_LOOKAT_ALTITUDE = "0";
+    private static final String MARKER_LOOKAT_HEADING = "0";
+    private static final String MARKER_LOOKAT_TILT = "0";
+    private static final String MARKER_LOOKAT_RANGE = "184.6844034672007";
 
     void updateKml(String kmlPath, String turtleFolderName, String turtleStyleId, List<Point> points, List<Point> markerPoints) throws Exception {
         File file = new File(kmlPath);
@@ -29,13 +33,14 @@ final class KmzPersistance {
         dbf.setNamespaceAware(true);
         DocumentBuilder db = dbf.newDocumentBuilder();
         Document doc = db.parse(file);
+        removeWhitespaceTextNodes(doc.getDocumentElement());
 
         Element documentElement = findFirstElementByLocalName(doc.getDocumentElement(), "Document");
         if (documentElement == null) {
             throw new IllegalStateException("Invalid KML: Document node was not found");
         }
 
-        removeFolderByName(documentElement, turtleFolderName);
+        removeFoldersByName(documentElement, turtleFolderName);
 
         Element folder = createElementSameNs(doc, documentElement, "Folder");
         Element folderName = createElementSameNs(doc, documentElement, "name");
@@ -86,18 +91,20 @@ final class KmzPersistance {
             placemark.appendChild(placemarkName);
 
             Element lookAt = createElementSameNs(doc, documentElement, "LookAt");
+            String lonText = Double.toString(p.lonDeg());
+            String latText = Double.toString(p.latDeg());
             Element lon = createElementSameNs(doc, documentElement, "longitude");
-            lon.setTextContent(Double.toString(p.lonDeg()));
+            lon.setTextContent(lonText);
             Element lat = createElementSameNs(doc, documentElement, "latitude");
-            lat.setTextContent(Double.toString(p.latDeg()));
+            lat.setTextContent(latText);
             Element alt = createElementSameNs(doc, documentElement, "altitude");
-            alt.setTextContent("0");
+            alt.setTextContent(MARKER_LOOKAT_ALTITUDE);
             Element heading = createElementSameNs(doc, documentElement, "heading");
-            heading.setTextContent("-0.01019120726538249");
+            heading.setTextContent(MARKER_LOOKAT_HEADING);
             Element tilt = createElementSameNs(doc, documentElement, "tilt");
-            tilt.setTextContent("0");
+            tilt.setTextContent(MARKER_LOOKAT_TILT);
             Element range = createElementSameNs(doc, documentElement, "range");
-            range.setTextContent("184.6844034672007");
+            range.setTextContent(MARKER_LOOKAT_RANGE);
             Element gxAltitudeMode = doc.createElementNS(GX_NS, "gx:altitudeMode");
             gxAltitudeMode.setTextContent("relativeToSeaFloor");
             lookAt.appendChild(lon);
@@ -117,7 +124,7 @@ final class KmzPersistance {
             Element gxDrawOrder = doc.createElementNS(GX_NS, "gx:drawOrder");
             gxDrawOrder.setTextContent("1");
             Element coordinates = createElementSameNs(doc, documentElement, "coordinates");
-            coordinates.setTextContent(p.lonDeg() + "," + p.latDeg() + ",0");
+            coordinates.setTextContent(lonText + "," + latText + ",0");
             point.appendChild(gxDrawOrder);
             point.appendChild(coordinates);
             placemark.appendChild(point);
@@ -167,8 +174,8 @@ final class KmzPersistance {
         return sb.toString();
     }
 
-    private void removeFolderByName(Element documentElement, String folderName) {
-        NodeList folders = documentElement.getChildNodes();
+    private void removeFoldersByName(Element documentElement, String folderName) {
+        NodeList folders = documentElement.getElementsByTagNameNS("*", "Folder");
         List<Node> toRemove = new ArrayList<>();
         for (int i = 0; i < folders.getLength(); i++) {
             Node n = folders.item(i);
@@ -176,13 +183,47 @@ final class KmzPersistance {
             Element e = (Element) n;
             if (!"Folder".equals(e.getLocalName()) && !"Folder".equals(e.getNodeName())) continue;
 
-            Element name = findFirstElementByLocalName(e, "name");
+            Element name = findDirectChildElementByLocalName(e, "name");
             if (name != null && folderName.equals(name.getTextContent())) {
                 toRemove.add(e);
             }
         }
         for (Node n : toRemove) {
-            documentElement.removeChild(n);
+            Node parent = n.getParentNode();
+            if (parent != null) {
+                parent.removeChild(n);
+            }
+        }
+    }
+
+    private Element findDirectChildElementByLocalName(Element root, String localName) {
+        NodeList children = root.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node n = children.item(i);
+            if (n.getNodeType() != Node.ELEMENT_NODE) continue;
+            Element e = (Element) n;
+            if (localName.equals(e.getLocalName()) || localName.equals(e.getNodeName())) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    private void removeWhitespaceTextNodes(Node node) {
+        NodeList children = node.getChildNodes();
+        List<Node> toRemove = new ArrayList<>();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.TEXT_NODE && child.getTextContent().trim().isEmpty()) {
+                toRemove.add(child);
+                continue;
+            }
+            if (child.getNodeType() == Node.ELEMENT_NODE) {
+                removeWhitespaceTextNodes(child);
+            }
+        }
+        for (Node whitespace : toRemove) {
+            node.removeChild(whitespace);
         }
     }
 
