@@ -12,7 +12,7 @@ java {
 }
 
 application {
-    mainClass = 'pyramidalimagebuilder.Main'
+    mainClass = 'matrixmerger.Main'
 }
 
 tasks.withType(JavaExec).configureEach {
@@ -30,7 +30,6 @@ repositories {
 
 dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
-    implementation 'org.jgrapht:jgrapht-core:1.5.2'
     implementation 'co.cubestudio:base:1.0'
     implementation 'co.cubestudio:awt:1.0'
     implementation 'co.cubestudio:jogl4:1.0'
