@@ -26,7 +26,7 @@ public class Main {
         model.setSelectedFrameIndex(config.startFrame());
         TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, Configuration.MAX_FRAME);
         tracedModelReader.importInto(model);
-        System.out.print("\nPreprocessing neighbors:\n");
+        System.out.print("\n[2/5] Preprocessing neighbors... \n");
         System.out.flush();
         preprocessNeighborsAndExport(model, model.snapshotFrames(), config.width(), config.height());
         System.out.println("OK");
@@ -104,7 +104,7 @@ public class Main {
         int width = Math.max(1, viewportWidth);
         int height = Math.max(1, viewportHeight);
         runStageWithProgress(
-            "Stage 1/3 - Assigning texture file paths to tiles",
+            "\n[3/5] Assigning texture file paths to tiles:",
             frames.size(),
             i -> {
                 Frame frame = frames.get(i);
@@ -121,7 +121,7 @@ public class Main {
             }
         );
         runStageWithProgress(
-            "Stage 2/3 - Detecting neighbors per frame",
+            "\n[4/5] Detecting neighbors per frame:",
             frames.size(),
             i -> {
                 Frame frame = frames.get(i);
@@ -134,15 +134,21 @@ public class Main {
             }
         );
         runStageWithProgress(
-            "Stage 3/3 - Writing processed frames to disk",
-            1,
-            i -> FrameWriter.writeFrames(Configuration.OUTPUT_ROOT, frames)
+            "\n[5/5] Writing processed frames to disk:",
+            frames.size(),
+            i -> {
+                Frame frame = frames.get(i);
+                if (frame == null) {
+                    return;
+                }
+                FrameWriter.writeFrame(Configuration.OUTPUT_ROOT, frame);
+            }
         );
     }
 
     private static void runStageWithProgress(String stageTitle, int totalWorkUnits, IndexedTask task) {
         int total = Math.max(1, totalWorkUnits);
-        System.out.println(stageTitle + " - started");
+        System.out.println(stageTitle);
         ProgressMonitor progressMonitor = new ProgressMonitorConsoleLongFormat();
         progressMonitor.begin();
         for (int i = 0; i < totalWorkUnits; i++) {
@@ -150,7 +156,6 @@ public class Main {
             progressMonitor.update(0, total, i + 1);
         }
         progressMonitor.end();
-        System.out.println(stageTitle + " - finished");
     }
 
     @FunctionalInterface
