@@ -1,82 +1,100 @@
 # Tracer Overview
 
-Este directorio contiene un fork mínimo de `apitrace` orientado a captura + export en runtime.
+This directory contains a minimal `apitrace` fork focused on capture + runtime export.
 
-Durante la ejecución, el tracer:
+During execution, the tracer:
 
-1. Sigue escribiendo el `.trace` estándar.
-2. Exporta blobs/artefactos por frame en `/media/ramdisk/output/%05d/`.
+1. Keeps writing the standard `.trace`.
+2. Exports per-frame blobs/artifacts to `/media/ramdisk/output/%05d/`.
 
-## Objetivo de esta variante
+## Goal of this variant
 
-- Mantener compatibilidad con flujo normal de `apitrace` (`.trace`).
-- Extraer datos binarios grandes durante el trace (sin depender sólo de post-procesado).
-- Exportar texturas cuando aparecen como blobs en llamadas GL relevantes.
+- Keep compatibility with the normal `apitrace` workflow (`.trace`).
+- Extract large binary data during tracing (without relying only on post-processing).
+- Export textures when they appear as blobs in relevant GL calls.
 
-## Hooks GL relevantes para texturas
+## Relevant GL hooks for textures
 
-En la implementación actual (ver `wrappers/glxtrace.py` + `lib/trace/trace_writer.cpp`), el estado de textura para export se prepara en:
+In the current implementation (see `wrappers/glxtrace.py` + `lib/trace/trace_writer.cpp`), texture state for export is prepared in:
 
 - `glTexImage2D`
 - `glTexSubImage2D`
 - `glCompressedTexImage2DARB`
-- `glBindTexture` (actualiza `THE_TextureId`)
+- `glBindTexture` (updates `THE_TextureId`)
 
-El número de frame se actualiza en `glXSwapBuffers` usando `THE_FrameNumber`.
+The frame number is updated in `glXSwapBuffers` using `THE_FrameNumber`.
 
-## Formato de export de texturas (actual)
+## Texture export format (current)
 
-La exportación ocurre desde `Writer::writeBlob(...)` cuando hay contexto de textura activo (`THE_TextureFormat/THE_TextureWidth/THE_TextureHeight`):
+Export happens from `Writer::writeBlob(...)` when texture context is active (`THE_TextureFormat/THE_TextureWidth/THE_TextureHeight`):
 
-- Comprimida DXT1 (`GL_COMPRESSED_RGB_S3TC_DXT1_EXT`): se exporta como `.dds` con header DDS.
-- No comprimida y decodificable (`type == GL_UNSIGNED_BYTE` y formatos soportados): se exporta como `.png`.
+- Compressed DXT1 (`GL_COMPRESSED_RGB_S3TC_DXT1_EXT`): exported as `.dds` with DDS header.
+- Uncompressed and decodable (`type == GL_UNSIGNED_BYTE` and supported formats): exported as `.png`.
 
-Nombre de archivo:
+Filename pattern:
 
 - `/media/ramdisk/output/%05d/%dx%d_%d.dds`
 - `/media/ramdisk/output/%05d/%dx%d_%d.png`
 
-Donde `%d` final corresponde a `THE_TextureId`.
+Where the final `%d` corresponds to `THE_TextureId`.
 
-Nota: actualmente el código no exporta `.ppm`; la salida no comprimida implementada es `.png`.
+Note: currently the code does not export `.ppm`; the implemented uncompressed output is `.png`.
 
-## Otros blobs exportados
+## Other exported blobs
 
-Además de texturas, también se exportan blobs para análisis geométrico/buffers:
+Besides textures, blobs are also exported for geometry/buffer analysis:
 
-- `glDrawElements` (índices)
+- `glDrawElements` (indices)
 - `glVertexAttribPointer`
-- `glBufferData` / `glBufferSubData` (snapshots y metadatos)
+- `glBufferData` / `glBufferSubData` (snapshots and metadata)
 
-Se genera `manifest.txt` por frame con líneas `key=value` describiendo cada export.
+A per-frame `manifest.txt` is generated with `key=value` lines describing each export.
 
-## Layout de salida
+## Output layout
 
 - `/media/ramdisk/output/%05d/gl.txt`
 - `/media/ramdisk/output/%05d/manifest.txt`
 - `/media/ramdisk/output/%05d/*.dds|*.png|*.bin|*.meta.txt`
 
-## Variables y runtime flags
+## Variables and runtime flags
 
-- `TRACE_FILE`: ruta del `.trace`.
-- `TRACE_TIMESTAMP`: timestamp en nombre de trace.
-- `FLUSH_EVERY_MS`: flush periódico del stream de trace.
-- `TRACE_WRITE_GLTXT=0`: desactiva escritura de `gl.txt`.
-- `TRACE_PNG_THREADS`: número de workers para PNG asíncrono (default: autodetección con tope conservador; rango válido `1..256`).
-- `TRACE_PNG_QUEUE`: tamaño máximo de cola de export PNG asíncrona (default `128`, max `4096`).
+- `TRACE_FILE`: path to the `.trace`.
+- `TRACE_TIMESTAMP`: timestamp in trace filename.
+- `FLUSH_EVERY_MS`: periodic flush of the trace stream.
+- `TRACE_WRITE_GLTXT=0`: disables writing `gl.txt`.
+- `TRACE_PNG_THREADS`: number of async PNG workers (default: autodetect with conservative cap; valid range `1..256`).
+- `TRACE_PNG_QUEUE`: max queue size for async PNG export (default `128`, max `4096`).
 
-## Export PNG asíncrono (productor-consumidor)
+## Async PNG export (producer-consumer)
 
-- El hilo de tracing encola trabajos de PNG y **copia el blob** a memoria propia del job.
-- Un pool de workers consume la cola y escribe `.png` en background.
-- Dedupe thread-safe por `frame + textureId` con estados `pending/exported`.
-- La cola es acotada: si se llena, el productor bloquea hasta tener espacio.
+- The tracing thread enqueues PNG jobs and **copies the blob** into job-owned memory.
+- A worker pool consumes the queue and writes `.png` files in the background.
+- Thread-safe dedupe by `frame + textureId` with `pending/exported` states.
+- The queue is bounded: if full, the producer blocks until space is available.
 
-Notas:
-- La exportación `.dds` (DXT1) sigue síncrona.
-- Si `TRACE_PNG_THREADS` no está definido, el pool se dimensiona automáticamente con límite conservador (hasta 12 workers) para evitar sobrecontención.
+Notes:
+- `.dds` (DXT1) export remains synchronous.
+- If `TRACE_PNG_THREADS` is not defined, the pool is sized automatically with a conservative limit (up to 12 workers) to avoid excessive contention.
 
-## Referencias de implementación
+## RAMDISK recommendation (`tmpfs`)
 
-- `wrappers/glxtrace.py`: set/reset de globals `THE_*`, frame boundary, hooks GLX/GL.
-- `lib/trace/trace_writer.cpp`: `writeBlob`, `exportPlain`, export de `.dds/.png`, manifests y blobs auxiliares.
+This program puts very heavy pressure on the I/O subsystem during capture.
+Without a fast write path, capture becomes very slow.
+
+If you have enough RAM, it is strongly recommended to use a `tmpfs` RAMDISK for capture and early-stage processing.
+
+Example on Linux:
+
+```bash
+mount -t tmpfs -o size=120G,nr_inodes=12M tmpfs /media/ramdisk/
+```
+
+A practical workflow is:
+
+- Capture and initial processing on `tmpfs` (`/media/ramdisk/output`).
+- After filtering/organizing the final tiles, copy the resulting dataset to a real SSD for long-term storage.
+
+## Implementation references
+
+- `wrappers/glxtrace.py`: set/reset of `THE_*` globals, frame boundary, GLX/GL hooks.
+- `lib/trace/trace_writer.cpp`: `writeBlob`, `exportPlain`, `.dds/.png` export, manifests, and auxiliary blobs.

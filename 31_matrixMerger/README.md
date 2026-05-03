@@ -1,101 +1,101 @@
 # 31_matrixMerger
 
-`31_matrixMerger` es un visor/procesador de matrices de tiles (`matrix.json`) generado en etapas previas, orientado a fusionar matrices solapadas y visualizar el resultado.
+`31_matrixMerger` is a tile-matrix (`matrix.json`) viewer/processor generated in previous stages, focused on merging overlapping matrices and visualizing the result.
 
-## Qué hace
+## What it does
 
-- Lee matrices desde carpetas de frame dentro de `output.directory` (por defecto `/media/ramdisk/output`).
-- Muestra una matriz activa por vez como quads en el plano `Z=0`.
-- Permite navegación de matriz y merges interactivos.
-- Implementa culling por frustum para no pintar quads fuera de cámara.
-- Implementa LOD por distancia:
-  - Cerca: quad completo con textura (pixel-perfect con `NEAREST` + `CLAMP_TO_EDGE`).
-  - Lejos: quad sin textura, escalado al `98%` para dejar separación visual.
-- Gestiona memoria de texturas GPU con presupuesto máximo y expulsión FIFO.
+- Reads matrices from frame folders inside `output.directory` (default `/media/ramdisk/output`).
+- Displays one active matrix at a time as quads on plane `Z=0`.
+- Supports matrix navigation and interactive merges.
+- Implements frustum culling to avoid drawing off-camera quads.
+- Implements distance-based LOD:
+  - Near: full textured quad (pixel-perfect with `NEAREST` + `CLAMP_TO_EDGE`).
+  - Far: untextured quad, scaled to `98%` to keep visible separation.
+- Manages GPU texture memory with a maximum budget and FIFO eviction.
 
-## Entradas esperadas
+## Expected inputs
 
-Cada frame debe contener `matrix.json` (fallback: `matrix.txt`) con estructura compatible con:
+Each frame must contain `matrix.json` (fallback: `matrix.txt`) with a structure compatible with:
 
 - `frameId`
 - `rows`
 - `cols`
-- `tiles[]` con:
-  - `id` (string, recomendado)
+- `tiles[]` with:
+  - `id` (string, recommended)
   - `i`, `j`
   - `textureFile`
 
-También acepta legado con `tileId` numérico al deserializar.
+It also accepts legacy numeric `tileId` during deserialization.
 
-## Controles en visor
+## Viewer controls
 
-- `1`: matriz anterior
-- `2`: matriz siguiente
-- `m`: merge entre matriz actual (A) y la siguiente (B)
-- `M`: merge sobre todo el conjunto (algoritmo completo)
-- `t`: toggle de textura (delegado al `RendererConfigurationController`)
-- `ESC`: salir
+- `1`: previous matrix
+- `2`: next matrix
+- `m`: merge current matrix (A) with next matrix (B)
+- `M`: merge across the entire set (full algorithm)
+- `t`: texture toggle (delegated to `RendererConfigurationController`)
+- `ESC`: exit
 
 HUD:
 
-- Siempre: `Matrix [1, 2]: i/N`
-- Si existe matriz siguiente: `Merge current matrix with next one [m]`
-- Si el último merge local falló (sin cambiar selección):
-  - `ERROR: Could not merge with next matrix!` (en rojo)
+- Always: `Matrix [1, 2]: i/N`
+- If a next matrix exists: `Merge current matrix with next one [m]`
+- If the last local merge failed (without changing selection):
+  - `ERROR: Could not merge with next matrix!` (in red)
 
-## Algoritmos de merge
+## Merge algorithms
 
 ### `processor.MatrixMerger`
 
-Opera sobre dos matrices `A` y `B`:
+Operates on two matrices `A` and `B`:
 
-1. Busca celdas coincidentes por `id` para calcular un único desplazamiento (`MatrixOffset`) de `B` sobre `A`.
-2. Si el desplazamiento no es consistente para todos los `id` compartidos, falla.
-3. Si al superponer hay conflictos de contenido en la misma celda, falla.
-4. Si es válido, agrega a `A` las celdas de `B` que no estaban en `A`.
-5. Normaliza coordenadas de `A` para que comiencen en `0` y recalcula `rows/cols`.
+1. Finds matching cells by `id` to compute one offset (`MatrixOffset`) for `B` over `A`.
+2. If the offset is not consistent for all shared `id` values, it fails.
+3. If overlapping cells contain conflicting content, it fails.
+4. If valid, adds to `A` the cells from `B` that were not already in `A`.
+5. Normalizes `A` coordinates to start at `0` and recalculates `rows/cols`.
 
 ### `processor.FullSetMerger`
 
-Recorre la lista completa:
+Iterates through the full list:
 
-1. Toma `A = matrices[i]`, `B = matrices[i+1]`.
-2. Si mergea, elimina `B` y vuelve a intentar con la nueva siguiente sobre la misma `A`.
-3. Si falla, avanza `i`.
-4. Termina al quedar una sola matriz o no existir más pares.
+1. Takes `A = matrices[i]`, `B = matrices[i+1]`.
+2. If merge succeeds, removes `B` and retries with the new next matrix on the same `A`.
+3. If merge fails, increments `i`.
+4. Stops when only one matrix remains or no more pairs exist.
 
-## Ejecución
+## Execution
 
-### Modo interactivo
+### Interactive mode
 
-Desde el root del repo:
+From repo root:
 
 ```bash
 ./gradlew :31_matrixMerger:run
 ```
 
-### Modo offline
+### Offline mode
 
-Ejecuta solo el merge global del conjunto y termina sin GUI:
+Runs only the global full-set merge and exits without GUI:
 
 ```bash
 ./gradlew :31_matrixMerger:run --args="--ofline"
 ```
 
-(Se acepta también `--offline` por compatibilidad.)
+(`--offline` is also accepted for compatibility.)
 
-## Configuración
+## Configuration
 
-En `matrixmerger.config.Configuration`:
+In `matrixmerger.config.Configuration`:
 
-- `MAX_GPU_TEXTURE_MEMORY`: límite de memoria de texturas en GPU.
-- `MAX_TEXTURED_QUAD_DISTANCE`: umbral de distancia para usar textura.
-- `FAR_QUAD_SCALE`: escala del quad lejano (sin textura).
+- `MAX_GPU_TEXTURE_MEMORY`: GPU texture memory limit.
+- `MAX_TEXTURED_QUAD_DISTANCE`: distance threshold for using textures.
+- `FAR_QUAD_SCALE`: scale of far (untextured) quads.
 
-## Estructura de paquetes
+## Package structure
 
-- `io`: lectura/deserialización de matrices.
-- `model`: estado de visualización y selección.
-- `processor`: merge local y merge del conjunto completo.
-- `render`: renderer JOGL, culling y LOD.
-- `gui`: teclado/ratón.
+- `io`: matrix reading/deserialization.
+- `model`: visualization and selection state.
+- `processor`: local merge and full-set merge.
+- `render`: JOGL renderer, culling, and LOD.
+- `gui`: keyboard/mouse handling.
