@@ -46,14 +46,15 @@ public class TraceProcessor {
 
         List<dumpanalyzer.model.TileInstance> tiles = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
         dumpanalyzer.model.TileInstance lastTile = tiles.isEmpty() ? null : tiles.get(tiles.size() - 1);
-        double[] projectionMatrix = lastTile == null ? null : lastTile.getProjectionMatrix();
-        double[] modelViewMatrix = lastTile == null ? null : lastTile.getModelViewMatrix();
-        if (projectionMatrix == null) {
-            projectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
-        }
-        if (modelViewMatrix == null) {
-            modelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
-        }
+        double[] sceneProjectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
+        double[] sceneModelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
+        double[] tileProjectionMatrix = lastTile == null ? null : lastTile.getProjectionMatrix();
+        double[] tileModelViewMatrix = lastTile == null ? null : lastTile.getModelViewMatrix();
+
+        // Frame-level camera must reflect the scene matrices from gl.txt, not the last tile draw.
+        // The last tile is often a different pass (HUD/minimap), especially in early Google Earth frames.
+        double[] projectionMatrix = sceneProjectionMatrix != null ? sceneProjectionMatrix : tileProjectionMatrix;
+        double[] modelViewMatrix = sceneModelViewMatrix != null ? sceneModelViewMatrix : tileModelViewMatrix;
         Camera googleCamera = new Camera();
         googleCamera.setName("GoogleCamera");
         CameraProcessor.applyProjectionMatrixToCamera(googleCamera, projectionMatrix);

@@ -61,7 +61,6 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final double MAX_DIAGONAL = 1.0e6;
     private static final double DIAGONAL_MIN_RATIO = 1.0e-3;
     private static final double DIAGONAL_MAX_RATIO = 1.0e3;
-    private static final double GOOGLE_PROJECTION_FAR_SCALE = 10.0;
 
     public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
         this.model = model;
@@ -418,8 +417,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (useGoogleCameraView) {
             int frameIndex = state.selectedFrameIndex();
             if (frameIndex >= 0 && frameIndex < frames.size()) {
-                double[] expandedProjection = expandFarPlane(frames.get(frameIndex).getProjectionMatrix(), GOOGLE_PROJECTION_FAR_SCALE);
-                Matrix4x4 fromFrame = matrixFromColumnMajor(expandedProjection);
+                Matrix4x4 fromFrame = matrixFromColumnMajor(frames.get(frameIndex).getProjectionMatrix());
                 if (fromFrame != null) {
                     return fromFrame;
                 }
@@ -440,39 +438,6 @@ public class Jogl4DumpAnalyzerRenderer implements
             }
         }
         return out;
-    }
-
-    private double[] expandFarPlane(double[] projectionMatrix, double farScale) {
-        if (projectionMatrix == null || projectionMatrix.length != 16) {
-            return projectionMatrix;
-        }
-        if (!(farScale > 1.0) || !isFinite(farScale)) {
-            return projectionMatrix;
-        }
-        double[] adjusted = projectionMatrix.clone();
-        // Perspective matrix in OpenGL convention.
-        if (Math.abs(adjusted[11] + 1.0) > 1.0e-6 || Math.abs(adjusted[15]) > 1.0e-6) {
-            return adjusted;
-        }
-        double m10 = adjusted[10];
-        double m14 = adjusted[14];
-        if (Math.abs(m10 - 1.0) <= 1.0e-12 || Math.abs(m10 + 1.0) <= 1.0e-12) {
-            return adjusted;
-        }
-
-        double near = Math.abs(m14 / (m10 - 1.0));
-        double far = Math.abs(m14 / (m10 + 1.0));
-        if (!isFinite(near) || !isFinite(far) || near <= 1.0e-9 || far <= near) {
-            return adjusted;
-        }
-        double farExpanded = far * farScale;
-        if (!isFinite(farExpanded) || farExpanded <= near) {
-            return adjusted;
-        }
-
-        adjusted[10] = -((farExpanded + near) / (farExpanded - near));
-        adjusted[14] = -((2.0 * farExpanded * near) / (farExpanded - near));
-        return adjusted;
     }
 
     private Vector3D safeFront() {

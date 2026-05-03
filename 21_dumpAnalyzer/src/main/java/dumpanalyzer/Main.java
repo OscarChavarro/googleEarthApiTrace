@@ -15,10 +15,8 @@ public class Main {
         model.setSelectedFrameIndex(config.startFrame());
         TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, config.endFrame());
         tracedModelReader.importInto(model);
-        System.out.print("\n[2/5] Preprocessing neighbors... \n");
         System.out.flush();
         NeighborsProcessor.preprocessNeighbors(model, model.snapshotFrames(), config.width(), config.height());
-        System.out.println("OK");
 
         if (!config.offline()) {
             InteractiveDebugger.start(model);
