@@ -19,7 +19,6 @@ import pathplanner.model.Point;
 
 public final class KmlPersistence {
     private static final String GX_NS = "http://www.google.com/kml/ext/2.2";
-    private static final String MARKER_LOOKAT_ALTITUDE = "0";
     private static final String MARKER_LOOKAT_HEADING = "0";
     private static final String MARKER_LOOKAT_TILT = "0";
     private static final String MARKER_LOOKAT_RANGE = "184.6844034672007";
@@ -94,12 +93,13 @@ public final class KmlPersistence {
             Element lookAt = createElementSameNs(doc, documentElement, "LookAt");
             String lonText = Double.toString(p.lonDeg());
             String latText = Double.toString(p.latDeg());
+            String altitudeText = Double.toString(p.altitudeMeters() * 3.0);
             Element lon = createElementSameNs(doc, documentElement, "longitude");
             lon.setTextContent(lonText);
             Element lat = createElementSameNs(doc, documentElement, "latitude");
             lat.setTextContent(latText);
             Element alt = createElementSameNs(doc, documentElement, "altitude");
-            alt.setTextContent(MARKER_LOOKAT_ALTITUDE);
+            alt.setTextContent(altitudeText);
             Element heading = createElementSameNs(doc, documentElement, "heading");
             heading.setTextContent(MARKER_LOOKAT_HEADING);
             Element tilt = createElementSameNs(doc, documentElement, "tilt");
@@ -125,7 +125,7 @@ public final class KmlPersistence {
             Element gxDrawOrder = doc.createElementNS(GX_NS, "gx:drawOrder");
             gxDrawOrder.setTextContent("1");
             Element coordinates = createElementSameNs(doc, documentElement, "coordinates");
-            coordinates.setTextContent(lonText + "," + latText + ",0");
+            coordinates.setTextContent(lonText + "," + latText + "," + altitudeText);
             point.appendChild(gxDrawOrder);
             point.appendChild(coordinates);
             placemark.appendChild(point);
@@ -170,7 +170,7 @@ public final class KmlPersistence {
             if (sb.length() > 0) {
                 sb.append(' ');
             }
-            sb.append(p.lonDeg()).append(',').append(p.latDeg()).append(',').append(0);
+            sb.append(p.lonDeg()).append(',').append(p.latDeg()).append(',').append(p.altitudeMeters());
         }
         return sb.toString();
     }

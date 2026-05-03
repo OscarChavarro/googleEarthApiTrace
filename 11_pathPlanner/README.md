@@ -8,6 +8,7 @@
 - Supports curve generators:
   - `spiral`
   - `zigzag`
+  - `globe`
 - Uses geodesic calculations to produce point sequences.
 - Writes routes and sampled marker points into Google Earth KML (`myplaces.kml`).
 
@@ -27,4 +28,10 @@ Or:
 
 ```bash
 gradle run --args="zigzag <lat> <lon> <step_distance_m> <max_distance_m>"
+```
+
+Or:
+
+```bash
+gradle run --args="globe <lat> <lon> <step_distance_m> <max_distance_m>"
 ```

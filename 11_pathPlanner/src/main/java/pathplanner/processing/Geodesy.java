@@ -6,6 +6,7 @@ public final class Geodesy {
     private static final double WGS84_A = 6378137.0;
     private static final double WGS84_F = 1.0 / 298.257223563;
     private static final double WGS84_B = WGS84_A * (1.0 - WGS84_F);
+    private static final double WGS84_E2 = WGS84_F * (2.0 - WGS84_F);
 
     private Geodesy() {}
 
@@ -139,7 +140,7 @@ public final class Geodesy {
                 return new InverseResult(distance, initialBearing);
             }
         }
-        throw new IllegalStateException("WGS84 inverse geodesic did not converge.");
+        return inverseSphericalFallback(p1, p2);
     }
 
     public static double distanceWgs84Meters(Point p1, Point p2) {
@@ -150,6 +151,32 @@ public final class Geodesy {
         while (lonRad > Math.PI) lonRad -= 2.0 * Math.PI;
         while (lonRad < -Math.PI) lonRad += 2.0 * Math.PI;
         return lonRad;
+    }
+
+    private static InverseResult inverseSphericalFallback(Point p1, Point p2) {
+        double lat1 = Math.toRadians(p1.latDeg());
+        double lon1 = Math.toRadians(p1.lonDeg());
+        double lat2 = Math.toRadians(p2.latDeg());
+        double lon2 = Math.toRadians(p2.lonDeg());
+
+        double dLat = lat2 - lat1;
+        double dLon = normalizeLonRad(lon2 - lon1);
+        double sinDLat2 = Math.sin(dLat * 0.5);
+        double sinDLon2 = Math.sin(dLon * 0.5);
+        double a = sinDLat2 * sinDLat2 + Math.cos(lat1) * Math.cos(lat2) * sinDLon2 * sinDLon2;
+        double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0.0, 1.0 - a)));
+        double meanLat = 0.5 * (lat1 + lat2);
+        double sinMeanLat = Math.sin(meanLat);
+        double radius = WGS84_A * (1.0 - WGS84_E2) / Math.pow(1.0 - WGS84_E2 * sinMeanLat * sinMeanLat, 1.5);
+        double distance = radius * c;
+
+        double y = Math.sin(dLon) * Math.cos(lat2);
+        double x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+        double bearing = Math.toDegrees(Math.atan2(y, x));
+        if (bearing < 0.0) bearing += 360.0;
+        if (!Double.isFinite(bearing)) bearing = 0.0;
+
+        return new InverseResult(distance, bearing);
     }
 
     public record InverseResult(double distanceMeters, double initialBearingDeg) {}
