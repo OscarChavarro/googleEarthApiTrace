@@ -1,6 +1,7 @@
 package pathplanner;
 
 import java.util.List;
+import pathplanner.generators.AltitudeGenerator;
 import pathplanner.generators.CurveGenerator;
 import pathplanner.generators.GlobeGenerator;
 import pathplanner.generators.SpiralGenerator;
@@ -17,6 +18,7 @@ public class Main {
     private static final String GENERATOR_SPIRAL = "spiral";
     private static final String GENERATOR_ZIGZAG = "zigzag";
     private static final String GENERATOR_GLOBE = "globe";
+    private static final int ALTITUDE_LANDMARK_COUNT = 18;
 
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
@@ -44,13 +46,20 @@ public class Main {
         List<Point> curve = curveGenerator.buildTurtleCurve(lat, lon, stepMeters, maxDistanceMeters);
         List<Point> zeroLongitudeSeam = new ZeroLongitudeSeamGenerator().buildTurtleCurve(0.0, 0.0, 0.0, 0.0);
         List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, stepMeters);
+        int altitudeLandmarkCount = 0;
+        if (usesAltitudeLandmarks(generatorName) && !curve.isEmpty()) {
+            List<Point> altitudeLandmarks = new AltitudeGenerator().buildAltitudeLandmarks(curve.get(0));
+            markerPoints.addAll(0, altitudeLandmarks);
+            altitudeLandmarkCount = ALTITUDE_LANDMARK_COUNT;
+        }
         kmlPersistence.updateKml(
             KML_PATH,
             TURTLE_FOLDER_NAME,
             TURTLE_STYLE_ID,
             curve,
             markerPoints,
-            zeroLongitudeSeam
+            zeroLongitudeSeam,
+            altitudeLandmarkCount
         );
 
         System.out.println("Generated turtle curve with " + curve.size() + " vertices and " + markerPoints.size() + " z-points in " + KML_PATH);
@@ -67,5 +76,9 @@ public class Main {
             return new GlobeGenerator();
         }
         throw new IllegalArgumentException("Unsupported generator: " + generatorName + ". Use: spiral, zigzag or globe");
+    }
+
+    private static boolean usesAltitudeLandmarks(String generatorName) {
+        return GENERATOR_SPIRAL.equalsIgnoreCase(generatorName) || GENERATOR_ZIGZAG.equalsIgnoreCase(generatorName);
     }
 }

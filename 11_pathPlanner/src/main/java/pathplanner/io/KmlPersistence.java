@@ -29,7 +29,8 @@ public final class KmlPersistence {
         String turtleStyleId,
         List<Point> points,
         List<Point> markerPoints,
-        List<Point> zeroLongitudeSeamPoints
+        List<Point> zeroLongitudeSeamPoints,
+        int altitudeLandmarkCount
     ) throws Exception {
         File file = new File(kmlPath);
         if (!file.exists()) {
@@ -57,7 +58,7 @@ public final class KmlPersistence {
         appendPathPlacemark(doc, documentElement, folder, turtleStyleId, "turtle_path", points);
         appendPathPlacemark(doc, documentElement, folder, turtleStyleId, "0LongitudeSeam", zeroLongitudeSeamPoints);
 
-        appendMarkerPlacemarks(doc, documentElement, folder, markerPoints);
+        appendMarkerPlacemarks(doc, documentElement, folder, markerPoints, altitudeLandmarkCount);
 
         documentElement.appendChild(folder);
         upsertTurtleStyle(doc, documentElement, turtleStyleId);
@@ -98,10 +99,22 @@ public final class KmlPersistence {
         folder.appendChild(pathPlacemark);
     }
 
-    private void appendMarkerPlacemarks(Document doc, Element documentElement, Element folder, List<Point> markerPoints) {
+    private void appendMarkerPlacemarks(
+        Document doc,
+        Element documentElement,
+        Element folder,
+        List<Point> markerPoints,
+        int altitudeLandmarkCount
+    ) {
+        int normalMarkerIndex = 1;
         for (int i = 0; i < markerPoints.size(); i++) {
             Point p = markerPoints.get(i);
-            String name = String.format("z%04d", i + 1);
+            String name;
+            if (i < altitudeLandmarkCount) {
+                name = "L" + i;
+            } else {
+                name = String.format("z%04d", normalMarkerIndex++);
+            }
 
             Element placemark = createElementSameNs(doc, documentElement, "Placemark");
 
