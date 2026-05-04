@@ -291,6 +291,7 @@ public class Jogl4DumpAnalyzerRenderer implements
                 drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, false, useGoogleCameraView);
                 tileOrdinal++;
             }
+            drawExtractedLinesForFrame(gl2, frameData, projection, useGoogleCameraView);
             if (model.getRendererConfiguration().isBoundingVolumeSet()) {
                 axisAlignedBoundingBoxRenderer.drawForSelection(
                     gl2,
@@ -308,6 +309,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex);
         drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, false, true, useGoogleCameraView);
+        drawExtractedLinesForFrame(gl2, frameData, projection, useGoogleCameraView);
         if (model.getRendererConfiguration().isBoundingVolumeSet()) {
             axisAlignedBoundingBoxRenderer.drawForSelection(
                 gl2,
@@ -350,6 +352,23 @@ public class Jogl4DumpAnalyzerRenderer implements
             hudRenderer,
             model.getActiveCamera()
         );
+    }
+
+    private void drawExtractedLinesForFrame(
+        GL2 gl2,
+        Frame frameData,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView
+    ) {
+        for (TileInstance tile : frameData.getTiles()) {
+            double[] combinedModelView = CoordinatesTransforms.geometryModelView(
+                useGoogleCameraView, viewingCamera, frameData
+            );
+            if (useGoogleCameraView && tile.getModelViewMatrix() != null && tile.getModelViewMatrix().length == 16) {
+                combinedModelView = tile.getModelViewMatrix();
+            }
+            Jogl4TileRenderer.drawExtractedLineStrips(gl2, tile, projection, combinedModelView);
+        }
     }
 
     private List<Jogl4HudRenderer.ScreenLabel> buildAabbLabelsForHud(

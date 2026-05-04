@@ -19,10 +19,14 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 final class TilesProcessor {
     private static final String GL_TRIANGLE_STRIP = "GL_TRIANGLE_STRIP";
     private static final String GL_TRIANGLES = "GL_TRIANGLES";
+    private static final String GL_LINES = "GL_LINES";
+    private static final String GL_LINE_STRIP = "GL_LINE_STRIP";
+    private static final String GL_LINE_LOOP = "GL_LINE_LOOP";
     private static final Pattern BIND_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglBindTexture\\s*\\((.*)\\)");
     private static final Pattern ACTIVE_TEXTURE_LINE_PATTERN = Pattern.compile("\\bglActiveTextureARB\\s*\\((.*)\\)");
     private static final Pattern VERTEX_ATTRIB_LINE_PATTERN = Pattern.compile("\\bglVertexAttribPointer\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_LINE_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
+    private static final Pattern DRAW_ARRAYS_LINE_PATTERN = Pattern.compile("\\bglDrawArrays\\s*\\((.*)\\)");
     private static final Pattern MATRIX_MODE_LINE_PATTERN = Pattern.compile("\\bglMatrixMode\\s*\\((.*)\\)");
     private static final Pattern LOAD_IDENTITY_LINE_PATTERN = Pattern.compile("\\bglLoadIdentity\\s*\\((.*)\\)");
     private static final Pattern LOAD_MATRIXF_LINE_PATTERN = Pattern.compile("\\bglLoadMatrixf\\s*\\((.*)\\)");
@@ -38,6 +42,7 @@ final class TilesProcessor {
     private static final Pattern DRAW_MODE_PATTERN = Pattern.compile("mode\\s*=\\s*([A-Z0-9_]+)");
     private static final Pattern DRAW_COUNT_PATTERN = Pattern.compile("count\\s*=\\s*(\\d+)");
     private static final Pattern DRAW_TYPE_PATTERN = Pattern.compile("type\\s*=\\s*([A-Z0-9_]+)");
+    private static final Pattern DRAW_FIRST_PATTERN = Pattern.compile("first\\s*=\\s*(\\d+)");
     private static final Pattern GL_CALL_NUMBER_PATTERN = Pattern.compile("^\\s*(\\d+)\\s+gl[A-Za-z0-9_]+\\s*\\(");
 
     private TilesProcessor() {
@@ -48,6 +53,7 @@ final class TilesProcessor {
         ManifestProcessor.ManifestIndex manifest = ManifestProcessor.loadManifestIndex(frameDirectory);
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
+        int drawElementsCount = 0;
         int vertexAttribExportCallCount = 0;
         int activeTextureUnit = 0;
         Map<Integer, Integer> boundTexture2DByUnit = new HashMap<>();
@@ -148,8 +154,15 @@ final class TilesProcessor {
             }
 
             Matcher drawMatcher = DRAW_ELEMENTS_LINE_PATTERN.matcher(line);
-            if (!drawMatcher.find()) {
+            Matcher drawArraysMatcher = DRAW_ARRAYS_LINE_PATTERN.matcher(line);
+            boolean isDrawElements = drawMatcher.find();
+            boolean isDrawArrays = drawArraysMatcher.find();
+            if (!isDrawElements && !isDrawArrays) {
                 continue;
+            }
+            int drawElementsOrdinal = -1;
+            if (isDrawElements) {
+                drawElementsOrdinal = ++drawElementsCount;
             }
 
             drawCount++;
@@ -159,29 +172,44 @@ final class TilesProcessor {
                 boundTextureId = boundTexture2DByUnit.get(activeTextureUnit);
             }
             if (boundTextureId == null || boundTextureId < 0) {
-                continue;
+                boundTextureId = -1;
             }
 
-            String drawArgs = drawMatcher.group(1);
+            String drawArgs = isDrawElements ? drawMatcher.group(1) : drawArraysMatcher.group(1);
             String mode = extractToken(DRAW_MODE_PATTERN, drawArgs);
             Integer count = extractInt(DRAW_COUNT_PATTERN, drawArgs);
-            String type = extractToken(DRAW_TYPE_PATTERN, drawArgs);
+            String type = isDrawElements ? extractToken(DRAW_TYPE_PATTERN, drawArgs) : "GL_UNSIGNED_SHORT";
             if (mode == null || type == null || count == null) {
                 continue;
             }
-            if ((!GL_TRIANGLE_STRIP.equals(mode) && !GL_TRIANGLES.equals(mode)) || !"GL_UNSIGNED_SHORT".equals(type) || count <= 0) {
+            boolean trianglePrimitive = GL_TRIANGLE_STRIP.equals(mode) || GL_TRIANGLES.equals(mode);
+            boolean linePrimitive = GL_LINES.equals(mode) || GL_LINE_STRIP.equals(mode) || GL_LINE_LOOP.equals(mode);
+            if ((!trianglePrimitive && !linePrimitive) || !"GL_UNSIGNED_SHORT".equals(type) || count <= 0) {
                 continue;
             }
 
-            Path indicesPath = ManifestProcessor.resolveIndicesBlobPath(frameDirectory, manifest, glCallNumber, drawCount);
-            int[] drawIndices = loadUnsignedShortBlob(indicesPath, count);
-            if (drawIndices == null || drawIndices.length == 0) {
-                String reason = classifyBlobFailure(drawArgs.contains("indices = NULL"), indicesPath, "index");
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
-                if (skippedBuilder != null) {
-                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, 0, true, reason);
+            int[] drawIndices;
+            if (isDrawElements) {
+                Path indicesPath = ManifestProcessor.resolveIndicesBlobPath(frameDirectory, manifest, glCallNumber, drawElementsOrdinal);
+                drawIndices = loadUnsignedShortBlob(indicesPath, count);
+                if (drawIndices == null || drawIndices.length == 0) {
+                    String reason = classifyBlobFailure(drawArgs.contains("indices = NULL"), indicesPath, "index");
+                    TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
+                    if (skippedBuilder != null) {
+                        skippedBuilder.noteDraw(mode, drawCount, glCallNumber, 0, 0, true, reason);
+                    }
+                    continue;
                 }
-                continue;
+            }
+            else {
+                Integer first = extractInt(DRAW_FIRST_PATTERN, drawArgs);
+                if (first == null || first < 0) {
+                    continue;
+                }
+                drawIndices = new int[count];
+                for (int i = 0; i < count; i++) {
+                    drawIndices[i] = first + i;
+                }
             }
             if (currentPositionVertexAttribCall == null && vertexAttribExportCallCount <= 0) {
                 TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
@@ -208,14 +236,6 @@ final class TilesProcessor {
                 }
                 continue;
             }
-            TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
-            if (candidate == null) {
-                TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
-                if (skippedBuilder != null) {
-                    skippedBuilder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, true, "invalid geometry data");
-                }
-                continue;
-            }
             TileKey key = new TileKey(boundTextureId, matrixSignature(currentProjectionMatrix), matrixSignature(currentModelViewMatrix));
             TileBuilder builder = tilesByKey.get(key);
             if (builder == null) {
@@ -226,11 +246,45 @@ final class TilesProcessor {
                 );
                 tilesByKey.put(key, builder);
             }
-            Path texCoordPath = ManifestProcessor.resolveVertexBlobPath(frameDirectory, manifest, currentTexCoordVertexAttribCall, -1, 3);
-            byte[] texCoordBlob = loadBlob(texCoordPath);
-            List<Vector3D> baseTexCoords = TextureProcessor.computeTexCoords(texCoordBlob, currentTexCoordSize, currentTexCoordStride, drawIndices);
-            List<Vector3D> transformedTexCoords = TextureProcessor.buildTexCoords(baseTexCoords, candidate.points(), candidate.min(), candidate.max(), currentTextureMatrix);
+            if (trianglePrimitive) {
+                TileGeometry candidate = computeGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices);
+                if (candidate == null) {
+                    TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
+                    if (skippedBuilder != null) {
+                        skippedBuilder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, true, "invalid geometry data");
+                    }
+                    continue;
+                }
+                Path texCoordPath = ManifestProcessor.resolveVertexBlobPath(frameDirectory, manifest, currentTexCoordVertexAttribCall, -1, 3);
+                byte[] texCoordBlob = loadBlob(texCoordPath);
+                List<Vector3D> baseTexCoords = TextureProcessor.computeTexCoords(texCoordBlob, currentTexCoordSize, currentTexCoordStride, drawIndices);
+                List<Vector3D> transformedTexCoords = TextureProcessor.buildTexCoords(baseTexCoords, candidate.points(), candidate.min(), candidate.max(), currentTextureMatrix);
 
+                if (GL_TRIANGLES.equals(mode)) {
+                    TrianglesProcessor.addTrianglesAsStrips(
+                        candidate.points(),
+                        transformedTexCoords,
+                        builder::addStrip
+                    );
+                }
+                else {
+                    builder.addStrip(candidate.points(), transformedTexCoords, candidate.min(), candidate.max());
+                }
+            }
+            else {
+                LineGeometry lineGeometry = computeLineGeometry(positionBlob, currentVertexSize, currentVertexStride, drawIndices, mode);
+                if (lineGeometry == null || lineGeometry.strips().isEmpty()) {
+                    TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
+                    if (skippedBuilder != null) {
+                        skippedBuilder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, true, "invalid line data");
+                    }
+                    continue;
+                }
+                for (List<Vector3D> strip : lineGeometry.strips()) {
+                    builder.addLineStrip(strip, lineGeometry.min(), lineGeometry.max());
+                }
+            }
+            /*
             if (GL_TRIANGLES.equals(mode)) {
                 TrianglesProcessor.addTrianglesAsStrips(
                     candidate.points(),
@@ -238,9 +292,13 @@ final class TilesProcessor {
                     builder::addStrip
                 );
             }
-            else {
+            else if (GL_TRIANGLE_STRIP.equals(mode)) {
                 builder.addStrip(candidate.points(), transformedTexCoords, candidate.min(), candidate.max());
             }
+            else {
+                builder.addLineStrip(mode, candidate.points(), candidate.min(), candidate.max());
+            }
+            */
             builder.noteDraw(mode, drawCount, glCallNumber, vertexArraySize, drawIndices.length, false, "");
         }
 
@@ -347,6 +405,86 @@ final class TilesProcessor {
         return new TileGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), points);
     }
 
+    private static LineGeometry computeLineGeometry(
+        byte[] vertexBlob,
+        int vertexSize,
+        int vertexStride,
+        int[] indices,
+        String mode
+    ) {
+        if (vertexSize < 3 || vertexBlob == null || indices == null || indices.length == 0) return null;
+        int minStride = vertexSize * 4;
+        int strideBytes = vertexStride > 0 ? vertexStride : minStride;
+        if (strideBytes < minStride || vertexBlob.length < minStride) return null;
+        int vertexCount = vertexBlob.length / strideBytes;
+        if (vertexCount <= 0) return null;
+        ByteBuffer bb = ByteBuffer.wrap(vertexBlob).order(ByteOrder.LITTLE_ENDIAN);
+
+        boolean hasAny = false;
+        double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
+        List<List<Vector3D>> strips = new ArrayList<>();
+        List<Vector3D> currentStrip = new ArrayList<>();
+
+        for (int index : indices) {
+            if (index < 0 || index >= vertexCount) {
+                if (currentStrip.size() >= 2) {
+                    strips.add(List.copyOf(currentStrip));
+                }
+                currentStrip.clear();
+                continue;
+            }
+            int baseBytes = index * strideBytes;
+            if (baseBytes + 12 > vertexBlob.length) {
+                continue;
+            }
+            double x = bb.getFloat(baseBytes);
+            double y = bb.getFloat(baseBytes + 4);
+            double z = bb.getFloat(baseBytes + 8);
+            Vector3D p = new Vector3D(x, y, z);
+            currentStrip.add(p);
+
+            if (!hasAny) {
+                minX = maxX = x;
+                minY = maxY = y;
+                minZ = maxZ = z;
+                hasAny = true;
+            }
+            else {
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                minZ = Math.min(minZ, z);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+                maxZ = Math.max(maxZ, z);
+            }
+        }
+        if (currentStrip.size() >= 2) {
+            strips.add(List.copyOf(currentStrip));
+        }
+        if (GL_LINES.equals(mode)) {
+            List<List<Vector3D>> pairs = new ArrayList<>();
+            for (List<Vector3D> strip : strips) {
+                for (int i = 0; i + 1 < strip.size(); i += 2) {
+                    pairs.add(List.of(strip.get(i), strip.get(i + 1)));
+                }
+            }
+            strips = pairs;
+        }
+        if (GL_LINE_LOOP.equals(mode)) {
+            List<List<Vector3D>> closed = new ArrayList<>();
+            for (List<Vector3D> strip : strips) {
+                if (strip.size() < 2) continue;
+                List<Vector3D> loop = new ArrayList<>(strip.size() + 1);
+                loop.addAll(strip);
+                loop.add(strip.get(0));
+                closed.add(List.copyOf(loop));
+            }
+            strips = closed;
+        }
+        if (!hasAny || strips.isEmpty()) return null;
+        return new LineGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), strips);
+    }
+
     private static int[] loadUnsignedShortBlob(Path path, int maxCount) {
         byte[] data;
         try {
@@ -385,6 +523,8 @@ final class TilesProcessor {
 
     private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {
     }
+    private record LineGeometry(Vector3D min, Vector3D max, List<List<Vector3D>> strips) {
+    }
 
     private record TileKey(int textureId, String projectionSignature, String modelViewSignature) {}
 
@@ -394,6 +534,7 @@ final class TilesProcessor {
         private final double[] modelViewMatrix;
         private final List<List<Vector3D>> strips = new ArrayList<>();
         private final List<List<Vector3D>> stripTexCoords = new ArrayList<>();
+        private final List<List<Vector3D>> lineStrips = new ArrayList<>();
         private final List<Vector3D> flatPoints = new ArrayList<>();
         private String primitive = "n/a";
         private int parserCall = -1;
@@ -417,7 +558,7 @@ final class TilesProcessor {
             this.glCall = glCall;
             this.vertexArraySize = Math.max(0, vertexArraySize);
             this.indexArraySize = Math.max(0, indexArraySize);
-            if (!strips.isEmpty() || !flatPoints.isEmpty()) {
+            if (!strips.isEmpty() || !lineStrips.isEmpty() || !flatPoints.isEmpty()) {
                 this.skipped = false;
                 this.skipReason = "";
                 return;
@@ -442,6 +583,19 @@ final class TilesProcessor {
             max = new Vector3D(Math.max(max.x(), stripMax.x()), Math.max(max.y(), stripMax.y()), Math.max(max.z(), stripMax.z()));
         }
 
+        private void addLineStrip(List<Vector3D> linePoints, Vector3D lineMin, Vector3D lineMax) {
+            if (linePoints == null || linePoints.size() < 2) return;
+            lineStrips.add(List.copyOf(linePoints));
+            flatPoints.addAll(linePoints);
+            if (min == null || max == null) {
+                min = Vector3D.copyOf(lineMin);
+                max = Vector3D.copyOf(lineMax);
+                return;
+            }
+            min = new Vector3D(Math.min(min.x(), lineMin.x()), Math.min(min.y(), lineMin.y()), Math.min(min.z(), lineMin.z()));
+            max = new Vector3D(Math.max(max.x(), lineMax.x()), Math.max(max.y(), lineMax.y()), Math.max(max.z(), lineMax.z()));
+        }
+
         private TileInstance build() {
             boolean exportableSimpleStrip =
                 GL_TRIANGLE_STRIP.equals(primitive) &&
@@ -450,9 +604,10 @@ final class TilesProcessor {
                 stripTexCoords.get(0) != null &&
                 stripTexCoords.get(0).size() == strips.get(0).size() &&
                 strips.get(0).size() >= 3;
-            boolean finalSkipped = skipped || !exportableSimpleStrip;
+            boolean hasLines = !lineStrips.isEmpty();
+            boolean finalSkipped = skipped || (!hasLines && !exportableSimpleStrip);
             String finalSkipReason = skipReason;
-            if (!skipped && !exportableSimpleStrip) {
+            if (!skipped && !hasLines && !exportableSimpleStrip) {
                 if (!GL_TRIANGLE_STRIP.equals(primitive)) {
                     finalSkipReason = "unsupported primitive";
                 }
@@ -475,6 +630,7 @@ final class TilesProcessor {
                 flatPoints,
                 strips,
                 stripTexCoords,
+                lineStrips,
                 primitive,
                 parserCall,
                 glCall,

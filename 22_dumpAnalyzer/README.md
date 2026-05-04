@@ -98,3 +98,20 @@ gradle run --args="--end-frame 500"
 | State / Framebuffer / Tests | `glAlphaFunc`, `glBlendFunc`, `glClear`, `glClearColor`, `glClearDepth`, `glClearStencil`, `glClipPlane`, `glColor4ub`, `glColorMask`, `glColorMaterial`, `glCullFace`, `glDepthFunc`, `glDepthMask`, `glDisable`, `glEnable`, `glFogf`, `glFogfv`, `glFogi`, `glFrontFace`, `glGetIntegerv`, `glScissor`, `glShadeModel`, `glStencilFunc`, `glStencilMask`, `glStencilOp` |
 | Lighting / Material | `glLightModelfv`, `glLightModeli`, `glLightf`, `glLightfv`, `glMaterialf`, `glMaterialfv` |
 | Context / Window (GLX) | `glXChooseVisual`, `glXCreateContext`, `glXDestroyContext`, `glXMakeCurrent`, `glXSwapBuffers`, `glXSwapIntervalSGI` |
+
+## Expected Blob Contract (Geometry Replay)
+
+For faithful geometry replay (including line primitives), each frame should provide:
+
+- `manifest.txt` entries:
+  - `kind=draw_elements ... call=<glDrawElementsCall> ... file=.../drawElements_indices_call_<call>.bin mode=<...> type=5123`
+  - `kind=vertex_attrib ... call=<glVertexAttribPointerCall> ... attribIndex=0 file=.../glVertexAttribPointer_vertexAttrib_call_<call>.bin`
+- Binary blobs:
+  - index buffer for each exported `glDrawElements` call (`GL_UNSIGNED_SHORT`)
+  - position vertex data blob (`attribIndex=0`) compatible with the active index range
+
+Line support currently expects draw modes:
+
+- `GL_LINES`
+- `GL_LINE_STRIP`
+- `GL_LINE_LOOP`

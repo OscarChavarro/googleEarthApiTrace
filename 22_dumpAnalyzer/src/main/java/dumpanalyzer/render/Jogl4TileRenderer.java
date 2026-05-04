@@ -17,6 +17,8 @@ final class Jogl4TileRenderer {
     private static final float SURFACE_POLYGON_OFFSET_UNITS = 1.0f;
     private static final float POINT_POLYGON_OFFSET_FACTOR = -2.0f;
     private static final float POINT_POLYGON_OFFSET_UNITS = -2.0f;
+    private static final float LINE_POLYGON_OFFSET_FACTOR = -4.0f;
+    private static final float LINE_POLYGON_OFFSET_UNITS = -4.0f;
 
     private Jogl4TileRenderer() {
     }
@@ -127,6 +129,31 @@ final class Jogl4TileRenderer {
                 gl2.glEnd();
             }
         }
+        if (!tile.getLineStrips().isEmpty()) {
+            if (textured) {
+                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+            }
+            gl2.glDisable(GL2.GL_LIGHTING);
+            gl2.glEnable(GL2.GL_DEPTH_TEST);
+            gl2.glDepthMask(false);
+            gl2.glDepthFunc(GL2.GL_LEQUAL);
+            gl2.glEnable(GL2.GL_POLYGON_OFFSET_LINE);
+            gl2.glPolygonOffset(LINE_POLYGON_OFFSET_FACTOR, LINE_POLYGON_OFFSET_UNITS);
+            gl2.glColor3d(1.0, 0.0, 0.0);
+            gl2.glLineWidth(1.0f);
+            for (List<Vector3D> lineStrip : tile.getLineStrips()) {
+                if (lineStrip.size() < 2) {
+                    continue;
+                }
+                gl2.glBegin(GL2.GL_LINE_STRIP);
+                for (Vector3D p : lineStrip) {
+                    gl2.glVertex3d(p.x(), p.y(), p.z());
+                }
+                gl2.glEnd();
+            }
+            gl2.glDisable(GL2.GL_POLYGON_OFFSET_LINE);
+        }
         if (quality.isPointsSet()) {
             if (textured) {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
@@ -153,5 +180,60 @@ final class Jogl4TileRenderer {
             gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
+    }
+
+    static void drawExtractedLineStrips(
+        GL2 gl2,
+        TileInstance tile,
+        Matrix4x4 projection,
+        double[] frameModelViewMatrix
+    ) {
+        if (tile == null || tile.getLineStrips().isEmpty()) {
+            return;
+        }
+        float[] mvp = projection.exportToFloatArrayColumnOrder();
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glPushMatrix();
+        gl2.glLoadMatrixf(mvp, 0);
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        gl2.glPushMatrix();
+        if (frameModelViewMatrix != null && frameModelViewMatrix.length == 16) {
+            float[] mv = new float[16];
+            for (int i = 0; i < 16; i++) {
+                mv[i] = (float)frameModelViewMatrix[i];
+            }
+            gl2.glLoadMatrixf(mv, 0);
+        }
+        else {
+            gl2.glLoadIdentity();
+        }
+
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glDisable(GL2.GL_LIGHTING);
+        gl2.glEnable(GL2.GL_DEPTH_TEST);
+        gl2.glDepthMask(false);
+        gl2.glDepthFunc(GL2.GL_LEQUAL);
+        gl2.glEnable(GL2.GL_POLYGON_OFFSET_LINE);
+        gl2.glPolygonOffset(LINE_POLYGON_OFFSET_FACTOR, LINE_POLYGON_OFFSET_UNITS);
+        gl2.glColor3d(1.0, 1.0, 0.0);
+        gl2.glLineWidth(2.0f);
+        for (List<Vector3D> lineStrip : tile.getLineStrips()) {
+            if (lineStrip.size() < 2) {
+                continue;
+            }
+            gl2.glBegin(GL2.GL_LINE_STRIP);
+            for (Vector3D p : lineStrip) {
+                gl2.glVertex3d(p.x(), p.y(), p.z());
+            }
+            gl2.glEnd();
+        }
+        gl2.glDisable(GL2.GL_POLYGON_OFFSET_LINE);
+        gl2.glDepthMask(true);
+        gl2.glDepthFunc(GL2.GL_LESS);
+
+        gl2.glPopMatrix();
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glPopMatrix();
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
     }
 }
