@@ -89,7 +89,18 @@ static const int THE_GL_BGR = 0x80E0;
 static const int THE_GL_BGRA = 0x80E1;
 static const int THE_GL_TRIANGLE_STRIP = 0x0005;
 static const int THE_GL_TRIANGLES = 0x0004;
+static const int THE_GL_LINES = 0x0001;
+static const int THE_GL_LINE_LOOP = 0x0002;
+static const int THE_GL_LINE_STRIP = 0x0003;
 static const int THE_GL_UNSIGNED_SHORT = 0x1403;
+
+static bool isExportableDrawMode(int mode) {
+    return mode == THE_GL_TRIANGLE_STRIP
+        || mode == THE_GL_TRIANGLES
+        || mode == THE_GL_LINES
+        || mode == THE_GL_LINE_LOOP
+        || mode == THE_GL_LINE_STRIP;
+}
 static const int THE_GL_FLOAT = 0x1406;
 static const int THE_GL_ARRAY_BUFFER = 0x8892;
 static const int THE_GL_ELEMENT_ARRAY_BUFFER = 0x8893;
@@ -520,7 +531,7 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
         return;
     }
 
-    if ((THE_DrawElementMode != THE_GL_TRIANGLE_STRIP && THE_DrawElementMode != THE_GL_TRIANGLES) || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
+    if (!isExportableDrawMode(THE_DrawElementMode) || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
         return;
     }
 
@@ -646,7 +657,7 @@ void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, u
     if (!THE_DrawElementShouldExport) {
         return;
     }
-    if ((THE_DrawElementMode != THE_GL_TRIANGLE_STRIP && THE_DrawElementMode != THE_GL_TRIANGLES) || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
+    if (!isExportableDrawMode(THE_DrawElementMode) || THE_DrawElementType != THE_GL_UNSIGNED_SHORT) {
         return;
     }
     if (THE_BoundElementArrayBufferId <= 0 || indexBytes == 0) {

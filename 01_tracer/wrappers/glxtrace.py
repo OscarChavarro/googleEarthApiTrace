@@ -67,7 +67,7 @@ class GlxTracer(GlTracer):
             print('    THE_DrawElementMode = mode;')
             print('    THE_DrawElementType = type;')
             print('    THE_DrawElementIndicesBlobId = (unsigned long long)(uintptr_t)indices;')
-            print('    THE_DrawElementShouldExport = ((mode == GL_TRIANGLE_STRIP || mode == GL_TRIANGLES) && type == GL_UNSIGNED_SHORT) ? 1 : 0;')
+            print('    THE_DrawElementShouldExport = ((mode == GL_TRIANGLE_STRIP || mode == GL_TRIANGLES || mode == GL_LINES || mode == GL_LINE_STRIP || mode == GL_LINE_LOOP) && type == GL_UNSIGNED_SHORT) ? 1 : 0;')
 
         if function.name == 'glBindBuffer':
             print('    if (target == GL_ARRAY_BUFFER) THE_BoundArrayBufferId = (int)buffer;')
