@@ -37,7 +37,7 @@ public final class DumpAnalyzerModel {
 
     public DumpAnalyzerModel() {
         rendererConfiguration.setWires(false);
-        rendererConfiguration.setBoundingVolume(false);
+        rendererConfiguration.setBoundingVolume(true);
         rendererConfiguration.setTexture(true);
         viewingCamera.setName("ViewingCamera");
         googleCamera.setName("GoogleCamera");

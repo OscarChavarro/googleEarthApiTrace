@@ -32,7 +32,7 @@ public final class CommandLineOptions {
                 continue;
             }
             if ("--start-frame".equals(a) && i + 1 < args.length) {
-                startFrame = safeParseInt(args[++i], startFrame);
+                startFrame = Math.max(1, safeParseInt(args[++i], startFrame));
                 continue;
             }
             if ("--end-frame".equals(a) && i + 1 < args.length) {

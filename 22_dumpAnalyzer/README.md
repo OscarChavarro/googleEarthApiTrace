@@ -73,7 +73,7 @@ Note: the current file format is `frame.json`.
 `dumpAnalyzer` supports these runtime options:
 
 - `--offline`: render a single frame to an image and exit (no interactive window).
-- `--start-frame <id>`: initial selected frame id in the viewer/offline run.
+- `--start-frame <id>`: lowest frame id to load from `/media/ramdisk/output` (inclusive), and initial selected frame.
 - `--end-frame <id>`: highest frame id to load from `/media/ramdisk/output` (inclusive).
 - `--width <px>`: viewport/output width.
 - `--height <px>`: viewport/output height.

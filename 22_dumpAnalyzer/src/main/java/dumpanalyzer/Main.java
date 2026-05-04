@@ -13,7 +13,11 @@ public class Main {
 
         DumpAnalyzerModel model = new DumpAnalyzerModel();
         model.setSelectedFrameIndex(config.startFrame());
-        TracedModelReader tracedModelReader = new TracedModelReader(Configuration.OUTPUT_ROOT, config.endFrame());
+        TracedModelReader tracedModelReader = new TracedModelReader(
+            Configuration.OUTPUT_ROOT,
+            config.startFrame(),
+            config.endFrame()
+        );
         tracedModelReader.importInto(model);
         System.out.flush();
         NeighborsProcessor.preprocessNeighbors(model, model.snapshotFrames(), config.width(), config.height());

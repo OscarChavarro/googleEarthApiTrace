@@ -90,28 +90,28 @@ public final class TileInstance {
     }
 
     public Integer getSouthNeighbor() {
-        if (southNeighbor != null) {
+        if (southNeighbor != null && southNeighbor != NO_NEIGHBOR) {
             return southNeighbor;
         }
         return detectedSouthNeighborIndex;
     }
 
     public Integer getNorthNeighbor() {
-        if (northNeighbor != null) {
+        if (northNeighbor != null && northNeighbor != NO_NEIGHBOR) {
             return northNeighbor;
         }
         return detectedNorthNeighborIndex;
     }
 
     public Integer getEastNeighbor() {
-        if (eastNeighbor != null) {
+        if (eastNeighbor != null && eastNeighbor != NO_NEIGHBOR) {
             return eastNeighbor;
         }
         return detectedEastNeighborIndex;
     }
 
     public Integer getWestNeighbor() {
-        if (westNeighbor != null) {
+        if (westNeighbor != null && westNeighbor != NO_NEIGHBOR) {
             return westNeighbor;
         }
         return detectedWestNeighborIndex;

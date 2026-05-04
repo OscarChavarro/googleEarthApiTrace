@@ -86,7 +86,7 @@ If you have enough RAM, it is strongly recommended to use a `tmpfs` RAMDISK for 
 Example on Linux:
 
 ```bash
-mount -t tmpfs -o size=120G,nr_inodes=12M tmpfs /media/ramdisk/
+mount -t tmpfs -o size=120G,nr_inodes=8M tmpfs /media/ramdisk/
 ```
 
 A practical workflow is:

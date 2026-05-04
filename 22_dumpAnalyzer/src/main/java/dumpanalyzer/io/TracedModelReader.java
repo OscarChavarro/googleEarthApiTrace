@@ -23,10 +23,12 @@ public final class TracedModelReader {
     private static final String POISON_PATH = "__POISON__";
 
     private final Path outputRoot;
+    private final int startFrameIdInclusive;
     private final int endFrameIdInclusive;
 
-    public TracedModelReader(Path outputRoot, int endFrameIdInclusive) {
+    public TracedModelReader(Path outputRoot, int startFrameIdInclusive, int endFrameIdInclusive) {
         this.outputRoot = outputRoot;
+        this.startFrameIdInclusive = startFrameIdInclusive;
         this.endFrameIdInclusive = endFrameIdInclusive;
     }
 
@@ -41,11 +43,20 @@ public final class TracedModelReader {
         TexturePathScanner.scanFrameDirectoriesParallel(frameDirectories, model, workerCount);
 
         List<String> glFilesToProcess = scanGlFilesFromFrameDirectories(frameDirectories);
-        if (endFrameIdInclusive > 0) {
+        if (startFrameIdInclusive > 0 || endFrameIdInclusive > 0) {
             glFilesToProcess = glFilesToProcess.stream()
                 .filter(path -> {
                     int frameId = parseFrameFromGlPath(path);
-                    return frameId > 0 && frameId <= endFrameIdInclusive;
+                    if (frameId <= 0) {
+                        return false;
+                    }
+                    if (startFrameIdInclusive > 0 && frameId < startFrameIdInclusive) {
+                        return false;
+                    }
+                    if (endFrameIdInclusive > 0 && frameId > endFrameIdInclusive) {
+                        return false;
+                    }
+                    return true;
                 })
                 .toList();
         }

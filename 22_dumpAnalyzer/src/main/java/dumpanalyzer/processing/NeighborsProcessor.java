@@ -52,7 +52,7 @@ public final class NeighborsProcessor {
                     projection = Matrix4x4.identityMatrix();
                 }
                 double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
-                NeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
+                TriangleStripNeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
             }
         );
         FrameWriter.writeFramesParallelWithProgress(Configuration.OUTPUT_ROOT, frames);
@@ -88,4 +88,3 @@ public final class NeighborsProcessor {
         return out;
     }
 }
-
