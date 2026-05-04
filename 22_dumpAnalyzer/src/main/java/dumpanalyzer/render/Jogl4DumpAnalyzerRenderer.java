@@ -38,7 +38,6 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public class Jogl4DumpAnalyzerRenderer implements
     GLEventListener {
-
     private final Runnable shutdownHook;
     private final DumpAnalyzerModel model;
     private final Jogl4HudRenderer hudRenderer;
@@ -189,9 +188,7 @@ public class Jogl4DumpAnalyzerRenderer implements
                 state.selectedTextureId()
             );
         }
-        if (!offlineMode) {
-            hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath, aabbLabels);
-        }
+        hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath, aabbLabels);
         if (offlineMode && !offlineCaptureDone) {
             captureOffscreen(drawable, gl);
             offlineCaptureDone = true;
