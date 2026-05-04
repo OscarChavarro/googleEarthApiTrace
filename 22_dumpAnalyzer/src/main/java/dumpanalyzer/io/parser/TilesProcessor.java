@@ -240,6 +240,7 @@ final class TilesProcessor {
             TileBuilder builder = tilesByKey.get(key);
             if (builder == null) {
                 builder = new TileBuilder(
+                    frameId,
                     boundTextureId,
                     currentProjectionMatrix,
                     currentModelViewMatrix
@@ -529,6 +530,7 @@ final class TilesProcessor {
     private record TileKey(int textureId, String projectionSignature, String modelViewSignature) {}
 
     private static final class TileBuilder {
+        private final int frameId;
         private final int textureId;
         private final double[] projectionMatrix;
         private final double[] modelViewMatrix;
@@ -546,7 +548,8 @@ final class TilesProcessor {
         private Vector3D min;
         private Vector3D max;
 
-        private TileBuilder(int textureId, double[] projectionMatrix, double[] modelViewMatrix) {
+        private TileBuilder(int frameId, int textureId, double[] projectionMatrix, double[] modelViewMatrix) {
+            this.frameId = frameId;
             this.textureId = textureId;
             this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
             this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
@@ -619,7 +622,7 @@ final class TilesProcessor {
                 }
             }
             return new TileInstance(
-                textureId,
+                frameScopedContentId(),
                 null,
                 null,
                 null,
@@ -641,6 +644,10 @@ final class TilesProcessor {
                 projectionMatrix,
                 modelViewMatrix
             );
+        }
+
+        private String frameScopedContentId() {
+            return frameId + "_" + textureId;
         }
     }
 

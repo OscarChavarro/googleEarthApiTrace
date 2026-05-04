@@ -44,7 +44,7 @@ public final class TriangleStripNeighborDetector {
             if (geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
                 continue;
             }
-            candidates.add(new Candidate(i, tile.getContentId()));
+            candidates.add(new Candidate(i));
         }
 
         for (int i = 0; i < candidates.size(); i++) {
@@ -96,16 +96,16 @@ public final class TriangleStripNeighborDetector {
         int west = tile.getDetectedWestNeighborIndex();
 
         if (direction == TriangleMeshVertexComparator.Direction.EAST) {
-            east = selectClosest(tiles, source.tileIndex(), east, target.contentId(), d2);
+            east = selectClosest(tiles, source.tileIndex(), east, target.tileIndex(), d2);
         }
         else if (direction == TriangleMeshVertexComparator.Direction.WEST) {
-            west = selectClosest(tiles, source.tileIndex(), west, target.contentId(), d2);
+            west = selectClosest(tiles, source.tileIndex(), west, target.tileIndex(), d2);
         }
         else if (direction == TriangleMeshVertexComparator.Direction.NORTH) {
-            north = selectClosest(tiles, source.tileIndex(), north, target.contentId(), d2);
+            north = selectClosest(tiles, source.tileIndex(), north, target.tileIndex(), d2);
         }
         else if (direction == TriangleMeshVertexComparator.Direction.SOUTH) {
-            south = selectClosest(tiles, source.tileIndex(), south, target.contentId(), d2);
+            south = selectClosest(tiles, source.tileIndex(), south, target.tileIndex(), d2);
         }
 
         tile.setDetectedNeighbors(south, north, east, west);
@@ -114,24 +114,24 @@ public final class TriangleStripNeighborDetector {
     private static int selectClosest(
         List<TileInstance> tiles,
         int sourceTileIndex,
-        int currentNeighborContentId,
-        int candidateNeighborContentId,
+        int currentNeighborIndex,
+        int candidateNeighborIndex,
         double candidateDistance2
     ) {
-        if (currentNeighborContentId == TileInstance.NO_NEIGHBOR) {
-            return candidateNeighborContentId;
+        if (currentNeighborIndex == TileInstance.NO_NEIGHBOR) {
+            return candidateNeighborIndex;
         }
-        double currentDistance2 = distanceSquaredBetweenTilesByContentId(tiles, sourceTileIndex, currentNeighborContentId);
+        double currentDistance2 = distanceSquaredBetweenTilesByIndex(tiles, sourceTileIndex, currentNeighborIndex);
         if (candidateDistance2 < currentDistance2) {
-            return candidateNeighborContentId;
+            return candidateNeighborIndex;
         }
-        return currentNeighborContentId;
+        return currentNeighborIndex;
     }
 
-    private static double distanceSquaredBetweenTilesByContentId(
+    private static double distanceSquaredBetweenTilesByIndex(
         List<TileInstance> tiles,
         int sourceTileIndex,
-        int neighborContentId
+        int neighborTileIndex
     ) {
         TileInstance source = tiles.get(sourceTileIndex);
         TileInstance.TriangleStripGeometry sourceGeometry = source.getTriangleStrip();
@@ -139,21 +139,19 @@ public final class TriangleStripNeighborDetector {
             return Double.POSITIVE_INFINITY;
         }
         double[] sourceCenter = center(sourceGeometry.vertices());
-        for (TileInstance tile : tiles) {
-            if (tile.getContentId() != neighborContentId) {
-                continue;
-            }
-            TileInstance.TriangleStripGeometry g = tile.getTriangleStrip();
-            if (g == null) {
-                return Double.POSITIVE_INFINITY;
-            }
-            double[] c = center(g.vertices());
-            double dx = c[0] - sourceCenter[0];
-            double dy = c[1] - sourceCenter[1];
-            double dz = c[2] - sourceCenter[2];
-            return dx * dx + dy * dy + dz * dz;
+        if (neighborTileIndex < 0 || neighborTileIndex >= tiles.size()) {
+            return Double.POSITIVE_INFINITY;
         }
-        return Double.POSITIVE_INFINITY;
+        TileInstance tile = tiles.get(neighborTileIndex);
+        TileInstance.TriangleStripGeometry g = tile.getTriangleStrip();
+        if (g == null) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double[] c = center(g.vertices());
+        double dx = c[0] - sourceCenter[0];
+        double dy = c[1] - sourceCenter[1];
+        double dz = c[2] - sourceCenter[2];
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private static double[] center(List<TileInstance.TriangleStripVertex> vertices) {
@@ -169,8 +167,5 @@ public final class TriangleStripNeighborDetector {
         return new double[] {sx * inv, sy * inv, sz * inv};
     }
 
-    private record Candidate(
-        int tileIndex,
-        int contentId
-    ) {}
+    private record Candidate(int tileIndex) {}
 }

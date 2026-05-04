@@ -8,12 +8,12 @@ public final class TileInstance {
     public static final int NO_NEIGHBOR = -1;
     private static final double FULL_RESOLUTION_TOLERANCE = 1e-3;
 
-    private final int contentId;
+    private final String contentId;
     private volatile String textureFile;
-    private final Integer southNeighbor;
-    private final Integer northNeighbor;
-    private final Integer eastNeighbor;
-    private final Integer westNeighbor;
+    private final String southNeighbor;
+    private final String northNeighbor;
+    private final String eastNeighbor;
+    private final String westNeighbor;
     private final Vector3D min;
     private final Vector3D max;
     private final List<Vector3D> points;
@@ -35,12 +35,12 @@ public final class TileInstance {
     private volatile int detectedWestNeighborIndex = NO_NEIGHBOR;
 
     public TileInstance(
-        int contentId,
+        String contentId,
         String textureFile,
-        Integer southNeighbor,
-        Integer northNeighbor,
-        Integer eastNeighbor,
-        Integer westNeighbor,
+        String southNeighbor,
+        String northNeighbor,
+        String eastNeighbor,
+        String westNeighbor,
         Vector3D min,
         Vector3D max,
         List<Vector3D> points,
@@ -80,7 +80,7 @@ public final class TileInstance {
         this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
-    public int getContentId() {
+    public String getContentId() {
         return contentId;
     }
 
@@ -92,32 +92,20 @@ public final class TileInstance {
         this.textureFile = textureFile;
     }
 
-    public Integer getSouthNeighbor() {
-        if (southNeighbor != null && southNeighbor != NO_NEIGHBOR) {
-            return southNeighbor;
-        }
-        return detectedSouthNeighborIndex;
+    public String getSouthNeighbor() {
+        return southNeighbor;
     }
 
-    public Integer getNorthNeighbor() {
-        if (northNeighbor != null && northNeighbor != NO_NEIGHBOR) {
-            return northNeighbor;
-        }
-        return detectedNorthNeighborIndex;
+    public String getNorthNeighbor() {
+        return northNeighbor;
     }
 
-    public Integer getEastNeighbor() {
-        if (eastNeighbor != null && eastNeighbor != NO_NEIGHBOR) {
-            return eastNeighbor;
-        }
-        return detectedEastNeighborIndex;
+    public String getEastNeighbor() {
+        return eastNeighbor;
     }
 
-    public Integer getWestNeighbor() {
-        if (westNeighbor != null && westNeighbor != NO_NEIGHBOR) {
-            return westNeighbor;
-        }
-        return detectedWestNeighborIndex;
+    public String getWestNeighbor() {
+        return westNeighbor;
     }
 
     public Vector3D getMin() {

@@ -77,6 +77,14 @@ public final class DumpAnalyzerModel {
         return byFrame.firstEntry().getValue();
     }
 
+    public String getTexturePath(int frameId, String contentId) {
+        Integer textureId = legacyTextureIdFromContent(contentId);
+        if (textureId == null) {
+            return null;
+        }
+        return getTexturePath(frameId, textureId);
+    }
+
     public List<Frame> snapshotFrames() {
         return new ArrayList<>(framesById.values());
     }
@@ -120,6 +128,20 @@ public final class DumpAnalyzerModel {
         return is256;
     }
 
+    public boolean isTexture256x256(int frameId, String contentId) {
+        String texturePath = getTexturePath(frameId, contentId);
+        if (texturePath == null) {
+            return false;
+        }
+        Boolean cached = textureIs256ByPath.get(texturePath);
+        if (cached != null) {
+            return cached;
+        }
+        boolean is256 = readTextureSize256x256(texturePath);
+        textureIs256ByPath.putIfAbsent(texturePath, is256);
+        return is256;
+    }
+
     public long getGpuRamTextureBytesAssigned() {
         return gpuRamTextureBytesAssigned.get();
     }
@@ -148,7 +170,7 @@ public final class DumpAnalyzerModel {
         int processed = frames.size();
 
         if (processed == 0) {
-            return new HudState(0, 0, SELECT_ALL_TILES, 0, 0);
+            return new HudState(0, 0, SELECT_ALL_TILES, 0, null);
         }
 
         int frameIdx = clamp(selectedFrameIndex.get(), 0, processed - 1);
@@ -159,7 +181,7 @@ public final class DumpAnalyzerModel {
         int tileIdx = tileCount == 0 ? SELECT_ALL_TILES : clamp(selectedTileIndex.get(), SELECT_ALL_TILES, tileCount - 1);
         selectedTileIndex.set(tileIdx);
 
-        int selectedTextureId = 0;
+        String selectedTextureId = null;
         if (tileIdx >= 0 && tileIdx < tileCount) {
             selectedTextureId = selectedFrame.getTiles().get(tileIdx).getContentId();
         }
@@ -313,5 +335,19 @@ public final class DumpAnalyzerModel {
         }
     }
 
-    public record HudState(int selectedFrameIndex, int processedFrames, int selectedTileIndex, int tilesInSelectedFrame, int selectedTextureId) {}
+    public record HudState(int selectedFrameIndex, int processedFrames, int selectedTileIndex, int tilesInSelectedFrame, String selectedTextureId) {}
+
+    private static Integer legacyTextureIdFromContent(String contentId) {
+        if (contentId == null || contentId.isBlank()) {
+            return null;
+        }
+        int sep = contentId.lastIndexOf('_');
+        String suffix = sep >= 0 ? contentId.substring(sep + 1) : contentId;
+        try {
+            return Integer.parseInt(suffix);
+        }
+        catch (NumberFormatException e) {
+            return null;
+        }
+    }
 }

@@ -19,7 +19,7 @@ public final class Frame implements Comparable<Frame> {
     public Frame(int id, List<TileInstance> tiles, double[] projectionMatrix, double[] modelViewMatrix, Camera googleCamera) {
         this.id = id;
         List<TileInstance> copy = new ArrayList<>(tiles);
-        copy.sort(Comparator.comparingInt(TileInstance::getContentId));
+        copy.sort(Comparator.comparing(TileInstance::getContentId, Comparator.nullsLast(String::compareTo)));
         this.tiles = Collections.unmodifiableList(copy);
         this.camera = new FrameCameraState(projectionMatrix, modelViewMatrix, googleCamera);
         this.axisAlignedBoundingBoxes = Collections.unmodifiableList(buildAabbsFromTiles(copy));

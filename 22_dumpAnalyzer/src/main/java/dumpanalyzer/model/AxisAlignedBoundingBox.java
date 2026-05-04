@@ -7,7 +7,7 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 public final class AxisAlignedBoundingBox {
     private final Vector3D min;
     private final Vector3D max;
-    private final int textureId;
+    private final String textureId;
     private final int sourceTileIndex;
     private final double[] modelViewMatrix;
     private final List<Vector3D> geometryPoints;
@@ -20,7 +20,7 @@ public final class AxisAlignedBoundingBox {
     public AxisAlignedBoundingBox(
         Vector3D min,
         Vector3D max,
-        int textureId,
+        String textureId,
         int sourceTileIndex,
         double[] modelViewMatrix,
         List<Vector3D> geometryPoints
@@ -41,7 +41,7 @@ public final class AxisAlignedBoundingBox {
         return max;
     }
 
-    public int getTextureId() {
+    public String getTextureId() {
         return textureId;
     }
 

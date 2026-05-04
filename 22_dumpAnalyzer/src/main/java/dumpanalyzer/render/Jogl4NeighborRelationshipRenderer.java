@@ -4,8 +4,6 @@ import com.jogamp.opengl.GL2;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
-import java.util.HashMap;
-import java.util.Map;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.Camera;
@@ -36,15 +34,12 @@ public final class Jogl4NeighborRelationshipRenderer {
         gl2.glDisable(GL2.GL_DEPTH_TEST);
         gl2.glDepthMask(false);
         gl2.glLineWidth(2.0f);
-        Map<Integer, Integer> indexByContentId = buildIndexByContentId(frameData);
-
         if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             for (int i = 0; i < frameData.getTiles().size(); i++) {
                 drawNeighborsForTile(
                     gl2,
                     frameData,
                     i,
-                    indexByContentId,
                     projection,
                     useGoogleCameraView,
                     viewingCamera,
@@ -58,7 +53,6 @@ public final class Jogl4NeighborRelationshipRenderer {
                 gl2,
                 frameData,
                 selectedTileIndex,
-                indexByContentId,
                 projection,
                 useGoogleCameraView,
                 viewingCamera,
@@ -78,7 +72,6 @@ public final class Jogl4NeighborRelationshipRenderer {
         GL2 gl2,
         Frame frameData,
         int sourceTileIndex,
-        Map<Integer, Integer> indexByContentId,
         Matrix4x4 projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
@@ -90,19 +83,18 @@ public final class Jogl4NeighborRelationshipRenderer {
         if (sourcePixel == null) {
             return;
         }
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedNorthNeighborIndex(), sourceTileIndex, indexByContentId, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 1.0, 0.2);
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedSouthNeighborIndex(), sourceTileIndex, indexByContentId, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.6, 0.2);
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedEastNeighborIndex(), sourceTileIndex, indexByContentId, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 0.8, 1.0);
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedWestNeighborIndex(), sourceTileIndex, indexByContentId, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.2, 0.8);
+        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedNorthNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 1.0, 0.2);
+        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedSouthNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.6, 0.2);
+        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedEastNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 0.8, 1.0);
+        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedWestNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.2, 0.8);
     }
 
     private static void drawDirectedNeighbor(
         GL2 gl2,
         Frame frameData,
         int[] sourcePixel,
-        int targetContentId,
+        int targetTileIndex,
         int sourceIndex,
-        Map<Integer, Integer> indexByContentId,
         Matrix4x4 projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
@@ -112,17 +104,16 @@ public final class Jogl4NeighborRelationshipRenderer {
         double green,
         double blue
     ) {
-        if (targetContentId == TileInstance.NO_NEIGHBOR) {
+        if (targetTileIndex == TileInstance.NO_NEIGHBOR) {
             return;
         }
-        Integer targetIndex = indexByContentId.get(targetContentId);
-        if (targetIndex == null || targetIndex == sourceIndex) {
+        if (targetTileIndex == sourceIndex) {
             return;
         }
-        if (targetIndex < 0 || targetIndex >= frameData.getTiles().size()) {
+        if (targetTileIndex < 0 || targetTileIndex >= frameData.getTiles().size()) {
             return;
         }
-        TileInstance target = frameData.getTiles().get(targetIndex);
+        TileInstance target = frameData.getTiles().get(targetTileIndex);
         int[] targetPixel = centerOfTile(target, frameData, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight);
         if (targetPixel == null) {
             return;
@@ -153,14 +144,6 @@ public final class Jogl4NeighborRelationshipRenderer {
         gl2.glColor3d(red, green, blue);
         drawCurvedBody(gl2, sx, sy, ex, ey, controlX, controlY);
         drawTriangularArrowHead(gl2, ex, ey, controlX, controlY, len);
-    }
-
-    private static Map<Integer, Integer> buildIndexByContentId(Frame frameData) {
-        Map<Integer, Integer> out = new HashMap<>();
-        for (int i = 0; i < frameData.getTiles().size(); i++) {
-            out.put(frameData.getTiles().get(i).getContentId(), i);
-        }
-        return out;
     }
 
     private static void drawCurvedBody(
