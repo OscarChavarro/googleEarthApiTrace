@@ -4,6 +4,7 @@ import java.util.List;
 import pathplanner.generators.CurveGenerator;
 import pathplanner.generators.GlobeGenerator;
 import pathplanner.generators.SpiralGenerator;
+import pathplanner.generators.ZeroLongitudeSeamGenerator;
 import pathplanner.generators.ZigzagGenerator;
 import pathplanner.io.KmlPersistence;
 import pathplanner.model.Point;
@@ -41,8 +42,16 @@ public class Main {
         KmlPersistence kmlPersistence = new KmlPersistence();
 
         List<Point> curve = curveGenerator.buildTurtleCurve(lat, lon, stepMeters, maxDistanceMeters);
+        List<Point> zeroLongitudeSeam = new ZeroLongitudeSeamGenerator().buildTurtleCurve(0.0, 0.0, 0.0, 0.0);
         List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, stepMeters);
-        kmlPersistence.updateKml(KML_PATH, TURTLE_FOLDER_NAME, TURTLE_STYLE_ID, curve, markerPoints);
+        kmlPersistence.updateKml(
+            KML_PATH,
+            TURTLE_FOLDER_NAME,
+            TURTLE_STYLE_ID,
+            curve,
+            markerPoints,
+            zeroLongitudeSeam
+        );
 
         System.out.println("Generated turtle curve with " + curve.size() + " vertices and " + markerPoints.size() + " z-points in " + KML_PATH);
     }

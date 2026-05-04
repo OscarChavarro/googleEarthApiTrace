@@ -23,7 +23,14 @@ public final class KmlPersistence {
     private static final String MARKER_LOOKAT_TILT = "0";
     private static final String MARKER_LOOKAT_RANGE = "184.6844034672007";
 
-    public void updateKml(String kmlPath, String turtleFolderName, String turtleStyleId, List<Point> points, List<Point> markerPoints) throws Exception {
+    public void updateKml(
+        String kmlPath,
+        String turtleFolderName,
+        String turtleStyleId,
+        List<Point> points,
+        List<Point> markerPoints,
+        List<Point> zeroLongitudeSeamPoints
+    ) throws Exception {
         File file = new File(kmlPath);
         if (!file.exists()) {
             throw new IllegalStateException("KML file does not exist: " + kmlPath);
@@ -47,9 +54,32 @@ public final class KmlPersistence {
         folderName.setTextContent(turtleFolderName);
         folder.appendChild(folderName);
 
+        appendPathPlacemark(doc, documentElement, folder, turtleStyleId, "turtle_path", points);
+        appendPathPlacemark(doc, documentElement, folder, turtleStyleId, "0LongitudeSeam", zeroLongitudeSeamPoints);
+
+        appendMarkerPlacemarks(doc, documentElement, folder, markerPoints);
+
+        documentElement.appendChild(folder);
+        upsertTurtleStyle(doc, documentElement, turtleStyleId);
+
+        TransformerFactory tf = TransformerFactory.newInstance();
+        Transformer transformer = tf.newTransformer();
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+        transformer.transform(new DOMSource(doc), new StreamResult(file));
+    }
+
+    private void appendPathPlacemark(
+        Document doc,
+        Element documentElement,
+        Element folder,
+        String turtleStyleId,
+        String name,
+        List<Point> points
+    ) {
         Element pathPlacemark = createElementSameNs(doc, documentElement, "Placemark");
         Element placemarkName = createElementSameNs(doc, documentElement, "name");
-        placemarkName.setTextContent("turtle_path");
+        placemarkName.setTextContent(name);
         pathPlacemark.appendChild(placemarkName);
 
         Element styleUrl = createElementSameNs(doc, documentElement, "styleUrl");
@@ -66,17 +96,6 @@ public final class KmlPersistence {
         lineString.appendChild(coordinates);
         pathPlacemark.appendChild(lineString);
         folder.appendChild(pathPlacemark);
-
-        appendMarkerPlacemarks(doc, documentElement, folder, markerPoints);
-
-        documentElement.appendChild(folder);
-        upsertTurtleStyle(doc, documentElement, turtleStyleId);
-
-        TransformerFactory tf = TransformerFactory.newInstance();
-        Transformer transformer = tf.newTransformer();
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-        transformer.transform(new DOMSource(doc), new StreamResult(file));
     }
 
     private void appendMarkerPlacemarks(Document doc, Element documentElement, Element folder, List<Point> markerPoints) {
