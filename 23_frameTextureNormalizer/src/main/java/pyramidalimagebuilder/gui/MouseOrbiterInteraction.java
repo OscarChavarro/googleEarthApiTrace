@@ -6,6 +6,7 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.util.function.BiFunction;
 import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
@@ -14,15 +15,18 @@ public final class MouseOrbiterInteraction implements MouseListener, MouseMotion
     private final CameraControllerOrbiter cameraController;
     private final Runnable repaintAction;
     private final Runnable focusAction;
+    private final BiFunction<Integer, Integer, Boolean> tileSelectionToggle;
 
     public MouseOrbiterInteraction(
         CameraControllerOrbiter cameraController,
         Runnable repaintAction,
-        Runnable focusAction
+        Runnable focusAction,
+        BiFunction<Integer, Integer, Boolean> tileSelectionToggle
     ) {
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
         this.focusAction = focusAction;
+        this.tileSelectionToggle = tileSelectionToggle;
     }
 
     public static void processReshape(GL4 gl, Camera camera, int width, int height) {
@@ -32,6 +36,13 @@ public final class MouseOrbiterInteraction implements MouseListener, MouseMotion
 
     @Override
     public void mouseClicked(MouseEvent e) {
+        if (e.getButton() == MouseEvent.BUTTON1 && tileSelectionToggle != null) {
+            Boolean changed = tileSelectionToggle.apply(e.getX(), e.getY());
+            if (Boolean.TRUE.equals(changed)) {
+                repaintAction.run();
+                return;
+            }
+        }
         if (cameraController.processMouseClickedEvent(AwtSystem.awt2vsdkEvent(e))) repaintAction.run();
     }
 

@@ -58,6 +58,47 @@ public final class Jogl4TileMatrixRenderer {
             }
         }
         drawIncorrectMappingWires(gl2, tiles, selectedTileIndex);
+        drawWestCuttingCellsOverlay(gl2, tiles, selectedTileIndex);
+        drawSelectedTilesOverlay(gl2, tiles, selectedTileIndex);
+    }
+
+    public void drawForSelection(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
+        if (gl2 == null || tiles == null || tiles.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < tiles.size(); i++) {
+            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                continue;
+            }
+            TileInstance tile = tiles.get(i);
+            if (tile == null || tile.isWestCuttingCell()) {
+                continue;
+            }
+            gl2.glLoadName(tile.getTileId());
+            drawFlatGeometry(gl2, tile);
+        }
+    }
+
+    private static void drawWestCuttingCellsOverlay(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glEnable(GL2.GL_POLYGON_OFFSET_LINE);
+        gl2.glPolygonOffset(-1.0f, -1.0f);
+        gl2.glPolygonMode(GL2.GL_FRONT_AND_BACK, GL2.GL_LINE);
+        gl2.glLineWidth(2.0f);
+        gl2.glColor3d(1.0, 0.0, 0.0);
+        for (int i = 0; i < tiles.size(); i++) {
+            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                continue;
+            }
+            TileInstance tile = tiles.get(i);
+            if (tile == null || !tile.isWestCuttingCell()) {
+                continue;
+            }
+            drawFlatGeometry(gl2, tile);
+        }
+        gl2.glLineWidth(1.0f);
+        gl2.glPolygonMode(GL2.GL_FRONT_AND_BACK, GL2.GL_FILL);
+        gl2.glDisable(GL2.GL_POLYGON_OFFSET_LINE);
     }
 
     private void drawIncorrectMappingWires(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
@@ -122,6 +163,28 @@ public final class Jogl4TileMatrixRenderer {
         }
         gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
+    }
+
+    private static void drawSelectedTilesOverlay(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glEnable(GL2.GL_POLYGON_OFFSET_LINE);
+        gl2.glPolygonOffset(-1.0f, -1.0f);
+        gl2.glPolygonMode(GL2.GL_FRONT_AND_BACK, GL2.GL_LINE);
+        gl2.glLineWidth(3.0f);
+        gl2.glColor3d(1.0, 1.0, 0.0);
+        for (int i = 0; i < tiles.size(); i++) {
+            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                continue;
+            }
+            TileInstance tile = tiles.get(i);
+            if (tile == null || !tile.isSelected()) {
+                continue;
+            }
+            drawFlatGeometry(gl2, tile);
+        }
+        gl2.glLineWidth(1.0f);
+        gl2.glPolygonMode(GL2.GL_FRONT_AND_BACK, GL2.GL_FILL);
+        gl2.glDisable(GL2.GL_POLYGON_OFFSET_LINE);
     }
 
     private static void drawFlatGeometry(GL2 gl2, TileInstance tile) {

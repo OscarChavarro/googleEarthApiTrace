@@ -10,8 +10,10 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.awt.TextRenderer;
+import com.jogamp.common.nio.Buffers;
 import java.awt.Font;
 import java.awt.geom.Rectangle2D;
+import java.nio.IntBuffer;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -23,6 +25,8 @@ import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener {
+    private static final int PICK_REGION_PIXELS = 5;
+    private static final int SELECT_BUFFER_SIZE = 4096;
     private final PyramidalImageModel model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileRenderer = new Jogl4TileMatrixRenderer();
@@ -46,6 +50,32 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
     public CameraControllerOrbiter getCameraController() {
         return cameraController;
+    }
+
+    public boolean toggleTileSelectionAt(GLAutoDrawable drawable, int mouseX, int mouseY) {
+        if (drawable == null) {
+            return false;
+        }
+        FrameData selected = model.getSelectedFrame();
+        if (selected == null || selected.getTiles() == null || selected.getTiles().isEmpty()) {
+            return false;
+        }
+        GL2 gl2 = drawable.getGL().getGL2();
+        Integer pickedTextureId = pickTextureId(gl2, drawable, selected.getTiles(), mouseX, mouseY);
+        if (pickedTextureId == null) {
+            return false;
+        }
+        for (TileInstance tile : selected.getTiles()) {
+            if (tile == null || tile.getTileId() != pickedTextureId.intValue()) {
+                continue;
+            }
+            if (tile.isWestCuttingCell()) {
+                return false;
+            }
+            tile.setSelected(!tile.isSelected());
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -74,7 +104,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
         FrameData selected = model.getSelectedFrame();
         if (selected == null) {
-            drawHud(drawable, 0, 0, -1, -1, 0, null);
+            drawHud(drawable, 0, 0, -1, -1, 0, null, 0);
             return;
         }
 
@@ -107,7 +137,8 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             selected.getId(),
             model.getSelectedTileIndex(),
             selected.getTiles().size(),
-            selectedTextureId
+            selectedTextureId,
+            selectedTilesCount(selected.getTiles())
         );
         if (selected.isWithMatrixErrors()) {
             drawMatrixErrorOverlay(drawable);
@@ -126,7 +157,8 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         int frameId,
         int selectedTileIndex,
         int tileCount,
-        String selectedTextureId
+        String selectedTextureId,
+        int selectedTilesCount
     ) {
         if (hudTextRenderer == null) {
             return;
@@ -149,6 +181,9 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         hudTextRenderer.draw("Frame [1,2]: " + selection + " (id " + frameText + ")", 16, h - 28);
         hudTextRenderer.draw("Tile [3,4]: " + tileText, 16, h - 50);
         hudTextRenderer.draw("Texture id: " + (selectedTextureId == null ? "n/a" : selectedTextureId), 16, h - 72);
+        if (selectedTilesCount > 0) {
+            hudTextRenderer.draw("West cut selected tiles [c]", 16, h - 94);
+        }
         hudTextRenderer.endRendering();
         drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
     }
@@ -251,6 +286,19 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         return frameAndTexture.substring(slash + 1);
     }
 
+    private static int selectedTilesCount(List<TileInstance> tiles) {
+        if (tiles == null || tiles.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (TileInstance tile : tiles) {
+            if (tile != null && tile.isSelected()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private static String matrixCoordsLabel(TileInstance tile) {
         if (tile == null || tile.getMatrixI() == null || tile.getMatrixJ() == null) {
             return null;
@@ -319,5 +367,83 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             out[i] = (float)values[i];
         }
         return out;
+    }
+
+    private Integer pickTextureId(GL2 gl2, GLAutoDrawable drawable, List<TileInstance> tiles, int mouseX, int mouseY) {
+        if (gl2 == null || drawable == null || tiles == null || tiles.isEmpty()) {
+            return null;
+        }
+
+        int[] viewport = new int[4];
+        gl2.glGetIntegerv(GL2.GL_VIEWPORT, viewport, 0);
+        if (viewport[2] <= 0 || viewport[3] <= 0) {
+            return null;
+        }
+
+        if (!gl2.isFunctionAvailable("glSelectBuffer") || !gl2.isFunctionAvailable("glRenderMode")) {
+            return null;
+        }
+        IntBuffer selectBuffer = Buffers.newDirectIntBuffer(SELECT_BUFFER_SIZE);
+        gl2.glSelectBuffer(SELECT_BUFFER_SIZE, selectBuffer);
+        gl2.glRenderMode(GL2.GL_SELECT);
+        gl2.glInitNames();
+        gl2.glPushName(0);
+
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glPushMatrix();
+        gl2.glLoadIdentity();
+        GLU glu = GLU.createGLU(gl2);
+        glu.gluPickMatrix(mouseX, viewport[3] - mouseY, PICK_REGION_PIXELS, PICK_REGION_PIXELS, viewport, 0);
+        gl2.glMultMatrixf(model.getViewingCamera().calculateViewVolumeMatrix().exportToFloatArrayColumnOrder(), 0);
+
+        FrameData selected = model.getSelectedFrame();
+        float[] modelViewForDraw = toFloat16(
+            selected == null || selected.getCameraState() == null ? null : selected.getCameraState().getModelViewMatrix()
+        );
+        if (modelViewForDraw == null) {
+            modelViewForDraw = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
+        }
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        gl2.glPushMatrix();
+        gl2.glLoadMatrixf(modelViewForDraw, 0);
+
+        tileRenderer.drawForSelection(gl2, tiles, model.getSelectedTileIndex());
+
+        gl2.glPopMatrix();
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glPopMatrix();
+        gl2.glFlush();
+        int hits = gl2.glRenderMode(GL2.GL_RENDER);
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+
+        if (hits <= 0) {
+            return null;
+        }
+        return parseNearestHitTextureId(selectBuffer, hits);
+    }
+
+    private static Integer parseNearestHitTextureId(IntBuffer selectBuffer, int hits) {
+        int offset = 0;
+        long nearestDepth = Long.MAX_VALUE;
+        Integer selectedName = null;
+        for (int i = 0; i < hits; i++) {
+            if (offset + 3 > selectBuffer.limit()) {
+                break;
+            }
+            int nameCount = selectBuffer.get(offset++);
+            long minDepth = Integer.toUnsignedLong(selectBuffer.get(offset++));
+            offset++; // max depth
+            if (nameCount <= 0 || offset + nameCount > selectBuffer.limit()) {
+                offset += Math.max(0, nameCount);
+                continue;
+            }
+            int hitName = selectBuffer.get(offset + nameCount - 1);
+            if (minDepth < nearestDepth) {
+                nearestDepth = minDepth;
+                selectedName = hitName;
+            }
+            offset += nameCount;
+        }
+        return selectedName;
     }
 }

@@ -10,7 +10,9 @@ import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 // App classes
+import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
+import pyramidalimagebuilder.processing.TileCutter;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
     private final PyramidalImageModel model;
@@ -62,6 +64,13 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             event.keycode = KeyEvent.KEY_F8;
             if (renderingConfigurationController != null
                 && renderingConfigurationController.processKeyPressedEvent(event)) {
+                redraw();
+                return;
+            }
+        }
+        if (keyChar == 'c' || keyChar == 'C') {
+            FrameData frame = model.getSelectedFrame();
+            if (frame != null && TileCutter.cutWestOnSelectedTiles(frame.getTiles()) > 0) {
                 redraw();
                 return;
             }

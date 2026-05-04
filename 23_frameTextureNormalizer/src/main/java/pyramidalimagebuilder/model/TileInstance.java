@@ -6,14 +6,16 @@ public final class TileInstance {
     private final int tileId;
     private final int frameId;
     private final String textureFile;
-    private final Integer southNeighbor;
-    private final Integer northNeighbor;
-    private final Integer eastNeighbor;
-    private final Integer westNeighbor;
+    private Integer southNeighbor;
+    private Integer northNeighbor;
+    private Integer eastNeighbor;
+    private Integer westNeighbor;
     private final TriangleStripGeometry triangleStrip;
     private final Integer matrixI;
     private final Integer matrixJ;
     private final boolean incorrectMatrixMapping;
+    private boolean westCuttingCell;
+    private boolean selected;
 
     public TileInstance(
         int tileId,
@@ -80,6 +82,38 @@ public final class TileInstance {
         Integer matrixJ,
         boolean incorrectMatrixMapping
     ) {
+        this(
+            tileId,
+            frameId,
+            textureFile,
+            southNeighbor,
+            northNeighbor,
+            eastNeighbor,
+            westNeighbor,
+            triangleStrip,
+            matrixI,
+            matrixJ,
+            incorrectMatrixMapping,
+            false,
+            false
+        );
+    }
+
+    public TileInstance(
+        int tileId,
+        int frameId,
+        String textureFile,
+        Integer southNeighbor,
+        Integer northNeighbor,
+        Integer eastNeighbor,
+        Integer westNeighbor,
+        TriangleStripGeometry triangleStrip,
+        Integer matrixI,
+        Integer matrixJ,
+        boolean incorrectMatrixMapping,
+        boolean westCuttingCell,
+        boolean selected
+    ) {
         this.tileId = tileId;
         this.frameId = frameId;
         this.textureFile = textureFile;
@@ -91,6 +125,8 @@ public final class TileInstance {
         this.matrixI = matrixI;
         this.matrixJ = matrixJ;
         this.incorrectMatrixMapping = incorrectMatrixMapping;
+        this.westCuttingCell = westCuttingCell;
+        this.selected = selected;
     }
 
     public int getTileId() {
@@ -109,16 +145,32 @@ public final class TileInstance {
         return southNeighbor;
     }
 
+    public void setSouthNeighbor(Integer southNeighbor) {
+        this.southNeighbor = southNeighbor;
+    }
+
     public Integer getNorthNeighbor() {
         return northNeighbor;
+    }
+
+    public void setNorthNeighbor(Integer northNeighbor) {
+        this.northNeighbor = northNeighbor;
     }
 
     public Integer getEastNeighbor() {
         return eastNeighbor;
     }
 
+    public void setEastNeighbor(Integer eastNeighbor) {
+        this.eastNeighbor = eastNeighbor;
+    }
+
     public Integer getWestNeighbor() {
         return westNeighbor;
+    }
+
+    public void setWestNeighbor(Integer westNeighbor) {
+        this.westNeighbor = westNeighbor;
     }
 
     public TriangleStripGeometry getTriangleStrip() {
@@ -135,6 +187,22 @@ public final class TileInstance {
 
     public boolean isIncorrectMatrixMapping() {
         return incorrectMatrixMapping;
+    }
+
+    public boolean isWestCuttingCell() {
+        return westCuttingCell;
+    }
+
+    public void setWestCuttingCell(boolean westCuttingCell) {
+        this.westCuttingCell = westCuttingCell;
+    }
+
+    public boolean isSelected() {
+        return selected;
+    }
+
+    public void setSelected(boolean selected) {
+        this.selected = selected;
     }
 
     public record TriangleStripGeometry(int vertexCount, List<TriangleStripVertex> vertices) {}

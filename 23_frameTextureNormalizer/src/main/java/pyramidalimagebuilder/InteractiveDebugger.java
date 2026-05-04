@@ -30,7 +30,15 @@ public final class InteractiveDebugger {
         MouseOrbiterInteraction mouse = new MouseOrbiterInteraction(
             cameraController,
             canvas::display,
-            canvas::requestFocusInWindow
+            canvas::requestFocusInWindow,
+            (x, y) -> {
+                final boolean[] changed = new boolean[] {false};
+                canvas.invoke(false, drawable -> {
+                    changed[0] = renderer.toggleTileSelectionAt(drawable, x, y);
+                    return true;
+                });
+                return changed[0];
+            }
         );
         KeyboardInteractionTechniques keyboard = new KeyboardInteractionTechniques(
             model,
