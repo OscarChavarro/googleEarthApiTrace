@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.TileInstance;
 
 public final class TileCutter {
@@ -27,6 +28,69 @@ public final class TileCutter {
             tileById.put(tile.getTileId(), tile);
             if (tile.isSelected()) {
                 seeds.addLast(tile);
+            }
+        }
+        if (seeds.isEmpty()) {
+            return 0;
+        }
+
+        Set<Integer> visited = new HashSet<>();
+        int cutCount = 0;
+        while (!seeds.isEmpty()) {
+            TileInstance seed = seeds.pollFirst();
+            if (seed == null) {
+                continue;
+            }
+            cutCount += propagateNorthSouthAndCut(seed, tileById, visited);
+        }
+        return cutCount;
+    }
+
+    public static int cutWestOnSelectedTilesAcrossFrames(List<FrameData> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return 0;
+        }
+        Set<Integer> cursedTileIds = new HashSet<>();
+        for (FrameData frame : frames) {
+            if (frame == null || frame.getTiles() == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile != null && tile.isSelected()) {
+                    cursedTileIds.add(tile.getTileId());
+                }
+            }
+        }
+        if (cursedTileIds.isEmpty()) {
+            return 0;
+        }
+
+        int totalCutCount = 0;
+        for (FrameData frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            totalCutCount += cutWestFromTileIds(frame.getTiles(), cursedTileIds);
+        }
+        return totalCutCount;
+    }
+
+    private static int cutWestFromTileIds(List<TileInstance> tiles, Set<Integer> cursedTileIds) {
+        if (tiles == null || tiles.isEmpty() || cursedTileIds == null || cursedTileIds.isEmpty()) {
+            return 0;
+        }
+        Map<Integer, TileInstance> tileById = new HashMap<>();
+        ArrayDeque<TileInstance> seeds = new ArrayDeque<>();
+        for (TileInstance tile : tiles) {
+            if (tile == null) {
+                continue;
+            }
+            tileById.put(tile.getTileId(), tile);
+        }
+        for (Integer cursedId : cursedTileIds) {
+            TileInstance seed = tileById.get(cursedId);
+            if (seed != null) {
+                seeds.addLast(seed);
             }
         }
         if (seeds.isEmpty()) {

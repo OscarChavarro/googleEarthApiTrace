@@ -10,7 +10,7 @@ import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.Camera;
 
-public final class Jogl4NeighborhoodRenderer {
+public final class Jogl4NeighborRelationshipRenderer {
     public void drawForSelection(
         GL2 gl2,
         Frame frameData,
@@ -147,9 +147,12 @@ public final class Jogl4NeighborhoodRenderer {
         double curveAmount = Math.max(10.0, Math.min(36.0, len * 0.20));
         double sideSign = 1.0;
 
+        double controlX = (sx + ex) * 0.5 + nx * sideSign * curveAmount;
+        double controlY = (sy + ey) * 0.5 + ny * sideSign * curveAmount;
+
         gl2.glColor3d(red, green, blue);
-        drawCurvedBody(gl2, sx, sy, ex, ey, nx, ny, curveAmount, sideSign);
-        drawCurvedArrow(gl2, ex, ey, ux, uy, nx, ny, Math.max(8.0, Math.min(18.0, len * 0.15)), sideSign);
+        drawCurvedBody(gl2, sx, sy, ex, ey, controlX, controlY);
+        drawTriangularArrowHead(gl2, ex, ey, controlX, controlY, len);
     }
 
     private static Map<Integer, Integer> buildIndexByContentId(Frame frameData) {
@@ -166,65 +169,46 @@ public final class Jogl4NeighborhoodRenderer {
         double sy,
         double ex,
         double ey,
-        double nx,
-        double ny,
-        double curveAmount,
-        double sideSign
+        double controlX,
+        double controlY
     ) {
-        double midX = (sx + ex) * 0.5 + nx * sideSign * curveAmount;
-        double midY = (sy + ey) * 0.5 + ny * sideSign * curveAmount;
         gl2.glBegin(GL2.GL_LINE_STRIP);
         for (int i = 0; i <= 18; i++) {
             double t = i / 18.0;
             double omt = 1.0 - t;
-            double x = omt * omt * sx + 2.0 * omt * t * midX + t * t * ex;
-            double y = omt * omt * sy + 2.0 * omt * t * midY + t * t * ey;
+            double x = omt * omt * sx + 2.0 * omt * t * controlX + t * t * ex;
+            double y = omt * omt * sy + 2.0 * omt * t * controlY + t * t * ey;
             gl2.glVertex2d(x, y);
         }
         gl2.glEnd();
     }
 
-    private static void drawCurvedArrow(
-        GL2 gl2,
-        double tipX,
-        double tipY,
-        double dirX,
-        double dirY,
-        double nx,
-        double ny,
-        double size,
-        double sideSign
-    ) {
-        drawArrowWingCurve(gl2, tipX, tipY, dirX, dirY, nx, ny, size, sideSign, 1.0);
-        drawArrowWingCurve(gl2, tipX, tipY, dirX, dirY, nx, ny, size, sideSign, -1.0);
-    }
-
-    private static void drawArrowWingCurve(
-        GL2 gl2,
-        double tipX,
-        double tipY,
-        double dirX,
-        double dirY,
-        double nx,
-        double ny,
-        double size,
-        double sideSign,
-        double wingSign
-    ) {
-        double lateral = sideSign * wingSign;
-        double controlX = tipX - dirX * size * 0.55 + nx * lateral * size * 0.55;
-        double controlY = tipY - dirY * size * 0.55 + ny * lateral * size * 0.55;
-        double endX = tipX - dirX * size * 1.05 + nx * lateral * size * 0.15;
-        double endY = tipY - dirY * size * 1.05 + ny * lateral * size * 0.15;
-
-        gl2.glBegin(GL2.GL_LINE_STRIP);
-        for (int i = 0; i <= 10; i++) {
-            double t = i / 10.0;
-            double omt = 1.0 - t;
-            double x = omt * omt * tipX + 2.0 * omt * t * controlX + t * t * endX;
-            double y = omt * omt * tipY + 2.0 * omt * t * controlY + t * t * endY;
-            gl2.glVertex2d(x, y);
+    private static void drawTriangularArrowHead(GL2 gl2, double tipX, double tipY, double controlX, double controlY, double length) {
+        double tx = tipX - controlX;
+        double ty = tipY - controlY;
+        double tlen = Math.sqrt(tx * tx + ty * ty);
+        if (!(tlen > 1e-6)) {
+            return;
         }
+        tx /= tlen;
+        ty /= tlen;
+        double nx = -ty;
+        double ny = tx;
+
+        double headLen = Math.max(8.0, Math.min(18.0, length * 0.15));
+        double halfWidth = headLen * 0.45;
+        double baseX = tipX - tx * headLen;
+        double baseY = tipY - ty * headLen;
+        double leftX = baseX + nx * halfWidth;
+        double leftY = baseY + ny * halfWidth;
+        double rightX = baseX - nx * halfWidth;
+        double rightY = baseY - ny * halfWidth;
+
+        gl2.glBegin(GL2.GL_LINES);
+        gl2.glVertex2d(tipX, tipY);
+        gl2.glVertex2d(leftX, leftY);
+        gl2.glVertex2d(tipX, tipY);
+        gl2.glVertex2d(rightX, rightY);
         gl2.glEnd();
     }
 

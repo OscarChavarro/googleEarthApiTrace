@@ -70,7 +70,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (keyChar == 'c' || keyChar == 'C') {
             FrameData frame = model.getSelectedFrame();
-            if (frame != null && TileCutter.cutWestOnSelectedTiles(frame.getTiles()) > 0) {
+            if (frame != null && TileCutter.cutWestOnSelectedTilesAcrossFrames(model.getFrames()) > 0) {
                 redraw();
                 return;
             }

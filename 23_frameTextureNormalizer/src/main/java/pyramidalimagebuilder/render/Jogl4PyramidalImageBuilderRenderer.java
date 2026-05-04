@@ -30,6 +30,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
     private final PyramidalImageModel model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileRenderer = new Jogl4TileMatrixRenderer();
+    private final Jogl4NeighborhoodRenderer neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
     private TextRenderer hudTextRenderer;
 
@@ -128,6 +129,17 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             model,
             model.getSelectedTileIndex()
         );
+        if (model.getRenderingConfiguration().isBoundingVolumeSet()) {
+            neighborhoodRenderer.drawForSelection(
+                gl2,
+                selected.getTiles(),
+                model.getSelectedTileIndex(),
+                projection,
+                modelViewForDraw,
+                drawable.getSurfaceWidth(),
+                drawable.getSurfaceHeight()
+            );
+        }
         drawTileIdsAtCenter(drawable, gl2, selected.getTiles(), model.getRenderingConfiguration().isBoundingVolumeSet());
         String selectedTextureId = selectedTextureId(selected.getTiles(), model.getSelectedTileIndex());
         drawHud(

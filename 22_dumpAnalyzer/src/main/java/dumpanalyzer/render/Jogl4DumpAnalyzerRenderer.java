@@ -42,7 +42,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private final DumpAnalyzerModel model;
     private final Jogl4HudRenderer hudRenderer;
     private final Jogl4AxisAlignedBoundingBoxRenderer axisAlignedBoundingBoxRenderer;
-    private final Jogl4NeighborhoodRenderer neighborhoodRenderer;
+    private final Jogl4NeighborRelationshipRenderer neighborhoodRenderer;
     private final Camera viewingCamera;
     private final CameraControllerOrbiter cameraController;
     private volatile boolean closing;
@@ -66,7 +66,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
         this.axisAlignedBoundingBoxRenderer = new Jogl4AxisAlignedBoundingBoxRenderer();
-        this.neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
+        this.neighborhoodRenderer = new Jogl4NeighborRelationshipRenderer();
         this.viewingCamera = model.getViewingCamera();
         this.cameraController = new CameraControllerOrbiter(viewingCamera);
         this.cameraController.setDeltaMovement(0.2);
