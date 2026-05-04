@@ -273,7 +273,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             int tileOrdinal = 0;
             for (TileInstance tile : frameData.getTiles()) {
-                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, useGoogleCameraView);
+                drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, false, useGoogleCameraView);
                 tileOrdinal++;
             }
             if (model.getRendererConfiguration().isBoundingVolumeSet()) {
@@ -292,7 +292,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex);
-        drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, false, useGoogleCameraView);
+        drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, false, true, useGoogleCameraView);
         if (model.getRendererConfiguration().isBoundingVolumeSet()) {
             axisAlignedBoundingBoxRenderer.drawForSelection(
                 gl2,
@@ -313,6 +313,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         TileInstance tile,
         Matrix4x4 projection,
         boolean drawAabb,
+        boolean singleTileMode,
         boolean useGoogleCameraView
     ) {
         double[] combinedModelView = CoordinatesTransforms.geometryModelView(
@@ -329,6 +330,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             projection,
             combinedModelView,
             drawAabb,
+            singleTileMode,
             model,
             hudRenderer,
             model.getActiveCamera()

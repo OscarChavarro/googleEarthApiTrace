@@ -7,7 +7,7 @@ import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 
 public final class TriangleMeshVertexComparator {
     private static final int REQUIRED_SHARED_VERTICES = 3;
-    private static final double VERTEX_EPSILON = 1e-4;
+    public static final double VERTEX_EPSILON = 1e-4;
     private static final double MIN_DIRECTION_DELTA_PIXELS = 0.25;
     private static final double EDGE_BAND_RATIO = 0.12;
     private static final int EDGE_VERTEX_TARGET = 3;

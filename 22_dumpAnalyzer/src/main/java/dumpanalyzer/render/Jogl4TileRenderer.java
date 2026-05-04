@@ -29,6 +29,7 @@ final class Jogl4TileRenderer {
         Matrix4x4 projection,
         double[] frameModelViewMatrix,
         boolean drawAabb,
+        boolean singleTileMode,
         DumpAnalyzerModel model,
         Jogl4HudRenderer hudRenderer,
         Camera camera
@@ -137,15 +138,8 @@ final class Jogl4TileRenderer {
             gl2.glDepthFunc(GL2.GL_LEQUAL);
             gl2.glEnable(GL2.GL_POLYGON_OFFSET_POINT);
             gl2.glPolygonOffset(POINT_POLYGON_OFFSET_FACTOR, POINT_POLYGON_OFFSET_UNITS);
-            gl2.glColor3d(1.0, 0.0, 0.0);
             gl2.glPointSize(3.0f);
-            for (List<Vector3D> strip : tile.getStrips()) {
-                gl2.glBegin(GL2.GL_POINTS);
-                for (Vector3D p : strip) {
-                    gl2.glVertex3d(p.x(), p.y(), p.z());
-                }
-                gl2.glEnd();
-            }
+            Jogl4TileVertexRenderer.drawTilePoints(gl2, tile, singleTileMode);
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_POINT);
         }
         gl2.glDepthMask(true);
