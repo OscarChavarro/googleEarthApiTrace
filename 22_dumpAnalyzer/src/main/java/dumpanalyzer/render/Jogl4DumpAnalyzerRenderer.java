@@ -1,6 +1,7 @@
 package dumpanalyzer.render;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -24,6 +25,9 @@ import com.jogamp.opengl.awt.GLCanvas;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
+import dumpanalyzer.processing.TriangleMeshVertexComparator;
+import dumpanalyzer.processing.TriangleStripTileClassifier;
+import dumpanalyzer.processing.TriangleStripTileTopology;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
@@ -60,6 +64,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final double MAX_DIAGONAL = 1.0e6;
     private static final double DIAGONAL_MIN_RATIO = 1.0e-3;
     private static final double DIAGONAL_MAX_RATIO = 1.0e3;
+    private static final int VERTEX_LABEL_X_OFFSET_PIXELS = 6;
 
     public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
         this.model = model;
@@ -147,7 +152,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         Camera activeCamera = model.getActiveCamera();
         Matrix4x4 projection = projectionForCurrentState(state, frames, activeCamera, model.isUsingGoogleCameraAsView());
         drawObjectsGL(gl, projection, model.isUsingGoogleCameraAsView());
-        List<Jogl4HudRenderer.ScreenLabel> aabbLabels = List.of();
+        List<Jogl4HudRenderer.ScreenLabel> hudLabels = new ArrayList<>();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
             Frame selectedFrame = frames.get(state.selectedFrameIndex());
             drawSelectedTile(
@@ -170,14 +175,24 @@ public class Jogl4DumpAnalyzerRenderer implements
                     drawable.getSurfaceHeight()
                 );
             }
-            aabbLabels = buildAabbLabelsForHud(
+            hudLabels.addAll(buildAabbLabelsForHud(
                 selectedFrame,
                 state.selectedTileIndex(),
                 projection,
                 model.isUsingGoogleCameraAsView(),
                 drawable.getSurfaceWidth(),
                 drawable.getSurfaceHeight()
-            );
+            ));
+            if (model.getRendererConfiguration().isPointsSet()) {
+                hudLabels.addAll(buildSelectedTileVertexLabelsForHud(
+                    selectedFrame,
+                    state.selectedTileIndex(),
+                    projection,
+                    model.isUsingGoogleCameraAsView(),
+                    drawable.getSurfaceWidth(),
+                    drawable.getSurfaceHeight()
+                ));
+            }
         }
         String hudTexturePath = null;
         if (!model.getRendererConfiguration().isTextureSet()
@@ -188,7 +203,7 @@ public class Jogl4DumpAnalyzerRenderer implements
                 state.selectedTextureId()
             );
         }
-        hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath, aabbLabels);
+        hudRenderer.render(drawable, model, state, activeCamera, hudTexturePath, hudLabels);
         if (offlineMode && !offlineCaptureDone) {
             captureOffscreen(drawable, gl);
             offlineCaptureDone = true;
@@ -357,6 +372,106 @@ public class Jogl4DumpAnalyzerRenderer implements
             viewportWidth,
             viewportHeight
         );
+    }
+
+    private List<Jogl4HudRenderer.ScreenLabel> buildSelectedTileVertexLabelsForHud(
+        Frame frameData,
+        int selectedTileIndex,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView,
+        int viewportWidth,
+        int viewportHeight
+    ) {
+        if (frameData == null
+            || selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES
+            || selectedTileIndex < 0
+            || selectedTileIndex >= frameData.getTiles().size()
+            || projection == null
+            || viewportWidth <= 0
+            || viewportHeight <= 0) {
+            return List.of();
+        }
+
+        TileInstance tile = frameData.getTiles().get(selectedTileIndex);
+        TileInstance.TriangleStripGeometry geometry = tile.getTriangleStrip();
+        TriangleStripTileClassifier classifier = new TriangleStripTileClassifier();
+        TriangleStripTileTopology topology = classifier.classify(geometry);
+        if (topology == TriangleStripTileTopology.UNKNOWN) {
+            return List.of();
+        }
+
+        List<TileInstance.TriangleStripVertex> vertices = classifier.deduplicateVertices(
+            geometry.vertices(),
+            TriangleMeshVertexComparator.VERTEX_EPSILON
+        );
+        if (vertices.isEmpty()) {
+            return List.of();
+        }
+
+        double[] modelView = CoordinatesTransforms.geometryModelView(useGoogleCameraView, viewingCamera, frameData);
+        if (useGoogleCameraView && tile.getModelViewMatrix() != null && tile.getModelViewMatrix().length == 16) {
+            modelView = tile.getModelViewMatrix();
+        }
+
+        List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
+        for (int i = 0; i < vertices.size(); i++) {
+            TileInstance.TriangleStripVertex v = vertices.get(i);
+            int[] pixel = projectToViewportPixel(
+                new Vector3D(v.x(), v.y(), v.z()),
+                modelView,
+                projection,
+                viewportWidth,
+                viewportHeight
+            );
+            if (pixel == null) {
+                continue;
+            }
+            double[] c = Jogl4TileVertexRenderer.colorForIndex(i);
+            labels.add(new Jogl4HudRenderer.ScreenLabel(
+                pixel[0] + VERTEX_LABEL_X_OFFSET_PIXELS,
+                pixel[1],
+                String.valueOf(i),
+                new Color((float)c[0], (float)c[1], (float)c[2])
+            ));
+        }
+        return labels;
+    }
+
+    private static int[] projectToViewportPixel(
+        Vector3D p,
+        double[] modelView,
+        Matrix4x4 projection,
+        int viewportWidth,
+        int viewportHeight
+    ) {
+        if (p == null || modelView == null || modelView.length != 16 || projection == null) {
+            return null;
+        }
+        double x = p.x();
+        double y = p.y();
+        double z = p.z();
+        double vx = modelView[0] * x + modelView[4] * y + modelView[8] * z + modelView[12];
+        double vy = modelView[1] * x + modelView[5] * y + modelView[9] * z + modelView[13];
+        double vz = modelView[2] * x + modelView[6] * y + modelView[10] * z + modelView[14];
+        double vw = modelView[3] * x + modelView[7] * y + modelView[11] * z + modelView[15];
+        double[] proj = projection.exportToDoubleArrayColumnOrder();
+        double cx = proj[0] * vx + proj[4] * vy + proj[8] * vz + proj[12] * vw;
+        double cy = proj[1] * vx + proj[5] * vy + proj[9] * vz + proj[13] * vw;
+        double cw = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15] * vw;
+        if (Math.abs(cw) < 1e-12) {
+            return null;
+        }
+        double ndcX = cx / cw;
+        double ndcY = cy / cw;
+        if (!Double.isFinite(ndcX) || !Double.isFinite(ndcY)) {
+            return null;
+        }
+        int px = (int)Math.round((ndcX * 0.5 + 0.5) * (viewportWidth - 1));
+        int py = (int)Math.round((ndcY * 0.5 + 0.5) * (viewportHeight - 1));
+        if (px < 0 || px >= viewportWidth || py < 0 || py >= viewportHeight) {
+            return null;
+        }
+        return new int[] {px, py};
     }
 
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {

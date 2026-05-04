@@ -26,6 +26,10 @@ final class Jogl4TileVertexRenderer {
     private Jogl4TileVertexRenderer() {
     }
 
+    static double[] colorForIndex(int index) {
+        return ORDERED_COLORS[Math.floorMod(index, ORDERED_COLORS.length)];
+    }
+
     static void drawTilePoints(GL2 gl2, TileInstance tile, boolean singleTileMode) {
         if (!singleTileMode) {
             drawAllPoints(gl2, tile);
@@ -54,7 +58,8 @@ final class Jogl4TileVertexRenderer {
         }
 
         TriangleStripTileTopology topology = TRIANGLE_STRIP_CLASSIFIER.classify(triangleStrip);
-        if (topology != TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD) {
+        if (topology != TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD
+            && topology != TriangleStripTileTopology.DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE) {
             drawAllInColor(gl2, tile.getPoints(), 0.0, 0.0, 1.0);
             return;
         }

@@ -8,6 +8,7 @@ import dumpanalyzer.model.TileInstance;
 public final class TriangleStripTileClassifier {
     public static final int TRIANGLE_STRIP_VERTEX_COUNT = 20;
     public static final int DEDUPLICATED_QUAD_VERTEX_COUNT = 9;
+    public static final int DEDUPLICATED_NORTH_POLE_TRIANGLE_VERTEX_COUNT = 7;
 
     public TriangleStripTileTopology classify(TileInstance.TriangleStripGeometry geometry) {
         if (geometry == null || geometry.vertexCount() != TRIANGLE_STRIP_VERTEX_COUNT) {
@@ -19,6 +20,9 @@ public final class TriangleStripTileClassifier {
         );
         if (unique.size() == DEDUPLICATED_QUAD_VERTEX_COUNT) {
             return TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD;
+        }
+        if (unique.size() == DEDUPLICATED_NORTH_POLE_TRIANGLE_VERTEX_COUNT) {
+            return TriangleStripTileTopology.DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE;
         }
         return TriangleStripTileTopology.UNKNOWN;
     }
