@@ -41,8 +41,10 @@ public final class FrameReader {
 
         List<Path> frameDirs = traceSessionReader.listFrameDirectories(Path.of(Configuration.INPUT_PATH));
         if (frameDirs.isEmpty()) {
+            System.out.println("[frame-reader] no frame directories to process");
             return List.of();
         }
+        System.out.println("[frame-reader] queued frame directories: " + frameDirs.size());
 
         ConcurrentLinkedQueue<Path> pendingDirs = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<LoadedFrame> loadedFrames = new ConcurrentLinkedQueue<>();
@@ -70,6 +72,7 @@ public final class FrameReader {
 
         List<LoadedFrame> ordered = new ArrayList<>(loadedFrames);
         ordered.sort(Comparator.comparing(LoadedFrame::dirName));
+        System.out.println("[frame-reader] loaded frame.json files: " + ordered.size());
 
         List<FrameData> out = new ArrayList<>(ordered.size());
         for (LoadedFrame lf : ordered) {
@@ -130,19 +133,33 @@ public final class FrameReader {
         }
         List<FrameData> out = new ArrayList<>(loaded.size());
         Set<Integer> previousTileIds = null;
+        int deduplicated = 0;
         for (FrameData frame : loaded) {
             if (frame == null) {
                 continue;
             }
             Set<Integer> tileIds = tileIdSet(frame.getTiles());
             if (previousTileIds != null && previousTileIds.equals(tileIds)) {
+                deduplicated++;
                 continue;
             }
             List<TileInstance> ccFilteredTiles = connectedComponentsFilterer.filter(frame.getTiles());
             List<TileInstance> filteredTiles = tileFilterer.filter(ccFilteredTiles, model.getViewingCamera());
-            out.add(new FrameData(frame.getId(), filteredTiles, frame.getCameraState(), frame.isWithMatrixErrors()));
+            if (frame.getId() == 100) {
+                System.out.println(
+                    "[frame-reader] frame 100: raw=" + (frame.getTiles() == null ? 0 : frame.getTiles().size())
+                        + " cc=" + ccFilteredTiles.size()
+                        + " geometric=" + filteredTiles.size()
+                );
+            }
+            out.add(new FrameData(frame.getId(), filteredTiles, frame.getLines(), frame.getCameraState(), frame.isWithMatrixErrors()));
             previousTileIds = tileIds;
         }
+        System.out.println(
+            "[frame-reader] filter summary: loaded=" + loaded.size()
+                + " deduplicated=" + deduplicated
+                + " kept=" + out.size()
+        );
         return out;
     }
 

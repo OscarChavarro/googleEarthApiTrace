@@ -10,7 +10,7 @@ public final class TileFiltererByGeometricNullNeighbors {
             return List.of();
         }
 
-        return tiles.stream()
+        List<TileInstance> withNeighbors = tiles.stream()
             .filter(tile -> tile != null)
             .filter(tile ->
                 tile.getSouthNeighbor() != null ||
@@ -18,6 +18,16 @@ public final class TileFiltererByGeometricNullNeighbors {
                 tile.getEastNeighbor() != null ||
                 tile.getWestNeighbor() != null
             )
+            .toList();
+
+        if (!withNeighbors.isEmpty()) {
+            return withNeighbors;
+        }
+
+        // Fallback for traces without neighbor metadata: keep drawable tiles.
+        return tiles.stream()
+            .filter(tile -> tile != null)
+            .filter(tile -> tile.getTriangleStrip() != null)
             .toList();
     }
 }

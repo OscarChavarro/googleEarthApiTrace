@@ -71,7 +71,7 @@ public final class TileTextureNormalizer {
                 ));
             }
 
-            normalizedFrames.add(new FrameData(frame.getId(), normalizedTiles, frame.getCameraState()));
+            normalizedFrames.add(new FrameData(frame.getId(), normalizedTiles, frame.getLines(), frame.getCameraState()));
         }
 
         return normalizedFrames;

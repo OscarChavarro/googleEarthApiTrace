@@ -29,11 +29,11 @@ public final class TileMatrixProcessor {
                 Set<Integer> conflictIds = convertor.getLastConflictingTileIds();
                 Map<Integer, MatrixTileCoordinate> partialCoords = convertor.getLastCoordinatesByTileId();
                 List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(frame.getTiles(), conflictIds, partialCoords);
-                out.add(new FrameData(frame.getId(), flaggedTiles, frame.getCameraState(), true));
+                out.add(new FrameData(frame.getId(), flaggedTiles, frame.getLines(), frame.getCameraState(), true));
                 continue;
             }
             List<TileInstance> tilesWithCoords = applyMatrixCoordinates(frame.getTiles(), matrix);
-            FrameData frameWithMatrix = new FrameData(frame.getId(), tilesWithCoords, frame.getCameraState(), false);
+            FrameData frameWithMatrix = new FrameData(frame.getId(), tilesWithCoords, frame.getLines(), frame.getCameraState(), false);
             out.add(frameWithMatrix);
             matrices.add(matrix);
         }

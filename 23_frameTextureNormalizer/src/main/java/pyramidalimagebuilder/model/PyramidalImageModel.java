@@ -1,11 +1,17 @@
 package pyramidalimagebuilder.model;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import pyramidalimagebuilder.config.Configuration;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 
@@ -17,6 +23,7 @@ public final class PyramidalImageModel {
     private final List<FrameData> frames = new ArrayList<>();
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
+    private final Set<Integer> westCutterTileIds = new LinkedHashSet<>();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
     private int selectedTileIndex = SELECT_ALL_TILES;
@@ -169,5 +176,36 @@ public final class PyramidalImageModel {
         }
         residentTexturesFifo.removeFirstOccurrence(texturePath);
         gpuTextureBytesAssigned = Math.max(0L, gpuTextureBytesAssigned - Math.max(0L, bytes));
+    }
+
+    public synchronized Set<Integer> getWestCutterTileIds() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(westCutterTileIds));
+    }
+
+    public synchronized void addWestCutterTileIds(Set<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (Integer id : ids) {
+            if (id != null && id >= 0 && westCutterTileIds.add(id)) {
+                changed = true;
+            }
+        }
+        if (changed) {
+            persistWestCuttersCache();
+        }
+    }
+
+    private synchronized void persistWestCuttersCache() {
+        Path outputPath = Path.of(Configuration.INPUT_PATH);
+        Path cachePath = outputPath.resolve("westCutters.json");
+        try {
+            Files.createDirectories(outputPath);
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.writerWithDefaultPrettyPrinter().writeValue(cachePath.toFile(), westCutterTileIds);
+        }
+        catch (IOException ignored) {
+        }
     }
 }

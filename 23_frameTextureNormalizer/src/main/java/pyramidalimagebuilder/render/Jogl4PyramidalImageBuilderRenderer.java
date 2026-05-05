@@ -110,11 +110,11 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         }
 
         Matrix4x4 projection = model.getViewingCamera().calculateViewVolumeMatrix();
-        float[] modelViewForDraw = toFloat16(
-            selected.getCameraState() == null ? null : selected.getCameraState().getModelViewMatrix()
-        );
+        double[] modelViewForLines = selected.getCameraState() == null ? null : selected.getCameraState().getModelViewMatrix();
+        float[] modelViewForDraw = toFloat16(modelViewForLines);
         if (modelViewForDraw == null) {
             modelViewForDraw = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
+            modelViewForLines = toDouble16(modelViewForDraw);
         }
 
         gl2.glMatrixMode(GL2.GL_PROJECTION);
@@ -125,6 +125,8 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         tileRenderer.draw(
             gl2,
             selected.getTiles(),
+            selected.getLines(),
+            modelViewForLines,
             model.getRenderingConfiguration(),
             model,
             model.getSelectedTileIndex()
@@ -309,6 +311,17 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             }
         }
         return count;
+    }
+
+    private static double[] toDouble16(float[] matrix) {
+        if (matrix == null || matrix.length != 16) {
+            return null;
+        }
+        double[] out = new double[16];
+        for (int i = 0; i < 16; i++) {
+            out[i] = matrix[i];
+        }
+        return out;
     }
 
     private static String matrixCoordsLabel(TileInstance tile) {

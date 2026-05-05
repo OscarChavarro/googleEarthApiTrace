@@ -5,6 +5,7 @@ import java.util.List;
 import pyramidalimagebuilder.io.FrameReader;
 import pyramidalimagebuilder.io.TileMatrixExporter;
 import pyramidalimagebuilder.io.TraceSessionReader;
+import pyramidalimagebuilder.io.WestCacheReader;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.model.TileMatrix;
 import pyramidalimagebuilder.options.CommandLineOptions;
@@ -48,7 +49,9 @@ public class Main {
             tileFilterer,
             model
         );
+        System.out.println("[main] frames after loadTracedFrames: " + model.getFrames().size());
         model.setFrames(frameFiltererByTileCount.keepFramesWithMoreThanTiles(model.getFrames(), 1));
+        System.out.println("[main] frames after keepFramesWithMoreThanTiles(>1): " + model.getFrames().size());
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -59,23 +62,29 @@ public class Main {
         List<List<String>> duplicatedTextureGroups = DuplicatedTextureFilenameMapper.loadOrCreate(model.getFrames());
         System.out.println("OK");
 
-        System.out.print("Tile texture normalization and matrix conversion... ");
-        TileMatrixProcessor tileMatrixProcessor = new TileMatrixProcessor();
-        TileMatrixProcessingResult matrixResult = tileMatrixProcessor.convertTileMatrices(
-            TileTextureNormalizer.normalize(model.getFrames(), duplicatedTextureGroups)
-        );
-        System.out.println("OK");
+        if (!offline) {
+            System.out.print("Tile texture normalization and matrix conversion... ");
+            TileMatrixProcessor tileMatrixProcessor = new TileMatrixProcessor();
+            TileMatrixProcessingResult matrixResult = tileMatrixProcessor.convertTileMatrices(
+                TileTextureNormalizer.normalize(model.getFrames(), duplicatedTextureGroups)
+            );
+            System.out.println("OK");
 
-        System.out.print("Filtering matrices by consistency... ");
-        List<TileMatrix> consistentMatrices =
-            tileMatrixFiltererByConsistency.filter(matrixResult.matrices());
-        System.out.println("OK");
+            System.out.print("Filtering matrices by consistency... ");
+            List<TileMatrix> consistentMatrices =
+                tileMatrixFiltererByConsistency.filter(matrixResult.matrices());
+            System.out.println("OK");
 
-        System.out.print("Exporting matrices... ");
-        tileMatrixExporter.export(consistentMatrices);
-        model.setFrames(matrixResult.frames());
-        model.setFrames(tileFilteringByErrored.removeErroredFrames(model.getFrames()));
-        System.out.println("OK");
+            System.out.print("Exporting matrices... ");
+            tileMatrixExporter.export(consistentMatrices);
+            model.setFrames(matrixResult.frames());
+            model.setFrames(tileFilteringByErrored.removeErroredFrames(model.getFrames()));
+            new WestCacheReader().restore(model);
+            System.out.println("OK");
+        }
+        else {
+            System.out.println("Offline mode: matrix merge/conversion pipeline disabled (commented).");
+        }
 
         if (offline) {
             System.out.println("Offline mode enabled: skipping interactive GUI.");

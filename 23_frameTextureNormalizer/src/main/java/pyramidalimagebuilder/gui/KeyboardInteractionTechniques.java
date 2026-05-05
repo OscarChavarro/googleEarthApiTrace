@@ -13,6 +13,7 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 import pyramidalimagebuilder.model.FrameData;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.processing.TileCutter;
+import java.util.Set;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
     private final PyramidalImageModel model;
@@ -70,7 +71,9 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (keyChar == 'c' || keyChar == 'C') {
             FrameData frame = model.getSelectedFrame();
-            if (frame != null && TileCutter.cutWestOnSelectedTilesAcrossFrames(model.getFrames()) > 0) {
+            Set<Integer> selectedIds = TileCutter.selectedTileIdsAcrossFrames(model.getFrames());
+            if (frame != null && TileCutter.cutWestFromTileIdsAcrossFrames(model.getFrames(), selectedIds) > 0) {
+                model.addWestCutterTileIds(selectedIds);
                 redraw();
                 return;
             }

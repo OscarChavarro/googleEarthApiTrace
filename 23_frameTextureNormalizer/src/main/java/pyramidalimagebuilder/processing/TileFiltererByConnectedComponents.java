@@ -42,6 +42,17 @@ public final class TileFiltererByConnectedComponents {
             addUndirectedEdge(graph, tile.getTileId(), tile.getWestNeighbor(), byId);
         }
 
+        // If no reciprocal neighbor edges exist, do not collapse to a single singleton component.
+        if (graph.edgeSet().isEmpty()) {
+            List<TileInstance> out = new ArrayList<>(tiles.size());
+            for (TileInstance tile : tiles) {
+                if (tile != null) {
+                    out.add(tile);
+                }
+            }
+            return out;
+        }
+
         ConnectivityInspector<Integer, DefaultEdge> inspector = new ConnectivityInspector<>(graph);
         List<Set<Integer>> components = inspector.connectedSets();
         if (components.isEmpty()) {

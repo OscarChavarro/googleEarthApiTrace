@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import pyramidalimagebuilder.config.Configuration;
+import pyramidalimagebuilder.model.Line;
 import pyramidalimagebuilder.model.PyramidalImageModel;
 import pyramidalimagebuilder.model.TileInstance;
 import pyramidalimagebuilder.model.TileInstance.TriangleStripGeometry;
@@ -22,6 +23,8 @@ public final class Jogl4TileMatrixRenderer {
     public void draw(
         GL2 gl2,
         List<TileInstance> tiles,
+        List<Line> lines,
+        double[] defaultModelViewMatrix,
         RendererConfiguration renderingConfiguration,
         PyramidalImageModel model,
         int selectedTileIndex
@@ -60,6 +63,7 @@ public final class Jogl4TileMatrixRenderer {
         drawIncorrectMappingWires(gl2, tiles, selectedTileIndex);
         drawWestCuttingCellsOverlay(gl2, tiles, selectedTileIndex);
         drawSelectedTilesOverlay(gl2, tiles, selectedTileIndex);
+        drawExtractedLines(gl2, lines, defaultModelViewMatrix);
     }
 
     public void drawForSelection(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
@@ -242,6 +246,53 @@ public final class Jogl4TileMatrixRenderer {
             gl2.glVertex3d(v.x(), v.y(), v.z());
         }
         gl2.glEnd();
+    }
+
+    private static void drawExtractedLines(GL2 gl2, List<Line> lines, double[] defaultModelViewMatrix) {
+        if (gl2 == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        gl2.glPushMatrix();
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glDisable(GL2.GL_LIGHTING);
+        gl2.glEnable(GL2.GL_DEPTH_TEST);
+        gl2.glDepthMask(false);
+        gl2.glDepthFunc(GL2.GL_LEQUAL);
+        gl2.glEnable(GL2.GL_POLYGON_OFFSET_LINE);
+        gl2.glPolygonOffset(-4.0f, -4.0f);
+        gl2.glColor3d(1.0, 1.0, 0.0);
+        gl2.glLineWidth(2.0f);
+        for (Line line : lines) {
+            List<Line.Vertex> lineStrip = line == null ? List.of() : line.getPoints();
+            if (lineStrip.size() < 2) {
+                continue;
+            }
+            double[] modelView = line == null ? null : line.getModelViewMatrix();
+            if (modelView == null || modelView.length != 16) {
+                modelView = defaultModelViewMatrix;
+            }
+            if (modelView != null && modelView.length == 16) {
+                float[] mv = new float[16];
+                for (int i = 0; i < 16; i++) {
+                    mv[i] = (float)modelView[i];
+                }
+                gl2.glLoadMatrixf(mv, 0);
+            }
+            else {
+                gl2.glLoadIdentity();
+            }
+            gl2.glBegin(GL2.GL_LINE_STRIP);
+            for (Line.Vertex p : lineStrip) {
+                gl2.glVertex3d(p.x(), p.y(), p.z());
+            }
+            gl2.glEnd();
+        }
+        gl2.glLineWidth(1.0f);
+        gl2.glDisable(GL2.GL_POLYGON_OFFSET_LINE);
+        gl2.glDepthMask(true);
+        gl2.glDepthFunc(GL2.GL_LESS);
+        gl2.glPopMatrix();
     }
 
     private TextureResident acquireTexture(GL2 gl2, PyramidalImageModel model, String texturePath) {

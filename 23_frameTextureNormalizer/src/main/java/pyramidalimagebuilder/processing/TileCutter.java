@@ -3,6 +3,7 @@ package pyramidalimagebuilder.processing;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,10 +48,18 @@ public final class TileCutter {
     }
 
     public static int cutWestOnSelectedTilesAcrossFrames(List<FrameData> frames) {
-        if (frames == null || frames.isEmpty()) {
+        Set<Integer> cursedTileIds = selectedTileIdsAcrossFrames(frames);
+        if (cursedTileIds.isEmpty()) {
             return 0;
         }
-        Set<Integer> cursedTileIds = new HashSet<>();
+        return cutWestFromTileIdsAcrossFrames(frames, cursedTileIds);
+    }
+
+    public static Set<Integer> selectedTileIdsAcrossFrames(List<FrameData> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return Set.of();
+        }
+        Set<Integer> cursedTileIds = new LinkedHashSet<>();
         for (FrameData frame : frames) {
             if (frame == null || frame.getTiles() == null) {
                 continue;
@@ -61,10 +70,13 @@ public final class TileCutter {
                 }
             }
         }
-        if (cursedTileIds.isEmpty()) {
+        return cursedTileIds;
+    }
+
+    public static int cutWestFromTileIdsAcrossFrames(List<FrameData> frames, Set<Integer> cursedTileIds) {
+        if (frames == null || frames.isEmpty() || cursedTileIds == null || cursedTileIds.isEmpty()) {
             return 0;
         }
-
         int totalCutCount = 0;
         for (FrameData frame : frames) {
             if (frame == null) {
