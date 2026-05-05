@@ -37,7 +37,8 @@ public final class TileInstanceReader {
             Integer east = nullableNeighbor(tile.get("eastNeighbor"));
             Integer west = nullableNeighbor(tile.get("westNeighbor"));
             TriangleStripGeometry triangleStrip = parseTriangleStrip(tile.get("triangleStrip"));
-            result.add(new TileInstance(tileId, frameId, textureFile, south, north, east, west, triangleStrip));
+            double[] modelViewMatrix = readArray16(tile.get("modelViewMatrix"));
+            result.add(new TileInstance(tileId, frameId, textureFile, south, north, east, west, triangleStrip, modelViewMatrix));
         }
         return result;
     }
@@ -107,6 +108,17 @@ public final class TileInstanceReader {
         }
         int value = extractLastNumber(text, -1);
         return value < 0 ? null : value;
+    }
+
+    private static double[] readArray16(JsonNode arrNode) {
+        if (arrNode == null || !arrNode.isArray() || arrNode.size() != 16) {
+            return null;
+        }
+        double[] out = new double[16];
+        for (int i = 0; i < 16; i++) {
+            out[i] = arrNode.get(i).asDouble(0.0);
+        }
+        return out;
     }
 
     private static String nullableText(JsonNode node) {

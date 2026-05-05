@@ -52,7 +52,8 @@ public final class TileTextureNormalizer {
                         tile.getNorthNeighbor(),
                         tile.getEastNeighbor(),
                         tile.getWestNeighbor(),
-                        tile.getTriangleStrip()
+                        tile.getTriangleStrip(),
+                        tile.getModelViewMatrix()
                     ));
                 }
             }
@@ -67,7 +68,8 @@ public final class TileTextureNormalizer {
                     remapNeighbor(tile.getNorthNeighbor(), idRemap),
                     remapNeighbor(tile.getEastNeighbor(), idRemap),
                     remapNeighbor(tile.getWestNeighbor(), idRemap),
-                    tile.getTriangleStrip()
+                    tile.getTriangleStrip(),
+                    tile.getModelViewMatrix()
                 ));
             }
 

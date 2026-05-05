@@ -83,6 +83,7 @@ public final class TileMatrixProcessor {
                 tile.getEastNeighbor(),
                 tile.getWestNeighbor(),
                 tile.getTriangleStrip(),
+                tile.getModelViewMatrix(),
                 c == null ? null : c.i(),
                 c == null ? null : c.j(),
                 tile.isIncorrectMatrixMapping()
@@ -115,6 +116,7 @@ public final class TileMatrixProcessor {
                 tile.getEastNeighbor(),
                 tile.getWestNeighbor(),
                 tile.getTriangleStrip(),
+                tile.getModelViewMatrix(),
                 coord == null ? tile.getMatrixI() : coord.i(),
                 coord == null ? tile.getMatrixJ() : coord.j(),
                 incorrect

@@ -189,7 +189,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
                 drawable.getSurfaceHeight()
             );
         }
-        drawTileIdsAtCenter(drawable, gl2, selected.getTiles(), model.getRenderingConfiguration().isBoundingVolumeSet());
+        drawTileIdsAtCenter(drawable, gl2, selected, model.getRenderingConfiguration().isBoundingVolumeSet());
         String selectedTextureId = selectedTextureId(selected.getTiles(), model.getSelectedTileIndex());
         drawHud(
             drawable,
@@ -253,16 +253,15 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         drawable.getGL().getGL2().glEnable(GL2.GL_DEPTH_TEST);
     }
 
-    private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, List<TileInstance> tiles, boolean enabled) {
+    private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, FrameData frame, boolean enabled) {
+        List<TileInstance> tiles = frame == null ? null : frame.getTiles();
         if (!enabled || hudTextRenderer == null || tiles == null || tiles.isEmpty()) {
             return;
         }
 
-        double[] modelView = new double[16];
-        double[] projection = new double[16];
+        double[] defaultModelView = modelViewForFrame(frame);
+        double[] projection = projectionForFrame(frame).exportToDoubleArrayColumnOrder();
         int[] viewport = new int[4];
-        gl2.glGetDoublev(GL2.GL_MODELVIEW_MATRIX, modelView, 0);
-        gl2.glGetDoublev(GL2.GL_PROJECTION_MATRIX, projection, 0);
         gl2.glGetIntegerv(GL2.GL_VIEWPORT, viewport, 0);
 
         int h = drawable.getSurfaceHeight();
@@ -286,7 +285,14 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             }
 
             double[] win = new double[3];
-            if (!glu.gluProject(center[0], center[1], center[2], modelView, 0, projection, 0, viewport, 0, win, 0)) {
+            double[] tileModelView = tile.getModelViewMatrix();
+            if (tileModelView == null || tileModelView.length != 16) {
+                tileModelView = defaultModelView;
+            }
+            if (tileModelView == null || tileModelView.length != 16) {
+                continue;
+            }
+            if (!glu.gluProject(center[0], center[1], center[2], tileModelView, 0, projection, 0, viewport, 0, win, 0)) {
                 continue;
             }
 
@@ -482,7 +488,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         gl2.glPushMatrix();
         gl2.glLoadMatrixf(modelViewForDraw, 0);
 
-        tileRenderer.drawForSelection(gl2, tiles, model.getSelectedTileIndex());
+        tileRenderer.drawForSelection(gl2, tiles, model.getSelectedTileIndex(), modelViewForFrame(selected));
 
         gl2.glPopMatrix();
         gl2.glMatrixMode(GL2.GL_PROJECTION);

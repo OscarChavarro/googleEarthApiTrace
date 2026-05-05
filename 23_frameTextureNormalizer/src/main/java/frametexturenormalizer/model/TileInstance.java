@@ -11,6 +11,7 @@ public final class TileInstance {
     private Integer eastNeighbor;
     private Integer westNeighbor;
     private final TriangleStripGeometry triangleStrip;
+    private final double[] modelViewMatrix;
     private final Integer matrixI;
     private final Integer matrixJ;
     private final boolean incorrectMatrixMapping;
@@ -25,7 +26,8 @@ public final class TileInstance {
         Integer northNeighbor,
         Integer eastNeighbor,
         Integer westNeighbor,
-        TriangleStripGeometry triangleStrip
+        TriangleStripGeometry triangleStrip,
+        double[] modelViewMatrix
     ) {
         this(
             tileId,
@@ -36,6 +38,7 @@ public final class TileInstance {
             eastNeighbor,
             westNeighbor,
             triangleStrip,
+            modelViewMatrix,
             null,
             null,
             false
@@ -51,6 +54,7 @@ public final class TileInstance {
         Integer eastNeighbor,
         Integer westNeighbor,
         TriangleStripGeometry triangleStrip,
+        double[] modelViewMatrix,
         Integer matrixI,
         Integer matrixJ
     ) {
@@ -63,6 +67,7 @@ public final class TileInstance {
             eastNeighbor,
             westNeighbor,
             triangleStrip,
+            modelViewMatrix,
             matrixI,
             matrixJ,
             false
@@ -78,6 +83,7 @@ public final class TileInstance {
         Integer eastNeighbor,
         Integer westNeighbor,
         TriangleStripGeometry triangleStrip,
+        double[] modelViewMatrix,
         Integer matrixI,
         Integer matrixJ,
         boolean incorrectMatrixMapping
@@ -91,6 +97,7 @@ public final class TileInstance {
             eastNeighbor,
             westNeighbor,
             triangleStrip,
+            modelViewMatrix,
             matrixI,
             matrixJ,
             incorrectMatrixMapping,
@@ -108,6 +115,7 @@ public final class TileInstance {
         Integer eastNeighbor,
         Integer westNeighbor,
         TriangleStripGeometry triangleStrip,
+        double[] modelViewMatrix,
         Integer matrixI,
         Integer matrixJ,
         boolean incorrectMatrixMapping,
@@ -122,6 +130,7 @@ public final class TileInstance {
         this.eastNeighbor = eastNeighbor;
         this.westNeighbor = westNeighbor;
         this.triangleStrip = triangleStrip;
+        this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
         this.matrixI = matrixI;
         this.matrixJ = matrixJ;
         this.incorrectMatrixMapping = incorrectMatrixMapping;
@@ -175,6 +184,10 @@ public final class TileInstance {
 
     public TriangleStripGeometry getTriangleStrip() {
         return triangleStrip;
+    }
+
+    public double[] getModelViewMatrix() {
+        return modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
     public Integer getMatrixI() {

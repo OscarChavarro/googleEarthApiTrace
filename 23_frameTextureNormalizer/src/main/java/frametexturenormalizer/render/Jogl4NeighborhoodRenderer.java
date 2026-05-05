@@ -198,7 +198,11 @@ public final class Jogl4NeighborhoodRenderer {
         if (center == null) {
             return null;
         }
-        return projectToViewportPixel(center[0], center[1], center[2], modelView, projection, viewportWidth, viewportHeight);
+        float[] tileModelView = toFloat16(tile == null ? null : tile.getModelViewMatrix());
+        if (tileModelView == null) {
+            tileModelView = modelView;
+        }
+        return projectToViewportPixel(center[0], center[1], center[2], tileModelView, projection, viewportWidth, viewportHeight);
     }
 
     private static int[] projectToViewportPixel(
@@ -260,5 +264,16 @@ public final class Jogl4NeighborhoodRenderer {
             return null;
         }
         return new double[] {sx / n, sy / n, sz / n};
+    }
+
+    private static float[] toFloat16(double[] values) {
+        if (values == null || values.length != 16) {
+            return null;
+        }
+        float[] out = new float[16];
+        for (int i = 0; i < 16; i++) {
+            out[i] = (float)values[i];
+        }
+        return out;
     }
 }

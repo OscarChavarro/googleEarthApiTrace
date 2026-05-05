@@ -1,6 +1,7 @@
 package dumpanalyzer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
@@ -172,6 +173,11 @@ public final class TileInstance {
     @JsonIgnore
     public double[] getModelViewMatrix() {
         return modelViewMatrix == null ? null : modelViewMatrix.clone();
+    }
+
+    @JsonProperty("modelViewMatrix")
+    public double[] getModelViewMatrixJson() {
+        return getModelViewMatrix();
     }
 
     @JsonIgnore
