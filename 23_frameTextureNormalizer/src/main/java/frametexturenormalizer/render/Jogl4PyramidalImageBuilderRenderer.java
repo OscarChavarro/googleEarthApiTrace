@@ -5,6 +5,8 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.GLCapabilities;
+import com.jogamp.opengl.GLDrawableFactory;
+import com.jogamp.opengl.GLOffscreenAutoDrawable;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
@@ -13,6 +15,8 @@ import com.jogamp.opengl.util.awt.TextRenderer;
 import com.jogamp.common.nio.Buffers;
 import java.awt.Font;
 import java.awt.geom.Rectangle2D;
+import java.io.File;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -23,6 +27,8 @@ import frametexturenormalizer.model.PyramidalImageModel;
 import frametexturenormalizer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBImageUncompressed;
 
 public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener {
     private static final int PICK_REGION_PIXELS = 5;
@@ -33,6 +39,9 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
     private final Jogl4NeighborhoodRenderer neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
     private TextRenderer hudTextRenderer;
+    private boolean offlineMode;
+    private boolean offlineCaptureDone;
+    private String offlineOutputPath;
 
     public Jogl4PyramidalImageBuilderRenderer(PyramidalImageModel model) {
         this.model = model;
@@ -51,6 +60,27 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
 
     public CameraControllerOrbiter getCameraController() {
         return cameraController;
+    }
+
+    public void startOffscreen(String outputPath, int width, int height) {
+        if (!vsdk.toolkit.render.jogl.Jogl4Renderer.verifyOpenGLAvailability()) {
+            System.out.println("Can not start OpenGL/JOGL renderer.");
+            return;
+        }
+        offlineMode = true;
+        offlineCaptureDone = false;
+        offlineOutputPath = outputPath;
+
+        GLProfile profile = GLProfile.get(GLProfile.GL4bc);
+        GLCapabilities caps = new GLCapabilities(profile);
+        caps.setDoubleBuffered(false);
+
+        GLDrawableFactory creator = GLDrawableFactory.getFactory(profile);
+        GLOffscreenAutoDrawable pbuffer = creator.createOffscreenAutoDrawable(
+            null, caps, null, Math.max(1, width), Math.max(1, height)
+        );
+        pbuffer.addGLEventListener(this);
+        pbuffer.display();
     }
 
     public boolean toggleTileSelectionAt(GLAutoDrawable drawable, int mouseX, int mouseY) {
@@ -109,8 +139,8 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             return;
         }
 
-        Matrix4x4 projection = model.getViewingCamera().calculateViewVolumeMatrix();
-        double[] modelViewForLines = selected.getCameraState() == null ? null : selected.getCameraState().getModelViewMatrix();
+        Matrix4x4 projection = projectionForFrame(selected);
+        double[] modelViewForLines = modelViewForFrame(selected);
         float[] modelViewForDraw = toFloat16(modelViewForLines);
         if (modelViewForDraw == null) {
             modelViewForDraw = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
@@ -156,6 +186,10 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         );
         if (selected.isWithMatrixErrors()) {
             drawMatrixErrorOverlay(drawable);
+        }
+        if (offlineMode && !offlineCaptureDone) {
+            captureOffscreen(drawable, gl);
+            offlineCaptureDone = true;
         }
     }
 
@@ -419,12 +453,11 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         gl2.glLoadIdentity();
         GLU glu = GLU.createGLU(gl2);
         glu.gluPickMatrix(mouseX, viewport[3] - mouseY, PICK_REGION_PIXELS, PICK_REGION_PIXELS, viewport, 0);
-        gl2.glMultMatrixf(model.getViewingCamera().calculateViewVolumeMatrix().exportToFloatArrayColumnOrder(), 0);
-
         FrameData selected = model.getSelectedFrame();
-        float[] modelViewForDraw = toFloat16(
-            selected == null || selected.getCameraState() == null ? null : selected.getCameraState().getModelViewMatrix()
-        );
+        Matrix4x4 projection = projectionForFrame(selected);
+        gl2.glMultMatrixf(projection.exportToFloatArrayColumnOrder(), 0);
+
+        float[] modelViewForDraw = toFloat16(modelViewForFrame(selected));
         if (modelViewForDraw == null) {
             modelViewForDraw = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
         }
@@ -470,5 +503,64 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             offset += nameCount;
         }
         return selectedName;
+    }
+
+    private void captureOffscreen(GLAutoDrawable drawable, GL4 gl) {
+        int width = Math.max(1, drawable.getSurfaceWidth());
+        int height = Math.max(1, drawable.getSurfaceHeight());
+        ByteBuffer bb = ByteBuffer.allocateDirect(3 * width * height);
+        gl.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1);
+        gl.glReadPixels(0, 0, width, height, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, bb);
+
+        RGBImageUncompressed image = new RGBImageUncompressed();
+        image.init(width, height);
+        int k = 0;
+        for (int y = height - 1; y >= 0; y--) {
+            for (int x = 0; x < width; x++) {
+                image.putPixel(x, y, bb.get(k++), bb.get(k++), bb.get(k++));
+            }
+        }
+        File out = new File(offlineOutputPath == null || offlineOutputPath.isBlank()
+            ? "/tmp/frameTextureNormalizer_offline.png"
+            : offlineOutputPath);
+        try {
+            ImagePersistence.exportJPG(out, image);
+            System.out.println("Offline image written to: " + out.getAbsolutePath());
+        }
+        catch (Exception e) {
+            System.out.println("Could not write offline image: " + e.getMessage());
+        }
+    }
+
+    private Matrix4x4 projectionForFrame(FrameData frame) {
+        Matrix4x4 fromFrame = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
+        if (fromFrame != null) {
+            return fromFrame;
+        }
+        return model.getViewingCamera().calculateViewVolumeMatrix();
+    }
+
+    private static double[] modelViewForFrame(FrameData frame) {
+        if (frame == null) {
+            return null;
+        }
+        double[] fromFrame = frame.getModelViewMatrix();
+        if (fromFrame != null && fromFrame.length == 16) {
+            return fromFrame;
+        }
+        return frame.getCameraState() == null ? null : frame.getCameraState().getModelViewMatrix();
+    }
+
+    private static Matrix4x4 matrixFromColumnMajor(double[] m) {
+        if (m == null || m.length != 16) {
+            return null;
+        }
+        Matrix4x4 out = new Matrix4x4();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                out = out.withVal(row, col, m[col * 4 + row]);
+            }
+        }
+        return out;
     }
 }

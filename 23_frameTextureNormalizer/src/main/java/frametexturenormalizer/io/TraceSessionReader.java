@@ -23,7 +23,6 @@ public final class TraceSessionReader {
 
     public List<Path> listFrameDirectories(Path inputRoot) {
         if (inputRoot == null || !Files.isDirectory(inputRoot)) {
-            System.out.println("[trace-reader] input root missing or not directory: " + inputRoot);
             return List.of();
         }
         try (var stream = Files.list(inputRoot)) {
@@ -36,15 +35,9 @@ public final class TraceSessionReader {
                 })
                 .sorted(Comparator.comparing(dir -> dir.getFileName().toString()))
                 .toList();
-            System.out.println(
-                "[trace-reader] input=" + inputRoot
-                    + " startFrom=" + Configuration.START_FROM_FRAME
-                    + " frameDirs=" + dirs.size()
-            );
             return dirs;
         }
         catch (IOException ex) {
-            System.out.println("[trace-reader] cannot list frame directories: " + ex.getMessage());
             return List.of();
         }
     }
@@ -55,9 +48,6 @@ public final class TraceSessionReader {
         }
         Path frameJson = dir.resolve("frame.json");
         if (!Files.isRegularFile(frameJson)) {
-            if ("00100".equals(dir.getFileName().toString())) {
-                System.out.println("[trace-reader] frame 00100 has no frame.json");
-            }
             return null;
         }
         TileInstanceReader tileReader = new TileInstanceReader();
@@ -66,22 +56,15 @@ public final class TraceSessionReader {
             int frameId = root.path("id").asInt(-1);
             List<TileInstance> tiles = tileReader.read(root);
             if (tiles.size() <= 1) {
-                if (frameId == 100 || "00100".equals(dir.getFileName().toString())) {
-                    System.out.println("[trace-reader] frame 100 discarded at read: tiles=" + tiles.size());
-                }
                 return null;
             }
-            if (frameId == 100 || "00100".equals(dir.getFileName().toString())) {
-                System.out.println("[trace-reader] frame 100 parsed tiles=" + tiles.size());
-            }
             GoogleCameraState cameraState = GoogleCameraState.fromFrameJson(root);
+            double[] frameProjectionMatrix = readFrameProjectionMatrix(root);
+            double[] frameModelViewMatrix = readFrameModelViewMatrix(root, cameraState);
             List<Line> lines = readLines(root, cameraState);
-            return new FrameData(frameId, tiles, lines, cameraState);
+            return new FrameData(frameId, tiles, lines, cameraState, frameProjectionMatrix, frameModelViewMatrix, false);
         }
         catch (IOException ex) {
-            if ("00100".equals(dir.getFileName().toString())) {
-                System.out.println("[trace-reader] frame 100 json read error: " + ex.getMessage());
-            }
             return null;
         }
     }
@@ -167,5 +150,33 @@ public final class TraceSessionReader {
             out[i] = arrNode.get(i).asDouble(0.0);
         }
         return out;
+    }
+
+    private static double[] readFrameProjectionMatrix(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+        JsonNode cameraNode = root.path("camera");
+        double[] projection = readArray16(cameraNode.path("projectionMatrix"));
+        if (projection != null) {
+            return projection;
+        }
+        return readArray16(root.path("projectionMatrix"));
+    }
+
+    private static double[] readFrameModelViewMatrix(JsonNode root, GoogleCameraState cameraState) {
+        if (root == null) {
+            return cameraState == null ? null : cameraState.getModelViewMatrix();
+        }
+        JsonNode cameraNode = root.path("camera");
+        double[] modelView = readArray16(cameraNode.path("modelViewMatrix"));
+        if (modelView != null) {
+            return modelView;
+        }
+        modelView = readArray16(root.path("modelViewMatrix"));
+        if (modelView != null) {
+            return modelView;
+        }
+        return cameraState == null ? null : cameraState.getModelViewMatrix();
     }
 }

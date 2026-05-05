@@ -134,6 +134,22 @@ public final class PyramidalImageModel {
         return true;
     }
 
+    public boolean selectFrameById(int frameId) {
+        if (frames.isEmpty() || frameId < 0) {
+            return false;
+        }
+        for (int i = 0; i < frames.size(); i++) {
+            FrameData frame = frames.get(i);
+            if (frame != null && frame.getId() == frameId) {
+                selectedFrameIndex = i;
+                selectedTileIndex = SELECT_ALL_TILES;
+                applyCameraForSelectedFrame();
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void applyCameraForSelectedFrame() {
         FrameData selected = getSelectedFrame();
         if (selected == null || selected.getCameraState() == null) {

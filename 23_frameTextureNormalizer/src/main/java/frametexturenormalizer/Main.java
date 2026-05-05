@@ -1,6 +1,7 @@
 package frametexturenormalizer;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import frametexturenormalizer.io.FrameReader;
 import frametexturenormalizer.io.TileMatrixExporter;
@@ -19,6 +20,7 @@ import frametexturenormalizer.processing.matrix.TileMatrixFiltererByConsistency;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessingResult;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessor;
 import frametexturenormalizer.processing.TileTextureNormalizer;
+import frametexturenormalizer.render.Jogl4PyramidalImageBuilderRenderer;
 
 public class Main {
     public static void main(String[] args) {
@@ -43,15 +45,30 @@ public class Main {
         TileMatrixFiltererByConsistency tileMatrixFiltererByConsistency = new TileMatrixFiltererByConsistency();
 
         System.out.print("Loading traced frames... ");
-        Runnable reloadTileMatrices = FrameReader.loadTracedFrames(
+        Runnable reloadTileMatricesRaw = FrameReader.loadTracedFrames(
             traceSessionReader,
             connectedComponentsFilterer,
             tileFilterer,
             model
         );
-        System.out.println("[main] frames after loadTracedFrames: " + model.getFrames().size());
+        int startFrame = CommandLineOptions.startFrame(args, 0);
+        int endFrame = CommandLineOptions.endFrame(args, Integer.MAX_VALUE);
+        if (endFrame < startFrame) {
+            endFrame = startFrame;
+        }
+        final int startFrameFinal = startFrame;
+        final int endFrameFinal = endFrame;
+        Runnable applyFrameRange = () -> model.setFrames(
+            model.getFrames().stream()
+                .filter(frame -> frame.getId() >= startFrameFinal && frame.getId() <= endFrameFinal)
+                .collect(Collectors.toList())
+        );
+        applyFrameRange.run();
+        Runnable reloadTileMatrices = () -> {
+            reloadTileMatricesRaw.run();
+            applyFrameRange.run();
+        };
         model.setFrames(frameFiltererByTileCount.keepFramesWithMoreThanTiles(model.getFrames(), 1));
-        System.out.println("[main] frames after keepFramesWithMoreThanTiles(>1): " + model.getFrames().size());
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -87,10 +104,34 @@ public class Main {
         }
 
         if (offline) {
-            System.out.println("Offline mode enabled: skipping interactive GUI.");
+            int targetFrameId = CommandLineOptions.offlineFrameId(
+                args,
+                model.getSelectedFrame() == null ? -1 : model.getSelectedFrame().getId()
+            );
+            if (targetFrameId >= 0 && !model.selectFrameById(targetFrameId)) {
+                System.out.println("Offline warning: frame id not found, keeping current selection: " + targetFrameId);
+            }
+            renderOffline(
+                model,
+                CommandLineOptions.offlineOutputPath(args),
+                CommandLineOptions.offlineWidth(args),
+                CommandLineOptions.offlineHeight(args)
+            );
             return;
         }
 
         InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
+    }
+
+    private static void renderOffline(PyramidalImageModel model, String outputPath, int width, int height) {
+        try {
+            Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
+            renderer.startOffscreen(outputPath, width, height);
+        }
+        catch (Throwable t) {
+            System.out.println(
+                "Warning: Offline image export is not available because there is no access to a graphics system."
+            );
+        }
     }
 }
