@@ -49,12 +49,11 @@ gradle run
 - `--offline`: renders one frame to an image and exits.
 - `--start-frame <id>` or `--start-frame=<id>`: minimum frame id to load (inclusive).
 - `--end-frame <id>` or `--end-frame=<id>`: maximum frame id to load (inclusive).
-- `--frame=<id>`: preferred frame id to render in offline mode.
 - `--width=<px>` and `--height=<px>`: output image size in offline mode.
 - `--output=<path>`: output image path in offline mode.
 
 ### Offline example (frame 150)
 
 ```bash
-gradle run --args="--offline --start-frame 150 --end-frame 150 --frame=150 --output=/tmp/frame150.png"
+gradle run --args="--offline --start-frame 150 --end-frame 150 --output=/tmp/frame150.png"
 ```

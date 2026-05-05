@@ -85,10 +85,6 @@ public final class CommandLineOptions {
         return getIntValue(args, "--height=", DEFAULT_OFFLINE_HEIGHT, 1);
     }
 
-    public static int offlineFrameId(String[] args, int fallback) {
-        return getIntValue(args, "--frame=", fallback, 0);
-    }
-
     public static int startFrame(String[] args, int fallback) {
         return getIntValue(args, "--start-frame", "--start-frame=", fallback, 0);
     }
