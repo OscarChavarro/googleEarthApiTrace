@@ -12,7 +12,7 @@ java {
 }
 
 application {
-    mainClass = 'pyramidalimagebuilder.Main'
+    mainClass = 'frametexturenormalizer.Main'
 }
 
 tasks.withType(JavaExec).configureEach {
