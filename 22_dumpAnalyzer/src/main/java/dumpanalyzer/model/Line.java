@@ -34,6 +34,11 @@ public final class Line {
         return modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
+    @JsonProperty("modelViewMatrix")
+    public double[] getModelViewMatrixJson() {
+        return getModelViewMatrix();
+    }
+
     public record Vertex(double x, double y, double z) {}
 
     @JsonProperty("lineStrip")

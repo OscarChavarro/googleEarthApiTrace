@@ -97,11 +97,16 @@ public final class TileInstanceReader {
         if (node == null || node.isNull()) {
             return null;
         }
-        int value = node.asInt(-1);
-        if (value < 0) {
+        if (node.isInt() || node.isLong()) {
+            int value = node.asInt(-1);
+            return value < 0 ? null : value;
+        }
+        String text = nullableText(node);
+        if (text == null) {
             return null;
         }
-        return value;
+        int value = extractLastNumber(text, -1);
+        return value < 0 ? null : value;
     }
 
     private static String nullableText(JsonNode node) {

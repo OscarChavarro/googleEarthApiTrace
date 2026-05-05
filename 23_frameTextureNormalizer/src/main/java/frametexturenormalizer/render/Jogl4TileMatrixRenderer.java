@@ -16,6 +16,7 @@ import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
 import vsdk.toolkit.common.RendererConfiguration;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 
 public final class Jogl4TileMatrixRenderer {
     private final Map<String, TextureResident> residentsByTexturePath = new HashMap<>();
@@ -24,6 +25,7 @@ public final class Jogl4TileMatrixRenderer {
         GL2 gl2,
         List<TileInstance> tiles,
         List<Line> lines,
+        Matrix4x4 projection,
         double[] defaultModelViewMatrix,
         RendererConfiguration renderingConfiguration,
         PyramidalImageModel model,
@@ -63,7 +65,7 @@ public final class Jogl4TileMatrixRenderer {
         drawIncorrectMappingWires(gl2, tiles, selectedTileIndex);
         drawWestCuttingCellsOverlay(gl2, tiles, selectedTileIndex);
         drawSelectedTilesOverlay(gl2, tiles, selectedTileIndex);
-        drawExtractedLines(gl2, lines, defaultModelViewMatrix);
+        drawExtractedLines(gl2, lines, projection, defaultModelViewMatrix);
     }
 
     public void drawForSelection(GL2 gl2, List<TileInstance> tiles, int selectedTileIndex) {
@@ -248,9 +250,20 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glEnd();
     }
 
-    private static void drawExtractedLines(GL2 gl2, List<Line> lines, double[] defaultModelViewMatrix) {
+    private static void drawExtractedLines(
+        GL2 gl2,
+        List<Line> lines,
+        Matrix4x4 projection,
+        double[] defaultModelViewMatrix
+    ) {
         if (gl2 == null || lines == null || lines.isEmpty()) {
             return;
+        }
+        float[] mvp = projection == null ? null : projection.exportToFloatArrayColumnOrder();
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glPushMatrix();
+        if (mvp != null) {
+            gl2.glLoadMatrixf(mvp, 0);
         }
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
         gl2.glPushMatrix();
@@ -293,6 +306,9 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glDepthMask(true);
         gl2.glDepthFunc(GL2.GL_LESS);
         gl2.glPopMatrix();
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glPopMatrix();
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
     }
 
     private TextureResident acquireTexture(GL2 gl2, PyramidalImageModel model, String texturePath) {

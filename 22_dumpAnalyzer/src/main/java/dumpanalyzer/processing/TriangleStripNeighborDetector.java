@@ -80,6 +80,18 @@ public final class TriangleStripNeighborDetector {
                 }
             }
         }
+
+        for (TileInstance tile : tiles) {
+            if (tile == null) {
+                continue;
+            }
+            tile.setDetectedNeighborContentIds(
+                contentIdAt(tiles, tile.getDetectedSouthNeighborIndex()),
+                contentIdAt(tiles, tile.getDetectedNorthNeighborIndex()),
+                contentIdAt(tiles, tile.getDetectedEastNeighborIndex()),
+                contentIdAt(tiles, tile.getDetectedWestNeighborIndex())
+            );
+        }
     }
 
     private static void assignDirectionalNeighbor(
@@ -165,6 +177,14 @@ public final class TriangleStripNeighborDetector {
         }
         double inv = 1.0 / vertices.size();
         return new double[] {sx * inv, sy * inv, sz * inv};
+    }
+
+    private static String contentIdAt(List<TileInstance> tiles, int index) {
+        if (index < 0 || index >= tiles.size()) {
+            return null;
+        }
+        TileInstance tile = tiles.get(index);
+        return tile == null ? null : tile.getContentId();
     }
 
     private record Candidate(int tileIndex) {}

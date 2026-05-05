@@ -32,6 +32,10 @@ public final class TileInstance {
     private volatile int detectedNorthNeighborIndex = NO_NEIGHBOR;
     private volatile int detectedEastNeighborIndex = NO_NEIGHBOR;
     private volatile int detectedWestNeighborIndex = NO_NEIGHBOR;
+    private volatile String detectedSouthNeighborContentId;
+    private volatile String detectedNorthNeighborContentId;
+    private volatile String detectedEastNeighborContentId;
+    private volatile String detectedWestNeighborContentId;
 
     public TileInstance(
         String contentId,
@@ -90,19 +94,19 @@ public final class TileInstance {
     }
 
     public String getSouthNeighbor() {
-        return southNeighbor;
+        return southNeighbor != null ? southNeighbor : detectedSouthNeighborContentId;
     }
 
     public String getNorthNeighbor() {
-        return northNeighbor;
+        return northNeighbor != null ? northNeighbor : detectedNorthNeighborContentId;
     }
 
     public String getEastNeighbor() {
-        return eastNeighbor;
+        return eastNeighbor != null ? eastNeighbor : detectedEastNeighborContentId;
     }
 
     public String getWestNeighbor() {
-        return westNeighbor;
+        return westNeighbor != null ? westNeighbor : detectedWestNeighborContentId;
     }
 
     public Vector3D getMin() {
@@ -195,6 +199,13 @@ public final class TileInstance {
         this.detectedNorthNeighborIndex = north;
         this.detectedEastNeighborIndex = east;
         this.detectedWestNeighborIndex = west;
+    }
+
+    public void setDetectedNeighborContentIds(String south, String north, String east, String west) {
+        this.detectedSouthNeighborContentId = south;
+        this.detectedNorthNeighborContentId = north;
+        this.detectedEastNeighborContentId = east;
+        this.detectedWestNeighborContentId = west;
     }
 
     public boolean isFullResolutionWithRespectToTexture() {

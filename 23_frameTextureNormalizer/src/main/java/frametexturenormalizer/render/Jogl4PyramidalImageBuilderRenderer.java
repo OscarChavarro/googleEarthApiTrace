@@ -16,8 +16,10 @@ import com.jogamp.common.nio.Buffers;
 import java.awt.Font;
 import java.awt.geom.Rectangle2D;
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -79,8 +81,22 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
         GLOffscreenAutoDrawable pbuffer = creator.createOffscreenAutoDrawable(
             null, caps, null, Math.max(1, width), Math.max(1, height)
         );
-        pbuffer.addGLEventListener(this);
-        pbuffer.display();
+        try {
+            pbuffer.addGLEventListener(this);
+            pbuffer.display();
+        }
+        finally {
+            try {
+                pbuffer.removeGLEventListener(this);
+            }
+            catch (Exception ignored) {
+            }
+            try {
+                pbuffer.destroy();
+            }
+            catch (Exception ignored) {
+            }
+        }
     }
 
     public boolean toggleTileSelectionAt(GLAutoDrawable drawable, int mouseX, int mouseY) {
@@ -156,6 +172,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             gl2,
             selected.getTiles(),
             selected.getLines(),
+            projection,
             modelViewForLines,
             model.getRenderingConfiguration(),
             model,
@@ -524,6 +541,10 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
             ? "/tmp/frameTextureNormalizer_offline.png"
             : offlineOutputPath);
         try {
+            Path parent = out.toPath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             ImagePersistence.exportJPG(out, image);
             System.out.println("Offline image written to: " + out.getAbsolutePath());
         }
