@@ -37,14 +37,15 @@ public class TraceProcessor {
         }
         catch (IOException e) {
             FatalErrorHandler.fail(filePath, "Cannot read file: " + e.getMessage());
-            return new Frame(frame, List.of(), null, null, null);
+            return new Frame(frame, List.of(), List.of(), null, null, null);
         }
 
         String normalized = LogicalLineProcessor.normalize(content);
         parseOrFail(filePath, normalized);
         functionCounter.addFromContent(normalized);
 
-        List<dumpanalyzer.model.TileInstance> tiles = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
+        TilesProcessor.FrameGeometry frameGeometry = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
+        List<dumpanalyzer.model.TileInstance> tiles = frameGeometry.tiles();
         dumpanalyzer.model.TileInstance lastTile = tiles.isEmpty() ? null : tiles.get(tiles.size() - 1);
         double[] sceneProjectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
         double[] sceneModelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
@@ -62,6 +63,7 @@ public class TraceProcessor {
         return new Frame(
             frame,
             tiles,
+            frameGeometry.lines(),
             projectionMatrix,
             modelViewMatrix,
             googleCamera

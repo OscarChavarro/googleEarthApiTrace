@@ -360,15 +360,10 @@ public class Jogl4DumpAnalyzerRenderer implements
         Matrix4x4 projection,
         boolean useGoogleCameraView
     ) {
-        for (TileInstance tile : frameData.getTiles()) {
-            double[] combinedModelView = CoordinatesTransforms.geometryModelView(
-                useGoogleCameraView, viewingCamera, frameData
-            );
-            if (useGoogleCameraView && tile.getModelViewMatrix() != null && tile.getModelViewMatrix().length == 16) {
-                combinedModelView = tile.getModelViewMatrix();
-            }
-            Jogl4TileRenderer.drawExtractedLineStrips(gl2, tile, projection, combinedModelView);
-        }
+        double[] combinedModelView = CoordinatesTransforms.geometryModelView(
+            useGoogleCameraView, viewingCamera, frameData
+        );
+        Jogl4TileRenderer.drawExtractedLineStrips(gl2, frameData.getLines(), projection, combinedModelView);
     }
 
     private List<Jogl4HudRenderer.ScreenLabel> buildAabbLabelsForHud(

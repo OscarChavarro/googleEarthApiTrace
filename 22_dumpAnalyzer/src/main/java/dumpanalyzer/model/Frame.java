@@ -13,14 +13,23 @@ import vsdk.toolkit.environment.Camera;
 public final class Frame implements Comparable<Frame> {
     private final int id;
     private final List<TileInstance> tiles;
+    private final List<Line> lines;
     private final List<AxisAlignedBoundingBox> axisAlignedBoundingBoxes;
     private final FrameCameraState camera;
 
-    public Frame(int id, List<TileInstance> tiles, double[] projectionMatrix, double[] modelViewMatrix, Camera googleCamera) {
+    public Frame(
+        int id,
+        List<TileInstance> tiles,
+        List<Line> lines,
+        double[] projectionMatrix,
+        double[] modelViewMatrix,
+        Camera googleCamera
+    ) {
         this.id = id;
         List<TileInstance> copy = new ArrayList<>(tiles);
         copy.sort(Comparator.comparing(TileInstance::getContentId, Comparator.nullsLast(String::compareTo)));
         this.tiles = Collections.unmodifiableList(copy);
+        this.lines = lines == null ? List.of() : List.copyOf(lines);
         this.camera = new FrameCameraState(projectionMatrix, modelViewMatrix, googleCamera);
         this.axisAlignedBoundingBoxes = Collections.unmodifiableList(buildAabbsFromTiles(copy));
     }
@@ -31,6 +40,10 @@ public final class Frame implements Comparable<Frame> {
 
     public List<TileInstance> getTiles() {
         return tiles;
+    }
+
+    public List<Line> getLines() {
+        return lines;
     }
 
     @JsonIgnore

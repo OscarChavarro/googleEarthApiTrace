@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
@@ -48,12 +49,16 @@ final class TilesProcessor {
     private TilesProcessor() {
     }
 
-    static List<TileInstance> processFrameCalls(int frameId, String normalizedContent, Path frameDirectory) {
+    static FrameGeometry processFrameCalls(int frameId, String normalizedContent, Path frameDirectory) {
         Map<TileKey, TileBuilder> tilesByKey = new LinkedHashMap<>();
+        List<Line> frameLines = new ArrayList<>();
         ManifestProcessor.ManifestIndex manifest = ManifestProcessor.loadManifestIndex(frameDirectory);
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
         int drawElementsCount = 0;
+        int lineDrawsSeen = 0;
+        int lineDrawsWithIndices = 0;
+        int lineDrawsWithGeometry = 0;
         int vertexAttribExportCallCount = 0;
         int activeTextureUnit = 0;
         Map<Integer, Integer> boundTexture2DByUnit = new HashMap<>();
@@ -187,6 +192,9 @@ final class TilesProcessor {
             if ((!trianglePrimitive && !linePrimitive) || !"GL_UNSIGNED_SHORT".equals(type) || count <= 0) {
                 continue;
             }
+            if (linePrimitive) {
+                lineDrawsSeen++;
+            }
 
             int[] drawIndices;
             if (isDrawElements) {
@@ -210,6 +218,9 @@ final class TilesProcessor {
                 for (int i = 0; i < count; i++) {
                     drawIndices[i] = first + i;
                 }
+            }
+            if (linePrimitive) {
+                lineDrawsWithIndices++;
             }
             if (currentPositionVertexAttribCall == null && vertexAttribExportCallCount <= 0) {
                 TileBuilder skippedBuilder = findLastTileByTexture(tilesByKey, boundTextureId);
@@ -281,8 +292,9 @@ final class TilesProcessor {
                     }
                     continue;
                 }
+                lineDrawsWithGeometry++;
                 for (List<Vector3D> strip : lineGeometry.strips()) {
-                    builder.addLineStrip(strip, lineGeometry.min(), lineGeometry.max());
+                    frameLines.add(new Line(mode, strip, currentModelViewMatrix));
                 }
             }
             /*
@@ -307,7 +319,7 @@ final class TilesProcessor {
         for (TileBuilder builder : tilesByKey.values()) {
             tiles.add(builder.build());
         }
-        return tiles;
+        return new FrameGeometry(tiles, frameLines);
     }
 
     private static TileBuilder findLastTileByTexture(Map<TileKey, TileBuilder> tilesByKey, int textureId) {
@@ -522,10 +534,10 @@ final class TilesProcessor {
         }
     }
 
-    private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {
-    }
-    private record LineGeometry(Vector3D min, Vector3D max, List<List<Vector3D>> strips) {
-    }
+    record FrameGeometry(List<TileInstance> tiles, List<Line> lines) {}
+
+    private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {}
+    private record LineGeometry(Vector3D min, Vector3D max, List<List<Vector3D>> strips) {}
 
     private record TileKey(int textureId, String projectionSignature, String modelViewSignature) {}
 
@@ -536,7 +548,6 @@ final class TilesProcessor {
         private final double[] modelViewMatrix;
         private final List<List<Vector3D>> strips = new ArrayList<>();
         private final List<List<Vector3D>> stripTexCoords = new ArrayList<>();
-        private final List<List<Vector3D>> lineStrips = new ArrayList<>();
         private final List<Vector3D> flatPoints = new ArrayList<>();
         private String primitive = "n/a";
         private int parserCall = -1;
@@ -561,7 +572,7 @@ final class TilesProcessor {
             this.glCall = glCall;
             this.vertexArraySize = Math.max(0, vertexArraySize);
             this.indexArraySize = Math.max(0, indexArraySize);
-            if (!strips.isEmpty() || !lineStrips.isEmpty() || !flatPoints.isEmpty()) {
+            if (!strips.isEmpty() || !flatPoints.isEmpty()) {
                 this.skipped = false;
                 this.skipReason = "";
                 return;
@@ -586,19 +597,6 @@ final class TilesProcessor {
             max = new Vector3D(Math.max(max.x(), stripMax.x()), Math.max(max.y(), stripMax.y()), Math.max(max.z(), stripMax.z()));
         }
 
-        private void addLineStrip(List<Vector3D> linePoints, Vector3D lineMin, Vector3D lineMax) {
-            if (linePoints == null || linePoints.size() < 2) return;
-            lineStrips.add(List.copyOf(linePoints));
-            flatPoints.addAll(linePoints);
-            if (min == null || max == null) {
-                min = Vector3D.copyOf(lineMin);
-                max = Vector3D.copyOf(lineMax);
-                return;
-            }
-            min = new Vector3D(Math.min(min.x(), lineMin.x()), Math.min(min.y(), lineMin.y()), Math.min(min.z(), lineMin.z()));
-            max = new Vector3D(Math.max(max.x(), lineMax.x()), Math.max(max.y(), lineMax.y()), Math.max(max.z(), lineMax.z()));
-        }
-
         private TileInstance build() {
             boolean exportableSimpleStrip =
                 GL_TRIANGLE_STRIP.equals(primitive) &&
@@ -607,10 +605,9 @@ final class TilesProcessor {
                 stripTexCoords.get(0) != null &&
                 stripTexCoords.get(0).size() == strips.get(0).size() &&
                 strips.get(0).size() >= 3;
-            boolean hasLines = !lineStrips.isEmpty();
-            boolean finalSkipped = skipped || (!hasLines && !exportableSimpleStrip);
+            boolean finalSkipped = skipped || !exportableSimpleStrip;
             String finalSkipReason = skipReason;
-            if (!skipped && !hasLines && !exportableSimpleStrip) {
+            if (!skipped && !exportableSimpleStrip) {
                 if (!GL_TRIANGLE_STRIP.equals(primitive)) {
                     finalSkipReason = "unsupported primitive";
                 }
@@ -633,7 +630,6 @@ final class TilesProcessor {
                 flatPoints,
                 strips,
                 stripTexCoords,
-                lineStrips,
                 primitive,
                 parserCall,
                 glCall,

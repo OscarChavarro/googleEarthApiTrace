@@ -6,6 +6,7 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 
 import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
@@ -129,31 +130,6 @@ final class Jogl4TileRenderer {
                 gl2.glEnd();
             }
         }
-        if (!tile.getLineStrips().isEmpty()) {
-            if (textured) {
-                gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
-                gl2.glDisable(GL2.GL_TEXTURE_2D);
-            }
-            gl2.glDisable(GL2.GL_LIGHTING);
-            gl2.glEnable(GL2.GL_DEPTH_TEST);
-            gl2.glDepthMask(false);
-            gl2.glDepthFunc(GL2.GL_LEQUAL);
-            gl2.glEnable(GL2.GL_POLYGON_OFFSET_LINE);
-            gl2.glPolygonOffset(LINE_POLYGON_OFFSET_FACTOR, LINE_POLYGON_OFFSET_UNITS);
-            gl2.glColor3d(1.0, 0.0, 0.0);
-            gl2.glLineWidth(1.0f);
-            for (List<Vector3D> lineStrip : tile.getLineStrips()) {
-                if (lineStrip.size() < 2) {
-                    continue;
-                }
-                gl2.glBegin(GL2.GL_LINE_STRIP);
-                for (Vector3D p : lineStrip) {
-                    gl2.glVertex3d(p.x(), p.y(), p.z());
-                }
-                gl2.glEnd();
-            }
-            gl2.glDisable(GL2.GL_POLYGON_OFFSET_LINE);
-        }
         if (quality.isPointsSet()) {
             if (textured) {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
@@ -184,11 +160,11 @@ final class Jogl4TileRenderer {
 
     static void drawExtractedLineStrips(
         GL2 gl2,
-        TileInstance tile,
+        List<Line> lines,
         Matrix4x4 projection,
-        double[] frameModelViewMatrix
+        double[] defaultModelViewMatrix
     ) {
-        if (tile == null || tile.getLineStrips().isEmpty()) {
+        if (lines == null || lines.isEmpty()) {
             return;
         }
         float[] mvp = projection.exportToFloatArrayColumnOrder();
@@ -197,16 +173,6 @@ final class Jogl4TileRenderer {
         gl2.glLoadMatrixf(mvp, 0);
         gl2.glMatrixMode(GL2.GL_MODELVIEW);
         gl2.glPushMatrix();
-        if (frameModelViewMatrix != null && frameModelViewMatrix.length == 16) {
-            float[] mv = new float[16];
-            for (int i = 0; i < 16; i++) {
-                mv[i] = (float)frameModelViewMatrix[i];
-            }
-            gl2.glLoadMatrixf(mv, 0);
-        }
-        else {
-            gl2.glLoadIdentity();
-        }
 
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glDisable(GL2.GL_LIGHTING);
@@ -217,9 +183,24 @@ final class Jogl4TileRenderer {
         gl2.glPolygonOffset(LINE_POLYGON_OFFSET_FACTOR, LINE_POLYGON_OFFSET_UNITS);
         gl2.glColor3d(1.0, 1.0, 0.0);
         gl2.glLineWidth(2.0f);
-        for (List<Vector3D> lineStrip : tile.getLineStrips()) {
+        for (Line line : lines) {
+            List<Vector3D> lineStrip = line == null ? List.of() : line.getPoints();
             if (lineStrip.size() < 2) {
                 continue;
+            }
+            double[] modelViewMatrix = line == null ? null : line.getModelViewMatrix();
+            if (modelViewMatrix == null || modelViewMatrix.length != 16) {
+                modelViewMatrix = defaultModelViewMatrix;
+            }
+            if (modelViewMatrix != null && modelViewMatrix.length == 16) {
+                float[] mv = new float[16];
+                for (int i = 0; i < 16; i++) {
+                    mv[i] = (float)modelViewMatrix[i];
+                }
+                gl2.glLoadMatrixf(mv, 0);
+            }
+            else {
+                gl2.glLoadIdentity();
             }
             gl2.glBegin(GL2.GL_LINE_STRIP);
             for (Vector3D p : lineStrip) {
