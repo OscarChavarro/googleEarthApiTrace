@@ -15,7 +15,7 @@ public final class InteractiveDebugger {
     private InteractiveDebugger() {
     }
 
-    public static void runDesktopGui(FrameTextureNormalizerModel model, Runnable reloadTileMatrices) {
+    public static void runDesktopGui(FrameTextureNormalizerModel model) {
         Jogl4FrameTextureNormalizerRenderer renderer = new Jogl4FrameTextureNormalizerRenderer(model);
         GLCanvas canvas = renderer.createCanvas();
 
@@ -44,8 +44,7 @@ public final class InteractiveDebugger {
             model,
             frame::dispose,
             cameraController,
-            canvas::display,
-            reloadTileMatrices
+            canvas::display
         );
         canvas.addMouseListener(mouse);
         canvas.addMouseMotionListener(mouse);

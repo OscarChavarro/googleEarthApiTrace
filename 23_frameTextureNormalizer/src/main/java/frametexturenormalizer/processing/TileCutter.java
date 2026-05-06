@@ -15,46 +15,6 @@ public final class TileCutter {
     private TileCutter() {
     }
 
-    public static int cutWestOnSelectedTiles(List<TileInstance> tiles) {
-        if (tiles == null || tiles.isEmpty()) {
-            return 0;
-        }
-
-        Map<Integer, TileInstance> tileById = new HashMap<>();
-        ArrayDeque<TileInstance> seeds = new ArrayDeque<>();
-        for (TileInstance tile : tiles) {
-            if (tile == null) {
-                continue;
-            }
-            tileById.put(tile.getTileId(), tile);
-            if (tile.isSelected()) {
-                seeds.addLast(tile);
-            }
-        }
-        if (seeds.isEmpty()) {
-            return 0;
-        }
-
-        Set<Integer> visited = new HashSet<>();
-        int cutCount = 0;
-        while (!seeds.isEmpty()) {
-            TileInstance seed = seeds.pollFirst();
-            if (seed == null) {
-                continue;
-            }
-            cutCount += propagateNorthSouthAndCut(seed, tileById, visited);
-        }
-        return cutCount;
-    }
-
-    public static int cutWestOnSelectedTilesAcrossFrames(List<FrameData> frames) {
-        Set<String> cursedTileIds = selectedTileIdsAcrossFrames(frames);
-        if (cursedTileIds.isEmpty()) {
-            return 0;
-        }
-        return cutWestFromTileIdsAcrossFrames(frames, cursedTileIds);
-    }
-
     public static Set<String> selectedTileIdsAcrossFrames(List<FrameData> frames) {
         if (frames == null || frames.isEmpty()) {
             return Set.of();

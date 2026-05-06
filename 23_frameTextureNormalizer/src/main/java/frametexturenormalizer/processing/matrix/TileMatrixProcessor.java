@@ -17,50 +17,6 @@ import frametexturenormalizer.processing.TileTextureNormalizer;
 public final class TileMatrixProcessor {
     private final TileSetToMatrixConverter convertor = new TileSetToMatrixConverter();
 
-    public TileMatrixProcessingResult convertTileMatrices(List<FrameData> frames) {
-        if (frames == null || frames.isEmpty()) {
-            return new TileMatrixProcessingResult(List.of(), List.of());
-        }
-
-        List<FrameData> out = new ArrayList<>(frames.size());
-        List<TileMatrix> matrices = new ArrayList<>(frames.size());
-        for (FrameData frame : frames) {
-            if (frame == null) {
-                continue;
-            }
-            TileMatrix matrix = convertor.convert(frame);
-            if (matrix == null) {
-                frame.setWithMatrixErrors(true);
-                Set<Integer> conflictIds = convertor.getLastConflictingTileIds();
-                Map<Integer, MatrixTileCoordinate> partialCoords = convertor.getLastCoordinatesByTileId();
-                List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(frame.getTiles(), conflictIds, partialCoords);
-                out.add(new FrameData(
-                    frame.getId(),
-                    flaggedTiles,
-                    frame.getLines(),
-                    frame.getCameraState(),
-                    frame.getProjectionMatrix(),
-                    frame.getModelViewMatrix(),
-                    true
-                ));
-                continue;
-            }
-            List<TileInstance> tilesWithCoords = applyMatrixCoordinates(frame.getTiles(), matrix);
-            FrameData frameWithMatrix = new FrameData(
-                frame.getId(),
-                tilesWithCoords,
-                frame.getLines(),
-                frame.getCameraState(),
-                frame.getProjectionMatrix(),
-                frame.getModelViewMatrix(),
-                false
-            );
-            out.add(frameWithMatrix);
-            matrices.add(matrix);
-        }
-        return new TileMatrixProcessingResult(out, matrices);
-    }
-
     public TileMatrixProcessingResult normalizeAndConvertTileMatrices(
         List<FrameData> frames,
         List<List<String>> duplicatedTextureGroups
@@ -198,7 +154,6 @@ public final class TileMatrixProcessor {
         FrameData sanitized = sanitizer.sanitizeFrame(normalized);
         TileMatrix matrix = localConvertor.convert(sanitized);
         if (matrix == null) {
-            sanitized.setWithMatrixErrors(true);
             Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();
             Map<Integer, MatrixTileCoordinate> partialCoords = localConvertor.getLastCoordinatesByTileId();
             List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(sanitized.getTiles(), conflictIds, partialCoords);

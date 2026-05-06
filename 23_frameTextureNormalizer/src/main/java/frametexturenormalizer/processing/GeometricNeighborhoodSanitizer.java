@@ -18,17 +18,6 @@ public final class GeometricNeighborhoodSanitizer {
     private static final double REL_MAX_DIST_THRESHOLD = 0.05;
     private static final double REL_LENGTH_DIFF_THRESHOLD = 0.02;
 
-    public List<FrameData> sanitize(List<FrameData> frames) {
-        if (frames == null || frames.isEmpty()) {
-            return List.of();
-        }
-        List<FrameData> out = new ArrayList<>(frames.size());
-        for (FrameData frame : frames) {
-            out.add(sanitizeFrame(frame));
-        }
-        return out;
-    }
-
     public FrameData sanitizeFrame(FrameData frame) {
         if (frame == null || frame.getTiles() == null || frame.getTiles().isEmpty()) {
             return frame;

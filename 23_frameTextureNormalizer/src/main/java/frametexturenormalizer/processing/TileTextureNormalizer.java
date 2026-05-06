@@ -18,24 +18,6 @@ public final class TileTextureNormalizer {
     private TileTextureNormalizer() {
     }
 
-    public static List<FrameData> normalize(List<FrameData> frames, List<List<String>> duplicatedTextureGroups) {
-        if (frames == null || frames.isEmpty()) {
-            return List.of();
-        }
-
-        Map<String, String> canonicalTextureByTexture = buildCanonicalTextureMap(duplicatedTextureGroups);
-        List<FrameData> normalizedFrames = new ArrayList<>(frames.size());
-
-        for (FrameData frame : frames) {
-            FrameData normalizedFrame = normalizeFrame(frame, canonicalTextureByTexture);
-            if (normalizedFrame != null) {
-                normalizedFrames.add(normalizedFrame);
-            }
-        }
-
-        return normalizedFrames;
-    }
-
     public static FrameData normalizeFrame(FrameData frame, Map<String, String> canonicalTextureByTexture) {
         if (frame == null) {
             return null;

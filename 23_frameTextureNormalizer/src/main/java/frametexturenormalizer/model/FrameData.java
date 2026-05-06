@@ -77,8 +77,4 @@ public final class FrameData {
     public boolean isWithMatrixErrors() {
         return withMatrixErrors;
     }
-
-    public void setWithMatrixErrors(boolean withMatrixErrors) {
-        this.withMatrixErrors = withMatrixErrors;
-    }
 }

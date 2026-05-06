@@ -19,7 +19,6 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final FrameTextureNormalizerModel model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
-    private final Runnable reloadMatricesAction;
     private final CameraControllerOrbiter cameraController;
     private final RendererConfigurationController renderingConfigurationController;
 
@@ -27,14 +26,12 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         FrameTextureNormalizerModel model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
-        Runnable repaintAction,
-        Runnable reloadMatricesAction
+        Runnable repaintAction
     ) {
         this.model = model;
         this.closeAction = closeAction;
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
-        this.reloadMatricesAction = reloadMatricesAction;
         this.renderingConfigurationController = model == null
             ? null
             : new RendererConfigurationController(model.getRenderingConfiguration());

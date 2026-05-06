@@ -71,10 +71,6 @@ public class Main {
                 .collect(Collectors.toList())
         );
         applyFrameRange.run();
-        Runnable reloadTileMatrices = () -> {
-            reloadTileMatricesRaw.run();
-            applyFrameRange.run();
-        };
         int minTilesExclusive = offline ? 0 : 1;
         model.setFrames(frameFiltererByTileCount.keepFramesWithMoreThanTiles(model.getFrames(), minTilesExclusive));
         System.out.println("OK");
@@ -129,7 +125,7 @@ public class Main {
             return;
         }
 
-        InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
+        InteractiveDebugger.runDesktopGui(model);
     }
 
     private static List<TileMatrix> deduplicateMatricesByTileIds(List<TileMatrix> matrices) {
