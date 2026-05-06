@@ -10,8 +10,10 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
+import java.awt.geom.Rectangle2D;
 import matrixmerger.io.TileMatrix;
 import matrixmerger.model.MatrixMergerModel;
+import com.jogamp.opengl.glu.GLU;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -77,6 +79,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             gl2.glLoadMatrixf(modelView, 0);
 
             tileMatrixRenderer.draw(gl2, selected, model.getRenderingConfiguration(), model);
+            drawTileIdsAtCenter(drawable, gl2, selected, model.getRenderingConfiguration().isBoundingVolumeSet());
         }
 
         drawHud(drawable);
@@ -114,5 +117,77 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         }
         hudTextRenderer.endRendering();
         gl2.glEnable(GL2.GL_DEPTH_TEST);
+    }
+
+    private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, TileMatrix matrix, boolean enabled) {
+        if (!enabled || hudTextRenderer == null || matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+            return;
+        }
+
+        double[] projection = model.getViewingCamera().calculateViewVolumeMatrix().exportToDoubleArrayColumnOrder();
+        double[] modelView = toDouble16(model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder());
+        if (modelView == null) {
+            return;
+        }
+
+        int[] viewport = new int[4];
+        gl2.glGetIntegerv(GL2.GL_VIEWPORT, viewport, 0);
+        int h = drawable.getSurfaceHeight();
+        float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
+        GLU glu = GLU.createGLU(gl2);
+
+        gl2.glDisable(GL2.GL_DEPTH_TEST);
+        hudTextRenderer.beginRendering(drawable.getSurfaceWidth(), h);
+        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+
+            float x0 = tile.getJ() + offsetX;
+            float yTop = -tile.getI() + offsetY;
+            float x1 = tile.getJ() + 1.0f + offsetX;
+            float yBottom = -(tile.getI() + 1.0f) + offsetY;
+            if (!QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, yTop, x1, yBottom)) {
+                continue;
+            }
+
+            double[] win = new double[3];
+            double cx = (x0 + x1) * 0.5;
+            double cy = (yTop + yBottom) * 0.5;
+            if (!glu.gluProject(cx, cy, 0.0, modelView, 0, projection, 0, viewport, 0, win, 0)) {
+                continue;
+            }
+
+            int sx = (int)Math.round(win[0]);
+            int sy = (int)Math.round(win[1]);
+            String idLabel = tile.getId();
+            if (idLabel == null || idLabel.isBlank()) {
+                continue;
+            }
+            String coordsLabel = "(" + tile.getI() + ", " + tile.getJ() + ")";
+
+            hudTextRenderer.setColor(1.0f, 1.0f, 0.4f, 1.0f);
+            Rectangle2D idBounds = hudTextRenderer.getBounds(idLabel);
+            int idX = sx - (int)Math.round(idBounds.getWidth() * 0.5);
+            hudTextRenderer.draw(idLabel, idX, sy);
+
+            Rectangle2D coordsBounds = hudTextRenderer.getBounds(coordsLabel);
+            int coordsX = sx - (int)Math.round(coordsBounds.getWidth() * 0.5);
+            hudTextRenderer.draw(coordsLabel, coordsX, sy - 18);
+        }
+        hudTextRenderer.endRendering();
+        gl2.glEnable(GL2.GL_DEPTH_TEST);
+    }
+
+    private static double[] toDouble16(float[] matrix) {
+        if (matrix == null || matrix.length != 16) {
+            return null;
+        }
+        double[] out = new double[16];
+        for (int i = 0; i < 16; i++) {
+            out[i] = matrix[i];
+        }
+        return out;
     }
 }
