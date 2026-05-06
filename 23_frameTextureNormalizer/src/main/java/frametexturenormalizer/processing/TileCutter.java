@@ -48,32 +48,78 @@ public final class TileCutter {
     }
 
     public static int cutWestOnSelectedTilesAcrossFrames(List<FrameData> frames) {
-        Set<Integer> cursedTileIds = selectedTileIdsAcrossFrames(frames);
+        Set<String> cursedTileIds = selectedTileIdsAcrossFrames(frames);
         if (cursedTileIds.isEmpty()) {
             return 0;
         }
         return cutWestFromTileIdsAcrossFrames(frames, cursedTileIds);
     }
 
-    public static Set<Integer> selectedTileIdsAcrossFrames(List<FrameData> frames) {
+    public static Set<String> selectedTileIdsAcrossFrames(List<FrameData> frames) {
         if (frames == null || frames.isEmpty()) {
             return Set.of();
         }
-        Set<Integer> cursedTileIds = new LinkedHashSet<>();
+        Set<String> cursedTileIds = new LinkedHashSet<>();
+        Set<String> selectedCanonicalTextures = new LinkedHashSet<>();
         for (FrameData frame : frames) {
             if (frame == null || frame.getTiles() == null) {
                 continue;
             }
             for (TileInstance tile : frame.getTiles()) {
                 if (tile != null && tile.isSelected()) {
-                    cursedTileIds.add(tile.getTileId());
+                    cursedTileIds.add(tile.getScopedId());
+                    if (tile.getTextureFile() != null && !tile.getTextureFile().isBlank()) {
+                        selectedCanonicalTextures.add(tile.getTextureFile());
+                    }
+                }
+            }
+        }
+        if (selectedCanonicalTextures.isEmpty()) {
+            return cursedTileIds;
+        }
+
+        // At this stage tiles have already been normalized to canonical texture paths.
+        // Those canonical paths come from grouping by .signature and confirming full PNG equality.
+        for (FrameData frame : frames) {
+            if (frame == null || frame.getTiles() == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                String textureFile = tile.getTextureFile();
+                if (textureFile != null && selectedCanonicalTextures.contains(textureFile)) {
+                    cursedTileIds.add(tile.getScopedId());
                 }
             }
         }
         return cursedTileIds;
     }
 
-    public static int cutWestFromTileIdsAcrossFrames(List<FrameData> frames, Set<Integer> cursedTileIds) {
+    public static int cutWestFromTileIdsAcrossFrames(List<FrameData> frames, Set<String> cursedTileIds) {
+        if (frames == null || frames.isEmpty() || cursedTileIds == null || cursedTileIds.isEmpty()) {
+            return 0;
+        }
+        Map<Integer, Set<Integer>> idsByFrame = indexScopedIdsByFrame(cursedTileIds);
+        if (idsByFrame.isEmpty()) {
+            return 0;
+        }
+        int totalCutCount = 0;
+        for (FrameData frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            Set<Integer> frameTileIds = idsByFrame.get(frame.getId());
+            if (frameTileIds == null || frameTileIds.isEmpty()) {
+                continue;
+            }
+            totalCutCount += cutWestFromTileIds(frame.getTiles(), frameTileIds);
+        }
+        return totalCutCount;
+    }
+
+    public static int cutWestFromLegacyTileIdsAcrossFrames(List<FrameData> frames, Set<Integer> cursedTileIds) {
         if (frames == null || frames.isEmpty() || cursedTileIds == null || cursedTileIds.isEmpty()) {
             return 0;
         }
@@ -85,6 +131,24 @@ public final class TileCutter {
             totalCutCount += cutWestFromTileIds(frame.getTiles(), cursedTileIds);
         }
         return totalCutCount;
+    }
+
+    public static Set<String> scopedIdsFromLegacyTileIdsAcrossFrames(List<FrameData> frames, Set<Integer> legacyTileIds) {
+        if (frames == null || frames.isEmpty() || legacyTileIds == null || legacyTileIds.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> scopedIds = new LinkedHashSet<>();
+        for (FrameData frame : frames) {
+            if (frame == null || frame.getTiles() == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile != null && legacyTileIds.contains(tile.getTileId())) {
+                    scopedIds.add(tile.getScopedId());
+                }
+            }
+        }
+        return scopedIds;
     }
 
     private static int cutWestFromTileIds(List<TileInstance> tiles, Set<Integer> cursedTileIds) {
@@ -119,6 +183,30 @@ public final class TileCutter {
             cutCount += propagateNorthSouthAndCut(seed, tileById, visited);
         }
         return cutCount;
+    }
+
+    private static Map<Integer, Set<Integer>> indexScopedIdsByFrame(Set<String> scopedTileIds) {
+        Map<Integer, Set<Integer>> idsByFrame = new HashMap<>();
+        for (String scopedId : scopedTileIds) {
+            if (scopedId == null || scopedId.isBlank()) {
+                continue;
+            }
+            int separator = scopedId.indexOf('_');
+            if (separator <= 0 || separator >= scopedId.length() - 1) {
+                continue;
+            }
+            try {
+                int frameId = Integer.parseInt(scopedId.substring(0, separator));
+                int tileId = Integer.parseInt(scopedId.substring(separator + 1));
+                if (frameId < 0 || tileId < 0) {
+                    continue;
+                }
+                idsByFrame.computeIfAbsent(frameId, ignored -> new LinkedHashSet<>()).add(tileId);
+            }
+            catch (NumberFormatException ignored) {
+            }
+        }
+        return idsByFrame;
     }
 
     private static int propagateNorthSouthAndCut(

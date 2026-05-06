@@ -11,12 +11,12 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 
 // App classes
 import frametexturenormalizer.model.FrameData;
-import frametexturenormalizer.model.PyramidalImageModel;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.processing.TileCutter;
 import java.util.Set;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
-    private final PyramidalImageModel model;
+    private final FrameTextureNormalizerModel model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
     private final Runnable reloadMatricesAction;
@@ -24,7 +24,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final RendererConfigurationController renderingConfigurationController;
 
     public KeyboardInteractionTechniques(
-        PyramidalImageModel model,
+        FrameTextureNormalizerModel model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
         Runnable repaintAction,
@@ -71,7 +71,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (keyChar == 'c' || keyChar == 'C') {
             FrameData frame = model.getSelectedFrame();
-            Set<Integer> selectedIds = TileCutter.selectedTileIdsAcrossFrames(model.getFrames());
+            Set<String> selectedIds = TileCutter.selectedTileIdsAcrossFrames(model.getFrames());
             if (frame != null && TileCutter.cutWestFromTileIdsAcrossFrames(model.getFrames(), selectedIds) > 0) {
                 model.addWestCutterTileIds(selectedIds);
                 redraw();

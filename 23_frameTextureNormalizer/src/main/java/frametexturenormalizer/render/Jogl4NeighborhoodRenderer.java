@@ -4,7 +4,7 @@ import com.jogamp.opengl.GL2;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import frametexturenormalizer.model.PyramidalImageModel;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
@@ -45,7 +45,7 @@ public final class Jogl4NeighborhoodRenderer {
         gl2.glLineWidth(2.0f);
 
         Map<Integer, Integer> indexById = buildIndexById(tiles);
-        if (selectedTileIndex == PyramidalImageModel.SELECT_ALL_TILES) {
+        if (selectedTileIndex == FrameTextureNormalizerModel.SELECT_ALL_TILES) {
             for (int i = 0; i < tiles.size(); i++) {
                 drawNeighborsForTile(gl2, tiles, i, indexById, projection, modelView, viewportWidth, viewportHeight);
             }

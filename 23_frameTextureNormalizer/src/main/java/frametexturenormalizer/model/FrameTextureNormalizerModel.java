@@ -15,7 +15,7 @@ import frametexturenormalizer.config.Configuration;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 
-public final class PyramidalImageModel {
+public final class FrameTextureNormalizerModel {
     public static final int SELECT_ALL_TILES = -1;
 
     private final Camera viewingCamera = new Camera();
@@ -23,12 +23,12 @@ public final class PyramidalImageModel {
     private final List<FrameData> frames = new ArrayList<>();
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
-    private final Set<Integer> westCutterTileIds = new LinkedHashSet<>();
+    private final Set<String> westCutterTileIds = new LinkedHashSet<>();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
     private int selectedTileIndex = SELECT_ALL_TILES;
 
-    public PyramidalImageModel() {
+    public FrameTextureNormalizerModel() {
         viewingCamera.setName("OrbiterCamera");
         renderingConfiguration.setWires(false);
     }
@@ -194,17 +194,17 @@ public final class PyramidalImageModel {
         gpuTextureBytesAssigned = Math.max(0L, gpuTextureBytesAssigned - Math.max(0L, bytes));
     }
 
-    public synchronized Set<Integer> getWestCutterTileIds() {
+    public synchronized Set<String> getWestCutterTileIds() {
         return Collections.unmodifiableSet(new LinkedHashSet<>(westCutterTileIds));
     }
 
-    public synchronized void addWestCutterTileIds(Set<Integer> ids) {
+    public synchronized void addWestCutterTileIds(Set<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return;
         }
         boolean changed = false;
-        for (Integer id : ids) {
-            if (id != null && id >= 0 && westCutterTileIds.add(id)) {
+        for (String id : ids) {
+            if (id != null && !id.isBlank() && westCutterTileIds.add(id)) {
                 changed = true;
             }
         }
@@ -219,7 +219,9 @@ public final class PyramidalImageModel {
         try {
             Files.createDirectories(outputPath);
             ObjectMapper mapper = new ObjectMapper();
-            mapper.writerWithDefaultPrettyPrinter().writeValue(cachePath.toFile(), westCutterTileIds);
+            List<String> sortedIds = new ArrayList<>(westCutterTileIds);
+            Collections.sort(sortedIds);
+            mapper.writerWithDefaultPrettyPrinter().writeValue(cachePath.toFile(), sortedIds);
         }
         catch (IOException ignored) {
         }

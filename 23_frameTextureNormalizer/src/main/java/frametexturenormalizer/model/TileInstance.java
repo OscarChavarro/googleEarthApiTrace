@@ -146,6 +146,10 @@ public final class TileInstance {
         return frameId;
     }
 
+    public String getScopedId() {
+        return frameId + "_" + tileId;
+    }
+
     public String getTextureFile() {
         return textureFile;
     }

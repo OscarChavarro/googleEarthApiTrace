@@ -7,19 +7,19 @@ import javax.swing.JFrame;
 import javax.swing.WindowConstants;
 import frametexturenormalizer.gui.KeyboardInteractionTechniques;
 import frametexturenormalizer.gui.MouseOrbiterInteraction;
-import frametexturenormalizer.model.PyramidalImageModel;
-import frametexturenormalizer.render.Jogl4PyramidalImageBuilderRenderer;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
+import frametexturenormalizer.render.Jogl4FrameTextureNormalizerRenderer;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public final class InteractiveDebugger {
     private InteractiveDebugger() {
     }
 
-    public static void runDesktopGui(PyramidalImageModel model, Runnable reloadTileMatrices) {
-        Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
+    public static void runDesktopGui(FrameTextureNormalizerModel model, Runnable reloadTileMatrices) {
+        Jogl4FrameTextureNormalizerRenderer renderer = new Jogl4FrameTextureNormalizerRenderer(model);
         GLCanvas canvas = renderer.createCanvas();
 
-        JFrame frame = new JFrame("pyramidalImageBuilder - Orbiter Skeleton");
+        JFrame frame = new JFrame("Frame texture normalizer - exports matrix.json");
         frame.setLayout(new BorderLayout());
         frame.add(canvas, BorderLayout.CENTER);
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);

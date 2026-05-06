@@ -7,9 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Pattern;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameData;
@@ -75,34 +73,15 @@ public final class TraceSessionReader {
             return List.of();
         }
         List<FrameData> out = new ArrayList<>();
-        Set<Integer> previousTileIds = null;
 
         for (Path dir : frameDirs) {
             FrameData frame = readFrameDirectory(dir);
             if (frame == null) {
                 continue;
             }
-            Set<Integer> tileIds = tileIdSet(frame.getTiles());
-            if (previousTileIds != null && previousTileIds.equals(tileIds)) {
-                continue;
-            }
             out.add(frame);
-            previousTileIds = tileIds;
         }
 
-        return out;
-    }
-
-    private static Set<Integer> tileIdSet(List<TileInstance> tiles) {
-        Set<Integer> out = new LinkedHashSet<>();
-        if (tiles == null) {
-            return out;
-        }
-        for (TileInstance tile : tiles) {
-            if (tile != null && tile.getTileId() >= 0) {
-                out.add(tile.getTileId());
-            }
-        }
         return out;
     }
 

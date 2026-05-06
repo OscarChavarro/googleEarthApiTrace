@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import frametexturenormalizer.io.FrameReader;
@@ -12,7 +14,7 @@ import frametexturenormalizer.io.TileMatrixExporter;
 import frametexturenormalizer.io.TraceSessionReader;
 import frametexturenormalizer.io.WestCacheReader;
 import frametexturenormalizer.model.FrameData;
-import frametexturenormalizer.model.PyramidalImageModel;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.options.CommandLineOptions;
 import frametexturenormalizer.processing.FrameFiltererByTileCount;
@@ -25,7 +27,7 @@ import frametexturenormalizer.processing.matrix.TileMatrixFiltererByConsistency;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessingResult;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessor;
 import frametexturenormalizer.processing.TileTextureNormalizer;
-import frametexturenormalizer.render.Jogl4PyramidalImageBuilderRenderer;
+import frametexturenormalizer.render.Jogl4FrameTextureNormalizerRenderer;
 
 public class Main {
     public static void main(String[] args) {
@@ -39,7 +41,7 @@ public class Main {
             System.setProperty("pib.debug.matrix.frame", debugFrame.trim());
         }
 
-        PyramidalImageModel model = new PyramidalImageModel();
+        FrameTextureNormalizerModel model = new FrameTextureNormalizerModel();
 
         TraceSessionReader traceSessionReader = new TraceSessionReader();
         TileFiltererByConnectedComponents connectedComponentsFilterer = new TileFiltererByConnectedComponents();
@@ -85,23 +87,28 @@ public class Main {
         List<List<String>> duplicatedTextureGroups = DuplicatedTextureFilenameMapper.loadOrCreate(model.getFrames());
         System.out.println("OK");
 
+        System.out.print("Restoring west cutters... ");
+        new WestCacheReader().restore(model);
+        System.out.println("OK");
+
         System.out.print("Tile texture normalization and matrix conversion... ");
         TileMatrixProcessor tileMatrixProcessor = new TileMatrixProcessor();
-        TileMatrixProcessingResult matrixResult = tileMatrixProcessor.convertTileMatrices(
-            TileTextureNormalizer.normalize(model.getFrames(), duplicatedTextureGroups)
+        TileMatrixProcessingResult matrixResult = tileMatrixProcessor.normalizeAndConvertTileMatrices(
+            model.getFrames(),
+            duplicatedTextureGroups
         );
         System.out.println("OK");
 
         System.out.print("Filtering matrices by consistency... ");
-        List<TileMatrix> consistentMatrices =
-            tileMatrixFiltererByConsistency.filter(matrixResult.matrices());
+        List<TileMatrix> consistentMatrices = deduplicateMatricesByTileIds(
+            tileMatrixFiltererByConsistency.filter(matrixResult.matrices())
+        );
         System.out.println("OK");
 
         System.out.print("Exporting matrices... ");
         tileMatrixExporter.export(consistentMatrices);
-        model.setFrames(matrixResult.frames());
-        model.setFrames(tileFilteringByErrored.removeErroredFrames(model.getFrames()));
-        new WestCacheReader().restore(model);
+        List<FrameData> cleanFrames = tileFilteringByErrored.removeErroredFrames(matrixResult.frames());
+        model.setFrames(keepFramesPresentInMatrices(cleanFrames, consistentMatrices));
         System.out.println("OK");
 
         if (offline) {
@@ -125,7 +132,61 @@ public class Main {
         InteractiveDebugger.runDesktopGui(model, reloadTileMatrices);
     }
 
-    private static void renderOffline(PyramidalImageModel model, String outputPath, int width, int height) {
+    private static List<TileMatrix> deduplicateMatricesByTileIds(List<TileMatrix> matrices) {
+        if (matrices == null || matrices.isEmpty()) {
+            return List.of();
+        }
+        List<TileMatrix> out = new ArrayList<>(matrices.size());
+        Set<String> seenSignatures = new LinkedHashSet<>();
+        for (TileMatrix matrix : matrices) {
+            if (matrix == null) {
+                continue;
+            }
+            String signature = tileIdSignature(matrix);
+            if (!seenSignatures.add(signature)) {
+                continue;
+            }
+            out.add(matrix);
+        }
+        return out;
+    }
+
+    private static List<FrameData> keepFramesPresentInMatrices(List<FrameData> frames, List<TileMatrix> matrices) {
+        if (frames == null || frames.isEmpty() || matrices == null || matrices.isEmpty()) {
+            return List.of();
+        }
+        Set<Integer> keptFrameIds = new LinkedHashSet<>();
+        for (TileMatrix matrix : matrices) {
+            if (matrix != null) {
+                keptFrameIds.add(matrix.getFrameId());
+            }
+        }
+        List<FrameData> out = new ArrayList<>(frames.size());
+        for (FrameData frame : frames) {
+            if (frame != null && keptFrameIds.contains(frame.getId())) {
+                out.add(frame);
+            }
+        }
+        return out;
+    }
+
+    private static String tileIdSignature(TileMatrix matrix) {
+        if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile != null && tile.tileId() >= 0) {
+                if (!sb.isEmpty()) {
+                    sb.append(',');
+                }
+                sb.append(tile.tileId());
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void renderOffline(FrameTextureNormalizerModel model, String outputPath, int width, int height) {
         try {
             List<FrameData> frames = model.getFrames();
             if (frames == null || frames.isEmpty()) {
@@ -137,7 +198,7 @@ public class Main {
                 return;
             }
             if (frames.size() == 1) {
-                Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
+                Jogl4FrameTextureNormalizerRenderer renderer = new Jogl4FrameTextureNormalizerRenderer(model);
                 renderer.startOffscreen(outputPaths.get(0), width, height);
                 return;
             }
@@ -150,7 +211,7 @@ public class Main {
                     continue;
                 }
                 String frameOutput = outputPaths.get(i);
-                Jogl4PyramidalImageBuilderRenderer renderer = new Jogl4PyramidalImageBuilderRenderer(model);
+                Jogl4FrameTextureNormalizerRenderer renderer = new Jogl4FrameTextureNormalizerRenderer(model);
                 renderer.startOffscreen(frameOutput, width, height);
                 System.out.println("Offline sequence frame " + frame.getId() + " -> " + frameOutput);
             }

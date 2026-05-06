@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.Line;
-import frametexturenormalizer.model.PyramidalImageModel;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
@@ -34,7 +34,7 @@ public final class Jogl4TileMatrixRenderer {
         Matrix4x4 projection,
         double[] defaultModelViewMatrix,
         RendererConfiguration renderingConfiguration,
-        PyramidalImageModel model,
+        FrameTextureNormalizerModel model,
         int selectedTileIndex
     ) {
         if (gl2 == null || tiles == null || renderingConfiguration == null || model == null) {
@@ -51,7 +51,7 @@ public final class Jogl4TileMatrixRenderer {
             gl2.glColor3d(1.0, 1.0, 1.0);
             gl2.glLineWidth(1.25f);
             for (int i = 0; i < tiles.size(); i++) {
-                if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                     continue;
                 }
                 drawWire(gl2, tiles.get(i), defaultModelViewMatrix);
@@ -62,7 +62,7 @@ public final class Jogl4TileMatrixRenderer {
             gl2.glColor3d(1.0, 0.0, 0.0);
             gl2.glPointSize(3.0f);
             for (int i = 0; i < tiles.size(); i++) {
-                if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                     continue;
                 }
                 drawPoints(gl2, tiles.get(i), defaultModelViewMatrix);
@@ -79,7 +79,7 @@ public final class Jogl4TileMatrixRenderer {
             return;
         }
         for (int i = 0; i < tiles.size(); i++) {
-            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+            if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                 continue;
             }
             TileInstance tile = tiles.get(i);
@@ -104,7 +104,7 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glLineWidth(2.0f);
         gl2.glColor3d(1.0, 0.0, 0.0);
         for (int i = 0; i < tiles.size(); i++) {
-            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+            if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                 continue;
             }
             TileInstance tile = tiles.get(i);
@@ -128,7 +128,7 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glColor3d(1.0, 0.0, 0.0);
         gl2.glLineWidth(2.5f);
         for (int i = 0; i < tiles.size(); i++) {
-            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+            if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                 continue;
             }
             TileInstance tile = tiles.get(i);
@@ -145,7 +145,7 @@ public final class Jogl4TileMatrixRenderer {
         List<TileInstance> tiles,
         double[] defaultModelViewMatrix,
         RendererConfiguration renderingConfiguration,
-        PyramidalImageModel model,
+        FrameTextureNormalizerModel model,
         int selectedTileIndex
     ) {
         boolean textured = renderingConfiguration.isTextureSet();
@@ -154,7 +154,7 @@ public final class Jogl4TileMatrixRenderer {
         }
         int lastBound = -1;
         for (int i = 0; i < tiles.size(); i++) {
-            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+            if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                 continue;
             }
             TileInstance tile = tiles.get(i);
@@ -201,7 +201,7 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glLineWidth(3.0f);
         gl2.glColor3d(1.0, 1.0, 0.0);
         for (int i = 0; i < tiles.size(); i++) {
-            if (selectedTileIndex != PyramidalImageModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+            if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
                 continue;
             }
             TileInstance tile = tiles.get(i);
@@ -380,7 +380,7 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glEnd();
     }
 
-    private TextureResident acquireTexture(GL2 gl2, PyramidalImageModel model, String texturePath) {
+    private TextureResident acquireTexture(GL2 gl2, FrameTextureNormalizerModel model, String texturePath) {
         TextureResident resident = residentsByTexturePath.get(texturePath);
         if (resident != null) {
             return resident;
@@ -412,7 +412,7 @@ public final class Jogl4TileMatrixRenderer {
         return residentsByTexturePath.get(texturePath);
     }
 
-    private void enforceTextureBudget(GL2 gl2, PyramidalImageModel model) {
+    private void enforceTextureBudget(GL2 gl2, FrameTextureNormalizerModel model) {
         while (model.getGpuTextureBytesAssigned() > Configuration.MAX_GPU_TEXTURE_MEMORY) {
             String oldest = model.popOldestResidentTexturePath();
             if (oldest == null) {

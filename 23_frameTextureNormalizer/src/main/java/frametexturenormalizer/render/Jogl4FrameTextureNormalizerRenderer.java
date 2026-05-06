@@ -25,17 +25,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import frametexturenormalizer.gui.MouseOrbiterInteraction;
 import frametexturenormalizer.model.FrameData;
-import frametexturenormalizer.model.PyramidalImageModel;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;
 
-public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener {
+public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListener {
     private static final int PICK_REGION_PIXELS = 5;
     private static final int SELECT_BUFFER_SIZE = 4096;
-    private final PyramidalImageModel model;
+    private final FrameTextureNormalizerModel model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileRenderer = new Jogl4TileMatrixRenderer();
     private final Jogl4NeighborhoodRenderer neighborhoodRenderer = new Jogl4NeighborhoodRenderer();
@@ -45,7 +45,7 @@ public final class Jogl4PyramidalImageBuilderRenderer implements GLEventListener
     private boolean offlineCaptureDone;
     private String offlineOutputPath;
 
-    public Jogl4PyramidalImageBuilderRenderer(PyramidalImageModel model) {
+    public Jogl4FrameTextureNormalizerRenderer(FrameTextureNormalizerModel model) {
         this.model = model;
         this.cameraController = new CameraControllerOrbiter(model.getViewingCamera());
         this.cameraController.setDeltaMovement(0.2);

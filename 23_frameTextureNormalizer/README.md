@@ -1,6 +1,6 @@
-# pyramidalImageBuilder
+# FrameTextureNormalizer
 
-`pyramidalImageBuilder` is a Java 17 + Gradle utility that consumes preprocessed frame data from `/media/ramdisk/output`.
+`FrameTextureNormalizer` is a Java 17 + Gradle utility that consumes preprocessed frame data from `/media/ramdisk/output`.
 
 ## Input
 

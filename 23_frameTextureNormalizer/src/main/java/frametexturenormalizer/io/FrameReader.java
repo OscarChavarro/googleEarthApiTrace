@@ -3,14 +3,12 @@ package frametexturenormalizer.io;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameData;
-import frametexturenormalizer.model.PyramidalImageModel;
+import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.processing.TileFiltererByConnectedComponents;
 import frametexturenormalizer.processing.TileFiltererByGeometricNullNeighbors;
@@ -23,11 +21,11 @@ public final class FrameReader {
         TraceSessionReader traceSessionReader,
         TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileFiltererByGeometricNullNeighbors tileFilterer,
-        PyramidalImageModel model
+        FrameTextureNormalizerModel model
     ) {
         Runnable reloadTileMatrices = () -> {
             List<FrameData> loaded = readFramesParallel(traceSessionReader);
-            List<FrameData> filtered = filterAndDeduplicate(loaded, connectedComponentsFilterer, tileFilterer, model);
+            List<FrameData> filtered = filterFrames(loaded, connectedComponentsFilterer, tileFilterer, model);
             model.setFrames(filtered);
         };
         reloadTileMatrices.run();
@@ -119,25 +117,18 @@ public final class FrameReader {
         }
     }
 
-    private static List<FrameData> filterAndDeduplicate(
+    private static List<FrameData> filterFrames(
         List<FrameData> loaded,
         TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileFiltererByGeometricNullNeighbors tileFilterer,
-        PyramidalImageModel model
+        FrameTextureNormalizerModel model
     ) {
         if (loaded == null || loaded.isEmpty()) {
             return List.of();
         }
         List<FrameData> out = new ArrayList<>(loaded.size());
-        Set<Integer> previousTileIds = null;
-        int deduplicated = 0;
         for (FrameData frame : loaded) {
             if (frame == null) {
-                continue;
-            }
-            Set<Integer> tileIds = tileIdSet(frame.getTiles());
-            if (previousTileIds != null && previousTileIds.equals(tileIds)) {
-                deduplicated++;
                 continue;
             }
             List<TileInstance> ccFilteredTiles = connectedComponentsFilterer.filter(frame.getTiles());
@@ -151,20 +142,6 @@ public final class FrameReader {
                 frame.getModelViewMatrix(),
                 frame.isWithMatrixErrors()
             ));
-            previousTileIds = tileIds;
-        }
-        return out;
-    }
-
-    private static Set<Integer> tileIdSet(List<TileInstance> tiles) {
-        Set<Integer> out = new LinkedHashSet<>();
-        if (tiles == null) {
-            return out;
-        }
-        for (TileInstance tile : tiles) {
-            if (tile != null && tile.getTileId() >= 0) {
-                out.add(tile.getTileId());
-            }
         }
         return out;
     }

@@ -1,13 +1,18 @@
 package frametexturenormalizer.processing.matrix;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileMatrix;
+import frametexturenormalizer.processing.GeometricNeighborhoodSanitizer;
+import frametexturenormalizer.processing.TileTextureNormalizer;
 
 public final class TileMatrixProcessor {
     private final TileSetToMatrixConverter convertor = new TileSetToMatrixConverter();
@@ -56,6 +61,57 @@ public final class TileMatrixProcessor {
         return new TileMatrixProcessingResult(out, matrices);
     }
 
+    public TileMatrixProcessingResult normalizeAndConvertTileMatrices(
+        List<FrameData> frames,
+        List<List<String>> duplicatedTextureGroups
+    ) {
+        if (frames == null || frames.isEmpty()) {
+            return new TileMatrixProcessingResult(List.of(), List.of());
+        }
+
+        Map<String, String> canonicalTextureByTexture = TileTextureNormalizer.buildCanonicalTextureMap(duplicatedTextureGroups);
+        ConcurrentLinkedQueue<FrameRequest> pendingFrames = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<IndexedFrameResult> completed = new ConcurrentLinkedQueue<>();
+        AtomicBoolean producerDone = new AtomicBoolean(false);
+
+        Thread producer = new Thread(
+            () -> produceFrameQueue(frames, pendingFrames, producerDone),
+            "tile-normalize-convert-producer"
+        );
+        producer.start();
+
+        int threadCount = Math.max(1, Runtime.getRuntime().availableProcessors());
+        Thread[] workers = new Thread[threadCount];
+        for (int i = 0; i < threadCount; i++) {
+            workers[i] = new Thread(
+                () -> consumeFrameQueue(pendingFrames, completed, producerDone, canonicalTextureByTexture),
+                "tile-normalize-convert-worker-" + i
+            );
+            workers[i].start();
+        }
+
+        for (Thread worker : workers) {
+            join(worker);
+        }
+        join(producer);
+
+        List<IndexedFrameResult> ordered = new ArrayList<>(completed);
+        ordered.sort(Comparator.comparingInt(IndexedFrameResult::index));
+
+        List<FrameData> out = new ArrayList<>(ordered.size());
+        List<TileMatrix> matrices = new ArrayList<>(ordered.size());
+        for (IndexedFrameResult result : ordered) {
+            if (result == null) {
+                continue;
+            }
+            out.add(result.frame());
+            if (result.matrix() != null) {
+                matrices.add(result.matrix());
+            }
+        }
+        return new TileMatrixProcessingResult(out, matrices);
+    }
+
     public List<TileInstance> applyMatrixCoordinates(List<TileInstance> tiles, TileMatrix matrix) {
         if (tiles == null || tiles.isEmpty() || matrix == null || matrix.getTiles() == null) {
             return List.of();
@@ -74,7 +130,7 @@ public final class TileMatrixProcessor {
                 continue;
             }
             TileMatrix.TileCoord c = byId.get(tile.getTileId());
-            out.add(new TileInstance(
+            TileInstance tileWithCoords = new TileInstance(
                 tile.getTileId(),
                 tile.getFrameId(),
                 tile.getTextureFile(),
@@ -87,7 +143,9 @@ public final class TileMatrixProcessor {
                 c == null ? null : c.i(),
                 c == null ? null : c.j(),
                 tile.isIncorrectMatrixMapping()
-            ));
+            );
+            tileWithCoords.setWestCuttingCell(tile.isWestCuttingCell());
+            out.add(tileWithCoords);
         }
         return out;
     }
@@ -107,7 +165,7 @@ public final class TileMatrixProcessor {
             }
             boolean incorrect = conflictIds != null && conflictIds.contains(tile.getTileId());
             MatrixTileCoordinate coord = partialCoords == null ? null : partialCoords.get(tile.getTileId());
-            out.add(new TileInstance(
+            TileInstance flaggedTile = new TileInstance(
                 tile.getTileId(),
                 tile.getFrameId(),
                 tile.getTextureFile(),
@@ -120,8 +178,120 @@ public final class TileMatrixProcessor {
                 coord == null ? tile.getMatrixI() : coord.i(),
                 coord == null ? tile.getMatrixJ() : coord.j(),
                 incorrect
-            ));
+            );
+            flaggedTile.setWestCuttingCell(tile.isWestCuttingCell());
+            out.add(flaggedTile);
         }
         return out;
+    }
+
+    private IndexedFrameResult processFrameRequest(
+        FrameRequest request,
+        Map<String, String> canonicalTextureByTexture,
+        GeometricNeighborhoodSanitizer sanitizer,
+        TileSetToMatrixConverter localConvertor
+    ) {
+        if (request == null || request.frame() == null) {
+            return null;
+        }
+        FrameData normalized = TileTextureNormalizer.normalizeFrame(request.frame(), canonicalTextureByTexture);
+        FrameData sanitized = sanitizer.sanitizeFrame(normalized);
+        TileMatrix matrix = localConvertor.convert(sanitized);
+        if (matrix == null) {
+            sanitized.setWithMatrixErrors(true);
+            Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();
+            Map<Integer, MatrixTileCoordinate> partialCoords = localConvertor.getLastCoordinatesByTileId();
+            List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(sanitized.getTiles(), conflictIds, partialCoords);
+            return new IndexedFrameResult(
+                request.index(),
+                new FrameData(
+                    sanitized.getId(),
+                    flaggedTiles,
+                    sanitized.getLines(),
+                    sanitized.getCameraState(),
+                    sanitized.getProjectionMatrix(),
+                    sanitized.getModelViewMatrix(),
+                    true
+                ),
+                null
+            );
+        }
+
+        List<TileInstance> tilesWithCoords = applyMatrixCoordinates(sanitized.getTiles(), matrix);
+        FrameData frameWithMatrix = new FrameData(
+            sanitized.getId(),
+            tilesWithCoords,
+            sanitized.getLines(),
+            sanitized.getCameraState(),
+            sanitized.getProjectionMatrix(),
+            sanitized.getModelViewMatrix(),
+            false
+        );
+        return new IndexedFrameResult(request.index(), frameWithMatrix, matrix);
+    }
+
+    private void consumeFrameQueue(
+        ConcurrentLinkedQueue<FrameRequest> pendingFrames,
+        ConcurrentLinkedQueue<IndexedFrameResult> completed,
+        AtomicBoolean producerDone,
+        Map<String, String> canonicalTextureByTexture
+    ) {
+        TileSetToMatrixConverter localConvertor = new TileSetToMatrixConverter();
+        GeometricNeighborhoodSanitizer sanitizer = new GeometricNeighborhoodSanitizer();
+        while (true) {
+            FrameRequest request = pendingFrames.poll();
+            if (request == null) {
+                if (producerDone.get()) {
+                    return;
+                }
+                Thread.yield();
+                continue;
+            }
+            IndexedFrameResult result = processFrameRequest(request, canonicalTextureByTexture, sanitizer, localConvertor);
+            if (result != null) {
+                completed.add(result);
+            }
+        }
+    }
+
+    private static void produceFrameQueue(
+        List<FrameData> frames,
+        ConcurrentLinkedQueue<FrameRequest> pendingFrames,
+        AtomicBoolean producerDone
+    ) {
+        try {
+            for (int i = 0; i < frames.size(); i++) {
+                FrameData frame = frames.get(i);
+                if (frame != null) {
+                    pendingFrames.add(new FrameRequest(i, frame));
+                }
+            }
+        }
+        finally {
+            producerDone.set(true);
+        }
+    }
+
+    private static void join(Thread thread) {
+        if (thread == null) {
+            return;
+        }
+        boolean done = false;
+        while (!done) {
+            try {
+                thread.join();
+                done = true;
+            }
+            catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                done = true;
+            }
+        }
+    }
+
+    private record FrameRequest(int index, FrameData frame) {
+    }
+
+    private record IndexedFrameResult(int index, FrameData frame, TileMatrix matrix) {
     }
 }
