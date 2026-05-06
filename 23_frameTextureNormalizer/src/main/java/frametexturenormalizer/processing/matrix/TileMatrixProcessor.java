@@ -12,6 +12,7 @@ import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.processing.GeometricNeighborhoodSanitizer;
+import frametexturenormalizer.processing.TileFiltererByTextureCoverage;
 import frametexturenormalizer.processing.TileTextureNormalizer;
 
 public final class TileMatrixProcessor {
@@ -144,6 +145,7 @@ public final class TileMatrixProcessor {
     private IndexedFrameResult processFrameRequest(
         FrameRequest request,
         Map<String, String> canonicalTextureByTexture,
+        TileFiltererByTextureCoverage textureCoverageFilterer,
         GeometricNeighborhoodSanitizer sanitizer,
         TileSetToMatrixConverter localConvertor
     ) {
@@ -152,34 +154,35 @@ public final class TileMatrixProcessor {
         }
         FrameData normalized = TileTextureNormalizer.normalizeFrame(request.frame(), canonicalTextureByTexture);
         FrameData sanitized = sanitizer.sanitizeFrame(normalized);
-        TileMatrix matrix = localConvertor.convert(sanitized);
+        FrameData filtered = textureCoverageFilterer.removeNonFullResolutionTiles(sanitized);
+        TileMatrix matrix = localConvertor.convert(filtered);
         if (matrix == null) {
             Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();
             Map<Integer, MatrixTileCoordinate> partialCoords = localConvertor.getLastCoordinatesByTileId();
-            List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(sanitized.getTiles(), conflictIds, partialCoords);
+            List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(filtered.getTiles(), conflictIds, partialCoords);
             return new IndexedFrameResult(
                 request.index(),
                 new FrameData(
-                    sanitized.getId(),
+                    filtered.getId(),
                     flaggedTiles,
-                    sanitized.getLines(),
-                    sanitized.getCameraState(),
-                    sanitized.getProjectionMatrix(),
-                    sanitized.getModelViewMatrix(),
+                    filtered.getLines(),
+                    filtered.getCameraState(),
+                    filtered.getProjectionMatrix(),
+                    filtered.getModelViewMatrix(),
                     true
                 ),
                 null
             );
         }
 
-        List<TileInstance> tilesWithCoords = applyMatrixCoordinates(sanitized.getTiles(), matrix);
+        List<TileInstance> tilesWithCoords = applyMatrixCoordinates(filtered.getTiles(), matrix);
         FrameData frameWithMatrix = new FrameData(
-            sanitized.getId(),
+            filtered.getId(),
             tilesWithCoords,
-            sanitized.getLines(),
-            sanitized.getCameraState(),
-            sanitized.getProjectionMatrix(),
-            sanitized.getModelViewMatrix(),
+            filtered.getLines(),
+            filtered.getCameraState(),
+            filtered.getProjectionMatrix(),
+            filtered.getModelViewMatrix(),
             false
         );
         return new IndexedFrameResult(request.index(), frameWithMatrix, matrix);
@@ -192,6 +195,7 @@ public final class TileMatrixProcessor {
         Map<String, String> canonicalTextureByTexture
     ) {
         TileSetToMatrixConverter localConvertor = new TileSetToMatrixConverter();
+        TileFiltererByTextureCoverage textureCoverageFilterer = new TileFiltererByTextureCoverage();
         GeometricNeighborhoodSanitizer sanitizer = new GeometricNeighborhoodSanitizer();
         while (true) {
             FrameRequest request = pendingFrames.poll();
@@ -202,7 +206,13 @@ public final class TileMatrixProcessor {
                 Thread.yield();
                 continue;
             }
-            IndexedFrameResult result = processFrameRequest(request, canonicalTextureByTexture, sanitizer, localConvertor);
+            IndexedFrameResult result = processFrameRequest(
+                request,
+                canonicalTextureByTexture,
+                textureCoverageFilterer,
+                sanitizer,
+                localConvertor
+            );
             if (result != null) {
                 completed.add(result);
             }

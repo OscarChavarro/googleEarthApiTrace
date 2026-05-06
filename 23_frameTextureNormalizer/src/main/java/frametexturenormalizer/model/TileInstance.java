@@ -3,6 +3,7 @@ package frametexturenormalizer.model;
 import java.util.List;
 
 public final class TileInstance {
+    private static final double FULL_RESOLUTION_TOLERANCE = 1.0e-6;
     private final int tileId;
     private final int frameId;
     private final String textureFile;
@@ -188,6 +189,34 @@ public final class TileInstance {
 
     public TriangleStripGeometry getTriangleStrip() {
         return triangleStrip;
+    }
+
+    public boolean isFullResolutionWithRespectToTexture() {
+        TriangleStripGeometry strip = triangleStrip;
+        if (strip == null || strip.vertices() == null || strip.vertices().isEmpty()) {
+            return false;
+        }
+        boolean hasAny = false;
+        double minU = Double.POSITIVE_INFINITY;
+        double maxU = Double.NEGATIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        double maxV = Double.NEGATIVE_INFINITY;
+        for (TriangleStripVertex uv : strip.vertices()) {
+            if (uv == null || !Double.isFinite(uv.u()) || !Double.isFinite(uv.v())) {
+                continue;
+            }
+            hasAny = true;
+            minU = Math.min(minU, uv.u());
+            maxU = Math.max(maxU, uv.u());
+            minV = Math.min(minV, uv.v());
+            maxV = Math.max(maxV, uv.v());
+        }
+        if (!hasAny) {
+            return false;
+        }
+        boolean coversU = minU <= FULL_RESOLUTION_TOLERANCE && maxU >= (1.0 - FULL_RESOLUTION_TOLERANCE);
+        boolean coversV = minV <= FULL_RESOLUTION_TOLERANCE && maxV >= (1.0 - FULL_RESOLUTION_TOLERANCE);
+        return coversU && coversV;
     }
 
     public double[] getModelViewMatrix() {

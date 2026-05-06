@@ -69,6 +69,7 @@ public final class Jogl4TileMatrixRenderer {
             }
         }
         drawIncorrectMappingWires(gl2, tiles, selectedTileIndex, defaultModelViewMatrix);
+        drawNonFullResolutionTilesOverlay(gl2, tiles, selectedTileIndex, defaultModelViewMatrix);
         drawWestCuttingCellsOverlay(gl2, tiles, selectedTileIndex, defaultModelViewMatrix);
         drawSelectedTilesOverlay(gl2, tiles, selectedTileIndex, defaultModelViewMatrix);
         drawExtractedLines(gl2, lines, projection, defaultModelViewMatrix);
@@ -133,6 +134,28 @@ public final class Jogl4TileMatrixRenderer {
             }
             TileInstance tile = tiles.get(i);
             if (tile == null || !tile.isIncorrectMatrixMapping()) {
+                continue;
+            }
+            drawWire(gl2, tile, defaultModelViewMatrix);
+        }
+        gl2.glLineWidth(1.0f);
+    }
+
+    private static void drawNonFullResolutionTilesOverlay(
+        GL2 gl2,
+        List<TileInstance> tiles,
+        int selectedTileIndex,
+        double[] defaultModelViewMatrix
+    ) {
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glColor3d(1.0, 0.0, 0.0);
+        gl2.glLineWidth(2.5f);
+        for (int i = 0; i < tiles.size(); i++) {
+            if (selectedTileIndex != FrameTextureNormalizerModel.SELECT_ALL_TILES && selectedTileIndex != i) {
+                continue;
+            }
+            TileInstance tile = tiles.get(i);
+            if (tile == null || tile.isFullResolutionWithRespectToTexture()) {
                 continue;
             }
             drawWire(gl2, tile, defaultModelViewMatrix);
