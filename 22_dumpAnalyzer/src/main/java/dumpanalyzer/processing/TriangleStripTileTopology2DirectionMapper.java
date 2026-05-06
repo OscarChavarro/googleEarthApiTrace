@@ -18,34 +18,35 @@ public final class TriangleStripTileTopology2DirectionMapper {
             return List.of();
         }
 
-        List<TileInstance.TriangleStripVertex> deduplicated = classifier.deduplicateVertices(
+        List<TileInstance.TriangleStripVertex> deDuplicated = classifier.deduplicateVertices(
             geometry.vertices(),
             TriangleMeshVertexComparator.VERTEX_EPSILON
         );
         TriangleStripTileTopology topology = classifier.classify(geometry);
 
         return switch (topology) {
-            case DEDUPLICATED_9_VERTICES_QUAD -> mapQuad(direction, deduplicated);
-            case DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE -> mapNorthPoleTriangle(direction, deduplicated);
+            case DEDUPLICATED_9_VERTICES_QUAD -> mapQuad(direction, deDuplicated);
+            case DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE -> mapNorthPoleTriangle(direction, deDuplicated);
             case UNKNOWN -> List.of();
         };
     }
 
-    private static List<Vector3D> mapQuad(Direction direction, List<TileInstance.TriangleStripVertex> deduplicated) {
+    private static List<Vector3D> mapQuad(Direction direction, List<TileInstance.TriangleStripVertex> deDuplicated) {
         return switch (direction) {
-            case WEST -> pick(deduplicated, 7, 8, 1);
-            case EAST -> pick(deduplicated, 5, 4, 3);
-            case NORTH -> pick(deduplicated, 7, 6, 5);
-            case SOUTH -> pick(deduplicated, 1, 2, 3);
+            case WEST -> pick(deDuplicated, 7, 8, 1);
+            case EAST -> pick(deDuplicated, 5, 4, 3);
+            case NORTH -> pick(deDuplicated, 7, 6, 5);
+            case SOUTH -> pick(deDuplicated, 1, 2, 3);
         };
     }
 
-    private static List<Vector3D> mapNorthPoleTriangle(Direction direction, List<TileInstance.TriangleStripVertex> deduplicated) {
+    private static List<Vector3D> mapNorthPoleTriangle(Direction direction, List<TileInstance.TriangleStripVertex> deDuplicated) {
         return switch (direction) {
             case NORTH -> List.of();
-            case WEST -> pick(deduplicated, 5, 6, 1);
-            case EAST -> pick(deduplicated, 5, 4, 3);
-            case SOUTH -> pick(deduplicated, 1, 2, 3);
+            //case WEST -> pick(deDuplicated, 5, 6, 1);
+            //case EAST -> pick(deDuplicated, 5, 4, 3);
+            case WEST, EAST -> List.of();
+            case SOUTH -> pick(deDuplicated, 1, 2, 3);
         };
     }
 

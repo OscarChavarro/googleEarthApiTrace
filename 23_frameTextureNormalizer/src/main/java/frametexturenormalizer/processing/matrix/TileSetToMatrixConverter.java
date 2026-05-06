@@ -15,6 +15,7 @@ import frametexturenormalizer.model.TileMatrix.TileCoord;
 
 public final class TileSetToMatrixConverter {
     private static final MatrixTileCoordinate UNASSIGNED = new MatrixTileCoordinate(-1, -1);
+    private static final int DISCONNECTED_SEGMENT_GAP_COLUMNS = 1;
     private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("pib.debug.matrix", "false"));
     private static final Integer DEBUG_FRAME = parseDebugFrame();
     private static final ThreadLocal<Integer> CURRENT_FRAME = new ThreadLocal<>();
@@ -530,7 +531,9 @@ public final class TileSetToMatrixConverter {
                 out.put(cell.tileId(), new MatrixTileCoordinate(i, j));
             }
 
-            nextStartJ += chunk.width();
+            // Keep disconnected segments separated so the exported matrix does not
+            // invent east-west adjacency that is absent from the source neighbor graph.
+            nextStartJ += chunk.width() + DISCONNECTED_SEGMENT_GAP_COLUMNS;
         }
 
         if (minI == Integer.MAX_VALUE || minI == 0) {

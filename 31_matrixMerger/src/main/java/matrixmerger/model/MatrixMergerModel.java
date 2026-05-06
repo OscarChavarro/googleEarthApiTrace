@@ -116,6 +116,14 @@ public final class MatrixMergerModel {
         return idx >= 0 && idx + 1 < tileMatrices.size();
     }
 
+    public TileMatrix getNextMatrixForSelection() {
+        int idx = getSelectedMatrixIndex();
+        if (idx < 0 || idx + 1 >= tileMatrices.size()) {
+            return null;
+        }
+        return tileMatrices.get(idx + 1);
+    }
+
     public boolean hasLastMergeFailedForCurrentSelection() {
         return lastMergeFailedForCurrentSelection;
     }
