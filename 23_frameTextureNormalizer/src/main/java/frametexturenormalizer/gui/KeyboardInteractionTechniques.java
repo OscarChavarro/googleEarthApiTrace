@@ -69,8 +69,9 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         if (keyChar == 'c' || keyChar == 'C') {
             FrameData frame = model.getSelectedFrame();
             Set<String> selectedIds = TileCutter.selectedTileIdsAcrossFrames(model.getFrames());
-            if (frame != null && TileCutter.cutWestFromTileIdsAcrossFrames(model.getFrames(), selectedIds) > 0) {
-                model.addWestCutterTileIds(selectedIds);
+            Set<String> expandedIds = TileCutter.expandWestCutScopedIdsAcrossFrames(model.getFrames(), selectedIds);
+            if (frame != null && !expandedIds.isEmpty()) {
+                model.addWestCutterTileIds(expandedIds);
                 redraw();
                 return;
             }

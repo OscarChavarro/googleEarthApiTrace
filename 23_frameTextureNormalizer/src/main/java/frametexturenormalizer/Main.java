@@ -4,8 +4,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -20,10 +22,11 @@ import frametexturenormalizer.options.CommandLineOptions;
 import frametexturenormalizer.processing.FrameFiltererByTileCount;
 import frametexturenormalizer.processing.TileFiltererByConnectedComponents;
 import frametexturenormalizer.processing.DuplicatedTextureFilenameMapper;
+import frametexturenormalizer.processing.GeometricNeighborhoodSanitizer;
+import frametexturenormalizer.processing.NeighborhoodDebugReporter;
 import frametexturenormalizer.processing.Sha256SignatureGenerator;
 import frametexturenormalizer.processing.TileFiltererByGeometricNullNeighbors;
 import frametexturenormalizer.processing.TileFilteringByErrored;
-import frametexturenormalizer.processing.matrix.TileMatrixFiltererByConsistency;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessingResult;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessor;
 import frametexturenormalizer.processing.TileTextureNormalizer;
@@ -49,7 +52,6 @@ public class Main {
         FrameFiltererByTileCount frameFiltererByTileCount = new FrameFiltererByTileCount();
         TileFilteringByErrored tileFilteringByErrored = new TileFilteringByErrored();
         TileMatrixExporter tileMatrixExporter = new TileMatrixExporter();
-        TileMatrixFiltererByConsistency tileMatrixFiltererByConsistency = new TileMatrixFiltererByConsistency();
 
         System.out.print("Loading traced frames... ");
         Runnable reloadTileMatricesRaw = FrameReader.loadTracedFrames(
@@ -73,6 +75,7 @@ public class Main {
         applyFrameRange.run();
         int minTilesExclusive = offline ? 0 : 1;
         model.setFrames(frameFiltererByTileCount.keepFramesWithMoreThanTiles(model.getFrames(), minTilesExclusive));
+        NeighborhoodDebugReporter.dumpFrames("loaded", model.getFrames());
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -83,8 +86,10 @@ public class Main {
         List<List<String>> duplicatedTextureGroups = DuplicatedTextureFilenameMapper.loadOrCreate(model.getFrames());
         System.out.println("OK");
 
-        System.out.print("Restoring west cutters... ");
-        new WestCacheReader().restore(model);
+        System.out.print("Completing tile neighborhoods... ");
+        GeometricNeighborhoodSanitizer neighborhoodSanitizer = new GeometricNeighborhoodSanitizer();
+        model.setFrames(model.getFrames().stream().map(neighborhoodSanitizer::sanitizeFrame).collect(Collectors.toList()));
+        NeighborhoodDebugReporter.dumpFrames("tightened", model.getFrames());
         System.out.println("OK");
 
         System.out.print("Tile texture normalization and matrix conversion... ");
@@ -95,16 +100,16 @@ public class Main {
         );
         System.out.println("OK");
 
-        System.out.print("Filtering matrices by consistency... ");
-        List<TileMatrix> consistentMatrices = deduplicateMatricesByTileIds(
-            tileMatrixFiltererByConsistency.filter(matrixResult.matrices())
-        );
-        System.out.println("OK");
+        List<FrameData> cleanFrames = tileFilteringByErrored.removeErroredFrames(matrixResult.frames());
 
         System.out.print("Exporting matrices... ");
-        tileMatrixExporter.export(consistentMatrices);
-        List<FrameData> cleanFrames = tileFilteringByErrored.removeErroredFrames(matrixResult.frames());
-        model.setFrames(keepFramesPresentInMatrices(cleanFrames, consistentMatrices));
+        List<TileMatrix> matrices = deduplicateMatricesByTileIds(matrixResult.matrices());
+        tileMatrixExporter.export(matrices);
+        model.setFrames(cleanFrames);
+        System.out.println("OK");
+
+        System.out.print("Restoring west cutters for editor/UI... ");
+        new WestCacheReader().restore(model);
         System.out.println("OK");
 
         if (offline) {
@@ -143,25 +148,6 @@ public class Main {
                 continue;
             }
             out.add(matrix);
-        }
-        return out;
-    }
-
-    private static List<FrameData> keepFramesPresentInMatrices(List<FrameData> frames, List<TileMatrix> matrices) {
-        if (frames == null || frames.isEmpty() || matrices == null || matrices.isEmpty()) {
-            return List.of();
-        }
-        Set<Integer> keptFrameIds = new LinkedHashSet<>();
-        for (TileMatrix matrix : matrices) {
-            if (matrix != null) {
-                keptFrameIds.add(matrix.getFrameId());
-            }
-        }
-        List<FrameData> out = new ArrayList<>(frames.size());
-        for (FrameData frame : frames) {
-            if (frame != null && keptFrameIds.contains(frame.getId())) {
-                out.add(frame);
-            }
         }
         return out;
     }

@@ -1,5 +1,7 @@
 package frametexturenormalizer.model;
 
+import frametexturenormalizer.util.ScopedTileIds;
+
 import java.util.List;
 
 public final class TileInstance {
@@ -148,7 +150,7 @@ public final class TileInstance {
     }
 
     public String getScopedId() {
-        return frameId + "_" + tileId;
+        return ScopedTileIds.formatFromTextureFile(textureFile, frameId, tileId);
     }
 
     public String getTextureFile() {

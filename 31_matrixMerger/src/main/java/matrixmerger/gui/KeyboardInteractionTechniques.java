@@ -41,6 +41,18 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         if (model == null) {
             return;
         }
+        if (keyChar == '1') {
+            if (model.selectPreviousMatrix()) {
+                repaintAction.run();
+            }
+            return;
+        }
+        if (keyChar == '2') {
+            if (model.selectNextMatrix()) {
+                repaintAction.run();
+            }
+            return;
+        }
 
         if (renderingConfigurationController != null
             && renderingConfigurationController.processKeyPressedEvent(event)) {
@@ -61,29 +73,26 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             }
             return;
         }
-        if (keyChar == 'M') {
-            if (model.mergeFullSet()) {
+        if (keyChar == 'c' || keyChar == 'C') {
+            if (model.splitSelectedFrameByWestCutters()) {
                 repaintAction.run();
             }
             return;
         }
-
-        switch (event.keycode) {
-            case KeyEvent.KEY_1 -> {
-                if (model.selectPreviousMatrix()) {
-                    repaintAction.run();
-                }
+        if (keyChar == 'M') {
+            if (model.mergeSelectedMatrixWithNextFrameAggressively()) {
+                repaintAction.run();
             }
-            case KeyEvent.KEY_2 -> {
-                if (model.selectNextMatrix()) {
-                    repaintAction.run();
-                }
+            return;
+        }
+        if (keyChar == 'n') {
+            if (model.retryMergeSelectedMatrixWithNextFrames()) {
+                repaintAction.run();
             }
-            default -> {
-                if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
-                    repaintAction.run();
-                }
-            }
+            return;
+        }
+        if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
+            repaintAction.run();
         }
     }
 

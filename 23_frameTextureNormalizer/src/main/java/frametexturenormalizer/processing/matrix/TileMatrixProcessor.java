@@ -12,6 +12,7 @@ import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.processing.GeometricNeighborhoodSanitizer;
+import frametexturenormalizer.processing.NeighborhoodDebugReporter;
 import frametexturenormalizer.processing.TileFiltererByTextureCoverage;
 import frametexturenormalizer.processing.TileTextureNormalizer;
 
@@ -153,8 +154,11 @@ public final class TileMatrixProcessor {
             return null;
         }
         FrameData normalized = TileTextureNormalizer.normalizeFrame(request.frame(), canonicalTextureByTexture);
+        NeighborhoodDebugReporter.dumpFrame("normalized", normalized);
         FrameData sanitized = sanitizer.sanitizeFrame(normalized);
+        NeighborhoodDebugReporter.dumpFrame("sanitized-after-normalize", sanitized);
         FrameData filtered = textureCoverageFilterer.removeNonFullResolutionTiles(sanitized);
+        NeighborhoodDebugReporter.dumpFrame("full-res-filtered", filtered);
         TileMatrix matrix = localConvertor.convert(filtered);
         if (matrix == null) {
             Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();

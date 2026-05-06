@@ -1,14 +1,34 @@
 package matrixmerger.processing;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import matrixmerger.io.TileMatrix;
+import matrixmerger.io.WestCutterReader;
 
 public final class MatrixMerger {
+    private Set<String> westCutterTileIds = Set.of();
+
+    public void setWestCutterTileIds(Set<String> westCutterTileIds) {
+        if (westCutterTileIds == null || westCutterTileIds.isEmpty()) {
+            this.westCutterTileIds = Set.of();
+            return;
+        }
+        Set<String> normalized = new HashSet<>();
+        for (String id : westCutterTileIds) {
+            String canonical = WestCutterReader.normalizeScopedTileId(id);
+            if (canonical != null) {
+                normalized.add(canonical);
+            }
+        }
+        this.westCutterTileIds = Collections.unmodifiableSet(normalized);
+    }
+
     public boolean merge(TileMatrix a, TileMatrix b) {
         if (!canMerge(a, b)) {
             return false;
@@ -35,7 +55,7 @@ public final class MatrixMerger {
             return false;
         }
 
-        List<TileMatrix.TileCoord> tilesToAppend = collectNonOverlappingTilesFromB(b, aByPos, offset);
+        List<TileMatrix.TileCoord> tilesToAppend = collectReachableTilesFromB(b, aByPos, bById, sharedIds, offset);
         if (tilesToAppend == null) {
             return false;
         }
@@ -117,26 +137,71 @@ public final class MatrixMerger {
         return byPosition;
     }
 
-    private static List<TileMatrix.TileCoord> collectNonOverlappingTilesFromB(
+    private List<TileMatrix.TileCoord> collectReachableTilesFromB(
         TileMatrix b,
         Map<String, TileMatrix.TileCoord> aByPos,
+        Map<String, TileMatrix.TileCoord> bById,
+        Set<String> sharedIds,
         MatrixOffset offset
     ) {
         List<TileMatrix.TileCoord> toAdd = new ArrayList<>();
+        Map<String, TileMatrix.TileCoord> bByTranslatedPos = new HashMap<>();
         for (TileMatrix.TileCoord bt : b.getTiles()) {
-            int translatedI = bt.getI() + offset.deltaI();
-            int translatedJ = bt.getJ() + offset.deltaJ();
-            String posKey = key(translatedI, translatedJ);
+            bByTranslatedPos.put(key(bt.getI() + offset.deltaI(), bt.getJ() + offset.deltaJ()), bt);
+        }
+
+        ArrayDeque<Position> queue = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        for (String sharedId : sharedIds) {
+            TileMatrix.TileCoord bt = bById.get(sharedId);
+            if (bt == null) {
+                continue;
+            }
+            Position start = new Position(bt.getI() + offset.deltaI(), bt.getJ() + offset.deltaJ());
+            String startKey = key(start.i(), start.j());
+            if (visited.add(startKey)) {
+                queue.addLast(start);
+            }
+        }
+
+        while (!queue.isEmpty()) {
+            Position current = queue.removeFirst();
+            String posKey = key(current.i(), current.j());
+            TileMatrix.TileCoord bt = bByTranslatedPos.get(posKey);
+            if (bt == null) {
+                continue;
+            }
+
             TileMatrix.TileCoord at = aByPos.get(posKey);
             if (at != null) {
                 if (!at.getId().equals(bt.getId())) {
                     return null;
                 }
-                continue;
             }
-            toAdd.add(cloneWithCoordinates(bt, translatedI, translatedJ));
+            else {
+                toAdd.add(cloneWithCoordinates(bt, current.i(), current.j()));
+            }
+
+            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i() - 1, current.j());
+            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i() + 1, current.j());
+            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i(), current.j() + 1);
+            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i(), current.j() - 1);
         }
         return toAdd;
+    }
+
+    private static void enqueueIfPresent(
+        ArrayDeque<Position> queue,
+        Set<String> visited,
+        Map<String, TileMatrix.TileCoord> bByTranslatedPos,
+        int i,
+        int j
+    ) {
+        String posKey = key(i, j);
+        if (!bByTranslatedPos.containsKey(posKey) || !visited.add(posKey)) {
+            return;
+        }
+        queue.addLast(new Position(i, j));
     }
 
     private static TileMatrix.TileCoord cloneWithCoordinates(TileMatrix.TileCoord src, int i, int j) {
@@ -198,5 +263,8 @@ public final class MatrixMerger {
 
     private static String key(int i, int j) {
         return i + ":" + j;
+    }
+
+    private record Position(int i, int j) {
     }
 }

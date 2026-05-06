@@ -26,6 +26,7 @@ public final class Jogl4TileMatrixRenderer {
         if (renderingConfiguration.isSurfacesSet()) {
             drawSurfaces(gl2, matrix, renderingConfiguration.isTextureSet(), model);
         }
+        drawWestCutterWires(gl2, matrix, model);
         if (renderingConfiguration.isWiresSet()) {
             drawWires(gl2, matrix, model);
         }
@@ -111,11 +112,41 @@ public final class Jogl4TileMatrixRenderer {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
-        gl2.glColor3f(1.0f, 1.0f, 1.0f);
         gl2.glLineWidth(1.1f);
         for (TileMatrix.TileCoord tile : matrix.getTiles()) {
-            
             if (tile == null) {
+                continue;
+            }
+            if (model.isWestCutterTileId(tile.getId())) {
+                continue;
+            }
+            int i = tile.getI();
+            int j = tile.getJ();
+            float x0 = j + offsetX;
+            float y0 = -i + offsetY;
+            float x1 = j + 1.0f + offsetX;
+            float y1 = -(i + 1.0f) + offsetY;
+            if (!QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, y0, x1, y1)) {
+                continue;
+            }
+            gl2.glColor3f(1.0f, 1.0f, 1.0f);
+            gl2.glBegin(GL2.GL_LINE_LOOP);
+            gl2.glVertex3f(x0, y0, 0.001f);
+            gl2.glVertex3f(x1, y0, 0.001f);
+            gl2.glVertex3f(x1, y1, 0.001f);
+            gl2.glVertex3f(x0, y1, 0.001f);
+            gl2.glEnd();
+        }
+    }
+
+    private void drawWestCutterWires(GL2 gl2, TileMatrix matrix, MatrixMergerModel model) {
+        float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glColor3f(1.0f, 0.1f, 0.1f);
+        gl2.glLineWidth(2.0f);
+        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || !model.isWestCutterTileId(tile.getId())) {
                 continue;
             }
             int i = tile.getI();
@@ -128,10 +159,10 @@ public final class Jogl4TileMatrixRenderer {
                 continue;
             }
             gl2.glBegin(GL2.GL_LINE_LOOP);
-            gl2.glVertex3f(x0, y0, 0.001f);
-            gl2.glVertex3f(x1, y0, 0.001f);
-            gl2.glVertex3f(x1, y1, 0.001f);
-            gl2.glVertex3f(x0, y1, 0.001f);
+            gl2.glVertex3f(x0, y0, 0.002f);
+            gl2.glVertex3f(x1, y0, 0.002f);
+            gl2.glVertex3f(x1, y1, 0.002f);
+            gl2.glVertex3f(x0, y1, 0.002f);
             gl2.glEnd();
         }
     }

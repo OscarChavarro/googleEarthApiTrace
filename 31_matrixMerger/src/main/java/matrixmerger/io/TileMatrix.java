@@ -52,7 +52,8 @@ public final class TileMatrix {
 
         public String getId() {
             if (id != null && !id.isBlank()) {
-                return id;
+                String normalized = WestCutterReader.normalizeScopedTileId(id);
+                return normalized == null ? id : normalized;
             }
             if (legacyTileId != null) {
                 return Integer.toString(legacyTileId);
@@ -61,7 +62,7 @@ public final class TileMatrix {
         }
 
         public void setId(String id) {
-            this.id = id;
+            this.id = WestCutterReader.normalizeScopedTileId(id);
         }
 
         public int getI() {

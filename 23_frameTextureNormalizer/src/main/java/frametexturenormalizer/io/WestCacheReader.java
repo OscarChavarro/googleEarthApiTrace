@@ -12,6 +12,7 @@ import java.util.Set;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.processing.TileCutter;
+import frametexturenormalizer.util.ScopedTileIds;
 
 public final class WestCacheReader {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -26,7 +27,7 @@ public final class WestCacheReader {
         }
         Set<String> scopedIds = new LinkedHashSet<>(westIds.scopedIds());
         if (!scopedIds.isEmpty()) {
-            TileCutter.cutWestFromTileIdsAcrossFrames(model.getFrames(), scopedIds);
+            scopedIds = new LinkedHashSet<>(TileCutter.expandWestCutScopedIdsAcrossFrames(model.getFrames(), scopedIds));
         }
         if (!westIds.legacyIds().isEmpty()) {
             TileCutter.cutWestFromLegacyTileIdsAcrossFrames(model.getFrames(), westIds.legacyIds());
@@ -47,9 +48,9 @@ public final class WestCacheReader {
             if (root != null && root.isArray()) {
                 for (JsonNode n : root) {
                     if (n != null && n.isTextual()) {
-                        String id = n.asText();
-                        if (id != null && !id.isBlank()) {
-                            scopedIds.add(id.trim());
+                        String id = ScopedTileIds.normalize(n.asText());
+                        if (id != null) {
+                            scopedIds.add(id);
                         }
                     }
                     else if (n != null && n.canConvertToInt()) {

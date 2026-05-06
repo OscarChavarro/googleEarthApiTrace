@@ -30,7 +30,7 @@ public final class TileSetToMatrixConverter {
         lastCoordinatesByTileId.clear();
 
         if (frameData == null || frameData.getTiles() == null || frameData.getTiles().isEmpty()) {
-            return new TileMatrix(frameData == null ? -1 : frameData.getId(), 0, 0, List.of());
+            return null;
         }
         CURRENT_FRAME.set(frameData.getId());
         debug(frameData.getId(), "=== Frame %d conversion start (%d tiles) ===", frameData.getId(), frameData.getTiles().size());
@@ -42,7 +42,8 @@ public final class TileSetToMatrixConverter {
             }
         }
         if (byId.isEmpty()) {
-            return new TileMatrix(frameData.getId(), 0, 0, List.of());
+            CURRENT_FRAME.remove();
+            return null;
         }
 
         Map<Integer, MatrixTileCoordinate> workingCoords = new HashMap<>();
@@ -67,12 +68,10 @@ public final class TileSetToMatrixConverter {
         }
         debug(frameData.getId(), "Frame %d merged row segments remaining: %d", frameData.getId(), chunks.size());
 
-        Map<Integer, MatrixTileCoordinate> finalCoords = placeRemainingChunks(chunks);
-        lastCoordinatesByTileId.putAll(finalCoords);
+        TileMatrix matrix = buildSingleMatrixFromChunks(frameData.getId(), chunks, lastCoordinatesByTileId);
         debug(frameData.getId(), "=== Frame %d conversion end ===", frameData.getId());
-        TileMatrix out = buildMatrix(frameData, finalCoords);
         CURRENT_FRAME.remove();
-        return out;
+        return matrix;
     }
 
     private List<RowSegment> buildHorizontalChunks(Map<Integer, TileInstance> byId, Map<Integer, MatrixTileCoordinate> workingCoords) {
@@ -469,122 +468,107 @@ public final class TileSetToMatrixConverter {
         }
     }
 
-    private Map<Integer, MatrixTileCoordinate> placeRemainingChunks(List<RowSegment> chunks) {
+    private TileMatrix buildSingleMatrixFromChunks(
+        int frameId,
+        List<RowSegment> chunks,
+        Map<Integer, MatrixTileCoordinate> coordsByTileId
+    ) {
         if (chunks == null || chunks.isEmpty()) {
-            return Map.of();
+            return null;
         }
-
-        // Anchor segment: largest one keeps the base vertical reference.
-        int anchorIndex = 0;
-        for (int i = 1; i < chunks.size(); i++) {
-            if (chunks.get(i).size() > chunks.get(anchorIndex).size()) {
-                anchorIndex = i;
-            }
-        }
-        if (anchorIndex != 0) {
-            RowSegment anchor = chunks.get(anchorIndex);
-            chunks.set(anchorIndex, chunks.get(0));
-            chunks.set(0, anchor);
-        }
-
-        Map<Integer, MatrixTileCoordinate> out = new HashMap<>();
-        int nextStartJ = 0;
-        int minI = Integer.MAX_VALUE;
-        int currentMaxI = Integer.MIN_VALUE;
-        int globalMaxHeight = 0;
-        for (RowSegment s : chunks) {
-            globalMaxHeight = Math.max(globalMaxHeight, s.height());
-        }
-
+        List<TileMatrix> matrices = new ArrayList<>(chunks.size());
         for (int idx = 0; idx < chunks.size(); idx++) {
             RowSegment chunk = chunks.get(idx);
+            if (chunk == null || chunk.cells().isEmpty()) {
+                continue;
+            }
             validateRowSegmentInvariants(chunk, "final-placement-before-shift", idx);
-            int shiftI;
-            if (idx == 0) {
-                shiftI = -chunk.minI();
-            } else if (chunk.height() >= globalMaxHeight) {
-                // Full-height segments are aligned to the top.
-                shiftI = -chunk.minI();
-            } else {
-                // Partial segments are placed below to avoid row collapse.
-                shiftI = (currentMaxI + 1) - chunk.minI();
+            TileMatrix matrix = buildMatrixFromChunk(frameId, chunk, coordsByTileId);
+            if (matrix != null && matrix.getRows() > 0 && matrix.getCols() > 0 && !matrix.getTiles().isEmpty()) {
+                matrices.add(matrix);
             }
-            int shiftJ = nextStartJ - chunk.minJ();
-            debug(
-                null,
-                "Final place seg=%d size=%d width=%d height=%d minI=%d maxI=%d shiftI=%d shiftJ=%d",
-                idx,
-                chunk.size(),
-                chunk.width(),
-                chunk.height(),
-                chunk.minI(),
-                chunk.maxI(),
-                shiftI,
-                shiftJ
-            );
-
-            for (MatrixCell cell : chunk.cells()) {
-                int i = cell.i() + shiftI;
-                int j = cell.j() + shiftJ;
-                minI = Math.min(minI, i);
-                currentMaxI = Math.max(currentMaxI, i);
-                out.put(cell.tileId(), new MatrixTileCoordinate(i, j));
-            }
-
-            // Keep disconnected segments separated so the exported matrix does not
-            // invent east-west adjacency that is absent from the source neighbor graph.
-            nextStartJ += chunk.width() + DISCONNECTED_SEGMENT_GAP_COLUMNS;
         }
-
-        if (minI == Integer.MAX_VALUE || minI == 0) {
-            return out;
-        }
-
-        Map<Integer, MatrixTileCoordinate> normalized = new HashMap<>(out.size());
-        for (Map.Entry<Integer, MatrixTileCoordinate> e : out.entrySet()) {
-            MatrixTileCoordinate c = e.getValue();
-            normalized.put(e.getKey(), new MatrixTileCoordinate(c.i() - minI, c.j()));
-        }
-        return normalized;
+        return collapseMatrices(frameId, matrices, coordsByTileId);
     }
 
-    private TileMatrix buildMatrix(FrameData frameData, Map<Integer, MatrixTileCoordinate> coordsByTileId) {
+    private TileMatrix collapseMatrices(int frameId, List<TileMatrix> matrices, Map<Integer, MatrixTileCoordinate> coordsByTileId) {
+        if (matrices == null || matrices.isEmpty()) {
+            return null;
+        }
+        if (matrices.size() == 1) {
+            return matrices.get(0);
+        }
+
+        int minI = Integer.MAX_VALUE;
+        int minJ = Integer.MAX_VALUE;
+        int maxI = Integer.MIN_VALUE;
+        int maxJ = Integer.MIN_VALUE;
+        Map<Integer, TileCoord> byTileId = new HashMap<>();
+        for (TileMatrix matrix : matrices) {
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            for (TileCoord tile : matrix.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                byTileId.putIfAbsent(tile.tileId(), tile);
+                minI = Math.min(minI, tile.i());
+                minJ = Math.min(minJ, tile.j());
+                maxI = Math.max(maxI, tile.i());
+                maxJ = Math.max(maxJ, tile.j());
+            }
+        }
+        if (byTileId.isEmpty()) {
+            return null;
+        }
+
+        List<TileCoord> collapsedTiles = new ArrayList<>(byTileId.size());
+        for (TileCoord tile : byTileId.values()) {
+            TileCoord normalized = new TileCoord(tile.tileId(), tile.i() - minI, tile.j() - minJ, tile.textureFile());
+            collapsedTiles.add(normalized);
+            coordsByTileId.put(tile.tileId(), new MatrixTileCoordinate(normalized.i(), normalized.j()));
+        }
+        return new TileMatrix(frameId, maxI - minI + 1, maxJ - minJ + 1, collapsedTiles);
+    }
+
+    private TileMatrix buildMatrixFromChunk(
+        int frameId,
+        RowSegment chunk,
+        Map<Integer, MatrixTileCoordinate> coordsByTileId
+    ) {
         int minI = Integer.MAX_VALUE;
         int minJ = Integer.MAX_VALUE;
         int maxI = Integer.MIN_VALUE;
         int maxJ = Integer.MIN_VALUE;
 
-        for (MatrixTileCoordinate c : coordsByTileId.values()) {
-            if (isUnassigned(c)) {
+        for (MatrixCell cell : chunk.cells()) {
+            if (cell == null) {
                 continue;
             }
-            minI = Math.min(minI, c.i());
-            minJ = Math.min(minJ, c.j());
-            maxI = Math.max(maxI, c.i());
-            maxJ = Math.max(maxJ, c.j());
+            minI = Math.min(minI, cell.i());
+            minJ = Math.min(minJ, cell.j());
+            maxI = Math.max(maxI, cell.i());
+            maxJ = Math.max(maxJ, cell.j());
         }
-
-        if (minI == Integer.MAX_VALUE) {
+        if (minI == Integer.MAX_VALUE || minJ == Integer.MAX_VALUE) {
             return null;
         }
 
-        int shiftI = minI < 0 ? -minI : 0;
-        int shiftJ = minJ < 0 ? -minJ : 0;
-
-        List<TileCoord> result = new ArrayList<>(frameData.getTiles().size());
-        for (TileInstance tile : frameData.getTiles()) {
-            if (tile == null) {
+        List<TileCoord> result = new ArrayList<>(chunk.size());
+        for (MatrixCell cell : chunk.cells()) {
+            if (cell == null || cell.tile() == null) {
                 continue;
             }
-            MatrixTileCoordinate c = coordsByTileId.get(tile.getTileId());
-            if (c == null || isUnassigned(c)) {
-                registerConflict(tile.getTileId(), null);
-                return null;
-            }
-            result.add(new TileCoord(tile.getTileId(), c.i() + shiftI, c.j() + shiftJ, tile.getTextureFile()));
+            int normalizedI = cell.i() - minI;
+            int normalizedJ = cell.j() - minJ;
+            coordsByTileId.put(cell.tileId(), new MatrixTileCoordinate(normalizedI, normalizedJ));
+            result.add(new TileCoord(cell.tileId(), normalizedI, normalizedJ, cell.tile().getTextureFile()));
         }
 
-        return new TileMatrix(frameData.getId(), maxI - minI + 1, maxJ - minJ + 1, result);
+        int rows = maxI - minI + 1;
+        int cols = maxJ - minJ + 1;
+        return new TileMatrix(frameId, rows, cols, result);
     }
 
     private static boolean isUnassigned(MatrixTileCoordinate c) {

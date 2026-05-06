@@ -8,8 +8,10 @@ import java.util.List;
 import java.util.Map;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
+import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
+import frametexturenormalizer.processing.matrix.TileSetToMatrixConverter;
 
 public final class GeometricNeighborhoodSanitizer {
     private static final double UV_EPS = 1.0e-6;
@@ -22,41 +24,86 @@ public final class GeometricNeighborhoodSanitizer {
         if (frame == null || frame.getTiles() == null || frame.getTiles().isEmpty()) {
             return frame;
         }
-
-        Map<Integer, TileProfile> profileByTileId = buildProfilesByTileId(frame);
-        List<TileInstance> sanitizedTiles = buildSanitizedTiles(frame, profileByTileId);
-        return rebuildFrame(frame, sanitizedTiles);
+        return tightenNeighborhoodsByMatrixLayout(frame);
     }
 
-    private static Map<Integer, TileProfile> buildProfilesByTileId(FrameData frame) {
-        Map<Integer, TileProfile> profileByTileId = new HashMap<>();
+    private static FrameData tightenNeighborhoodsByMatrixLayout(FrameData frame) {
+        TileSetToMatrixConverter converter = new TileSetToMatrixConverter();
+        TileMatrix matrix = converter.convert(frame);
+        if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+            return frame;
+        }
+
+        Map<Integer, TileInstance> byId = new HashMap<>();
+        for (TileInstance tile : frame.getTiles()) {
+            if (tile != null) {
+                byId.put(tile.getTileId(), tile);
+            }
+        }
+        if (byId.isEmpty()) {
+            return frame;
+        }
+
+        Map<Integer, NeighborSet> tightenedByTileId = new HashMap<>();
+        Map<String, TileMatrix.TileCoord> byPos = new HashMap<>();
+        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile != null) {
+                byPos.put(key(tile.i(), tile.j()), tile);
+            }
+        }
+        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            Integer north = tileIdAt(byPos, tile.i() - 1, tile.j());
+            Integer south = tileIdAt(byPos, tile.i() + 1, tile.j());
+            Integer east = tileIdAt(byPos, tile.i(), tile.j() + 1);
+            Integer west = tileIdAt(byPos, tile.i(), tile.j() - 1);
+            tightenedByTileId.put(tile.tileId(), new NeighborSet(south, north, east, west));
+        }
+
+        if (tightenedByTileId.isEmpty()) {
+            return frame;
+        }
+
+        List<TileInstance> tightenedTiles = new ArrayList<>(frame.getTiles().size());
         for (TileInstance tile : frame.getTiles()) {
             if (tile == null) {
                 continue;
             }
-            profileByTileId.put(tile.getTileId(), TileProfile.build(tile, frame.getModelViewMatrix()));
-        }
-        return profileByTileId;
-    }
-
-    private static List<TileInstance> buildSanitizedTiles(FrameData frame, Map<Integer, TileProfile> profileByTileId) {
-        List<TileInstance> sanitizedTiles = new ArrayList<>(frame.getTiles().size());
-        for (TileInstance tile : frame.getTiles()) {
-            if (tile == null) {
+            NeighborSet tightened = tightenedByTileId.get(tile.getTileId());
+            if (tightened == null) {
+                tightenedTiles.add(tile);
                 continue;
             }
-            sanitizedTiles.add(buildSanitizedTile(tile, profileByTileId));
+            Integer south = chooseNeighbor(tile.getSouthNeighbor(), tightened.south());
+            Integer north = chooseNeighbor(tile.getNorthNeighbor(), tightened.north());
+            Integer east = chooseNeighbor(tile.getEastNeighbor(), tightened.east());
+            Integer west = tile.isWestCuttingCell() ? null : chooseNeighbor(tile.getWestNeighbor(), tightened.west());
+            tightenedTiles.add(copyTileWithNeighbors(tile, south, north, east, west));
         }
-        return sanitizedTiles;
+        return rebuildFrame(frame, tightenedTiles);
     }
 
-    private static TileInstance buildSanitizedTile(TileInstance tile, Map<Integer, TileProfile> profileByTileId) {
-        Integer south = keepOriginalNeighborIfValid(tile, Direction.SOUTH, profileByTileId);
-        Integer north = keepOriginalNeighborIfValid(tile, Direction.NORTH, profileByTileId);
-        Integer east = keepOriginalNeighborIfValid(tile, Direction.EAST, profileByTileId);
-        Integer west = tile.isWestCuttingCell()
-            ? null
-            : keepOriginalNeighborIfValid(tile, Direction.WEST, profileByTileId);
+    private static FrameData rebuildFrame(FrameData originalFrame, List<TileInstance> sanitizedTiles) {
+        return new FrameData(
+            originalFrame.getId(),
+            sanitizedTiles,
+            originalFrame.getLines(),
+            originalFrame.getCameraState(),
+            originalFrame.getProjectionMatrix(),
+            originalFrame.getModelViewMatrix(),
+            originalFrame.isWithMatrixErrors()
+        );
+    }
+
+    private static TileInstance copyTileWithNeighbors(
+        TileInstance tile,
+        Integer south,
+        Integer north,
+        Integer east,
+        Integer west
+    ) {
         return new TileInstance(
             tile.getTileId(),
             tile.getFrameId(),
@@ -75,118 +122,27 @@ public final class GeometricNeighborhoodSanitizer {
         );
     }
 
-    private static Integer keepOriginalNeighborIfValid(
-        TileInstance sourceTile,
-        Direction direction,
-        Map<Integer, TileProfile> profileByTileId
-    ) {
-        Integer neighborId = originalNeighbor(sourceTile, direction);
-        if (neighborId == null) {
-            return null;
-        }
-        TileProfile sourceProfile = profileByTileId.get(sourceTile.getTileId());
-        TileProfile targetProfile = profileByTileId.get(neighborId);
-        return isValidOriginalNeighbor(sourceProfile, targetProfile, direction) ? neighborId : null;
+    private static Integer tileIdAt(Map<String, TileMatrix.TileCoord> byPos, int i, int j) {
+        TileMatrix.TileCoord tile = byPos.get(key(i, j));
+        return tile == null ? null : tile.tileId();
     }
 
-    private static boolean isValidOriginalNeighbor(
-        TileProfile sourceProfile,
-        TileProfile targetProfile,
-        Direction direction
-    ) {
-        if (!hasReciprocalOriginalNeighbor(sourceProfile, targetProfile, direction)) {
-            return false;
-        }
-        return bordersMatchGeometrically(sourceProfile, targetProfile, direction);
+    private static Integer chooseNeighbor(Integer preferred, Integer fallback) {
+        return preferred != null ? preferred : fallback;
     }
 
-    private static boolean hasReciprocalOriginalNeighbor(
-        TileProfile sourceProfile,
-        TileProfile targetProfile,
-        Direction direction
-    ) {
-        if (sourceProfile == null || targetProfile == null || direction == null) {
-            return false;
-        }
-        TileInstance sourceTile = sourceProfile.tile();
-        TileInstance targetTile = targetProfile.tile();
-        if (sourceTile == null || targetTile == null) {
-            return false;
-        }
-        Integer reverseNeighborId = originalNeighbor(targetTile, direction.opposite());
-        return reverseNeighborId != null && reverseNeighborId.intValue() == sourceTile.getTileId();
-    }
-
-    private static boolean bordersMatchGeometrically(
-        TileProfile sourceProfile,
-        TileProfile targetProfile,
-        Direction direction
-    ) {
-        if (sourceProfile == null || targetProfile == null || direction == null) {
-            return false;
-        }
-        if (!sourceProfile.isUsable() || !targetProfile.isUsable()) {
-            return false;
-        }
-        BorderProfile sourceBorder = sourceProfile.border(direction);
-        BorderProfile targetBorder = targetProfile.border(direction.opposite());
-        if (sourceBorder == null || targetBorder == null) {
-            return false;
-        }
-        BorderMatchScore score = BorderMatchScore.compute(
-            sourceBorder,
-            targetBorder,
-            sourceProfile.scale(),
-            targetProfile.scale()
-        );
-        return score.accepted();
-    }
-
-    private static FrameData rebuildFrame(FrameData originalFrame, List<TileInstance> sanitizedTiles) {
-        return new FrameData(
-            originalFrame.getId(),
-            sanitizedTiles,
-            originalFrame.getLines(),
-            originalFrame.getCameraState(),
-            originalFrame.getProjectionMatrix(),
-            originalFrame.getModelViewMatrix(),
-            originalFrame.isWithMatrixErrors()
-        );
-    }
-
-    private static Integer originalNeighbor(TileInstance tile, Direction direction) {
-        if (tile == null || direction == null) {
-            return null;
-        }
-        return switch (direction) {
-            case NORTH -> tile.getNorthNeighbor();
-            case SOUTH -> tile.getSouthNeighbor();
-            case EAST -> tile.getEastNeighbor();
-            case WEST -> tile.getWestNeighbor();
-        };
-    }
-
-    private static Integer getNeighbor(EnumMap<Direction, Integer> neighbors, Direction direction) {
-        if (neighbors == null || direction == null) {
-            return null;
-        }
-        return neighbors.get(direction);
+    private static String key(int i, int j) {
+        return i + ":" + j;
     }
 
     private enum Direction {
         NORTH,
         SOUTH,
         EAST,
-        WEST;
+        WEST
+    }
 
-        Direction opposite() {
-            return switch (this) {
-                case NORTH -> SOUTH;
-                case SOUTH -> NORTH;
-                case EAST -> WEST;
-                case WEST -> EAST;
-            };
-        }
+    private record NeighborSet(Integer south, Integer north, Integer east, Integer west) {
     }
 
     private record BorderMatchScore(double meanDistance, boolean accepted) {

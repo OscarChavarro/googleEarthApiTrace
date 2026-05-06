@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import frametexturenormalizer.config.Configuration;
+import frametexturenormalizer.util.ScopedTileIds;
 import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.Camera;
 
@@ -204,7 +205,8 @@ public final class FrameTextureNormalizerModel {
         }
         boolean changed = false;
         for (String id : ids) {
-            if (id != null && !id.isBlank() && westCutterTileIds.add(id)) {
+            String normalized = ScopedTileIds.normalize(id);
+            if (normalized != null && westCutterTileIds.add(normalized)) {
                 changed = true;
             }
         }

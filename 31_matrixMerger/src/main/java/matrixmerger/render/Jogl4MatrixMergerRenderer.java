@@ -99,22 +99,40 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
         int i = model.getSelectedMatrixOrdinal();
-        int total = model.getMatrixCount();
+        int total = model.getFrameCount();
         boolean hasNext = model.hasNextMatrixForSelection();
         TileMatrix nextMatrix = model.getNextMatrixForSelection();
         boolean mergeFailed = model.hasLastMergeFailedForCurrentSelection();
+        String selectedFrameLabel = model.getSelectedFrameLabel();
+        String nextFrameLabel = model.getNextFrameLabelForSelection();
+        boolean selectedFrameInvalid = model.isSelectedFrameInvalid();
 
         GL2 gl2 = drawable.getGL().getGL2();
         gl2.glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(w, h);
         hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
-        hudTextRenderer.draw("Matrix [1, 2]: " + i + "/" + total, 16, h - 28);
-        if (hasNext && nextMatrix != null) {
-            hudTextRenderer.draw("Merge current matrix with next one [m], next frame: " + nextMatrix.getFrameId(), 16, h - 50);
+        hudTextRenderer.draw(
+            "Frame [1, 2]: " + i + "/" + total + " | id " + selectedFrameLabel,
+            16,
+            h - 28
+        );
+        if (!selectedFrameInvalid && hasNext && nextMatrix != null) {
+            hudTextRenderer.draw(
+                "Split by west cutters [c], merge next frame [m], merge/rotate [M], retry cycle [n], next frame: " + nextFrameLabel,
+                16,
+                h - 50
+            );
         }
-        if (hasNext && mergeFailed) {
+        else if (!selectedFrameInvalid) {
+            hudTextRenderer.draw("Split by west cutters [c]", 16, h - 50);
+        }
+        if (!selectedFrameInvalid && hasNext && mergeFailed) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
-            hudTextRenderer.draw("ERROR: Could not merge with next matrix!", 16, h - 72);
+            hudTextRenderer.draw("ERROR: Could not merge with next frame!", 16, h - 72);
+        }
+        if (selectedFrameInvalid) {
+            hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
+            hudTextRenderer.draw(model.getSelectedFrameInvalidReason(), 16, h - 50);
         }
         hudTextRenderer.endRendering();
         gl2.glEnable(GL2.GL_DEPTH_TEST);

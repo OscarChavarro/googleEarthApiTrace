@@ -2,9 +2,17 @@ package matrixmerger;
 
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import matrixmerger.io.MatrixReader;
+import matrixmerger.io.WestCutterReader;
+import matrixmerger.io.WestCutterWriter;
+import matrixmerger.io.FrameMatrices;
 import matrixmerger.model.MatrixMergerModel;
+import matrixmerger.processing.WestCutterColumnPropagator;
+import matrixmerger.processing.WestCutterFrameValidator;
+import matrixmerger.processing.WestCutterValidationResult;
 import matrixmerger.render.Jogl4MatrixMergerRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
@@ -32,8 +40,18 @@ public class Main {
 
     private static MatrixMergerModel createModel() {
         MatrixMergerModel model = new MatrixMergerModel();
-        model.setTileMatrices(new MatrixReader().readAllFromOutput(Path.of(OUTPUT_DIRECTORY)));
-        System.out.println("Loaded matrices: " + model.getTileMatrices().size());
+        Path outputPath = Path.of(OUTPUT_DIRECTORY);
+        List<FrameMatrices> frames = new MatrixReader().readAllFromOutput(outputPath);
+        Set<String> westCutterIds = new WestCutterReader().readFromOutput(outputPath);
+        Set<String> propagatedWestCutterIds = new WestCutterColumnPropagator().propagate(frames, westCutterIds);
+        if (!propagatedWestCutterIds.equals(westCutterIds)) {
+            new WestCutterWriter().writeToOutput(outputPath, propagatedWestCutterIds);
+        }
+        westCutterIds = propagatedWestCutterIds;
+        WestCutterValidationResult validation = new WestCutterFrameValidator().validate(frames, westCutterIds);
+        model.setFrameMatrices(frames);
+        model.setWestCutterTileIds(westCutterIds);
+        model.setInvalidFrames(validation.getInvalidReasonByFrameId());
         return model;
     }
 

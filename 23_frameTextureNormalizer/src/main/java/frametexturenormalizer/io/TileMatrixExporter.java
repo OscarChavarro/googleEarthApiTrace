@@ -11,13 +11,29 @@ import frametexturenormalizer.model.TileMatrix;
 
 public final class TileMatrixExporter {
     public void export(List<TileMatrix> matrices) {
-        cleanupObsoleteMatrices(matrices);
-        if (matrices == null || matrices.isEmpty()) {
+        List<TileMatrix> oneMatrixPerFrame = oneMatrixPerFrame(matrices);
+        cleanupObsoleteMatrices(oneMatrixPerFrame);
+        if (oneMatrixPerFrame.isEmpty()) {
             return;
         }
-        for (TileMatrix matrix : matrices) {
+        for (TileMatrix matrix : oneMatrixPerFrame) {
             MatrixWriter.writeMatrixJson(matrix);
         }
+    }
+
+    private static List<TileMatrix> oneMatrixPerFrame(List<TileMatrix> matrices) {
+        if (matrices == null || matrices.isEmpty()) {
+            return List.of();
+        }
+        Set<Integer> emittedFrames = new LinkedHashSet<>();
+        List<TileMatrix> out = new java.util.ArrayList<>();
+        for (TileMatrix matrix : matrices) {
+            if (matrix == null || !emittedFrames.add(matrix.getFrameId())) {
+                continue;
+            }
+            out.add(matrix);
+        }
+        return out;
     }
 
     private static void cleanupObsoleteMatrices(List<TileMatrix> matrices) {
