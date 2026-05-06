@@ -118,7 +118,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         );
         if (!selectedFrameInvalid && hasNext && nextMatrix != null) {
             hudTextRenderer.draw(
-                "Split by west cutters [c], merge next frame [m], merge/rotate [M], retry cycle [n], next frame: " + nextFrameLabel,
+                "Split by west cutters [c], merge next frame [m], retry cycle [n], next frame: " + nextFrameLabel,
                 16,
                 h - 50
             );

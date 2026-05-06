@@ -2,6 +2,7 @@ package matrixmerger.model;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -77,6 +78,10 @@ public final class MatrixMergerModel {
         matrixMerger.setWestCutterTileIds(this.westCutterTileIds);
     }
 
+    public Set<String> getWestCutterTileIds() {
+        return Collections.unmodifiableSet(new HashSet<>(westCutterTileIds));
+    }
+
     public void setInvalidFrames(Map<Integer, String> invalidReasonByFrameId) {
         this.invalidReasonByFrameId.clear();
         if (invalidReasonByFrameId != null) {
@@ -150,6 +155,16 @@ public final class MatrixMergerModel {
         }
         selectedFrameIndex++;
         lastMergeFailedForCurrentSelection = false;
+        return true;
+    }
+
+    public boolean selectFrameIndex(int index) {
+        if (frameMatrices.isEmpty() || index < 0 || index >= frameMatrices.size()) {
+            return false;
+        }
+        selectedFrameIndex = index;
+        lastMergeFailedForCurrentSelection = false;
+        normalizeSelection();
         return true;
     }
 
@@ -310,6 +325,13 @@ public final class MatrixMergerModel {
         return mergedAny;
     }
 
+    public void sortFramesByTileCountAscending() {
+        frameMatrices.sort(Comparator.comparingInt(MatrixMergerModel::tileCountOfFrame));
+        maximumRetryCount = frameMatrices.size();
+        normalizeSelection();
+        lastMergeFailedForCurrentSelection = false;
+    }
+
     public synchronized long getGpuTextureBytesAssigned() {
         return gpuTextureBytesAssigned;
     }
@@ -431,6 +453,14 @@ public final class MatrixMergerModel {
 
     private static boolean isEmpty(FrameMatrices frame) {
         return frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty();
+    }
+
+    private static int tileCountOfFrame(FrameMatrices frame) {
+        if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+            return 0;
+        }
+        TileMatrix matrix = frame.getMatrices().get(0);
+        return matrix == null || matrix.getTiles() == null ? 0 : matrix.getTiles().size();
     }
 
     private static String formatFrameLabel(int frameId) {

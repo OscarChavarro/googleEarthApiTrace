@@ -10,6 +10,7 @@ import matrixmerger.io.WestCutterReader;
 import matrixmerger.io.WestCutterWriter;
 import matrixmerger.io.FrameMatrices;
 import matrixmerger.model.MatrixMergerModel;
+import matrixmerger.processing.AutomaticGrouper;
 import matrixmerger.processing.WestCutterColumnPropagator;
 import matrixmerger.processing.WestCutterFrameValidator;
 import matrixmerger.processing.WestCutterValidationResult;
@@ -18,8 +19,14 @@ import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public class Main {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
+    private enum Mode {
+        MANUAL,
+        AUTO
+    }
+
     public static void main(String[] args) {
         boolean offline = hasArg(args, "--ofline") || hasArg(args, "--offline");
+        Mode mode = parseMode(args);
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
             System.out.println("Can not start OpenGL/JOGL.");
             return;
@@ -32,6 +39,9 @@ public class Main {
             int after = model.getMatrixCount();
             System.out.println("Offline full-set merge done. Matrices: " + before + " -> " + after);
             return;
+        }
+        if (mode == Mode.AUTO) {
+            new AutomaticGrouper().run(model);
         }
         Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
         InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
@@ -78,5 +88,36 @@ public class Main {
             }
         }
         return false;
+    }
+
+    private static Mode parseMode(String[] args) {
+        String value = argValue(args, "--mode");
+        if (value == null || value.isBlank()) {
+            return Mode.MANUAL;
+        }
+        return "auto".equalsIgnoreCase(value.trim()) ? Mode.AUTO : Mode.MANUAL;
+    }
+
+    private static String argValue(String[] args, String flag) {
+        if (args == null || flag == null || flag.isBlank()) {
+            return null;
+        }
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg == null) {
+                continue;
+            }
+            if (arg.equals(flag)) {
+                if (i + 1 < args.length) {
+                    return args[i + 1];
+                }
+                return null;
+            }
+            String prefix = flag + "=";
+            if (arg.startsWith(prefix)) {
+                return arg.substring(prefix.length());
+            }
+        }
+        return null;
     }
 }

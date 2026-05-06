@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 set -euo pipefail
-gradle run --quiet
+gradle run --quiet --args="--mode auto"
