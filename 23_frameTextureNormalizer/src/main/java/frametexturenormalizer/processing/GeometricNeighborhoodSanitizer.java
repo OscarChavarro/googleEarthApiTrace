@@ -23,131 +23,147 @@ public final class GeometricNeighborhoodSanitizer {
             return frame;
         }
 
-        List<TileProfile> profiles = new ArrayList<>(frame.getTiles().size());
+        Map<Integer, TileProfile> profileByTileId = buildProfilesByTileId(frame);
+        List<TileInstance> sanitizedTiles = buildSanitizedTiles(frame, profileByTileId);
+        return rebuildFrame(frame, sanitizedTiles);
+    }
+
+    private static Map<Integer, TileProfile> buildProfilesByTileId(FrameData frame) {
+        Map<Integer, TileProfile> profileByTileId = new HashMap<>();
         for (TileInstance tile : frame.getTiles()) {
             if (tile == null) {
                 continue;
             }
-            profiles.add(TileProfile.build(tile, frame.getModelViewMatrix()));
+            profileByTileId.put(tile.getTileId(), TileProfile.build(tile, frame.getModelViewMatrix()));
         }
+        return profileByTileId;
+    }
 
-        Map<Integer, EnumMap<Direction, Candidate>> bestByTile = new HashMap<>();
-        for (TileProfile source : profiles) {
-            if (source == null || !source.isUsable()) {
-                continue;
-            }
-            EnumMap<Direction, Candidate> best = new EnumMap<>(Direction.class);
-            for (Direction direction : Direction.values()) {
-                if (direction == Direction.WEST && source.tile().isWestCuttingCell()) {
-                    continue;
-                }
-                BorderProfile sourceBorder = source.border(direction);
-                if (sourceBorder == null) {
-                    continue;
-                }
-                Candidate candidate = bestCandidateForDirection(source, direction, sourceBorder, profiles);
-                if (candidate != null) {
-                    best.put(direction, candidate);
-                }
-            }
-            bestByTile.put(source.tile().getTileId(), best);
-        }
-
-        Map<Integer, EnumMap<Direction, Integer>> reciprocalNeighbors = new HashMap<>();
-        for (TileProfile source : profiles) {
-            if (source == null) {
-                continue;
-            }
-            EnumMap<Direction, Integer> neighbors = new EnumMap<>(Direction.class);
-            EnumMap<Direction, Candidate> sourceBest = bestByTile.get(source.tile().getTileId());
-            if (sourceBest != null) {
-                for (Map.Entry<Direction, Candidate> entry : sourceBest.entrySet()) {
-                    Direction direction = entry.getKey();
-                    Candidate candidate = entry.getValue();
-                    if (candidate == null) {
-                        continue;
-                    }
-                    EnumMap<Direction, Candidate> targetBest = bestByTile.get(candidate.targetId());
-                    if (targetBest == null) {
-                        continue;
-                    }
-                    Candidate reverse = targetBest.get(direction.opposite());
-                    if (reverse == null || reverse.targetId() != source.tile().getTileId()) {
-                        continue;
-                    }
-                    neighbors.put(direction, candidate.targetId());
-                }
-            }
-            reciprocalNeighbors.put(source.tile().getTileId(), neighbors);
-        }
-
+    private static List<TileInstance> buildSanitizedTiles(FrameData frame, Map<Integer, TileProfile> profileByTileId) {
         List<TileInstance> sanitizedTiles = new ArrayList<>(frame.getTiles().size());
         for (TileInstance tile : frame.getTiles()) {
             if (tile == null) {
                 continue;
             }
-            EnumMap<Direction, Integer> neighbors = reciprocalNeighbors.get(tile.getTileId());
-            Integer north = getNeighbor(neighbors, Direction.NORTH);
-            Integer south = getNeighbor(neighbors, Direction.SOUTH);
-            Integer east = getNeighbor(neighbors, Direction.EAST);
-            Integer west = getNeighbor(neighbors, Direction.WEST);
-            if (tile.isWestCuttingCell()) {
-                west = null;
-            }
-            TileInstance sanitized = new TileInstance(
-                tile.getTileId(),
-                tile.getFrameId(),
-                tile.getTextureFile(),
-                south,
-                north,
-                east,
-                west,
-                tile.getTriangleStrip(),
-                tile.getModelViewMatrix(),
-                tile.getMatrixI(),
-                tile.getMatrixJ(),
-                tile.isIncorrectMatrixMapping(),
-                tile.isWestCuttingCell(),
-                tile.isSelected()
-            );
-            sanitizedTiles.add(sanitized);
+            sanitizedTiles.add(buildSanitizedTile(tile, profileByTileId));
         }
+        return sanitizedTiles;
+    }
 
-        return new FrameData(
-            frame.getId(),
-            sanitizedTiles,
-            frame.getLines(),
-            frame.getCameraState(),
-            frame.getProjectionMatrix(),
-            frame.getModelViewMatrix(),
-            frame.isWithMatrixErrors()
+    private static TileInstance buildSanitizedTile(TileInstance tile, Map<Integer, TileProfile> profileByTileId) {
+        Integer south = keepOriginalNeighborIfValid(tile, Direction.SOUTH, profileByTileId);
+        Integer north = keepOriginalNeighborIfValid(tile, Direction.NORTH, profileByTileId);
+        Integer east = keepOriginalNeighborIfValid(tile, Direction.EAST, profileByTileId);
+        Integer west = tile.isWestCuttingCell()
+            ? null
+            : keepOriginalNeighborIfValid(tile, Direction.WEST, profileByTileId);
+        return new TileInstance(
+            tile.getTileId(),
+            tile.getFrameId(),
+            tile.getTextureFile(),
+            south,
+            north,
+            east,
+            west,
+            tile.getTriangleStrip(),
+            tile.getModelViewMatrix(),
+            tile.getMatrixI(),
+            tile.getMatrixJ(),
+            tile.isIncorrectMatrixMapping(),
+            tile.isWestCuttingCell(),
+            tile.isSelected()
         );
     }
 
-    private static Candidate bestCandidateForDirection(
-        TileProfile source,
+    private static Integer keepOriginalNeighborIfValid(
+        TileInstance sourceTile,
         Direction direction,
-        BorderProfile sourceBorder,
-        List<TileProfile> profiles
+        Map<Integer, TileProfile> profileByTileId
     ) {
-        Candidate best = null;
-        for (TileProfile target : profiles) {
-            if (target == null || target.tile().getTileId() == source.tile().getTileId() || !target.isUsable()) {
-                continue;
-            }
-            BorderProfile targetBorder = target.border(direction.opposite());
-            if (targetBorder == null) {
-                continue;
-            }
-            BorderMatchScore score = BorderMatchScore.compute(sourceBorder, targetBorder, source.scale(), target.scale());
-            if (!score.accepted()) {
-                continue;
-            }
-            if (best == null || score.meanDistance() < best.score().meanDistance()) {
-                best = new Candidate(target.tile().getTileId(), score);
-            }
+        Integer neighborId = originalNeighbor(sourceTile, direction);
+        if (neighborId == null) {
+            return null;
         }
-        return best;
+        TileProfile sourceProfile = profileByTileId.get(sourceTile.getTileId());
+        TileProfile targetProfile = profileByTileId.get(neighborId);
+        return isValidOriginalNeighbor(sourceProfile, targetProfile, direction) ? neighborId : null;
+    }
+
+    private static boolean isValidOriginalNeighbor(
+        TileProfile sourceProfile,
+        TileProfile targetProfile,
+        Direction direction
+    ) {
+        if (!hasReciprocalOriginalNeighbor(sourceProfile, targetProfile, direction)) {
+            return false;
+        }
+        return bordersMatchGeometrically(sourceProfile, targetProfile, direction);
+    }
+
+    private static boolean hasReciprocalOriginalNeighbor(
+        TileProfile sourceProfile,
+        TileProfile targetProfile,
+        Direction direction
+    ) {
+        if (sourceProfile == null || targetProfile == null || direction == null) {
+            return false;
+        }
+        TileInstance sourceTile = sourceProfile.tile();
+        TileInstance targetTile = targetProfile.tile();
+        if (sourceTile == null || targetTile == null) {
+            return false;
+        }
+        Integer reverseNeighborId = originalNeighbor(targetTile, direction.opposite());
+        return reverseNeighborId != null && reverseNeighborId.intValue() == sourceTile.getTileId();
+    }
+
+    private static boolean bordersMatchGeometrically(
+        TileProfile sourceProfile,
+        TileProfile targetProfile,
+        Direction direction
+    ) {
+        if (sourceProfile == null || targetProfile == null || direction == null) {
+            return false;
+        }
+        if (!sourceProfile.isUsable() || !targetProfile.isUsable()) {
+            return false;
+        }
+        BorderProfile sourceBorder = sourceProfile.border(direction);
+        BorderProfile targetBorder = targetProfile.border(direction.opposite());
+        if (sourceBorder == null || targetBorder == null) {
+            return false;
+        }
+        BorderMatchScore score = BorderMatchScore.compute(
+            sourceBorder,
+            targetBorder,
+            sourceProfile.scale(),
+            targetProfile.scale()
+        );
+        return score.accepted();
+    }
+
+    private static FrameData rebuildFrame(FrameData originalFrame, List<TileInstance> sanitizedTiles) {
+        return new FrameData(
+            originalFrame.getId(),
+            sanitizedTiles,
+            originalFrame.getLines(),
+            originalFrame.getCameraState(),
+            originalFrame.getProjectionMatrix(),
+            originalFrame.getModelViewMatrix(),
+            originalFrame.isWithMatrixErrors()
+        );
+    }
+
+    private static Integer originalNeighbor(TileInstance tile, Direction direction) {
+        if (tile == null || direction == null) {
+            return null;
+        }
+        return switch (direction) {
+            case NORTH -> tile.getNorthNeighbor();
+            case SOUTH -> tile.getSouthNeighbor();
+            case EAST -> tile.getEastNeighbor();
+            case WEST -> tile.getWestNeighbor();
+        };
     }
 
     private static Integer getNeighbor(EnumMap<Direction, Integer> neighbors, Direction direction) {
@@ -171,9 +187,6 @@ public final class GeometricNeighborhoodSanitizer {
                 case WEST -> EAST;
             };
         }
-    }
-
-    private record Candidate(int targetId, BorderMatchScore score) {
     }
 
     private record BorderMatchScore(double meanDistance, boolean accepted) {
