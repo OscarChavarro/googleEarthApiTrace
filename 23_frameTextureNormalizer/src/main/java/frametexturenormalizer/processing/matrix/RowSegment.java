@@ -6,10 +6,14 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
 
 final class RowSegment {
     private final Map<Integer, MatrixCell> byTileId = new HashMap<>();
     private final Map<String, MatrixCell> byCoord = new HashMap<>();
+    private final Map<Integer, List<MatrixCell>> byRow = new HashMap<>();
+    private List<MatrixCell> cellsSortedLeftToRightCache;
+    private List<Integer> sortedRowIndicesCache;
 
     RowSegment copyShifted(int di, int dj) {
         RowSegment out = new RowSegment();
@@ -23,6 +27,9 @@ final class RowSegment {
     void put(MatrixCell cell) {
         byTileId.put(cell.tileId(), cell);
         byCoord.put(key(cell.i(), cell.j()), cell);
+        byRow.computeIfAbsent(cell.i(), __ -> new ArrayList<>()).add(cell);
+        cellsSortedLeftToRightCache = null;
+        sortedRowIndicesCache = null;
     }
 
     MatrixCell getByCoord(int i, int j) {
@@ -38,17 +45,35 @@ final class RowSegment {
     }
 
     List<MatrixCell> cellsSortedLeftToRight() {
-        List<MatrixCell> out = new ArrayList<>(byTileId.values());
-        out.sort(Comparator.comparingInt(MatrixCell::j).thenComparingInt(MatrixCell::tileId));
-        return out;
+        if (cellsSortedLeftToRightCache == null) {
+            List<MatrixCell> out = new ArrayList<>(byTileId.values());
+            out.sort(Comparator.comparingInt(MatrixCell::i).thenComparingInt(MatrixCell::j).thenComparingInt(MatrixCell::tileId));
+            cellsSortedLeftToRightCache = Collections.unmodifiableList(out);
+        }
+        return cellsSortedLeftToRightCache;
     }
 
     Collection<MatrixCell> cells() {
         return byTileId.values();
     }
 
+    List<MatrixCell> cellsInRowSortedLeftToRight(int row) {
+        List<MatrixCell> cells = byRow.get(row);
+        if (cells == null || cells.isEmpty()) {
+            return List.of();
+        }
+        List<MatrixCell> out = new ArrayList<>(cells);
+        out.sort(Comparator.comparingInt(MatrixCell::j).thenComparingInt(MatrixCell::tileId));
+        return out;
+    }
+
     List<Integer> sortedRowIndices() {
-        return byTileId.values().stream().map(MatrixCell::i).distinct().sorted().toList();
+        if (sortedRowIndicesCache == null) {
+            List<Integer> rows = new ArrayList<>(byRow.keySet());
+            Collections.sort(rows);
+            sortedRowIndicesCache = Collections.unmodifiableList(rows);
+        }
+        return sortedRowIndicesCache;
     }
 
     int size() {
@@ -67,6 +92,9 @@ final class RowSegment {
         List<MatrixCell> cells = new ArrayList<>(byTileId.values());
         byTileId.clear();
         byCoord.clear();
+        byRow.clear();
+        cellsSortedLeftToRightCache = null;
+        sortedRowIndicesCache = null;
         for (MatrixCell c : cells) {
             c.shift(di, dj);
             put(c);

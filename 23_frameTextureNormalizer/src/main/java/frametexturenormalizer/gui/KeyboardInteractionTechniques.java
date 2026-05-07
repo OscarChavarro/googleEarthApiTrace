@@ -12,7 +12,7 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 // App classes
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
-import frametexturenormalizer.processing.TileCutter;
+import frametexturenormalizer.processing.neighborhood.TileCutter;
 import java.util.Set;
 
 public final class KeyboardInteractionTechniques implements KeyListener {

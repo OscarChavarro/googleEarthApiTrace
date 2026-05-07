@@ -40,6 +40,23 @@ public final class TraceSessionReader {
         }
     }
 
+    public int findLastFrameId(Path inputRoot, int fallback) {
+        List<Path> frameDirs = listFrameDirectories(inputRoot);
+        if (frameDirs.isEmpty()) {
+            return fallback;
+        }
+        Path lastDir = frameDirs.get(frameDirs.size() - 1);
+        if (lastDir == null || lastDir.getFileName() == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(lastDir.getFileName().toString());
+        }
+        catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
     public FrameData readFrameDirectory(Path dir) {
         if (dir == null) {
             return null;

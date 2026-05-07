@@ -10,8 +10,8 @@ import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
-import frametexturenormalizer.processing.TileFiltererByConnectedComponents;
-import frametexturenormalizer.processing.TileFiltererByGeometricNullNeighbors;
+import frametexturenormalizer.processing.filtering.TileFiltererByConnectedComponents;
+import frametexturenormalizer.processing.filtering.TileFiltererByGeometricNullNeighbors;
 
 public final class FrameReader {
     private FrameReader() {

@@ -1,4 +1,4 @@
-package frametexturenormalizer.processing;
+package frametexturenormalizer.processing.preparation;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

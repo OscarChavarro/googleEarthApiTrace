@@ -1,4 +1,4 @@
-package frametexturenormalizer.processing;
+package frametexturenormalizer.processing.filtering;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -1,4 +1,4 @@
-package frametexturenormalizer.processing;
+package frametexturenormalizer.processing.filtering;
 
 import java.util.List;
 import frametexturenormalizer.model.TileInstance;

@@ -1,4 +1,4 @@
-package frametexturenormalizer.processing;
+package frametexturenormalizer.processing.neighborhood;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -289,7 +289,8 @@ public final class GeometricNeighborhoodSanitizer {
             if (a.center().x() <= b.center().x()) {
                 out.put(Direction.WEST, a);
                 out.put(Direction.EAST, b);
-            } else {
+            }
+            else {
                 out.put(Direction.WEST, b);
                 out.put(Direction.EAST, a);
             }
@@ -302,7 +303,8 @@ public final class GeometricNeighborhoodSanitizer {
             if (a.center().y() <= b.center().y()) {
                 out.put(Direction.SOUTH, a);
                 out.put(Direction.NORTH, b);
-            } else {
+            }
+            else {
                 out.put(Direction.SOUTH, b);
                 out.put(Direction.NORTH, a);
             }

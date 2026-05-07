@@ -11,14 +11,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileMatrix;
-import frametexturenormalizer.processing.GeometricNeighborhoodSanitizer;
-import frametexturenormalizer.processing.NeighborhoodDebugReporter;
-import frametexturenormalizer.processing.TileFiltererByTextureCoverage;
-import frametexturenormalizer.processing.TileTextureNormalizer;
+import frametexturenormalizer.processing.filtering.TileFiltererByIsolatedTiles;
+import frametexturenormalizer.processing.filtering.TileFiltererByTextureCoverage;
+import frametexturenormalizer.processing.neighborhood.GeometricNeighborhoodSanitizer;
+import frametexturenormalizer.processing.texture.TileTextureNormalizer;
 
 public final class TileMatrixProcessor {
-    private final TileSetToMatrixConverter convertor = new TileSetToMatrixConverter();
-
     public TileMatrixProcessingResult normalizeAndConvertTileMatrices(
         List<FrameData> frames,
         List<List<String>> duplicatedTextureGroups
@@ -88,24 +86,15 @@ public final class TileMatrixProcessor {
                 continue;
             }
             TileMatrix.TileCoord c = byId.get(tile.getTileId());
-            TileInstance tileWithCoords = new TileInstance(
-                tile.getTileId(),
-                tile.getFrameId(),
-                tile.getTextureFile(),
-                tile.getSouthNeighbor(),
-                tile.getNorthNeighbor(),
-                tile.getEastNeighbor(),
-                tile.getWestNeighbor(),
-                tile.getTriangleStrip(),
-                tile.getModelViewMatrix(),
-                c == null ? null : c.i(),
-                c == null ? null : c.j(),
-                tile.isIncorrectMatrixMapping()
-            );
-            tileWithCoords.setWestCuttingCell(tile.isWestCuttingCell());
-            out.add(tileWithCoords);
+            TileInstance tileWithCoordinates = getTileInstance(tile, c == null ? null : c.i(), c == null ? null : c.j(), tile.isIncorrectMatrixMapping());
+            out.add(tileWithCoordinates);
         }
         return out;
+    }
+
+    private static TileInstance getTileInstance(TileInstance tile, Integer c, Integer c1, boolean tile1) {
+        TileInstance tileWithCoordinates = getTileInstance2(tile, c, c1, tile1);
+        return tileWithCoordinates;
     }
 
     private List<TileInstance> markIncorrectMatrixMappings(
@@ -122,8 +111,15 @@ public final class TileMatrixProcessor {
                 continue;
             }
             boolean incorrect = conflictIds != null && conflictIds.contains(tile.getTileId());
-            MatrixTileCoordinate coord = partialCoords == null ? null : partialCoords.get(tile.getTileId());
-            TileInstance flaggedTile = new TileInstance(
+            MatrixTileCoordinate coordinate = partialCoords == null ? null : partialCoords.get(tile.getTileId());
+            TileInstance flaggedTile = getTileInstance2(tile, coordinate == null ? tile.getMatrixI() : coordinate.i(), coordinate == null ? tile.getMatrixJ() : coordinate.j(), incorrect);
+            out.add(flaggedTile);
+        }
+        return out;
+    }
+
+    private static TileInstance getTileInstance2(TileInstance tile, int coordinate, int coordinate1, boolean incorrect) {
+        TileInstance flaggedTile = new TileInstance(
                 tile.getTileId(),
                 tile.getFrameId(),
                 tile.getTextureFile(),
@@ -133,20 +129,19 @@ public final class TileMatrixProcessor {
                 tile.getWestNeighbor(),
                 tile.getTriangleStrip(),
                 tile.getModelViewMatrix(),
-                coord == null ? tile.getMatrixI() : coord.i(),
-                coord == null ? tile.getMatrixJ() : coord.j(),
+                coordinate,
+                coordinate1,
                 incorrect
-            );
-            flaggedTile.setWestCuttingCell(tile.isWestCuttingCell());
-            out.add(flaggedTile);
-        }
-        return out;
+        );
+        flaggedTile.setWestCuttingCell(tile.isWestCuttingCell());
+        return flaggedTile;
     }
 
     private IndexedFrameResult processFrameRequest(
         FrameRequest request,
         Map<String, String> canonicalTextureByTexture,
         TileFiltererByTextureCoverage textureCoverageFilterer,
+        TileFiltererByIsolatedTiles isolatedTileFilterer,
         GeometricNeighborhoodSanitizer sanitizer,
         TileSetToMatrixConverter localConvertor
     ) {
@@ -154,16 +149,18 @@ public final class TileMatrixProcessor {
             return null;
         }
         FrameData normalized = TileTextureNormalizer.normalizeFrame(request.frame(), canonicalTextureByTexture);
-        NeighborhoodDebugReporter.dumpFrame("normalized", normalized);
         FrameData sanitized = sanitizer.sanitizeFrame(normalized);
-        NeighborhoodDebugReporter.dumpFrame("sanitized-after-normalize", sanitized);
-        FrameData filtered = textureCoverageFilterer.removeNonFullResolutionTiles(sanitized);
-        NeighborhoodDebugReporter.dumpFrame("full-res-filtered", filtered);
+        FrameData fullResolutionFiltered = textureCoverageFilterer.removeNonFullResolutionTiles(sanitized);
+        FrameData filtered = isolatedTileFilterer.removeIsolatedTiles(fullResolutionFiltered);
         TileMatrix matrix = localConvertor.convert(filtered);
         if (matrix == null) {
             Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();
             Map<Integer, MatrixTileCoordinate> partialCoords = localConvertor.getLastCoordinatesByTileId();
-            List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(filtered.getTiles(), conflictIds, partialCoords);
+            List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(
+                filtered.getTiles(),
+                conflictIds,
+                partialCoords
+            );
             return new IndexedFrameResult(
                 request.index(),
                 new FrameData(
@@ -200,6 +197,7 @@ public final class TileMatrixProcessor {
     ) {
         TileSetToMatrixConverter localConvertor = new TileSetToMatrixConverter();
         TileFiltererByTextureCoverage textureCoverageFilterer = new TileFiltererByTextureCoverage();
+        TileFiltererByIsolatedTiles isolatedTileFilterer = new TileFiltererByIsolatedTiles();
         GeometricNeighborhoodSanitizer sanitizer = new GeometricNeighborhoodSanitizer();
         while (true) {
             FrameRequest request = pendingFrames.poll();
@@ -214,6 +212,7 @@ public final class TileMatrixProcessor {
                 request,
                 canonicalTextureByTexture,
                 textureCoverageFilterer,
+                isolatedTileFilterer,
                 sanitizer,
                 localConvertor
             );
@@ -258,9 +257,4 @@ public final class TileMatrixProcessor {
         }
     }
 
-    private record FrameRequest(int index, FrameData frame) {
-    }
-
-    private record IndexedFrameResult(int index, FrameData frame, TileMatrix matrix) {
-    }
 }

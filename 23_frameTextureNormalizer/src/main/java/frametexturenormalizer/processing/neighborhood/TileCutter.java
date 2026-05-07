@@ -1,4 +1,4 @@
-package frametexturenormalizer.processing;
+package frametexturenormalizer.processing.neighborhood;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;

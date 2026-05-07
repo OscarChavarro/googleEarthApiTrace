@@ -1,4 +1,4 @@
-package frametexturenormalizer.processing;
+package frametexturenormalizer.processing.texture;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

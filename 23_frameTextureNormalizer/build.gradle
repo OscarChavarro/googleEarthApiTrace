@@ -18,6 +18,11 @@ application {
 tasks.withType(JavaExec).configureEach {
     // Shader loader resolves from working directory; keep it at project root so ../etc works.
     workingDir = projectDir
+    if (project.hasProperty('jfrFile')) {
+        String jfrFile = project.property('jfrFile').toString()
+        String jfrSettings = project.findProperty('jfrSettings')?.toString() ?: 'profile'
+        jvmArgs("-XX:StartFlightRecording=filename=${jfrFile},settings=${jfrSettings},dumponexit=true")
+    }
 }
 
 repositories {

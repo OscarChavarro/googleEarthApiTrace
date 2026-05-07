@@ -93,6 +93,21 @@ public final class CommandLineOptions {
         return getIntValue(args, "--end-frame", "--end-frame=", fallback, 0);
     }
 
+    public static boolean hasEndFrame(String[] args) {
+        if (args == null) {
+            return false;
+        }
+        for (String a : args) {
+            if (a == null) {
+                continue;
+            }
+            if ("--end-frame".equals(a) || a.startsWith("--end-frame=")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String offlineOutputPath(String[] args) {
         String value = getArgValue(args, "--output=");
         if (value == null || value.isBlank()) {
