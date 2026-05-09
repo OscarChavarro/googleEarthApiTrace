@@ -81,6 +81,7 @@ public final class UncleDetector {
         if (candidate.getTriangleStrip() != null
             && simpleBounds != null
             && simpleBounds.isDirectUncleRange()
+            && simpleBounds.hasAdequateDirectUncleScale()
             && !candidate.isFullResolutionWithRespectToTexture()) {
             return new CandidateProfile(simpleBounds, null, null);
         }
@@ -315,6 +316,12 @@ public final class UncleDetector {
                 && spanLooksLikeDirectUncle(maxV - minV)
                 && uHalf() != null
                 && vHalf() != null;
+        }
+
+        private boolean hasAdequateDirectUncleScale() {
+            // Reject lower-left quarter mappings like 0..0.5 x 0..0.5, which can
+            // create false uncle matches after texture normalization.
+            return !(maxU <= HALF_SPAN + UV_TOLERANCE && maxV <= HALF_SPAN + UV_TOLERANCE);
         }
 
         private HalfRange uHalf() {

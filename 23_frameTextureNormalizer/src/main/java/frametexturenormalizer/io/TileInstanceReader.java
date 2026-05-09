@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
+import frametexturenormalizer.util.ScopedTileIds;
 import processing.uncles.ToUncleRelationship;
 import processing.uncles.UncleDirections;
 
@@ -132,13 +133,29 @@ public final class TileInstanceReader {
                 continue;
             }
             UncleDirections direction = parseDirection(item.get("direction"));
-            Integer uncleId = nullableNeighbor(item.get("uncleContentId"));
-            if (direction == null || uncleId == null) {
+            String uncleContentId = nullableScopedTileId(item.get("uncleContentId"));
+            if (direction == null || uncleContentId == null) {
                 continue;
             }
-            out.add(new ToUncleRelationship(direction, uncleId));
+            out.add(new ToUncleRelationship(direction, uncleContentId));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static String nullableScopedTileId(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isInt() || node.isLong()) {
+            int value = node.asInt(-1);
+            return value < 0 ? null : Integer.toString(value);
+        }
+        String text = nullableText(node);
+        if (text == null) {
+            return null;
+        }
+        String normalized = ScopedTileIds.normalize(text);
+        return normalized == null || normalized.isBlank() ? text : normalized;
     }
 
     private static UncleDirections parseDirection(JsonNode node) {

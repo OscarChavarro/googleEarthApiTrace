@@ -9,6 +9,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
+import frametexturenormalizer.util.ScopedTileIds;
 import processing.uncles.ToUncleRelationship;
 
 public final class TileTextureNormalizer {
@@ -25,6 +26,7 @@ public final class TileTextureNormalizer {
         List<TileInstance> originalTiles = frame.getTiles();
         List<TileInstance> interimTiles = new ArrayList<>(originalTiles == null ? 0 : originalTiles.size());
         Map<Integer, Integer> idRemap = new HashMap<>();
+        Map<String, String> scopedIdRemap = new HashMap<>();
 
         if (originalTiles != null) {
             for (TileInstance tile : originalTiles) {
@@ -38,8 +40,13 @@ public final class TileTextureNormalizer {
                     : canonicalTextureByTexture.getOrDefault(originalTexture, originalTexture);
                 int newTileId = canonicalTexture == null ? tile.getTileId() : extractLastNumber(canonicalTexture, tile.getTileId());
                 idRemap.put(tile.getTileId(), newTileId);
+                String originalScopedId = ScopedTileIds.format(frame.getId(), tile.getTileId());
+                String normalizedScopedId = ScopedTileIds.formatFromTextureFile(canonicalTexture, frame.getId(), newTileId);
+                if (originalScopedId != null && normalizedScopedId != null) {
+                    scopedIdRemap.put(originalScopedId, normalizedScopedId);
+                }
 
-                TileInstance normalizedTile = getTileInstance(tile, newTileId, canonicalTexture);
+                TileInstance normalizedTile = getTileInstance(tile, newTileId, canonicalTexture, scopedIdRemap);
                 interimTiles.add(normalizedTile);
             }
         }
@@ -59,7 +66,7 @@ public final class TileTextureNormalizer {
                 tile.getMatrixI(),
                 tile.getMatrixJ(),
                 tile.isIncorrectMatrixMapping(),
-                remapUncles(tile.getUncles(), idRemap)
+                remapUncles(tile.getUncles(), scopedIdRemap)
             );
             normalizedTile.setWestCuttingCell(tile.isWestCuttingCell());
             normalizedTiles.add(normalizedTile);
@@ -76,7 +83,12 @@ public final class TileTextureNormalizer {
         );
     }
 
-    private static TileInstance getTileInstance(TileInstance tile, int newTileId, String canonicalTexture) {
+    private static TileInstance getTileInstance(
+        TileInstance tile,
+        int newTileId,
+        String canonicalTexture,
+        Map<String, String> scopedIdRemap
+    ) {
         TileInstance normalizedTile = new TileInstance(
                 newTileId,
             tile.getFrameId(),
@@ -90,7 +102,7 @@ public final class TileTextureNormalizer {
             tile.getMatrixI(),
             tile.getMatrixJ(),
             tile.isIncorrectMatrixMapping(),
-            remapUncles(tile.getUncles(), Map.of(tile.getTileId(), newTileId))
+            remapUncles(tile.getUncles(), scopedIdRemap)
         );
         normalizedTile.setWestCuttingCell(tile.isWestCuttingCell());
         return normalizedTile;
@@ -105,19 +117,20 @@ public final class TileTextureNormalizer {
 
     private static List<ToUncleRelationship> remapUncles(
         List<ToUncleRelationship> uncles,
-        Map<Integer, Integer> idRemap
+        Map<String, String> scopedIdRemap
     ) {
         if (uncles == null || uncles.isEmpty()) {
             return List.of();
         }
         List<ToUncleRelationship> out = new ArrayList<>(uncles.size());
         for (ToUncleRelationship relationship : uncles) {
-            if (relationship == null || relationship.direction() == null || relationship.uncleId() == null) {
+            if (relationship == null || relationship.direction() == null || relationship.uncleContentId() == null) {
                 continue;
             }
+            String remappedUncleId = scopedIdRemap.getOrDefault(relationship.uncleContentId(), relationship.uncleContentId());
             out.add(new ToUncleRelationship(
                 relationship.direction(),
-                remapNeighbor(relationship.uncleId(), idRemap)
+                remappedUncleId
             ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);

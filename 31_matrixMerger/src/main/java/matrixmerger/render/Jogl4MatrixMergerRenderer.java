@@ -22,7 +22,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileMatrixRenderer;
     private TextRenderer hudTextRenderer;
-    private String lastPrintedBrokenUncleSignature;
+    private String lastPrintedUncleSignature;
 
     public Jogl4MatrixMergerRenderer(MatrixMergerModel model) {
         this.model = model;
@@ -132,18 +132,16 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             if (uncleHudStatus.broken()) {
                 hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
                 hudTextRenderer.draw("Uncle relations: " + uncleHudStatus.relationCount() + " (BROKEN)", 16, h - 72);
-                printBrokenUncleIds(uncleHudStatus);
             }
             else if (uncleHudStatus.topLevel()) {
                 hudTextRenderer.setColor(0.2f, 0.9f, 0.2f, 1.0f);
                 hudTextRenderer.draw("Uncle relations: " + uncleHudStatus.relationCount() + " (TOPLEVEL)", 16, h - 72);
-                lastPrintedBrokenUncleSignature = null;
             }
             else {
                 hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
                 hudTextRenderer.draw("Uncle relations: " + uncleHudStatus.relationCount(), 16, h - 72);
-                lastPrintedBrokenUncleSignature = null;
             }
+            printSelectedUncleIds(selectedFrameLabel, uncleHudStatus);
         }
         if (!selectedFrameInvalid && hasNext && mergeFailed) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
@@ -229,30 +227,38 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         return out;
     }
 
-    private void printBrokenUncleIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {
-        if (uncleHudStatus == null || !uncleHudStatus.broken()) {
-            lastPrintedBrokenUncleSignature = null;
+    private void printSelectedUncleIds(String selectedFrameLabel, MatrixMergerModel.UncleHudStatus uncleHudStatus) {
+        if (uncleHudStatus == null) {
+            lastPrintedUncleSignature = null;
             return;
         }
-        String signature = uncleHudStatus.uncleTileIds().toString()
+        String signature = selectedFrameLabel
+            + "|"
+            + uncleHudStatus.state()
+            + "|"
+            + uncleHudStatus.uncleTileIds()
             + "|"
             + uncleHudStatus.missingUncleIds()
             + "|"
             + uncleHudStatus.locatedUncleTiles();
-        if (signature.equals(lastPrintedBrokenUncleSignature)) {
+        if (signature.equals(lastPrintedUncleSignature)) {
             return;
         }
-        lastPrintedBrokenUncleSignature = signature;
-        System.out.println("BROKEN uncle tile ids: " + formatBrokenUncleTileIds(uncleHudStatus));
+        lastPrintedUncleSignature = signature;
+        System.out.println(
+            "Frame " + selectedFrameLabel + " uncle tile ids: "
+                + formatUncleTileIds(uncleHudStatus)
+                + " [" + uncleHudStatus.state() + "]"
+        );
         if (!uncleHudStatus.missingUncleIds().isEmpty()) {
             System.out.println("Missing uncle tile ids: " + uncleHudStatus.missingUncleIds());
         }
     }
 
-    private static String formatBrokenUncleTileIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {
+    private static String formatUncleTileIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {
         StringBuilder sb = new StringBuilder("[");
         boolean first = true;
-        for (Integer uncleTileId : uncleHudStatus.uncleTileIds()) {
+        for (String uncleTileId : uncleHudStatus.uncleTileIds()) {
             if (!first) {
                 sb.append(", ");
             }

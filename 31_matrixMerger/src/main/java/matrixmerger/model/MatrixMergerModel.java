@@ -117,7 +117,7 @@ public final class MatrixMergerModel {
             return new UncleHudStatus(0, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
         }
 
-        Map<Integer, Integer> uncleCountsByTileId = new LinkedHashMap<>();
+        Map<String, Integer> uncleCountsByTileId = new LinkedHashMap<>();
         int relationCount = 0;
         for (TileMatrix.TileCoord tile : selected.getTiles()) {
             if (tile == null || tile.getUncles() == null) {
@@ -128,7 +128,11 @@ public final class MatrixMergerModel {
                 if (relationship == null || relationship.uncleContentId() == null) {
                     continue;
                 }
-                uncleCountsByTileId.merge(relationship.uncleContentId(), 1, Integer::sum);
+                String normalizedUncleId = WestCutterReader.normalizeScopedTileId(relationship.uncleContentId());
+                if (normalizedUncleId == null || normalizedUncleId.isBlank()) {
+                    continue;
+                }
+                uncleCountsByTileId.merge(normalizedUncleId, 1, Integer::sum);
             }
         }
 
@@ -136,10 +140,10 @@ public final class MatrixMergerModel {
             return new UncleHudStatus(relationCount, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
         }
 
-        Map<Integer, Integer> frameIndexByTileId = buildFrameIndexByTileId();
+        Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
         LinkedHashSet<Integer> uncleFrameIndexes = new LinkedHashSet<>();
-        List<Integer> missingUncleIds = new ArrayList<>();
-        for (Integer uncleTileId : uncleCountsByTileId.keySet()) {
+        List<String> missingUncleIds = new ArrayList<>();
+        for (String uncleTileId : uncleCountsByTileId.keySet()) {
             Integer frameIndex = frameIndexByTileId.get(uncleTileId);
             if (frameIndex == null) {
                 missingUncleIds.add(uncleTileId);
@@ -524,8 +528,8 @@ public final class MatrixMergerModel {
         return frameId == -1 ? "transient" : Integer.toString(frameId);
     }
 
-    private Map<Integer, Integer> buildFrameIndexByTileId() {
-        Map<Integer, Integer> frameIndexByTileId = new LinkedHashMap<>();
+    private Map<String, Integer> buildFrameIndexByTileId() {
+        Map<String, Integer> frameIndexByTileId = new LinkedHashMap<>();
         for (int frameIndex = 0; frameIndex < frameMatrices.size(); frameIndex++) {
             FrameMatrices frame = frameMatrices.get(frameIndex);
             if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
@@ -539,8 +543,8 @@ public final class MatrixMergerModel {
                 if (tile == null) {
                     continue;
                 }
-                Integer tileId = tile.getNumericTileId();
-                if (tileId != null) {
+                String tileId = tile.getId();
+                if (tileId != null && !tileId.isBlank()) {
                     frameIndexByTileId.put(tileId, frameIndex);
                 }
             }
@@ -548,8 +552,8 @@ public final class MatrixMergerModel {
         return frameIndexByTileId;
     }
 
-    private Map<Integer, UncleTileLocation> buildLocatedUncleTiles(Set<Integer> uncleTileIds) {
-        Map<Integer, UncleTileLocation> out = new LinkedHashMap<>();
+    private Map<String, UncleTileLocation> buildLocatedUncleTiles(Set<String> uncleTileIds) {
+        Map<String, UncleTileLocation> out = new LinkedHashMap<>();
         if (uncleTileIds == null || uncleTileIds.isEmpty()) {
             return out;
         }
@@ -566,9 +570,9 @@ public final class MatrixMergerModel {
                 if (tile == null) {
                     continue;
                 }
-                Integer numericTileId = tile.getNumericTileId();
-                if (numericTileId != null && uncleTileIds.contains(numericTileId)) {
-                    out.put(numericTileId, new UncleTileLocation(tile.getId(), frameIndex));
+                String scopedTileId = tile.getId();
+                if (scopedTileId != null && uncleTileIds.contains(scopedTileId)) {
+                    out.put(scopedTileId, new UncleTileLocation(scopedTileId, frameIndex));
                 }
             }
         }
@@ -588,9 +592,9 @@ public final class MatrixMergerModel {
     public record UncleHudStatus(
         int relationCount,
         UncleHudState state,
-        List<Integer> uncleTileIds,
-        List<Integer> missingUncleIds,
-        Map<Integer, UncleTileLocation> locatedUncleTiles
+        List<String> uncleTileIds,
+        List<String> missingUncleIds,
+        Map<String, UncleTileLocation> locatedUncleTiles
     ) {
         public boolean broken() {
             return state == UncleHudState.BROKEN;
