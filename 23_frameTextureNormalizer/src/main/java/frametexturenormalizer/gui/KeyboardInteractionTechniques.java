@@ -38,7 +38,9 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     }
 
     private void redraw() {
-        if (repaintAction != null) repaintAction.run();
+        if (repaintAction != null) {
+            repaintAction.run();
+        }
     }
 
     @Override

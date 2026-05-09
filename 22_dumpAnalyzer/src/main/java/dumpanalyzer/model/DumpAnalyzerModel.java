@@ -54,6 +54,13 @@ public final class DumpAnalyzerModel {
         notifyListeners();
     }
 
+    public void replaceFrame(Frame frame) {
+        if (frame == null) {
+            return;
+        }
+        framesById.put(frame.getId(), frame);
+    }
+
     public void registerTexturePath(int frameId, int textureId, String absolutePath) {
         texturePathByIdAndFrame
             .computeIfAbsent(textureId, ignored -> new ConcurrentSkipListMap<>())

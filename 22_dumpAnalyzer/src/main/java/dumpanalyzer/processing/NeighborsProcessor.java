@@ -47,6 +47,11 @@ public final class NeighborsProcessor {
             frames.size(),
             i -> {
                 Frame frame = frames.get(i);
+                if (frame != null) {
+                    frame = VisualTilePositioner.reorderFrame(frame, width, height);
+                    frames.set(i, frame);
+                    model.replaceFrame(frame);
+                }
                 Matrix4x4 projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
                 if (projection == null) {
                     projection = Matrix4x4.identityMatrix();

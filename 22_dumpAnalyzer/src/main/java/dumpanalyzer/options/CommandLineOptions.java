@@ -19,7 +19,7 @@ public final class CommandLineOptions {
 
     public static CommandLineOptions parseArgs(String[] args) {
         boolean offline = false;
-        int startFrame = 48;
+        int startFrame = 1;
         int endFrame = 100000;
         int width = 1280;
         int height = 720;

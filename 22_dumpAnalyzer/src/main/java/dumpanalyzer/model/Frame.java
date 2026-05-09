@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
@@ -27,7 +26,6 @@ public final class Frame implements Comparable<Frame> {
     ) {
         this.id = id;
         List<TileInstance> copy = new ArrayList<>(tiles);
-        copy.sort(Comparator.comparing(TileInstance::getContentId, Comparator.nullsLast(String::compareTo)));
         this.tiles = Collections.unmodifiableList(copy);
         this.lines = lines == null ? List.of() : List.copyOf(lines);
         this.camera = new FrameCameraState(projectionMatrix, modelViewMatrix, googleCamera);
