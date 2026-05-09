@@ -28,6 +28,7 @@ import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
 import dumpanalyzer.processing.TriangleStripTileTopology;
+import dumpanalyzer.processing.uncles.ToUncleRelationship;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.environment.Camera;
@@ -309,6 +310,9 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
         TileInstance tile = frameData.getTiles().get(selectedTileIndex);
         drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, false, true, useGoogleCameraView);
+        for (TileInstance uncleTile : resolveUncleTiles(frameData, tile)) {
+            drawTileWireframe(gl, gl2, frameData, -1, uncleTile, projection, false, true, useGoogleCameraView);
+        }
         drawExtractedLinesForFrame(gl2, frameData, projection, useGoogleCameraView);
         if (model.getRendererConfiguration().isBoundingVolumeSet()) {
             axisAlignedBoundingBoxRenderer.drawForSelection(
@@ -449,6 +453,35 @@ public class Jogl4DumpAnalyzerRenderer implements
             ));
         }
         return labels;
+    }
+
+    private List<TileInstance> resolveUncleTiles(Frame frameData, TileInstance tile) {
+        if (frameData == null || tile == null || tile.getUncles() == null || tile.getUncles().isEmpty()) {
+            return List.of();
+        }
+        List<TileInstance> resolved = new ArrayList<>();
+        for (ToUncleRelationship relationship : tile.getUncles()) {
+            if (relationship == null || relationship.uncleContentId() == null) {
+                continue;
+            }
+            TileInstance uncleTile = findTileByContentId(frameData, relationship.uncleContentId());
+            if (uncleTile != null && !resolved.contains(uncleTile)) {
+                resolved.add(uncleTile);
+            }
+        }
+        return resolved;
+    }
+
+    private TileInstance findTileByContentId(Frame frameData, String contentId) {
+        if (frameData == null || contentId == null) {
+            return null;
+        }
+        for (TileInstance candidate : frameData.getTiles()) {
+            if (candidate != null && contentId.equals(candidate.getContentId())) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static int[] projectToViewportPixel(

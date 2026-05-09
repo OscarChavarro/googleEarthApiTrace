@@ -8,6 +8,8 @@ import com.jogamp.opengl.GL2;
 import dumpanalyzer.model.AxisAlignedBoundingBox;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.TileInstance;
+import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.Camera;
@@ -58,6 +60,24 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
             viewportWidth,
             viewportHeight
         );
+        TileInstance selectedTile = selectedTileIndex < frameData.getTiles().size() ? frameData.getTiles().get(selectedTileIndex) : null;
+        for (TileInstance uncleTile : resolveUncleTiles(frameData, selectedTile)) {
+            int uncleTileIndex = frameData.getTiles().indexOf(uncleTile);
+            if (uncleTileIndex < 0 || uncleTileIndex >= aabbs.size()) {
+                continue;
+            }
+            appendLabel(
+                labels,
+                aabbs.get(uncleTileIndex),
+                frameData,
+                projection,
+                useGoogleCameraView,
+                viewingCamera,
+                viewportWidth,
+                viewportHeight,
+                Color.RED
+            );
+        }
         return labels;
     }
 
@@ -129,6 +149,20 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         int viewportWidth,
         int viewportHeight
     ) {
+        appendLabel(labels, aabb, frameData, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, aabb == null ? Color.YELLOW : aabb.getColor());
+    }
+
+    private static void appendLabel(
+        List<Jogl4HudRenderer.ScreenLabel> labels,
+        AxisAlignedBoundingBox aabb,
+        Frame frameData,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView,
+        Camera viewingCamera,
+        int viewportWidth,
+        int viewportHeight,
+        Color color
+    ) {
         if (aabb == null || aabb.getMin() == null || aabb.getMax() == null) {
             return;
         }
@@ -145,7 +179,36 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         if (pixel == null) {
             return;
         }
-        labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(aabb.getTextureId()), aabb.getColor()));
+        labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(aabb.getTextureId()), color));
+    }
+
+    private static List<TileInstance> resolveUncleTiles(Frame frameData, TileInstance tile) {
+        if (frameData == null || tile == null || tile.getUncles() == null || tile.getUncles().isEmpty()) {
+            return List.of();
+        }
+        List<TileInstance> resolved = new ArrayList<>();
+        for (ToUncleRelationship relationship : tile.getUncles()) {
+            if (relationship == null || relationship.uncleContentId() == null) {
+                continue;
+            }
+            TileInstance uncleTile = findTileByContentId(frameData, relationship.uncleContentId());
+            if (uncleTile != null && !resolved.contains(uncleTile)) {
+                resolved.add(uncleTile);
+            }
+        }
+        return resolved;
+    }
+
+    private static TileInstance findTileByContentId(Frame frameData, String contentId) {
+        if (frameData == null || contentId == null) {
+            return null;
+        }
+        for (TileInstance candidate : frameData.getTiles()) {
+            if (candidate != null && contentId.equals(candidate.getContentId())) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static int[] projectToViewportPixel(

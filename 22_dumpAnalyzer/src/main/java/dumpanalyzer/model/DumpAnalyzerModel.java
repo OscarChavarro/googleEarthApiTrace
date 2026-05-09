@@ -216,6 +216,29 @@ public final class DumpAnalyzerModel {
         notifyListeners();
     }
 
+    public void setSelectedTileByContentId(String contentId) {
+        if (contentId == null || contentId.isBlank()) {
+            return;
+        }
+        List<Frame> frames = snapshotFrames();
+        if (frames.isEmpty()) {
+            return;
+        }
+        int frameIdx = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
+        Frame selectedFrame = frames.get(frameIdx);
+        List<TileInstance> tiles = selectedFrame.getTiles();
+        for (int i = 0; i < tiles.size(); i++) {
+            TileInstance tile = tiles.get(i);
+            if (tile != null && contentId.equals(tile.getContentId())) {
+                selectedTileIndex.set(i);
+                clampSelection();
+                updateGoogleCameraFromSelection();
+                notifyListeners();
+                return;
+            }
+        }
+    }
+
     public void setSelectedFrameIndex(int frameIndex) {
         selectedFrameIndex.set(Math.max(0, frameIndex));
         clampSelection();

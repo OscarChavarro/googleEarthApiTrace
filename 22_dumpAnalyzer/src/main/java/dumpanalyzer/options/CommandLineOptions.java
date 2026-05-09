@@ -7,14 +7,24 @@ public final class CommandLineOptions {
     private final int width;
     private final int height;
     private final String outputPath;
+    private final String tileContentId;
 
-    private CommandLineOptions(boolean offline, int startFrame, int endFrame, int width, int height, String outputPath) {
+    private CommandLineOptions(
+        boolean offline,
+        int startFrame,
+        int endFrame,
+        int width,
+        int height,
+        String outputPath,
+        String tileContentId
+    ) {
         this.offline = offline;
         this.startFrame = startFrame;
         this.endFrame = endFrame;
         this.width = width;
         this.height = height;
         this.outputPath = outputPath;
+        this.tileContentId = tileContentId;
     }
 
     public static CommandLineOptions parseArgs(String[] args) {
@@ -24,6 +34,7 @@ public final class CommandLineOptions {
         int width = 1280;
         int height = 720;
         String outputPath = "/tmp/vitral/testsuite/_APITests/_JOGL4PbufferExample/src/output.png";
+        String tileContentId = null;
 
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -49,10 +60,14 @@ public final class CommandLineOptions {
             }
             if ("--output".equals(a) && i + 1 < args.length) {
                 outputPath = args[++i];
+                continue;
+            }
+            if ("--tile-content-id".equals(a) && i + 1 < args.length) {
+                tileContentId = args[++i];
             }
         }
 
-        return new CommandLineOptions(offline, startFrame, endFrame, width, height, outputPath);
+        return new CommandLineOptions(offline, startFrame, endFrame, width, height, outputPath, tileContentId);
     }
 
     public boolean offline() {
@@ -77,6 +92,10 @@ public final class CommandLineOptions {
 
     public String outputPath() {
         return outputPath;
+    }
+
+    public String tileContentId() {
+        return tileContentId;
     }
 
     private static int safeParseInt(String s, int fallback) {

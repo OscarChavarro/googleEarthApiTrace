@@ -2,6 +2,7 @@ package dumpanalyzer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
@@ -37,6 +38,7 @@ public final class TileInstance {
     private volatile String detectedNorthNeighborContentId;
     private volatile String detectedEastNeighborContentId;
     private volatile String detectedWestNeighborContentId;
+    private volatile List<ToUncleRelationship> uncles;
 
     public TileInstance(
         String contentId,
@@ -80,6 +82,7 @@ public final class TileInstance {
         this.skipReason = skipReason == null ? "" : skipReason;
         this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
         this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
+        this.uncles = List.of();
     }
 
     public String getContentId() {
@@ -108,6 +111,10 @@ public final class TileInstance {
 
     public String getWestNeighbor() {
         return westNeighbor != null ? westNeighbor : detectedWestNeighborContentId;
+    }
+
+    public List<ToUncleRelationship> getUncles() {
+        return uncles;
     }
 
     public Vector3D getMin() {
@@ -212,6 +219,10 @@ public final class TileInstance {
         this.detectedNorthNeighborContentId = north;
         this.detectedEastNeighborContentId = east;
         this.detectedWestNeighborContentId = west;
+    }
+
+    public void setUncles(List<ToUncleRelationship> uncles) {
+        this.uncles = uncles == null ? List.of() : List.copyOf(uncles);
     }
 
     public boolean isFullResolutionWithRespectToTexture() {

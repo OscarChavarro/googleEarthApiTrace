@@ -28,6 +28,11 @@ public class Main {
 
         if (config.offline()) {
             model.setSelectedFrameById(config.startFrame());
+            if (config.tileContentId() != null && !config.tileContentId().isBlank()) {
+                model.setSelectedTileByContentId(config.tileContentId());
+                model.getRendererConfiguration().setBoundingVolume(true);
+                model.getRendererConfiguration().setWires(true);
+            }
             renderOffline(model, config);
         }
     }

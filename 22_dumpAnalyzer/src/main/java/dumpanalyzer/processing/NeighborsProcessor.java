@@ -5,12 +5,16 @@ import dumpanalyzer.io.FrameWriter;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
+import dumpanalyzer.processing.uncles.UncleDetector;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.gui.feedback.ProgressMonitor;
 import vsdk.toolkit.gui.feedback.ProgressMonitorConsoleLongFormat;
 
 public final class NeighborsProcessor {
+    private static final UncleDetector UNCLE_DETECTOR = new UncleDetector();
+    private static final int DEBUG_FRAME_ID = 50;
+
     private NeighborsProcessor() {
     }
 
@@ -58,6 +62,8 @@ public final class NeighborsProcessor {
                 }
                 double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
                 TriangleStripNeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
+                populateUncles(frame);
+                debugFrame(frame);
             }
         );
         FrameWriter.writeFramesParallelWithProgress(Configuration.OUTPUT_ROOT, frames);
@@ -91,5 +97,40 @@ public final class NeighborsProcessor {
             }
         }
         return out;
+    }
+
+    private static void populateUncles(Frame frame) {
+        if (frame == null) {
+            return;
+        }
+        for (TileInstance tile : frame.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            if (hasAnyMissingCardinalNeighbor(tile)) {
+                tile.setUncles(UNCLE_DETECTOR.detect(frame, tile));
+            }
+            else {
+                tile.setUncles(List.of());
+            }
+        }
+    }
+
+    private static boolean hasAnyMissingCardinalNeighbor(TileInstance tile) {
+        return tile.getSouthNeighbor() == null
+            || tile.getNorthNeighbor() == null
+            || tile.getEastNeighbor() == null
+            || tile.getWestNeighbor() == null;
+    }
+
+    private static void debugFrame(Frame frame) {
+        if (frame == null || frame.getId() != DEBUG_FRAME_ID) {
+            return;
+        }
+        for (TileInstance tile : frame.getTiles()) {
+            if (tile == null || !hasAnyMissingCardinalNeighbor(tile)) {
+                continue;
+            }
+        }
     }
 }
