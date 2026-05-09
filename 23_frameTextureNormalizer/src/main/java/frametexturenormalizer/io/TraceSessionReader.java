@@ -24,7 +24,7 @@ public final class TraceSessionReader {
             return List.of();
         }
         try (var stream = Files.list(inputRoot)) {
-            List<Path> dirs = stream
+            return stream
                 .filter(Files::isDirectory)
                 .filter(dir -> NUMERIC_DIR.matcher(dir.getFileName().toString()).matches())
                 .filter(dir -> {
@@ -33,7 +33,6 @@ public final class TraceSessionReader {
                 })
                 .sorted(Comparator.comparing(dir -> dir.getFileName().toString()))
                 .toList();
-            return dirs;
         }
         catch (IOException ex) {
             return List.of();
@@ -84,24 +83,6 @@ public final class TraceSessionReader {
         }
     }
 
-    public List<FrameData> readSession(Path inputRoot) {
-        List<Path> frameDirs = listFrameDirectories(inputRoot);
-        if (frameDirs.isEmpty()) {
-            return List.of();
-        }
-        List<FrameData> out = new ArrayList<>();
-
-        for (Path dir : frameDirs) {
-            FrameData frame = readFrameDirectory(dir);
-            if (frame == null) {
-                continue;
-            }
-            out.add(frame);
-        }
-
-        return out;
-    }
-
     private static List<Line> readLines(JsonNode root, GoogleCameraState cameraState) {
         JsonNode linesNode = root.path("lines");
         if (!linesNode.isArray() || linesNode.isEmpty()) {
@@ -132,7 +113,7 @@ public final class TraceSessionReader {
             if (modelView == null) {
                 modelView = defaultModelView;
             }
-            out.add(new Line(lineNode.path("primitive").asText("n/a"), List.copyOf(points), modelView));
+            out.add(new Line(List.copyOf(points), modelView));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
     }

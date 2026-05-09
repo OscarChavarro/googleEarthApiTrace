@@ -125,10 +125,9 @@ public final class Jogl4NeighborhoodRenderer {
         double ux = dx / len;
         double uy = dy / len;
         double nx = -uy;
-        double ny = ux;
         double curveAmount = Math.max(10.0, Math.min(36.0, len * 0.20));
         double controlX = (sx + ex) * 0.5 + nx * curveAmount;
-        double controlY = (sy + ey) * 0.5 + ny * curveAmount;
+        double controlY = (sy + ey) * 0.5 + ux * curveAmount;
 
         gl2.glColor3d(red, green, blue);
         drawCurvedBody(gl2, sx, sy, ex, ey, controlX, controlY);
@@ -161,12 +160,12 @@ public final class Jogl4NeighborhoodRenderer {
     private static void drawTriangularArrowHead(GL2 gl2, double tipX, double tipY, double controlX, double controlY, double length) {
         double tx = tipX - controlX;
         double ty = tipY - controlY;
-        double tlen = Math.sqrt(tx * tx + ty * ty);
-        if (!(tlen > 1.0e-6)) {
+        double tLength = Math.sqrt(tx * tx + ty * ty);
+        if (!(tLength > 1.0e-6)) {
             return;
         }
-        tx /= tlen;
-        ty /= tlen;
+        tx /= tLength;
+        ty /= tLength;
         double nx = -ty;
         double ny = tx;
 
@@ -220,7 +219,7 @@ public final class Jogl4NeighborhoodRenderer {
         double ew = modelView[3] * x + modelView[7] * y + modelView[11] * z + modelView[15];
 
         double[] proj = projection.exportToDoubleArrayColumnOrder();
-        if (proj == null || proj.length != 16) {
+        if (proj.length != 16) {
             return null;
         }
         double cx = proj[0] * ex + proj[4] * ey + proj[8] * ez + proj[12] * ew;

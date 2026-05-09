@@ -68,7 +68,7 @@ final class VerticalSegmentMerger {
         RowSegment shiftedB = b.copyShifted(shift.di(), shift.dj());
 
         for (MatrixCell cb : shiftedB.cells()) {
-            MatrixCell occupant = a.getByCoord(cb.i(), cb.j());
+            MatrixCell occupant = a.getByCoordinate(cb.i(), cb.j());
             if (occupant != null && occupant.tileId() != cb.tileId()) {
                 conflictTracker.registerConflict(cb.tileId(), occupant.tileId());
                 MatrixDebug.debug(
@@ -88,7 +88,7 @@ final class VerticalSegmentMerger {
             merged.put(new MatrixCell(ca.i(), ca.j(), ca.tile()));
         }
         for (MatrixCell cb : shiftedB.cells()) {
-            if (!merged.containsTileId(cb.tileId())) {
+            if (merged.tileIdNotFound(cb.tileId())) {
                 merged.put(new MatrixCell(cb.i(), cb.j(), cb.tile()));
             }
         }
@@ -97,7 +97,7 @@ final class VerticalSegmentMerger {
             MatrixDebug.debug(null, "Merge rejected: neighbor consistency check failed after merge");
             return null;
         }
-        if (!validateRowContiguity(merged, byId, conflictTracker)) {
+        if (invalidRowContiguity(merged, byId, conflictTracker)) {
             MatrixDebug.debug(null, "Merge rejected: row contiguity invariant failed");
             return null;
         }
@@ -119,7 +119,7 @@ final class VerticalSegmentMerger {
             Map<String, Integer> votes = new HashMap<>();
             Map<String, Shift> shiftByKey = new HashMap<>();
 
-            for (MatrixCell cell : source.cellsInRowSortedLeftToRight(row.intValue())) {
+            for (MatrixCell cell : source.cellsInRowSortedLeftToRight(row)) {
                 TileInstance tile = byId.get(cell.tileId());
                 if (tile == null) {
                     continue;
@@ -166,7 +166,7 @@ final class VerticalSegmentMerger {
         int deltaI,
         RowSegment target
     ) {
-        if (neighborId == null || !target.containsTileId(neighborId)) {
+        if (neighborId == null || target.tileIdNotFound(neighborId)) {
             return;
         }
         MatrixCell otherCell = target.getByTileId(neighborId);
@@ -189,29 +189,29 @@ final class VerticalSegmentMerger {
                 continue;
             }
 
-            if (!matches(merged, tile.getEastNeighbor(), cell.i(), cell.j() + 1, cell.tileId(), conflictTracker)) {
+            if (matchNotFound(merged, tile.getEastNeighbor(), cell.i(), cell.j() + 1, cell.tileId(), conflictTracker)) {
                 return false;
             }
-            if (!matches(merged, tile.getWestNeighbor(), cell.i(), cell.j() - 1, cell.tileId(), conflictTracker)) {
+            if (matchNotFound(merged, tile.getWestNeighbor(), cell.i(), cell.j() - 1, cell.tileId(), conflictTracker)) {
                 return false;
             }
-            if (!matches(merged, tile.getNorthNeighbor(), cell.i() - 1, cell.j(), cell.tileId(), conflictTracker)) {
+            if (matchNotFound(merged, tile.getNorthNeighbor(), cell.i() - 1, cell.j(), cell.tileId(), conflictTracker)) {
                 return false;
             }
-            if (!matches(merged, tile.getSouthNeighbor(), cell.i() + 1, cell.j(), cell.tileId(), conflictTracker)) {
+            if (matchNotFound(merged, tile.getSouthNeighbor(), cell.i() + 1, cell.j(), cell.tileId(), conflictTracker)) {
                 return false;
             }
         }
         return true;
     }
 
-    static boolean validateRowContiguity(
+    static boolean invalidRowContiguity(
         RowSegment chunk,
         Map<Integer, TileInstance> byId,
         MatrixConflictTracker conflictTracker
     ) {
         for (Integer rowValue : chunk.sortedRowIndices()) {
-            int row = rowValue.intValue();
+            int row = rowValue;
             List<MatrixCell> cells = chunk.cellsInRowSortedLeftToRight(row);
             Set<Integer> idSet = new HashSet<>();
             for (MatrixCell c : cells) {
@@ -283,7 +283,7 @@ final class VerticalSegmentMerger {
                             c.tileId(),
                             t.getEastNeighbor()
                         );
-                        return false;
+                        return true;
                     }
                 }
                 if (t.getWestNeighbor() != null && idSet.contains(t.getWestNeighbor())) {
@@ -296,12 +296,12 @@ final class VerticalSegmentMerger {
                             c.tileId(),
                             t.getWestNeighbor()
                         );
-                        return false;
+                        return true;
                     }
                 }
             }
         }
-        return true;
+        return false;
     }
 
     private static void addIfSameRowNeighbor(
@@ -322,7 +322,7 @@ final class VerticalSegmentMerger {
         queue.add(neighbor);
     }
 
-    private boolean matches(
+    private boolean matchNotFound(
         RowSegment merged,
         Integer neighborId,
         int expectedI,
@@ -331,12 +331,12 @@ final class VerticalSegmentMerger {
         MatrixConflictTracker conflictTracker
     ) {
         if (neighborId == null) {
-            return true;
+            return false;
         }
 
         MatrixCell neighbor = merged.getByTileId(neighborId);
         if (neighbor == null) {
-            return true;
+            return false;
         }
 
         if (neighbor.i() != expectedI || neighbor.j() != expectedJ) {
@@ -351,8 +351,8 @@ final class VerticalSegmentMerger {
                 neighbor.i(),
                 neighbor.j()
             );
-            return false;
+            return true;
         }
-        return true;
+        return false;
     }
 }

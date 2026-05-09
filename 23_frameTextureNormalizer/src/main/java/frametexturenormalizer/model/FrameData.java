@@ -12,7 +12,7 @@ public final class FrameData {
     private final GoogleCameraState cameraState;
     private final double[] projectionMatrix;
     private final double[] modelViewMatrix;
-    private boolean withMatrixErrors;
+    private final boolean withMatrixErrors;
 
     public FrameData(int id, List<TileInstance> tiles, GoogleCameraState cameraState) {
         this(id, tiles, List.of(), cameraState, null, null, false);

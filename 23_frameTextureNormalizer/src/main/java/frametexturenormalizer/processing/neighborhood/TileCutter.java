@@ -57,11 +57,6 @@ public final class TileCutter {
         return cursedTileIds;
     }
 
-    public static int cutWestFromTileIdsAcrossFrames(List<FrameData> frames, Set<String> cursedTileIds) {
-        Set<String> expandedScopedIds = expandWestCutScopedIdsAcrossFrames(frames, cursedTileIds);
-        return countWestCuttingCells(frames);
-    }
-
     public static Set<String> expandWestCutScopedIdsAcrossFrames(List<FrameData> frames, Set<String> cursedTileIds) {
         if (frames == null || frames.isEmpty() || cursedTileIds == null || cursedTileIds.isEmpty()) {
             return Set.of();
@@ -101,20 +96,6 @@ public final class TileCutter {
         }
         while (changed);
         return expandedScopedIds;
-    }
-
-    public static int cutWestFromLegacyTileIdsAcrossFrames(List<FrameData> frames, Set<Integer> cursedTileIds) {
-        if (frames == null || frames.isEmpty() || cursedTileIds == null || cursedTileIds.isEmpty()) {
-            return 0;
-        }
-        int totalCutCount = 0;
-        for (FrameData frame : frames) {
-            if (frame == null) {
-                continue;
-            }
-            totalCutCount += cutWestFromTileIds(frame.getTiles(), cursedTileIds, null);
-        }
-        return totalCutCount;
     }
 
     public static Set<String> scopedIdsFromLegacyTileIdsAcrossFrames(List<FrameData> frames, Set<Integer> legacyTileIds) {
@@ -210,24 +191,6 @@ public final class TileCutter {
             }
         }
         return markedNow;
-    }
-
-    private static int countWestCuttingCells(List<FrameData> frames) {
-        if (frames == null || frames.isEmpty()) {
-            return 0;
-        }
-        int count = 0;
-        for (FrameData frame : frames) {
-            if (frame == null || frame.getTiles() == null) {
-                continue;
-            }
-            for (TileInstance tile : frame.getTiles()) {
-                if (tile != null && tile.isWestCuttingCell()) {
-                    count++;
-                }
-            }
-        }
-        return count;
     }
 
     private static void cutWestConnection(TileInstance tile, Map<Integer, TileInstance> tileById) {

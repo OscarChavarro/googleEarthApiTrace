@@ -1,25 +1,21 @@
 package frametexturenormalizer.io;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
-import java.nio.file.Path;
+// Java classes
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+// Libraries classes
+import com.fasterxml.jackson.databind.JsonNode;
+
+// App classes
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
 
 public final class TileInstanceReader {
-    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
-
-    public List<TileInstance> read(Path frameJsonPath) throws IOException {
-        JsonNode root = JSON.readTree(frameJsonPath.toFile());
-        return read(root);
-    }
 
     public List<TileInstance> read(JsonNode root) {
         int frameId = root.path("id").asInt(-1);

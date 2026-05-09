@@ -2,6 +2,7 @@ package frametexturenormalizer.gui;
 
 // Java classes
 import java.awt.event.KeyListener;
+import java.util.Set;
 
 // Vitral classes
 import vsdk.toolkit.gui.KeyEvent;
@@ -13,7 +14,6 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.processing.neighborhood.TileCutter;
-import java.util.Set;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
     private final FrameTextureNormalizerModel model;

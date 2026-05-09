@@ -448,7 +448,7 @@ public final class Jogl4TileMatrixRenderer {
             if (resident.texture() != null) {
                 resident.texture().destroy(gl2);
             }
-            model.unmarkTextureResident(oldest, resident.bytesAssigned());
+            model.unMarkTextureResident(oldest, resident.bytesAssigned());
         }
     }
 

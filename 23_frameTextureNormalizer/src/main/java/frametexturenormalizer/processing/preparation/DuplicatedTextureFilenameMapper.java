@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -244,6 +245,26 @@ public final class DuplicatedTextureFilenameMapper {
                 }
             }
         }
+        UnionFind uf = getUnionFind(groups, allNodes);
+
+        Map<String, List<String>> normalized = new HashMap<>();
+        for (String path : allNodes) {
+            String root = uf.find(path);
+            normalized.computeIfAbsent(root, key -> new ArrayList<>()).add(path);
+        }
+
+        List<List<String>> result = new ArrayList<>();
+        for (List<String> group : normalized.values()) {
+            if (group.size() > 1) {
+                Collections.sort(group);
+                result.add(group);
+            }
+        }
+        result.sort(Comparator.comparing(a -> a.get(0)));
+        return result;
+    }
+
+    private static UnionFind getUnionFind(List<List<String>> groups, Set<String> allNodes) {
         UnionFind uf = new UnionFind(new ArrayList<>(allNodes));
         for (List<String> group : groups) {
             if (group == null || group.size() < 2) {
@@ -262,22 +283,7 @@ public final class DuplicatedTextureFilenameMapper {
                 }
             }
         }
-
-        Map<String, List<String>> normalized = new HashMap<>();
-        for (String path : allNodes) {
-            String root = uf.find(path);
-            normalized.computeIfAbsent(root, key -> new ArrayList<>()).add(path);
-        }
-
-        List<List<String>> result = new ArrayList<>();
-        for (List<String> group : normalized.values()) {
-            if (group.size() > 1) {
-                Collections.sort(group);
-                result.add(group);
-            }
-        }
-        result.sort((a, b) -> a.get(0).compareTo(b.get(0)));
-        return result;
+        return uf;
     }
 
     private static void writeToDisk(List<List<String>> groups) {

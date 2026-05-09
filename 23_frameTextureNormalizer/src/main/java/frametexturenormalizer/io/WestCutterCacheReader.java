@@ -1,7 +1,6 @@
 package frametexturenormalizer.io;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+// Java classes
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,12 +8,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+
+// Libraries classes
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+// App classes
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.processing.neighborhood.TileCutter;
 import frametexturenormalizer.util.ScopedTileIds;
 
-public final class WestCacheReader {
+public final class WestCutterCacheReader {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     public void restore(FrameTextureNormalizerModel model) {
@@ -30,7 +35,6 @@ public final class WestCacheReader {
             scopedIds = new LinkedHashSet<>(TileCutter.expandWestCutScopedIdsAcrossFrames(model.getFrames(), scopedIds));
         }
         if (!westIds.legacyIds().isEmpty()) {
-            TileCutter.cutWestFromLegacyTileIdsAcrossFrames(model.getFrames(), westIds.legacyIds());
             scopedIds.addAll(TileCutter.scopedIdsFromLegacyTileIdsAcrossFrames(model.getFrames(), westIds.legacyIds()));
         }
         model.addWestCutterTileIds(scopedIds);

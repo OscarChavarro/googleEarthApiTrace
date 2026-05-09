@@ -256,5 +256,4 @@ public final class TileMatrixProcessor {
             }
         }
     }
-
 }

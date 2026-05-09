@@ -8,14 +8,14 @@ import java.util.stream.Collectors;
 import frametexturenormalizer.io.FrameReader;
 import frametexturenormalizer.io.TileMatrixExporter;
 import frametexturenormalizer.io.TraceSessionReader;
-import frametexturenormalizer.io.WestCacheReader;
+import frametexturenormalizer.io.WestCutterCacheReader;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.processing.filtering.FrameFiltererByTileCount;
 import frametexturenormalizer.processing.filtering.TileFiltererByConnectedComponents;
 import frametexturenormalizer.processing.filtering.TileFiltererByGeometricNullNeighbors;
-import frametexturenormalizer.processing.filtering.TileFilteringByErrored;
+import frametexturenormalizer.processing.filtering.TileFilteringByError;
 import frametexturenormalizer.processing.preparation.DuplicatedTextureFilenameMapper;
 import frametexturenormalizer.processing.preparation.Sha256SignatureGenerator;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessingResult;
@@ -28,10 +28,10 @@ public final class NormalizationPipeline {
     private final TileFiltererByGeometricNullNeighbors tileFilterer =
         new TileFiltererByGeometricNullNeighbors();
     private final FrameFiltererByTileCount frameFiltererByTileCount = new FrameFiltererByTileCount();
-    private final TileFilteringByErrored tileFilteringByErrored = new TileFilteringByErrored();
+    private final TileFilteringByError tileFilteringByError = new TileFilteringByError();
     private final TileMatrixExporter tileMatrixExporter = new TileMatrixExporter();
     private final TileMatrixProcessor tileMatrixProcessor = new TileMatrixProcessor();
-    private final WestCacheReader westCacheReader = new WestCacheReader();
+    private final WestCutterCacheReader westCutterCacheReader = new WestCutterCacheReader();
 
     public void run(FrameTextureNormalizerModel model, int startFrame, int endFrame, boolean offline) {
         if (model == null) {
@@ -65,7 +65,7 @@ public final class NormalizationPipeline {
         );
         System.out.println("OK");
 
-        List<FrameData> cleanFrames = tileFilteringByErrored.removeErroredFrames(matrixResult.frames());
+        List<FrameData> cleanFrames = tileFilteringByError.removeFramesWithErrors(matrixResult.frames());
 
         System.out.print("Exporting matrices... ");
         List<TileMatrix> matrices = deduplicateMatricesByTileIds(matrixResult.matrices());
@@ -74,7 +74,7 @@ public final class NormalizationPipeline {
         System.out.println("OK");
 
         System.out.print("Restoring west cutters for editor/UI... ");
-        westCacheReader.restore(model);
+        westCutterCacheReader.restore(model);
         System.out.println("OK");
     }
 
@@ -82,7 +82,7 @@ public final class NormalizationPipeline {
         if (model == null) {
             return;
         }
-        int boundedEndFrame = endFrame < startFrame ? startFrame : endFrame;
+        int boundedEndFrame = Math.max(endFrame, startFrame);
         final int startFrameFinal = startFrame;
         final int endFrameFinal = boundedEndFrame;
         model.setFrames(

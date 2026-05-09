@@ -167,14 +167,13 @@ public final class FrameTextureNormalizerModel {
         return gpuTextureBytesAssigned;
     }
 
-    public synchronized boolean markTextureResident(String texturePath, long bytes) {
+    public synchronized void markTextureResident(String texturePath, long bytes) {
         if (texturePath == null || texturePath.isBlank() || bytes <= 0L || residentTexturePaths.contains(texturePath)) {
-            return false;
+            return;
         }
         residentTexturePaths.add(texturePath);
         residentTexturesFifo.addLast(texturePath);
         gpuTextureBytesAssigned += bytes;
-        return true;
     }
 
     public synchronized String popOldestResidentTexturePath() {
@@ -187,16 +186,12 @@ public final class FrameTextureNormalizerModel {
         return null;
     }
 
-    public synchronized void unmarkTextureResident(String texturePath, long bytes) {
+    public synchronized void unMarkTextureResident(String texturePath, long bytes) {
         if (texturePath == null || !residentTexturePaths.remove(texturePath)) {
             return;
         }
         residentTexturesFifo.removeFirstOccurrence(texturePath);
         gpuTextureBytesAssigned = Math.max(0L, gpuTextureBytesAssigned - Math.max(0L, bytes));
-    }
-
-    public synchronized Set<String> getWestCutterTileIds() {
-        return Collections.unmodifiableSet(new LinkedHashSet<>(westCutterTileIds));
     }
 
     public synchronized void addWestCutterTileIds(Set<String> ids) {

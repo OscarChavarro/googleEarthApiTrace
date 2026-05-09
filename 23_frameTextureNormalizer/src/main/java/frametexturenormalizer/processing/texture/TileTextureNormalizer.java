@@ -3,10 +3,8 @@ package frametexturenormalizer.processing.texture;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import frametexturenormalizer.model.FrameData;
@@ -40,18 +38,7 @@ public final class TileTextureNormalizer {
                 int newTileId = canonicalTexture == null ? tile.getTileId() : extractLastNumber(canonicalTexture, tile.getTileId());
                 idRemap.put(tile.getTileId(), newTileId);
 
-                TileInstance normalizedTile = new TileInstance(
-                    newTileId,
-                    tile.getFrameId(),
-                    canonicalTexture,
-                    tile.getSouthNeighbor(),
-                    tile.getNorthNeighbor(),
-                    tile.getEastNeighbor(),
-                    tile.getWestNeighbor(),
-                    tile.getTriangleStrip(),
-                    tile.getModelViewMatrix()
-                );
-                normalizedTile.setWestCuttingCell(tile.isWestCuttingCell());
+                TileInstance normalizedTile = getTileInstance(tile, newTileId, canonicalTexture);
                 interimTiles.add(normalizedTile);
             }
         }
@@ -84,24 +71,20 @@ public final class TileTextureNormalizer {
         );
     }
 
-    public static List<FrameData> deduplicateConsecutiveFramesByTileIds(List<FrameData> frames) {
-        if (frames == null || frames.isEmpty()) {
-            return List.of();
-        }
-        List<FrameData> out = new ArrayList<>(frames.size());
-        Set<Integer> previousTileIds = null;
-        for (FrameData frame : frames) {
-            if (frame == null) {
-                continue;
-            }
-            Set<Integer> tileIds = tileIdSet(frame.getTiles());
-            if (previousTileIds != null && previousTileIds.equals(tileIds)) {
-                continue;
-            }
-            out.add(frame);
-            previousTileIds = tileIds;
-        }
-        return out;
+    private static TileInstance getTileInstance(TileInstance tile, int newTileId, String canonicalTexture) {
+        TileInstance normalizedTile = new TileInstance(
+                newTileId,
+            tile.getFrameId(),
+                canonicalTexture,
+            tile.getSouthNeighbor(),
+            tile.getNorthNeighbor(),
+            tile.getEastNeighbor(),
+            tile.getWestNeighbor(),
+            tile.getTriangleStrip(),
+            tile.getModelViewMatrix()
+        );
+        normalizedTile.setWestCuttingCell(tile.isWestCuttingCell());
+        return normalizedTile;
     }
 
     private static Integer remapNeighbor(Integer neighborId, Map<Integer, Integer> idRemap) {
@@ -109,19 +92,6 @@ public final class TileTextureNormalizer {
             return null;
         }
         return idRemap.getOrDefault(neighborId, neighborId);
-    }
-
-    private static Set<Integer> tileIdSet(List<TileInstance> tiles) {
-        Set<Integer> out = new LinkedHashSet<>();
-        if (tiles == null) {
-            return out;
-        }
-        for (TileInstance tile : tiles) {
-            if (tile != null && tile.getTileId() >= 0) {
-                out.add(tile.getTileId());
-            }
-        }
-        return out;
     }
 
     public static Map<String, String> buildCanonicalTextureMap(List<List<String>> duplicatedTextureGroups) {

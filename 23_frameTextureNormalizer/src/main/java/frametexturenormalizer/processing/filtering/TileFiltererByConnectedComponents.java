@@ -130,7 +130,7 @@ public final class TileFiltererByConnectedComponents {
     }
 
     private static boolean pointsTo(Integer relation, int expectedId) {
-        return relation != null && relation.intValue() == expectedId;
+        return relation != null && relation == expectedId;
     }
 
     private static int minOrder(Set<Integer> component, Map<Integer, Integer> orderByTileId) {

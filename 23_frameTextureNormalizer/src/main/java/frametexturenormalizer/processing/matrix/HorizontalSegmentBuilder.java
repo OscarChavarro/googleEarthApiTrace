@@ -35,16 +35,16 @@ final class HorizontalSegmentBuilder {
                     continue;
                 }
 
-                if (!assignHorizontal(chunk, byId, currentCell, currentTile.getEastNeighbor(), +1, queue, conflictTracker)) {
+                if (assignHorizontal(chunk, byId, currentCell, currentTile.getEastNeighbor(), +1, queue, conflictTracker)) {
                     return null;
                 }
-                if (!assignHorizontal(chunk, byId, currentCell, currentTile.getWestNeighbor(), -1, queue, conflictTracker)) {
+                if (assignHorizontal(chunk, byId, currentCell, currentTile.getWestNeighbor(), -1, queue, conflictTracker)) {
                     return null;
                 }
             }
 
             chunk.normalizeRowStartToZero();
-            if (!VerticalSegmentMerger.validateRowContiguity(chunk, byId, conflictTracker)) {
+            if (VerticalSegmentMerger.invalidRowContiguity(chunk, byId, conflictTracker)) {
                 return null;
             }
             MatrixDebug.debug(null, "Row segment finalized size=%d width=%d minJ->0", chunk.size(), chunk.width());
@@ -67,12 +67,12 @@ final class HorizontalSegmentBuilder {
         MatrixConflictTracker conflictTracker
     ) {
         if (neighborId == null) {
-            return true;
+            return false;
         }
 
         TileInstance neighborTile = byId.get(neighborId);
         if (neighborTile == null) {
-            return true;
+            return false;
         }
 
         int expectedI = currentCell.i();
@@ -80,10 +80,10 @@ final class HorizontalSegmentBuilder {
 
         MatrixCell assigned = chunk.getByTileId(neighborId);
         if (assigned == null) {
-            MatrixCell occupant = chunk.getByCoord(expectedI, expectedJ);
+            MatrixCell occupant = chunk.getByCoordinate(expectedI, expectedJ);
             if (occupant != null && occupant.tileId() != neighborId) {
                 conflictTracker.registerConflict(neighborId, occupant.tileId());
-                return false;
+                return true;
             }
             MatrixCell cell = new MatrixCell(expectedI, expectedJ, neighborTile);
             chunk.put(cell);
@@ -97,14 +97,14 @@ final class HorizontalSegmentBuilder {
             );
             conflictTracker.setCoordinate(neighborId, new MatrixTileCoordinate(expectedI, expectedJ));
             queue.add(neighborId);
-            return true;
+            return false;
         }
 
         if (assigned.i() != expectedI || assigned.j() != expectedJ) {
             conflictTracker.registerConflict(currentCell.tileId(), neighborId);
-            return false;
+            return true;
         }
 
-        return true;
+        return false;
     }
 }

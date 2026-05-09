@@ -80,10 +80,6 @@ public final class GoogleCameraState {
         }
         JsonNode cameraNode = root.path("camera");
         JsonNode node = cameraNode.path("googleCamera");
-        // Compatibility:
-        // - New dumpAnalyzer export: { "camera": { "googleCamera": { ... } } }
-        // - Legacy direct export: { "googleCamera": { ... } }
-        // - Defensive fallback: { "camera": { ...camera fields... } }
         if (node.isMissingNode() || node.isNull() || !node.isObject()) {
             node = root.path("googleCamera");
         }

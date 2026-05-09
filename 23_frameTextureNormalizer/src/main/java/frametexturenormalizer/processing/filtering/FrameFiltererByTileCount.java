@@ -2,6 +2,7 @@ package frametexturenormalizer.processing.filtering;
 
 import java.util.ArrayList;
 import java.util.List;
+
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 

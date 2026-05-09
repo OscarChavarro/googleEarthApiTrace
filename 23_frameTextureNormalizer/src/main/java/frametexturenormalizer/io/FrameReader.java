@@ -1,11 +1,14 @@
 package frametexturenormalizer.io;
 
+// Java classes
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+// App classes
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
@@ -17,7 +20,7 @@ public final class FrameReader {
     private FrameReader() {
     }
 
-    public static Runnable loadTracedFrames(
+    public static void loadTracedFrames(
         TraceSessionReader traceSessionReader,
         TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileFiltererByGeometricNullNeighbors tileFilterer,
@@ -29,7 +32,6 @@ public final class FrameReader {
             model.setFrames(filtered);
         };
         reloadTileMatrices.run();
-        return reloadTileMatrices;
     }
 
     private static List<FrameData> readFramesParallel(TraceSessionReader traceSessionReader) {
@@ -132,7 +134,7 @@ public final class FrameReader {
                 continue;
             }
             List<TileInstance> ccFilteredTiles = connectedComponentsFilterer.filter(frame.getTiles());
-            List<TileInstance> filteredTiles = tileFilterer.filter(ccFilteredTiles, model.getViewingCamera());
+            List<TileInstance> filteredTiles = tileFilterer.filter(ccFilteredTiles);
             out.add(new FrameData(
                 frame.getId(),
                 filteredTiles,

@@ -1,12 +1,17 @@
 package frametexturenormalizer.gui;
 
-import com.jogamp.opengl.GL4;
+// Java classes
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.util.function.BiFunction;
+
+// JOGL classes
+import com.jogamp.opengl.GL4;
+
+// Vitral classes
 import vsdk.toolkit.environment.Camera;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;

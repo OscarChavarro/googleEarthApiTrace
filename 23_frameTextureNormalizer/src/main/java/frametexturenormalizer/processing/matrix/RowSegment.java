@@ -10,9 +10,8 @@ import java.util.Collections;
 
 final class RowSegment {
     private final Map<Integer, MatrixCell> byTileId = new HashMap<>();
-    private final Map<String, MatrixCell> byCoord = new HashMap<>();
+    private final Map<String, MatrixCell> byCoordinate = new HashMap<>();
     private final Map<Integer, List<MatrixCell>> byRow = new HashMap<>();
-    private List<MatrixCell> cellsSortedLeftToRightCache;
     private List<Integer> sortedRowIndicesCache;
 
     RowSegment copyShifted(int di, int dj) {
@@ -26,31 +25,21 @@ final class RowSegment {
 
     void put(MatrixCell cell) {
         byTileId.put(cell.tileId(), cell);
-        byCoord.put(key(cell.i(), cell.j()), cell);
+        byCoordinate.put(key(cell.i(), cell.j()), cell);
         byRow.computeIfAbsent(cell.i(), __ -> new ArrayList<>()).add(cell);
-        cellsSortedLeftToRightCache = null;
         sortedRowIndicesCache = null;
     }
 
-    MatrixCell getByCoord(int i, int j) {
-        return byCoord.get(key(i, j));
+    MatrixCell getByCoordinate(int i, int j) {
+        return byCoordinate.get(key(i, j));
     }
 
-    boolean containsTileId(int id) {
-        return byTileId.containsKey(id);
+    boolean tileIdNotFound(int id) {
+        return !byTileId.containsKey(id);
     }
 
     MatrixCell getByTileId(int id) {
         return byTileId.get(id);
-    }
-
-    List<MatrixCell> cellsSortedLeftToRight() {
-        if (cellsSortedLeftToRightCache == null) {
-            List<MatrixCell> out = new ArrayList<>(byTileId.values());
-            out.sort(Comparator.comparingInt(MatrixCell::i).thenComparingInt(MatrixCell::j).thenComparingInt(MatrixCell::tileId));
-            cellsSortedLeftToRightCache = Collections.unmodifiableList(out);
-        }
-        return cellsSortedLeftToRightCache;
     }
 
     Collection<MatrixCell> cells() {
@@ -91,34 +80,13 @@ final class RowSegment {
     private void rebuildShifted(int di, int dj) {
         List<MatrixCell> cells = new ArrayList<>(byTileId.values());
         byTileId.clear();
-        byCoord.clear();
+        byCoordinate.clear();
         byRow.clear();
-        cellsSortedLeftToRightCache = null;
         sortedRowIndicesCache = null;
         for (MatrixCell c : cells) {
             c.shift(di, dj);
             put(c);
         }
-    }
-
-    int minI() {
-        int min = Integer.MAX_VALUE;
-        for (MatrixCell c : byTileId.values()) {
-            min = Math.min(min, c.i());
-        }
-        return min == Integer.MAX_VALUE ? 0 : min;
-    }
-
-    int maxI() {
-        int max = Integer.MIN_VALUE;
-        for (MatrixCell c : byTileId.values()) {
-            max = Math.max(max, c.i());
-        }
-        return max == Integer.MIN_VALUE ? 0 : max;
-    }
-
-    int height() {
-        return maxI() - minI() + 1;
     }
 
     int minJ() {

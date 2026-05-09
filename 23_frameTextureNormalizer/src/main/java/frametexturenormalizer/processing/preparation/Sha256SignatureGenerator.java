@@ -113,8 +113,8 @@ public final class Sha256SignatureGenerator {
                 return line;
             }
         }
-        catch (IOException | InterruptedException ignored) {
-            if (ignored instanceof InterruptedException) {
+        catch (IOException | InterruptedException exception) {
+            if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             return null;

@@ -78,21 +78,21 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         caps.setDoubleBuffered(false);
 
         GLDrawableFactory creator = GLDrawableFactory.getFactory(profile);
-        GLOffscreenAutoDrawable pbuffer = creator.createOffscreenAutoDrawable(
+        GLOffscreenAutoDrawable pBuffer = creator.createOffscreenAutoDrawable(
             null, caps, null, Math.max(1, width), Math.max(1, height)
         );
         try {
-            pbuffer.addGLEventListener(this);
-            pbuffer.display();
+            pBuffer.addGLEventListener(this);
+            pBuffer.display();
         }
         finally {
             try {
-                pbuffer.removeGLEventListener(this);
+                pBuffer.removeGLEventListener(this);
             }
             catch (Exception ignored) {
             }
             try {
-                pbuffer.destroy();
+                pBuffer.destroy();
             }
             catch (Exception ignored) {
             }
@@ -113,7 +113,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
             return false;
         }
         for (TileInstance tile : selected.getTiles()) {
-            if (tile == null || tile.getTileId() != pickedTextureId.intValue()) {
+            if (tile == null || tile.getTileId() != pickedTextureId) {
                 continue;
             }
             if (tile.isWestCuttingCell()) {
@@ -298,8 +298,8 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
 
             int sx = (int)Math.round(win[0]);
             int sy = (int)Math.round(win[1]);
-            String coordsLabel = matrixCoordsLabel(tile);
-            if (coordsLabel == null) {
+            String coordinatesLabel = matrixCoordinatesLabel(tile);
+            if (coordinatesLabel == null) {
                 hudTextRenderer.setColor(1.0f, 0.2f, 0.2f, 1.0f);
             } else {
                 hudTextRenderer.setColor(1.0f, 1.0f, 0.4f, 1.0f);
@@ -307,10 +307,10 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
             Rectangle2D bounds = hudTextRenderer.getBounds(textureLabel);
             int centeredX = sx - (int)Math.round(bounds.getWidth() * 0.5);
             hudTextRenderer.draw(textureLabel, centeredX, sy);
-            if (coordsLabel != null) {
-                Rectangle2D cBounds = hudTextRenderer.getBounds(coordsLabel);
+            if (coordinatesLabel != null) {
+                Rectangle2D cBounds = hudTextRenderer.getBounds(coordinatesLabel);
                 int cX = sx - (int)Math.round(cBounds.getWidth() * 0.5);
-                hudTextRenderer.draw(coordsLabel, cX, sy - 18);
+                hudTextRenderer.draw(coordinatesLabel, cX, sy - 18);
             }
         }
 
@@ -332,7 +332,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
             }
             last = value;
         }
-        if (first == null || last == null) {
+        if (first == null) {
             return null;
         }
         return first + "/" + last;
@@ -381,7 +381,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         return out;
     }
 
-    private static String matrixCoordsLabel(TileInstance tile) {
+    private static String matrixCoordinatesLabel(TileInstance tile) {
         if (tile == null || tile.getMatrixI() == null || tile.getMatrixJ() == null) {
             return null;
         }

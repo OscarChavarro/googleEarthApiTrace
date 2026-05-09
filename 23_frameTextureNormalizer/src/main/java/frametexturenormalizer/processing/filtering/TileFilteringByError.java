@@ -4,8 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import frametexturenormalizer.model.FrameData;
 
-public final class TileFilteringByErrored {
-    public List<FrameData> removeErroredFrames(List<FrameData> frames) {
+public final class TileFilteringByError {
+    public List<FrameData> removeFramesWithErrors(List<FrameData> frames) {
         if (frames == null || frames.isEmpty()) {
             return List.of();
         }
@@ -24,7 +24,7 @@ public final class TileFilteringByErrored {
         }
 
         if (!removedIds.isEmpty()) {
-            System.out.println("Removed errored frames: " + removedIds);
+            System.out.println("Removed frames with errors: " + removedIds);
         }
         return out;
     }
