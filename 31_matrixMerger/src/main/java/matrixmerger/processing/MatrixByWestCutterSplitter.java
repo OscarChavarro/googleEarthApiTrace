@@ -137,6 +137,7 @@ public final class MatrixByWestCutterSplitter {
         copy.setI(i);
         copy.setJ(j);
         copy.setTextureFile(source.getTextureFile());
+        copy.setUncles(source.getUncles());
         return copy;
     }
 

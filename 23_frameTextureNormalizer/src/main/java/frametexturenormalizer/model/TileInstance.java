@@ -3,6 +3,7 @@ package frametexturenormalizer.model;
 import frametexturenormalizer.util.ScopedTileIds;
 
 import java.util.List;
+import processing.uncles.ToUncleRelationship;
 
 public final class TileInstance {
     private static final double FULL_RESOLUTION_TOLERANCE = 1.0e-6;
@@ -18,6 +19,7 @@ public final class TileInstance {
     private final Integer matrixI;
     private final Integer matrixJ;
     private final boolean incorrectMatrixMapping;
+    private final List<ToUncleRelationship> uncles;
     private boolean westCuttingCell;
     private boolean selected;
 
@@ -44,7 +46,8 @@ public final class TileInstance {
             modelViewMatrix,
             null,
             null,
-            false
+            false,
+            List.of()
         );
     }
 
@@ -73,7 +76,8 @@ public final class TileInstance {
             modelViewMatrix,
             matrixI,
             matrixJ,
-            false
+            false,
+            List.of()
         );
     }
 
@@ -104,6 +108,7 @@ public final class TileInstance {
             matrixI,
             matrixJ,
             incorrectMatrixMapping,
+            List.of(),
             false,
             false
         );
@@ -122,6 +127,41 @@ public final class TileInstance {
         Integer matrixI,
         Integer matrixJ,
         boolean incorrectMatrixMapping,
+        List<ToUncleRelationship> uncles
+    ) {
+        this(
+            tileId,
+            frameId,
+            textureFile,
+            southNeighbor,
+            northNeighbor,
+            eastNeighbor,
+            westNeighbor,
+            triangleStrip,
+            modelViewMatrix,
+            matrixI,
+            matrixJ,
+            incorrectMatrixMapping,
+            uncles,
+            false,
+            false
+        );
+    }
+
+    public TileInstance(
+        int tileId,
+        int frameId,
+        String textureFile,
+        Integer southNeighbor,
+        Integer northNeighbor,
+        Integer eastNeighbor,
+        Integer westNeighbor,
+        TriangleStripGeometry triangleStrip,
+        double[] modelViewMatrix,
+        Integer matrixI,
+        Integer matrixJ,
+        boolean incorrectMatrixMapping,
+        List<ToUncleRelationship> uncles,
         boolean westCuttingCell,
         boolean selected
     ) {
@@ -137,6 +177,7 @@ public final class TileInstance {
         this.matrixI = matrixI;
         this.matrixJ = matrixJ;
         this.incorrectMatrixMapping = incorrectMatrixMapping;
+        this.uncles = uncles == null ? List.of() : List.copyOf(uncles);
         this.westCuttingCell = westCuttingCell;
         this.selected = selected;
     }
@@ -235,6 +276,10 @@ public final class TileInstance {
 
     public boolean isIncorrectMatrixMapping() {
         return incorrectMatrixMapping;
+    }
+
+    public List<ToUncleRelationship> getUncles() {
+        return uncles;
     }
 
     public boolean isWestCuttingCell() {

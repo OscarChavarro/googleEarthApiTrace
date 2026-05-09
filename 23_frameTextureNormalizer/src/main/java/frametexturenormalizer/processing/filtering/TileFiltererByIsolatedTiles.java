@@ -53,6 +53,7 @@ public final class TileFiltererByIsolatedTiles {
                     tile.getMatrixI(),
                     tile.getMatrixJ(),
                     tile.isIncorrectMatrixMapping(),
+                    tile.getUncles(),
                     tile.isWestCuttingCell(),
                     tile.isSelected()
                 ));

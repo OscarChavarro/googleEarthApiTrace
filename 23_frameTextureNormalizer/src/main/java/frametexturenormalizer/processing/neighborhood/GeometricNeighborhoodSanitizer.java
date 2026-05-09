@@ -108,6 +108,7 @@ public final class GeometricNeighborhoodSanitizer {
             tile.getMatrixI(),
             tile.getMatrixJ(),
             tile.isIncorrectMatrixMapping(),
+            tile.getUncles(),
             tile.isWestCuttingCell(),
             tile.isSelected()
         );

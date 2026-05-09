@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -108,6 +109,62 @@ public final class MatrixMergerModel {
 
     public String getSelectedFrameInvalidReason() {
         return invalidReasonByFrameId.getOrDefault(getSelectedFrameId(), "");
+    }
+
+    public UncleHudStatus getSelectedMatrixUncleHudStatus() {
+        TileMatrix selected = getSelectedMatrix();
+        if (selected == null || selected.getTiles() == null || selected.getTiles().isEmpty()) {
+            return new UncleHudStatus(0, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
+        }
+
+        Map<Integer, Integer> uncleCountsByTileId = new LinkedHashMap<>();
+        int relationCount = 0;
+        for (TileMatrix.TileCoord tile : selected.getTiles()) {
+            if (tile == null || tile.getUncles() == null) {
+                continue;
+            }
+            relationCount += tile.getUncles().size();
+            for (var relationship : tile.getUncles()) {
+                if (relationship == null || relationship.uncleContentId() == null) {
+                    continue;
+                }
+                uncleCountsByTileId.merge(relationship.uncleContentId(), 1, Integer::sum);
+            }
+        }
+
+        if (uncleCountsByTileId.isEmpty()) {
+            return new UncleHudStatus(relationCount, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
+        }
+
+        Map<Integer, Integer> frameIndexByTileId = buildFrameIndexByTileId();
+        LinkedHashSet<Integer> uncleFrameIndexes = new LinkedHashSet<>();
+        List<Integer> missingUncleIds = new ArrayList<>();
+        for (Integer uncleTileId : uncleCountsByTileId.keySet()) {
+            Integer frameIndex = frameIndexByTileId.get(uncleTileId);
+            if (frameIndex == null) {
+                missingUncleIds.add(uncleTileId);
+                continue;
+            }
+            uncleFrameIndexes.add(frameIndex);
+        }
+
+        UncleHudState state;
+        if (uncleFrameIndexes.isEmpty()) {
+            state = UncleHudState.TOPLEVEL;
+        }
+        else if (uncleFrameIndexes.size() > 1) {
+            state = UncleHudState.BROKEN;
+        }
+        else {
+            state = UncleHudState.NORMAL;
+        }
+        return new UncleHudStatus(
+            relationCount,
+            state,
+            new ArrayList<>(uncleCountsByTileId.keySet()),
+            missingUncleIds,
+            buildLocatedUncleTiles(uncleCountsByTileId.keySet())
+        );
     }
 
     public TileMatrix getSelectedMatrix() {
@@ -467,6 +524,57 @@ public final class MatrixMergerModel {
         return frameId == -1 ? "transient" : Integer.toString(frameId);
     }
 
+    private Map<Integer, Integer> buildFrameIndexByTileId() {
+        Map<Integer, Integer> frameIndexByTileId = new LinkedHashMap<>();
+        for (int frameIndex = 0; frameIndex < frameMatrices.size(); frameIndex++) {
+            FrameMatrices frame = frameMatrices.get(frameIndex);
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+                continue;
+            }
+            TileMatrix matrix = frame.getMatrices().get(0);
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                Integer tileId = tile.getNumericTileId();
+                if (tileId != null) {
+                    frameIndexByTileId.put(tileId, frameIndex);
+                }
+            }
+        }
+        return frameIndexByTileId;
+    }
+
+    private Map<Integer, UncleTileLocation> buildLocatedUncleTiles(Set<Integer> uncleTileIds) {
+        Map<Integer, UncleTileLocation> out = new LinkedHashMap<>();
+        if (uncleTileIds == null || uncleTileIds.isEmpty()) {
+            return out;
+        }
+        for (int frameIndex = 0; frameIndex < frameMatrices.size(); frameIndex++) {
+            FrameMatrices frame = frameMatrices.get(frameIndex);
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+                continue;
+            }
+            TileMatrix matrix = frame.getMatrices().get(0);
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                Integer numericTileId = tile.getNumericTileId();
+                if (numericTileId != null && uncleTileIds.contains(numericTileId)) {
+                    out.put(numericTileId, new UncleTileLocation(tile.getId(), frameIndex));
+                }
+            }
+        }
+        return out;
+    }
+
     private void selectFirstInvalidFrame() {
         for (int i = 0; i < frameMatrices.size(); i++) {
             FrameMatrices frame = frameMatrices.get(i);
@@ -475,5 +583,33 @@ public final class MatrixMergerModel {
                 return;
             }
         }
+    }
+
+    public record UncleHudStatus(
+        int relationCount,
+        UncleHudState state,
+        List<Integer> uncleTileIds,
+        List<Integer> missingUncleIds,
+        Map<Integer, UncleTileLocation> locatedUncleTiles
+    ) {
+        public boolean broken() {
+            return state == UncleHudState.BROKEN;
+        }
+
+        public boolean topLevel() {
+            return state == UncleHudState.TOPLEVEL;
+        }
+    }
+
+    public record UncleTileLocation(
+        String tileId,
+        int frameIndex
+    ) {
+    }
+
+    public enum UncleHudState {
+        NORMAL,
+        BROKEN,
+        TOPLEVEL
     }
 }

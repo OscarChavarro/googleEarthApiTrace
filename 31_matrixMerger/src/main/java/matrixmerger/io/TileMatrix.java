@@ -3,6 +3,7 @@ package matrixmerger.io;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import java.util.ArrayList;
 import java.util.List;
+import processing.uncles.ToUncleRelationship;
 
 public final class TileMatrix {
     private int frameId;
@@ -49,6 +50,7 @@ public final class TileMatrix {
         private int i;
         private int j;
         private String textureFile;
+        private List<ToUncleRelationship> uncles = new ArrayList<>();
 
         public String getId() {
             if (id != null && !id.isBlank()) {
@@ -63,6 +65,26 @@ public final class TileMatrix {
 
         public void setId(String id) {
             this.id = WestCutterReader.normalizeScopedTileId(id);
+        }
+
+        public Integer getNumericTileId() {
+            if (legacyTileId != null) {
+                return legacyTileId;
+            }
+            String resolved = getId();
+            if (resolved == null || resolved.isBlank()) {
+                return null;
+            }
+            int separator = resolved.lastIndexOf('_');
+            String numericPart = separator >= 0 && separator < resolved.length() - 1
+                ? resolved.substring(separator + 1)
+                : resolved;
+            try {
+                return Integer.parseInt(numericPart);
+            }
+            catch (NumberFormatException ex) {
+                return null;
+            }
         }
 
         public int getI() {
@@ -87,6 +109,14 @@ public final class TileMatrix {
 
         public void setTextureFile(String textureFile) {
             this.textureFile = textureFile;
+        }
+
+        public List<ToUncleRelationship> getUncles() {
+            return uncles;
+        }
+
+        public void setUncles(List<ToUncleRelationship> uncles) {
+            this.uncles = uncles == null ? new ArrayList<>() : new ArrayList<>(uncles);
         }
     }
 }

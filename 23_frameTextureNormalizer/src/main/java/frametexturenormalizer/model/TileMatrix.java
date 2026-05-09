@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import processing.uncles.ToUncleRelationship;
 
 public final class TileMatrix {
     private final int frameId;
@@ -36,6 +37,6 @@ public final class TileMatrix {
         return tiles;
     }
 
-    public record TileCoord(int tileId, int i, int j, String textureFile) {
+    public record TileCoord(int tileId, int i, int j, String textureFile, List<ToUncleRelationship> uncles) {
     }
 }

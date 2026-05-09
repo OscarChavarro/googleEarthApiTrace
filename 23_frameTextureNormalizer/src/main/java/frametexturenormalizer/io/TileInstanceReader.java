@@ -13,6 +13,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
+import processing.uncles.ToUncleRelationship;
+import processing.uncles.UncleDirections;
 
 public final class TileInstanceReader {
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
@@ -34,7 +36,21 @@ public final class TileInstanceReader {
             Integer west = nullableNeighbor(tile.get("westNeighbor"));
             TriangleStripGeometry triangleStrip = parseTriangleStrip(tile.get("triangleStrip"));
             double[] modelViewMatrix = readArray16(tile.get("modelViewMatrix"));
-            result.add(new TileInstance(tileId, frameId, textureFile, south, north, east, west, triangleStrip, modelViewMatrix));
+            result.add(new TileInstance(
+                tileId,
+                frameId,
+                textureFile,
+                south,
+                north,
+                east,
+                west,
+                triangleStrip,
+                modelViewMatrix,
+                null,
+                null,
+                false,
+                parseUncles(tile.get("uncles"))
+            ));
         }
         return result;
     }
@@ -104,6 +120,38 @@ public final class TileInstanceReader {
         }
         int value = extractLastNumber(text, -1);
         return value < 0 ? null : value;
+    }
+
+    private static List<ToUncleRelationship> parseUncles(JsonNode node) {
+        if (node == null || !node.isArray() || node.isEmpty()) {
+            return List.of();
+        }
+        List<ToUncleRelationship> out = new ArrayList<>(node.size());
+        for (JsonNode item : node) {
+            if (item == null || item.isNull()) {
+                continue;
+            }
+            UncleDirections direction = parseDirection(item.get("direction"));
+            Integer uncleId = nullableNeighbor(item.get("uncleContentId"));
+            if (direction == null || uncleId == null) {
+                continue;
+            }
+            out.add(new ToUncleRelationship(direction, uncleId));
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static UncleDirections parseDirection(JsonNode node) {
+        String text = nullableText(node);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return UncleDirections.valueOf(text);
+        }
+        catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private static double[] readArray16(JsonNode arrNode) {

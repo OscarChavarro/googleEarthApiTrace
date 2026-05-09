@@ -9,6 +9,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
+import processing.uncles.ToUncleRelationship;
 
 public final class TileTextureNormalizer {
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
@@ -54,7 +55,11 @@ public final class TileTextureNormalizer {
                 remapNeighbor(tile.getEastNeighbor(), idRemap),
                 remapNeighbor(tile.getWestNeighbor(), idRemap),
                 tile.getTriangleStrip(),
-                tile.getModelViewMatrix()
+                tile.getModelViewMatrix(),
+                tile.getMatrixI(),
+                tile.getMatrixJ(),
+                tile.isIncorrectMatrixMapping(),
+                remapUncles(tile.getUncles(), idRemap)
             );
             normalizedTile.setWestCuttingCell(tile.isWestCuttingCell());
             normalizedTiles.add(normalizedTile);
@@ -81,7 +86,11 @@ public final class TileTextureNormalizer {
             tile.getEastNeighbor(),
             tile.getWestNeighbor(),
             tile.getTriangleStrip(),
-            tile.getModelViewMatrix()
+            tile.getModelViewMatrix(),
+            tile.getMatrixI(),
+            tile.getMatrixJ(),
+            tile.isIncorrectMatrixMapping(),
+            remapUncles(tile.getUncles(), Map.of(tile.getTileId(), newTileId))
         );
         normalizedTile.setWestCuttingCell(tile.isWestCuttingCell());
         return normalizedTile;
@@ -92,6 +101,26 @@ public final class TileTextureNormalizer {
             return null;
         }
         return idRemap.getOrDefault(neighborId, neighborId);
+    }
+
+    private static List<ToUncleRelationship> remapUncles(
+        List<ToUncleRelationship> uncles,
+        Map<Integer, Integer> idRemap
+    ) {
+        if (uncles == null || uncles.isEmpty()) {
+            return List.of();
+        }
+        List<ToUncleRelationship> out = new ArrayList<>(uncles.size());
+        for (ToUncleRelationship relationship : uncles) {
+            if (relationship == null || relationship.direction() == null || relationship.uncleId() == null) {
+                continue;
+            }
+            out.add(new ToUncleRelationship(
+                relationship.direction(),
+                remapNeighbor(relationship.uncleId(), idRemap)
+            ));
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
     }
 
     public static Map<String, String> buildCanonicalTextureMap(List<List<String>> duplicatedTextureGroups) {

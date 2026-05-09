@@ -210,6 +210,7 @@ public final class MatrixMerger {
         added.setI(i);
         added.setJ(j);
         added.setTextureFile(src.getTextureFile());
+        added.setUncles(src.getUncles());
         return added;
     }
 

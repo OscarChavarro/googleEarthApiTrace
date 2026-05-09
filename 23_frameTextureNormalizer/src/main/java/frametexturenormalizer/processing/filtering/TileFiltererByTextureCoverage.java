@@ -42,6 +42,7 @@ public final class TileFiltererByTextureCoverage {
                 tile.getMatrixI(),
                 tile.getMatrixJ(),
                 tile.isIncorrectMatrixMapping(),
+                tile.getUncles(),
                 tile.isWestCuttingCell(),
                 tile.isSelected()
             ));

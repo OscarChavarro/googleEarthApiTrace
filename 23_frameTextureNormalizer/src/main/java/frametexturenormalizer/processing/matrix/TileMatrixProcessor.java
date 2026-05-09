@@ -131,7 +131,8 @@ public final class TileMatrixProcessor {
                 tile.getModelViewMatrix(),
                 coordinate,
                 coordinate1,
-                incorrect
+                incorrect,
+                tile.getUncles()
         );
         flaggedTile.setWestCuttingCell(tile.isWestCuttingCell());
         return flaggedTile;

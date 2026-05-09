@@ -66,7 +66,13 @@ final class MatrixAssembler {
 
         List<TileCoord> collapsedTiles = new ArrayList<>(byTileId.size());
         for (TileCoord tile : byTileId.values()) {
-            TileCoord normalized = new TileCoord(tile.tileId(), tile.i() - minI, tile.j() - minJ, tile.textureFile());
+            TileCoord normalized = new TileCoord(
+                tile.tileId(),
+                tile.i() - minI,
+                tile.j() - minJ,
+                tile.textureFile(),
+                tile.uncles()
+            );
             collapsedTiles.add(normalized);
             conflictTracker.setCoordinate(tile.tileId(), new MatrixTileCoordinate(normalized.i(), normalized.j()));
         }
@@ -100,7 +106,13 @@ final class MatrixAssembler {
             int normalizedI = cell.i() - minI;
             int normalizedJ = cell.j() - minJ;
             conflictTracker.setCoordinate(cell.tileId(), new MatrixTileCoordinate(normalizedI, normalizedJ));
-            result.add(new TileCoord(cell.tileId(), normalizedI, normalizedJ, cell.tile().getTextureFile()));
+            result.add(new TileCoord(
+                cell.tileId(),
+                normalizedI,
+                normalizedJ,
+                cell.tile().getTextureFile(),
+                cell.tile().getUncles()
+            ));
         }
 
         int rows = maxI - minI + 1;

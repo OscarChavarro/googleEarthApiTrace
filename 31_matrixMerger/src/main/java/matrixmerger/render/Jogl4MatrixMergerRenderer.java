@@ -22,6 +22,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileMatrixRenderer;
     private TextRenderer hudTextRenderer;
+    private String lastPrintedBrokenUncleSignature;
 
     public Jogl4MatrixMergerRenderer(MatrixMergerModel model) {
         this.model = model;
@@ -106,6 +107,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         String selectedFrameLabel = model.getSelectedFrameLabel();
         String nextFrameLabel = model.getNextFrameLabelForSelection();
         boolean selectedFrameInvalid = model.isSelectedFrameInvalid();
+        MatrixMergerModel.UncleHudStatus uncleHudStatus = model.getSelectedMatrixUncleHudStatus();
 
         GL2 gl2 = drawable.getGL().getGL2();
         gl2.glDisable(GL2.GL_DEPTH_TEST);
@@ -126,9 +128,26 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         else if (!selectedFrameInvalid) {
             hudTextRenderer.draw("Split by west cutters [c]", 16, h - 50);
         }
+        if (!selectedFrameInvalid) {
+            if (uncleHudStatus.broken()) {
+                hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
+                hudTextRenderer.draw("Uncle relations: " + uncleHudStatus.relationCount() + " (BROKEN)", 16, h - 72);
+                printBrokenUncleIds(uncleHudStatus);
+            }
+            else if (uncleHudStatus.topLevel()) {
+                hudTextRenderer.setColor(0.2f, 0.9f, 0.2f, 1.0f);
+                hudTextRenderer.draw("Uncle relations: " + uncleHudStatus.relationCount() + " (TOPLEVEL)", 16, h - 72);
+                lastPrintedBrokenUncleSignature = null;
+            }
+            else {
+                hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+                hudTextRenderer.draw("Uncle relations: " + uncleHudStatus.relationCount(), 16, h - 72);
+                lastPrintedBrokenUncleSignature = null;
+            }
+        }
         if (!selectedFrameInvalid && hasNext && mergeFailed) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
-            hudTextRenderer.draw("ERROR: Could not merge with next frame!", 16, h - 72);
+            hudTextRenderer.draw("ERROR: Could not merge with next frame!", 16, h - 94);
         }
         if (selectedFrameInvalid) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
@@ -208,5 +227,46 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             out[i] = matrix[i];
         }
         return out;
+    }
+
+    private void printBrokenUncleIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {
+        if (uncleHudStatus == null || !uncleHudStatus.broken()) {
+            lastPrintedBrokenUncleSignature = null;
+            return;
+        }
+        String signature = uncleHudStatus.uncleTileIds().toString()
+            + "|"
+            + uncleHudStatus.missingUncleIds()
+            + "|"
+            + uncleHudStatus.locatedUncleTiles();
+        if (signature.equals(lastPrintedBrokenUncleSignature)) {
+            return;
+        }
+        lastPrintedBrokenUncleSignature = signature;
+        System.out.println("BROKEN uncle tile ids: " + formatBrokenUncleTileIds(uncleHudStatus));
+        if (!uncleHudStatus.missingUncleIds().isEmpty()) {
+            System.out.println("Missing uncle tile ids: " + uncleHudStatus.missingUncleIds());
+        }
+    }
+
+    private static String formatBrokenUncleTileIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {
+        StringBuilder sb = new StringBuilder("[");
+        boolean first = true;
+        for (Integer uncleTileId : uncleHudStatus.uncleTileIds()) {
+            if (!first) {
+                sb.append(", ");
+            }
+            first = false;
+            MatrixMergerModel.UncleTileLocation location = uncleHudStatus.locatedUncleTiles().get(uncleTileId);
+            if (location != null && location.tileId() != null && !location.tileId().isBlank()) {
+                sb.append(location.tileId());
+                sb.append(" (frame ").append(location.frameIndex()).append(")");
+            }
+            else {
+                sb.append(uncleTileId);
+            }
+        }
+        sb.append(']');
+        return sb.toString();
     }
 }
