@@ -2,25 +2,29 @@ package dumpanalyzer.model;
 
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
-public final class BigTile {
+public final class GlobeLevelTileSet {
     private final String contentId;
     private final Vector3D center;
     private final Vector3D northBorderCenter;
     private final Vector3D southBorderCenter;
     private final Vector3D eastBorderCenter;
     private final Vector3D westBorderCenter;
+    private final int triangleStripCount;
+    private final boolean drawSourceTile;
     private volatile String detectedNorthNeighborContentId;
     private volatile String detectedSouthNeighborContentId;
     private volatile String detectedEastNeighborContentId;
     private volatile String detectedWestNeighborContentId;
 
-    public BigTile(
+    public GlobeLevelTileSet(
         String contentId,
         Vector3D center,
         Vector3D northBorderCenter,
         Vector3D southBorderCenter,
         Vector3D eastBorderCenter,
-        Vector3D westBorderCenter
+        Vector3D westBorderCenter,
+        int triangleStripCount,
+        boolean drawSourceTile
     ) {
         this.contentId = contentId;
         this.center = center == null ? null : Vector3D.copyOf(center);
@@ -28,6 +32,8 @@ public final class BigTile {
         this.southBorderCenter = southBorderCenter == null ? null : Vector3D.copyOf(southBorderCenter);
         this.eastBorderCenter = eastBorderCenter == null ? null : Vector3D.copyOf(eastBorderCenter);
         this.westBorderCenter = westBorderCenter == null ? null : Vector3D.copyOf(westBorderCenter);
+        this.triangleStripCount = triangleStripCount;
+        this.drawSourceTile = drawSourceTile;
     }
 
     public String getContentId() {
@@ -52,6 +58,14 @@ public final class BigTile {
 
     public Vector3D getWestBorderCenter() {
         return westBorderCenter == null ? null : Vector3D.copyOf(westBorderCenter);
+    }
+
+    public int getTriangleStripCount() {
+        return triangleStripCount;
+    }
+
+    public boolean shouldDrawSourceTile() {
+        return drawSourceTile;
     }
 
     public String getDetectedNorthNeighborContentId() {

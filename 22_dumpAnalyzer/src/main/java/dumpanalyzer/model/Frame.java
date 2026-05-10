@@ -15,6 +15,8 @@ public final class Frame implements Comparable<Frame> {
     private final List<Line> lines;
     private final List<AxisAlignedBoundingBox> axisAlignedBoundingBoxes;
     private final FrameCameraState camera;
+    private volatile List<TileInstance> selectableTilesOverride = List.of();
+    private volatile List<AxisAlignedBoundingBox> selectableAxisAlignedBoundingBoxes = List.of();
 
     public Frame(
         int id,
@@ -40,6 +42,17 @@ public final class Frame implements Comparable<Frame> {
         return tiles;
     }
 
+    @JsonIgnore
+    public List<TileInstance> getSelectableTiles() {
+        return selectableTilesOverride == null || selectableTilesOverride.isEmpty() ? tiles : selectableTilesOverride;
+    }
+
+    public void setSelectableTilesOverride(List<TileInstance> selectableTiles) {
+        List<TileInstance> copy = selectableTiles == null ? List.of() : List.copyOf(selectableTiles);
+        this.selectableTilesOverride = copy;
+        this.selectableAxisAlignedBoundingBoxes = buildAabbsFromTiles(copy);
+    }
+
     public List<Line> getLines() {
         return lines;
     }
@@ -47,6 +60,13 @@ public final class Frame implements Comparable<Frame> {
     @JsonIgnore
     public List<AxisAlignedBoundingBox> getAxisAlignedBoundingBoxes() {
         return axisAlignedBoundingBoxes;
+    }
+
+    @JsonIgnore
+    public List<AxisAlignedBoundingBox> getSelectableAxisAlignedBoundingBoxes() {
+        return selectableAxisAlignedBoundingBoxes == null || selectableAxisAlignedBoundingBoxes.isEmpty()
+            ? axisAlignedBoundingBoxes
+            : selectableAxisAlignedBoundingBoxes;
     }
 
     public FrameCameraState getCamera() {

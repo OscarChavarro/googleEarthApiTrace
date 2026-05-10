@@ -1,17 +1,17 @@
 package dumpanalyzer.render;
 
 import com.jogamp.opengl.GL2;
-import dumpanalyzer.model.BigTile;
+import dumpanalyzer.model.GlobeLevelTileSet;
 import dumpanalyzer.model.TileInstance;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
-final class Jogl4BigTileRenderer {
-    private Jogl4BigTileRenderer() {
+final class Jogl4GlobeLevelTileSetRenderer {
+    private Jogl4GlobeLevelTileSetRenderer() {
     }
 
-    static void drawWireOverlay(GL2 gl2, TileInstance tile, BigTile bigTile) {
-        if (gl2 == null || tile == null || bigTile == null) {
+    static void drawWireOverlay(GL2 gl2, TileInstance tile, GlobeLevelTileSet globeLevelTileSet) {
+        if (gl2 == null || tile == null || globeLevelTileSet == null) {
             return;
         }
         gl2.glColor3d(128.0 / 255.0, 1.0, 128.0 / 255.0);

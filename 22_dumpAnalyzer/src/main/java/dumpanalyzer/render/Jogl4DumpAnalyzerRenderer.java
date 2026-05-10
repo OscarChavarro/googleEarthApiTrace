@@ -229,10 +229,11 @@ public class Jogl4DumpAnalyzerRenderer implements
             recenterCameraToAllTiles(frameData, frameStats);
             return;
         }
-        if (tileIndex < 0 || tileIndex >= frameData.getTiles().size()) {
+        List<TileInstance> selectableTiles = frameData.getSelectableTiles();
+        if (tileIndex < 0 || tileIndex >= selectableTiles.size()) {
             return;
         }
-        TileInstance tile = frameData.getTiles().get(tileIndex);
+        TileInstance tile = selectableTiles.get(tileIndex);
         Vector3D[] transformed = CoordinatesTransforms.transformAabb(
             tile.getMin(), tile.getMax(), frameData.getModelViewMatrix()
         );
@@ -288,7 +289,7 @@ public class Jogl4DumpAnalyzerRenderer implements
 
         if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             int tileOrdinal = 0;
-            for (TileInstance tile : frameData.getTiles()) {
+            for (TileInstance tile : frameData.getSelectableTiles()) {
                 drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, false, useGoogleCameraView);
                 tileOrdinal++;
             }
@@ -305,12 +306,13 @@ public class Jogl4DumpAnalyzerRenderer implements
             }
             return;
         }
-        if (selectedTileIndex < 0 || selectedTileIndex >= frameData.getTiles().size()) {
+        List<TileInstance> selectableTiles = frameData.getSelectableTiles();
+        if (selectedTileIndex < 0 || selectedTileIndex >= selectableTiles.size()) {
             return;
         }
-        TileInstance tile = frameData.getTiles().get(selectedTileIndex);
+        TileInstance tile = selectableTiles.get(selectedTileIndex);
         drawTileWireframe(gl, gl2, frameData, selectedTileIndex, tile, projection, false, true, useGoogleCameraView);
-        for (TileInstance uncleTile : resolveUncleTiles(frameData, tile)) {
+        for (TileInstance uncleTile : resolveUncleTiles(frameData, tile, selectableTiles)) {
             drawTileWireframe(gl, gl2, frameData, -1, uncleTile, projection, false, true, useGoogleCameraView);
         }
         drawExtractedLinesForFrame(gl2, frameData, projection, useGoogleCameraView);
@@ -403,14 +405,14 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (frameData == null
             || selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES
             || selectedTileIndex < 0
-            || selectedTileIndex >= frameData.getTiles().size()
+            || selectedTileIndex >= frameData.getSelectableTiles().size()
             || projection == null
             || viewportWidth <= 0
             || viewportHeight <= 0) {
             return List.of();
         }
 
-        TileInstance tile = frameData.getTiles().get(selectedTileIndex);
+        TileInstance tile = frameData.getSelectableTiles().get(selectedTileIndex);
         TileInstance.TriangleStripGeometry geometry = tile.getTriangleStrip();
         TriangleStripTileClassifier classifier = new TriangleStripTileClassifier();
         TriangleStripTileTopology topology = classifier.classify(geometry);
@@ -455,7 +457,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         return labels;
     }
 
-    private List<TileInstance> resolveUncleTiles(Frame frameData, TileInstance tile) {
+    private List<TileInstance> resolveUncleTiles(Frame frameData, TileInstance tile, List<TileInstance> searchSpace) {
         if (frameData == null || tile == null || tile.getUncles() == null || tile.getUncles().isEmpty()) {
             return List.of();
         }
@@ -464,7 +466,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             if (relationship == null || relationship.uncleContentId() == null) {
                 continue;
             }
-            TileInstance uncleTile = findTileByContentId(frameData, relationship.uncleContentId());
+            TileInstance uncleTile = findTileByContentId(searchSpace, relationship.uncleContentId());
             if (uncleTile != null && !resolved.contains(uncleTile)) {
                 resolved.add(uncleTile);
             }
@@ -472,11 +474,11 @@ public class Jogl4DumpAnalyzerRenderer implements
         return resolved;
     }
 
-    private TileInstance findTileByContentId(Frame frameData, String contentId) {
-        if (frameData == null || contentId == null) {
+    private TileInstance findTileByContentId(List<TileInstance> tiles, String contentId) {
+        if (tiles == null || contentId == null) {
             return null;
         }
-        for (TileInstance candidate : frameData.getTiles()) {
+        for (TileInstance candidate : tiles) {
             if (candidate != null && contentId.equals(candidate.getContentId())) {
                 return candidate;
             }
@@ -524,7 +526,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
         Vector3D min = null;
         Vector3D max = null;
-        for (TileInstance tile : frameData.getTiles()) {
+        for (TileInstance tile : frameData.getSelectableTiles()) {
             Vector3D[] transformed = CoordinatesTransforms.transformAabb(
                 tile.getMin(), tile.getMax(), frameData.getModelViewMatrix()
             );
@@ -631,7 +633,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         double maxDiagonal = 0.0;
         double sumDiagonal = 0.0;
         int count = 0;
-        for (TileInstance tile : frameData.getTiles()) {
+        for (TileInstance tile : frameData.getSelectableTiles()) {
             Vector3D[] transformed = CoordinatesTransforms.transformAabb(
                 tile.getMin(), tile.getMax(), frameData.getModelViewMatrix()
             );

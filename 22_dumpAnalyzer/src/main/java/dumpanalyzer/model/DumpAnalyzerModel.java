@@ -184,13 +184,13 @@ public final class DumpAnalyzerModel {
         selectedFrameIndex.set(frameIdx);
 
         Frame selectedFrame = frames.get(frameIdx);
-        int tileCount = selectedFrame.getTiles().size();
+        int tileCount = selectedFrame.getSelectableTiles().size();
         int tileIdx = tileCount == 0 ? SELECT_ALL_TILES : clamp(selectedTileIndex.get(), SELECT_ALL_TILES, tileCount - 1);
         selectedTileIndex.set(tileIdx);
 
         String selectedTextureId = null;
         if (tileIdx >= 0 && tileIdx < tileCount) {
-            selectedTextureId = selectedFrame.getTiles().get(tileIdx).getContentId();
+            selectedTextureId = selectedFrame.getSelectableTiles().get(tileIdx).getContentId();
         }
 
         return new HudState(frameIdx, processed, tileIdx, tileCount, selectedTextureId);
@@ -226,7 +226,7 @@ public final class DumpAnalyzerModel {
         }
         int frameIdx = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
         Frame selectedFrame = frames.get(frameIdx);
-        List<TileInstance> tiles = selectedFrame.getTiles();
+        List<TileInstance> tiles = selectedFrame.getSelectableTiles();
         for (int i = 0; i < tiles.size(); i++) {
             TileInstance tile = tiles.get(i);
             if (tile != null && contentId.equals(tile.getContentId())) {
@@ -265,7 +265,7 @@ public final class DumpAnalyzerModel {
             return;
         }
         for (int i = 0; i < frames.size(); i++) {
-            if (!frames.get(i).getTiles().isEmpty()) {
+            if (!frames.get(i).getSelectableTiles().isEmpty()) {
                 selectedFrameIndex.set(i);
                 selectedTileIndex.set(SELECT_ALL_TILES);
                 clampSelection();
@@ -283,7 +283,7 @@ public final class DumpAnalyzerModel {
         }
         int frameIdx = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
         Frame selectedFrame = frames.get(frameIdx);
-        List<TileInstance> tiles = selectedFrame.getTiles();
+        List<TileInstance> tiles = selectedFrame.getSelectableTiles();
         if (tiles.isEmpty()) {
             return null;
         }
@@ -319,7 +319,7 @@ public final class DumpAnalyzerModel {
         selectedFrameIndex.set(frameIdx);
 
         Frame selectedFrame = frames.get(frameIdx);
-        int tiles = selectedFrame.getTiles().size();
+        int tiles = selectedFrame.getSelectableTiles().size();
         if (tiles <= 0) {
             selectedTileIndex.set(SELECT_ALL_TILES);
         }
@@ -341,7 +341,7 @@ public final class DumpAnalyzerModel {
         int current = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
         int idx = current + direction;
         while (idx >= 0 && idx < frames.size()) {
-            if (!frames.get(idx).getTiles().isEmpty()) {
+            if (!frames.get(idx).getSelectableTiles().isEmpty()) {
                 selectedFrameIndex.set(idx);
                 clampSelection();
                 updateGoogleCameraFromSelection();

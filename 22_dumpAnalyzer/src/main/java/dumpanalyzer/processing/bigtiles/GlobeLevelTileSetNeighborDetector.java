@@ -1,17 +1,17 @@
 package dumpanalyzer.processing.bigtiles;
 
-import dumpanalyzer.model.BigTile;
 import dumpanalyzer.model.Frame;
+import dumpanalyzer.model.GlobeLevelTileSet;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import java.util.ArrayList;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
-public final class BigTileNeighborDetector {
+public final class GlobeLevelTileSetNeighborDetector {
     private static final double BORDER_CENTER_EPSILON = 1e-4;
 
-    private BigTileNeighborDetector() {
+    private GlobeLevelTileSetNeighborDetector() {
     }
 
     public static void populateNeighbors(Frame frame) {
@@ -22,12 +22,12 @@ public final class BigTileNeighborDetector {
         List<TileInstance> tiles = frame.getTiles();
         for (int i = 0; i < tiles.size(); i++) {
             TileInstance tile = tiles.get(i);
-            BigTile bigTile = tile == null ? null : tile.getBigTile();
-            if (bigTile == null) {
+            GlobeLevelTileSet globeLevelTileSet = tile == null ? null : tile.getGlobeLevelTileSet();
+            if (globeLevelTileSet == null) {
                 continue;
             }
-            bigTile.setDetectedNeighborContentIds(null, null, null, null);
-            candidates.add(new Candidate(i, tile, bigTile));
+            globeLevelTileSet.setDetectedNeighborContentIds(null, null, null, null);
+            candidates.add(new Candidate(i, tile, globeLevelTileSet));
         }
 
         for (Candidate source : candidates) {
@@ -43,11 +43,17 @@ public final class BigTileNeighborDetector {
                 if (source == target) {
                     continue;
                 }
-                TriangleMeshVertexComparator.Direction direction = detectDirection(source.bigTile(), target.bigTile());
+                TriangleMeshVertexComparator.Direction direction = detectDirection(
+                    source.globeLevelTileSet(),
+                    target.globeLevelTileSet()
+                );
                 if (direction == null) {
                     continue;
                 }
-                double d2 = distanceSquared(source.bigTile().getCenter(), target.bigTile().getCenter());
+                double d2 = distanceSquared(
+                    source.globeLevelTileSet().getCenter(),
+                    target.globeLevelTileSet().getCenter()
+                );
                 if (direction == TriangleMeshVertexComparator.Direction.NORTH && d2 < northD2) {
                     north = target;
                     northD2 = d2;
@@ -65,7 +71,7 @@ public final class BigTileNeighborDetector {
                     westD2 = d2;
                 }
             }
-            source.bigTile().setDetectedNeighborContentIds(
+            source.globeLevelTileSet().setDetectedNeighborContentIds(
                 contentIdOf(south),
                 contentIdOf(north),
                 contentIdOf(east),
@@ -74,7 +80,7 @@ public final class BigTileNeighborDetector {
         }
     }
 
-    private static TriangleMeshVertexComparator.Direction detectDirection(BigTile a, BigTile b) {
+    private static TriangleMeshVertexComparator.Direction detectDirection(GlobeLevelTileSet a, GlobeLevelTileSet b) {
         if (matches(a.getEastBorderCenter(), b.getWestBorderCenter())) {
             return TriangleMeshVertexComparator.Direction.EAST;
         }
@@ -108,5 +114,5 @@ public final class BigTileNeighborDetector {
         return candidate == null || candidate.tile() == null ? null : candidate.tile().getContentId();
     }
 
-    private record Candidate(int tileIndex, TileInstance tile, BigTile bigTile) {}
+    private record Candidate(int tileIndex, TileInstance tile, GlobeLevelTileSet globeLevelTileSet) {}
 }

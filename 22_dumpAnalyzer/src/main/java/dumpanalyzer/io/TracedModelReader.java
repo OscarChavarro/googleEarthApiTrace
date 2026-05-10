@@ -74,7 +74,7 @@ public final class TracedModelReader {
 
         Thread loggerThread = ConcurrentMessages.createLoggerThread(outputRoot, logQueue);
         loggerThread.start();
-        System.out.println("\n[1/4] Processing frame traces:");
+        System.out.println("\n[1/5] Processing frame traces:");
         progressProducer.init(problemSize);
         progressThread.start();
 

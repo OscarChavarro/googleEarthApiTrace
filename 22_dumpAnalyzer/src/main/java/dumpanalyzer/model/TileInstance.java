@@ -2,13 +2,13 @@ package dumpanalyzer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import dumpanalyzer.model.BigTile;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class TileInstance {
     public static final int NO_NEIGHBOR = -1;
+    public static final String SYNTHETIC_GLOBE_LEVEL_TILE_SKIP_REASON = "synthetic globe-level tile";
     private static final double FULL_RESOLUTION_TOLERANCE = 1e-3;
 
     private final String contentId;
@@ -40,7 +40,7 @@ public final class TileInstance {
     private volatile String detectedEastNeighborContentId;
     private volatile String detectedWestNeighborContentId;
     private volatile List<ToUncleRelationship> uncles;
-    private volatile BigTile bigTile;
+    private volatile GlobeLevelTileSet globeLevelTileSet;
 
     public TileInstance(
         String contentId,
@@ -228,12 +228,16 @@ public final class TileInstance {
     }
 
     @JsonIgnore
-    public BigTile getBigTile() {
-        return bigTile;
+    public GlobeLevelTileSet getGlobeLevelTileSet() {
+        return globeLevelTileSet;
     }
 
-    public void setBigTile(BigTile bigTile) {
-        this.bigTile = bigTile;
+    public void setGlobeLevelTileSet(GlobeLevelTileSet globeLevelTileSet) {
+        this.globeLevelTileSet = globeLevelTileSet;
+    }
+
+    public boolean isSyntheticGlobeLevelTile() {
+        return SYNTHETIC_GLOBE_LEVEL_TILE_SKIP_REASON.equals(skipReason);
     }
 
     public boolean isFullResolutionWithRespectToTexture() {

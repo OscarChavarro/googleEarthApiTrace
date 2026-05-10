@@ -1,6 +1,6 @@
 package dumpanalyzer.processing.bigtiles;
 
-import dumpanalyzer.model.BigTile;
+import dumpanalyzer.model.GlobeLevelTileSet;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
@@ -11,10 +11,12 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class BigAreaCoveringTile {
     private static final double UV_TOLERANCE = 1e-3;
+    private static final int REQUIRED_TRIANGLE_STRIP_COUNT = 320;
+    private static final int REQUIRED_TRIANGLE_STRIP_VERTEX_COUNT = 20;
 
     private final TriangleStripTileClassifier classifier = new TriangleStripTileClassifier();
 
-    public BigTile groupTilesIntoBigTile(TileInstance tile) {
+    public GlobeLevelTileSet buildGlobeLevelTileSet(TileInstance tile) {
         if (tile == null) {
             return null;
         }
@@ -22,16 +24,19 @@ public final class BigAreaCoveringTile {
         if (geometries.size() <= 1) {
             return null;
         }
+        if (geometries.size() != REQUIRED_TRIANGLE_STRIP_COUNT) {
+            return new GlobeLevelTileSet(tile.getContentId(), null, null, null, null, null, geometries.size(), false);
+        }
 
         List<TileInstance.TriangleStripVertex> allVertices = new ArrayList<>();
         for (TileInstance.TriangleStripGeometry geometry : geometries) {
+            if (geometry == null || geometry.vertexCount() != REQUIRED_TRIANGLE_STRIP_VERTEX_COUNT) {
+                return new GlobeLevelTileSet(tile.getContentId(), null, null, null, null, null, geometries.size(), false);
+            }
             TriangleStripTileTopology topology = classifier.classify(geometry);
             if (topology != TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD
                 && topology != TriangleStripTileTopology.DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE) {
-                return null;
-            }
-            if (coversFullUvRange(geometry.vertices())) {
-                return null;
+                return new GlobeLevelTileSet(tile.getContentId(), null, null, null, null, null, geometries.size(), false);
             }
             allVertices.addAll(classifier.deduplicateVertices(
                 geometry.vertices(),
@@ -39,39 +44,20 @@ public final class BigAreaCoveringTile {
             ));
         }
         if (allVertices.isEmpty()) {
-            return null;
+            return new GlobeLevelTileSet(tile.getContentId(), null, null, null, null, null, geometries.size(), false);
         }
 
         UvBounds bounds = computeBounds(allVertices);
-        if (!bounds.coversWholeTexture() && !isEarlyTextureMiddleBandCase(tile, bounds)) {
-            return null;
-        }
-
         Vector3D center = average(allVertices, v -> true);
         Vector3D north = average(allVertices, v -> Math.abs(v.v() - bounds.maxV) <= UV_TOLERANCE);
         Vector3D south = average(allVertices, v -> Math.abs(v.v() - bounds.minV) <= UV_TOLERANCE);
         Vector3D east = average(allVertices, v -> Math.abs(v.u() - bounds.maxU) <= UV_TOLERANCE);
         Vector3D west = average(allVertices, v -> Math.abs(v.u() - bounds.minU) <= UV_TOLERANCE);
         if (center == null || north == null || south == null || east == null || west == null) {
-            return null;
+            return new GlobeLevelTileSet(tile.getContentId(), null, null, null, null, null, geometries.size(), false);
         }
 
-        return new BigTile(tile.getContentId(), center, north, south, east, west);
-    }
-
-    private static boolean coversFullUvRange(List<TileInstance.TriangleStripVertex> vertices) {
-        return computeBounds(vertices).coversWholeTexture();
-    }
-
-    private static boolean isEarlyTextureMiddleBandCase(TileInstance tile, UvBounds bounds) {
-        Integer legacyTextureId = legacyTextureIdFromContent(tile == null ? null : tile.getContentId());
-        if (legacyTextureId == null || legacyTextureId < 0 || legacyTextureId > 5) {
-            return false;
-        }
-        return bounds.minU <= UV_TOLERANCE
-            && bounds.maxU >= (1.0 - UV_TOLERANCE)
-            && Math.abs(bounds.minV - 0.25) <= UV_TOLERANCE
-            && Math.abs(bounds.maxV - 0.75) <= UV_TOLERANCE;
+        return new GlobeLevelTileSet(tile.getContentId(), center, north, south, east, west, geometries.size(), true);
     }
 
     private static UvBounds computeBounds(List<TileInstance.TriangleStripVertex> vertices) {
@@ -115,26 +101,6 @@ public final class BigAreaCoveringTile {
         return new Vector3D(sx * inv, sy * inv, sz * inv);
     }
 
-    private static Integer legacyTextureIdFromContent(String contentId) {
-        if (contentId == null || contentId.isBlank()) {
-            return null;
-        }
-        int separator = contentId.lastIndexOf('_');
-        String suffix = separator >= 0 ? contentId.substring(separator + 1) : contentId;
-        try {
-            return Integer.parseInt(suffix);
-        }
-        catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
     private record UvBounds(double minU, double maxU, double minV, double maxV) {
-        boolean coversWholeTexture() {
-            return minU <= UV_TOLERANCE
-                && maxU >= (1.0 - UV_TOLERANCE)
-                && minV <= UV_TOLERANCE
-                && maxV >= (1.0 - UV_TOLERANCE);
-        }
     }
 }

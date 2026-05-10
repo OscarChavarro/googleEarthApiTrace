@@ -30,7 +30,7 @@ public final class NeighborsProcessor {
         int width = Math.max(1, viewportWidth);
         int height = Math.max(1, viewportHeight);
         runStageWithProgress(
-            "\n[2/4] Assigning texture file paths to tiles:",
+            "\n[2/5] Assigning texture file paths to tiles:",
             frames.size(),
             i -> {
                 Frame frame = frames.get(i);
@@ -47,7 +47,7 @@ public final class NeighborsProcessor {
             }
         );
         runStageWithProgress(
-            "\n[3/4] Detecting neighbors per frame:",
+            "\n[3/5] Detecting neighbors per frame:",
             frames.size(),
             i -> {
                 Frame frame = frames.get(i);

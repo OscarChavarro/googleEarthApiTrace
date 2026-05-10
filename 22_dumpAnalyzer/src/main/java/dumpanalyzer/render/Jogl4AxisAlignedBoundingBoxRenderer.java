@@ -39,7 +39,8 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         if (frameData == null || viewportWidth <= 0 || viewportHeight <= 0) {
             return List.of();
         }
-        List<AxisAlignedBoundingBox> aabbs = frameData.getAxisAlignedBoundingBoxes();
+        List<AxisAlignedBoundingBox> aabbs = frameData.getSelectableAxisAlignedBoundingBoxes();
+        List<TileInstance> tiles = frameData.getSelectableTiles();
         List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
         if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
             for (AxisAlignedBoundingBox aabb : aabbs) {
@@ -60,9 +61,9 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
             viewportWidth,
             viewportHeight
         );
-        TileInstance selectedTile = selectedTileIndex < frameData.getTiles().size() ? frameData.getTiles().get(selectedTileIndex) : null;
-        for (TileInstance uncleTile : resolveUncleTiles(frameData, selectedTile)) {
-            int uncleTileIndex = frameData.getTiles().indexOf(uncleTile);
+        TileInstance selectedTile = selectedTileIndex < tiles.size() ? tiles.get(selectedTileIndex) : null;
+        for (TileInstance uncleTile : resolveUncleTiles(tiles, selectedTile)) {
+            int uncleTileIndex = tiles.indexOf(uncleTile);
             if (uncleTileIndex < 0 || uncleTileIndex >= aabbs.size()) {
                 continue;
             }
@@ -182,8 +183,8 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         labels.add(new Jogl4HudRenderer.ScreenLabel(pixel[0], pixel[1], String.valueOf(aabb.getTextureId()), color));
     }
 
-    private static List<TileInstance> resolveUncleTiles(Frame frameData, TileInstance tile) {
-        if (frameData == null || tile == null || tile.getUncles() == null || tile.getUncles().isEmpty()) {
+    private static List<TileInstance> resolveUncleTiles(List<TileInstance> tiles, TileInstance tile) {
+        if (tiles == null || tile == null || tile.getUncles() == null || tile.getUncles().isEmpty()) {
             return List.of();
         }
         List<TileInstance> resolved = new ArrayList<>();
@@ -191,7 +192,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
             if (relationship == null || relationship.uncleContentId() == null) {
                 continue;
             }
-            TileInstance uncleTile = findTileByContentId(frameData, relationship.uncleContentId());
+            TileInstance uncleTile = findTileByContentId(tiles, relationship.uncleContentId());
             if (uncleTile != null && !resolved.contains(uncleTile)) {
                 resolved.add(uncleTile);
             }
@@ -199,11 +200,11 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         return resolved;
     }
 
-    private static TileInstance findTileByContentId(Frame frameData, String contentId) {
-        if (frameData == null || contentId == null) {
+    private static TileInstance findTileByContentId(List<TileInstance> tiles, String contentId) {
+        if (tiles == null || contentId == null) {
             return null;
         }
-        for (TileInstance candidate : frameData.getTiles()) {
+        for (TileInstance candidate : tiles) {
             if (candidate != null && contentId.equals(candidate.getContentId())) {
                 return candidate;
             }

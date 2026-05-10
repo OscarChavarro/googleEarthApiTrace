@@ -4,6 +4,7 @@ import com.jogamp.opengl.GL2;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
+import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.camera.Camera;
@@ -35,9 +36,11 @@ public final class Jogl4NeighborRelationshipRenderer {
         gl2.glDepthMask(false);
         gl2.glLineWidth(2.0f);
         if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
-            for (int i = 0; i < frameData.getTiles().size(); i++) {
+            List<TileInstance> selectableTiles = frameData.getSelectableTiles();
+            for (int i = 0; i < selectableTiles.size(); i++) {
                 drawNeighborsForTile(
                     gl2,
+                    selectableTiles,
                     frameData,
                     i,
                     projection,
@@ -48,9 +51,10 @@ public final class Jogl4NeighborRelationshipRenderer {
                 );
             }
         }
-        else if (selectedTileIndex >= 0 && selectedTileIndex < frameData.getTiles().size()) {
+        else if (selectedTileIndex >= 0 && selectedTileIndex < frameData.getSelectableTiles().size()) {
             drawNeighborsForTile(
                 gl2,
+                frameData.getSelectableTiles(),
                 frameData,
                 selectedTileIndex,
                 projection,
@@ -70,6 +74,7 @@ public final class Jogl4NeighborRelationshipRenderer {
 
     private static void drawNeighborsForTile(
         GL2 gl2,
+        List<TileInstance> tiles,
         Frame frameData,
         int sourceTileIndex,
         Matrix4x4 projection,
@@ -78,19 +83,20 @@ public final class Jogl4NeighborRelationshipRenderer {
         int viewportWidth,
         int viewportHeight
     ) {
-        TileInstance source = frameData.getTiles().get(sourceTileIndex);
+        TileInstance source = tiles.get(sourceTileIndex);
         int[] sourcePixel = centerOfTile(source, frameData, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight);
         if (sourcePixel == null) {
             return;
         }
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedNorthNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 1.0, 0.2);
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedSouthNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.6, 0.2);
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedEastNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 0.8, 1.0);
-        drawDirectedNeighbor(gl2, frameData, sourcePixel, source.getDetectedWestNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.2, 0.8);
+        drawDirectedNeighbor(gl2, tiles, frameData, sourcePixel, source.getDetectedNorthNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 1.0, 0.2);
+        drawDirectedNeighbor(gl2, tiles, frameData, sourcePixel, source.getDetectedSouthNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.6, 0.2);
+        drawDirectedNeighbor(gl2, tiles, frameData, sourcePixel, source.getDetectedEastNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 0.2, 0.8, 1.0);
+        drawDirectedNeighbor(gl2, tiles, frameData, sourcePixel, source.getDetectedWestNeighborIndex(), sourceTileIndex, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight, 1.0, 0.2, 0.8);
     }
 
     private static void drawDirectedNeighbor(
         GL2 gl2,
+        List<TileInstance> tiles,
         Frame frameData,
         int[] sourcePixel,
         int targetTileIndex,
@@ -110,10 +116,10 @@ public final class Jogl4NeighborRelationshipRenderer {
         if (targetTileIndex == sourceIndex) {
             return;
         }
-        if (targetTileIndex < 0 || targetTileIndex >= frameData.getTiles().size()) {
+        if (targetTileIndex < 0 || targetTileIndex >= tiles.size()) {
             return;
         }
-        TileInstance target = frameData.getTiles().get(targetTileIndex);
+        TileInstance target = tiles.get(targetTileIndex);
         int[] targetPixel = centerOfTile(target, frameData, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight);
         if (targetPixel == null) {
             return;

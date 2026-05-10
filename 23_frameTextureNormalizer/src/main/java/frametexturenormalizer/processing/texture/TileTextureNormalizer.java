@@ -146,7 +146,7 @@ public final class TileTextureNormalizer {
             if (group == null || group.isEmpty()) {
                 continue;
             }
-            String canonical = selectOldestByFolderNumber(group);
+            String canonical = selectCanonicalTexturePath(group);
             if (canonical == null) {
                 continue;
             }
@@ -160,7 +160,7 @@ public final class TileTextureNormalizer {
         return result;
     }
 
-    private static String selectOldestByFolderNumber(List<String> group) {
+    public static String selectCanonicalTexturePath(List<String> group) {
         String best = null;
         int bestFolder = Integer.MAX_VALUE;
         for (String texturePath : group) {

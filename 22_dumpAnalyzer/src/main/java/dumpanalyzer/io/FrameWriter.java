@@ -43,7 +43,7 @@ public final class FrameWriter {
     }
 
     public static void writeFramesParallelWithProgress(Path outputRoot, List<Frame> frames) {
-        System.out.println("\n[4/4] Writing processed frames to disk:");
+        System.out.println("\n[4/5] Writing processed frames to disk:");
         if (frames == null || frames.isEmpty()) {
             ProgressMonitor progressMonitor = new ProgressMonitorConsoleLongFormat();
             progressMonitor.begin();

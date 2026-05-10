@@ -18,10 +18,16 @@ public final class InteractiveDebugger {
 
     private static Thread createRendererThread(DumpAnalyzerModel model) {
         return new Thread(() -> {
-            Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, InteractiveDebugger::shutdownNow);
-            renderer.start((canvas, cameraController, closeAction, repaintAction) ->
-                installInteractionTechniques(model, canvas, cameraController, closeAction, repaintAction)
-            );
+            try {
+                Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, InteractiveDebugger::shutdownNow);
+                renderer.start((canvas, cameraController, closeAction, repaintAction) ->
+                    installInteractionTechniques(model, canvas, cameraController, closeAction, repaintAction)
+                );
+            }
+            catch (Throwable t) {
+                System.err.println("Interactive renderer failed to start: " + t.getClass().getName() + ": " + t.getMessage());
+                t.printStackTrace(System.err);
+            }
         }, "jogl4-renderer");
     }
 
@@ -53,4 +59,3 @@ public final class InteractiveDebugger {
         System.exit(0);
     }
 }
-

@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
+import frametexturenormalizer.processing.texture.TileTextureNormalizer;
 
 public final class DuplicatedTextureFilenameMapper {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -26,6 +27,7 @@ public final class DuplicatedTextureFilenameMapper {
         new TypeReference<>() {
         };
     private static final Path MAP_FILE = Path.of(Configuration.INPUT_PATH, "textureFileNamesMap.json");
+    private static final Path DELETE_SCRIPT_FILE = Path.of(Configuration.INPUT_PATH, "deleteRepeatedImages.sh");
 
     private DuplicatedTextureFilenameMapper() {
     }
@@ -33,10 +35,12 @@ public final class DuplicatedTextureFilenameMapper {
     public static List<List<String>> loadOrCreate(List<FrameData> frames) {
         List<List<String>> loaded = loadFromDisk();
         if (loaded != null) {
+            writeDeleteScript(loaded);
             return loaded;
         }
         List<List<String>> computed = compute(frames);
         writeToDisk(computed);
+        writeDeleteScript(computed);
         return computed;
     }
 
@@ -293,6 +297,36 @@ public final class DuplicatedTextureFilenameMapper {
         }
         catch (IOException ignored) {
         }
+    }
+
+    private static void writeDeleteScript(List<List<String>> groups) {
+        List<String> lines = new ArrayList<>();
+        if (groups != null) {
+            for (List<String> group : groups) {
+                if (group == null || group.isEmpty()) {
+                    continue;
+                }
+                String canonical = TileTextureNormalizer.selectCanonicalTexturePath(group);
+                for (String texturePath : group) {
+                    if (texturePath == null || texturePath.isBlank() || texturePath.equals(canonical) || !isPng(texturePath)) {
+                        continue;
+                    }
+                    lines.add("rm -f " + texturePath);
+                }
+            }
+        }
+
+        Collections.sort(lines);
+        try {
+            Files.createDirectories(DELETE_SCRIPT_FILE.getParent());
+            Files.write(DELETE_SCRIPT_FILE, lines);
+        }
+        catch (IOException ignored) {
+        }
+    }
+
+    private static boolean isPng(String texturePath) {
+        return texturePath != null && texturePath.toLowerCase().endsWith(".png");
     }
 
     private static void join(Thread thread) {

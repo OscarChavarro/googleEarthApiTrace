@@ -37,11 +37,17 @@ final class Jogl4TileRenderer {
         Jogl4HudRenderer hudRenderer,
         Camera camera
     ) {
+        if (shouldSkipSourceGlobeLevelTile(tile)) {
+            return;
+        }
         RendererConfiguration quality = model.getRendererConfiguration();
         boolean fullResolution = tile.isFullResolutionWithRespectToTexture();
         boolean forceRedWires = !fullResolution;
         boolean multiPrimitiveNonFullRes = forceRedWires && tile.getStrips() != null && tile.getStrips().size() > 1;
-        boolean hasBigTile = tile.getBigTile() != null;
+        boolean hasGlobeLevelTileSet = tile.getGlobeLevelTileSet() != null;
+        boolean drawGlobeLevelTileSetOverlay = hasGlobeLevelTileSet
+            && !tile.isSyntheticGlobeLevelTile()
+            && tile.getGlobeLevelTileSet().shouldDrawSourceTile();
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
         if (textured) {
@@ -105,7 +111,7 @@ final class Jogl4TileRenderer {
             }
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
-        if (quality.isWiresSet() || forceRedWires || hasBigTile) {
+        if (quality.isWiresSet() || forceRedWires || drawGlobeLevelTileSetOverlay) {
             if (textured) {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
                 gl2.glDisable(GL2.GL_TEXTURE_2D);
@@ -114,8 +120,8 @@ final class Jogl4TileRenderer {
             gl2.glEnable(GL2.GL_DEPTH_TEST);
             gl2.glDepthMask(false);
             gl2.glDepthFunc(GL2.GL_LEQUAL);
-            if (hasBigTile) {
-                Jogl4BigTileRenderer.drawWireOverlay(gl2, tile, tile.getBigTile());
+            if (drawGlobeLevelTileSetOverlay) {
+                Jogl4GlobeLevelTileSetRenderer.drawWireOverlay(gl2, tile, tile.getGlobeLevelTileSet());
             }
             else if (forceRedWires) {
                 if (multiPrimitiveNonFullRes) {
@@ -128,7 +134,7 @@ final class Jogl4TileRenderer {
             else {
                 gl2.glColor3d(1.0, 1.0, 1.0);
             }
-            if (!hasBigTile) {
+            if (!drawGlobeLevelTileSetOverlay) {
                 gl2.glLineWidth(1.0f);
                 for (List<Vector3D> strip : tile.getStrips()) {
                     if (strip.size() < 2) {
@@ -168,6 +174,13 @@ final class Jogl4TileRenderer {
             gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
+    }
+
+    private static boolean shouldSkipSourceGlobeLevelTile(TileInstance tile) {
+        if (tile == null || tile.isSyntheticGlobeLevelTile()) {
+            return false;
+        }
+        return tile.getGlobeLevelTileSet() != null && !tile.getGlobeLevelTileSet().shouldDrawSourceTile();
     }
 
     static void drawExtractedLineStrips(

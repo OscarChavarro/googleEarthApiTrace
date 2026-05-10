@@ -103,6 +103,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         int total = model.getFrameCount();
         boolean hasNext = model.hasNextMatrixForSelection();
         TileMatrix nextMatrix = model.getNextMatrixForSelection();
+        TileMatrix selectedMatrix = model.getSelectedMatrix();
         boolean mergeFailed = model.hasLastMergeFailedForCurrentSelection();
         String selectedFrameLabel = model.getSelectedFrameLabel();
         String nextFrameLabel = model.getNextFrameLabelForSelection();
@@ -115,7 +116,9 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         hudTextRenderer.beginRendering(w, h);
         hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
         hudTextRenderer.draw(
-            "Frame [1, 2]: " + i + "/" + total + " | id " + selectedFrameLabel,
+            "Frame [1, 2]: " + i + "/" + total
+                + " | id " + selectedFrameLabel
+                + " | Matrix: " + matrixSizeLabel(selectedMatrix),
             16,
             h - 28
         );
@@ -158,6 +161,13 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         }
         hudTextRenderer.endRendering();
         gl2.glEnable(GL2.GL_DEPTH_TEST);
+    }
+
+    private static String matrixSizeLabel(TileMatrix matrix) {
+        if (matrix == null) {
+            return "?x?";
+        }
+        return matrix.getRows() + "x" + matrix.getCols();
     }
 
     private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, TileMatrix matrix, boolean enabled) {
