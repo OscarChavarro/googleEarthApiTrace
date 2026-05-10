@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import dumpanalyzer.io.parser.CameraProcessor;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.common.RendererConfiguration;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.RendererConfigurationController;
 

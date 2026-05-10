@@ -14,7 +14,7 @@ import java.util.Set;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.util.ScopedTileIds;
 import vsdk.toolkit.common.RendererConfiguration;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 
 public final class FrameTextureNormalizerModel {
     public static final int SELECT_ALL_TILES = -1;

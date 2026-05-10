@@ -31,7 +31,7 @@ import dumpanalyzer.processing.TriangleStripTileTopology;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;

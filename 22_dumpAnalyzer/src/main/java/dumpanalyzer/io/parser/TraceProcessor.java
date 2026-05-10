@@ -19,7 +19,7 @@ import org.antlr.v4.runtime.Recognizer;
 
 import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.Frame;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 
 public class TraceProcessor {
     private final FunctionCounter functionCounter;

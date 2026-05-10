@@ -16,7 +16,7 @@ import com.jogamp.opengl.util.awt.TextRenderer;
 import dumpanalyzer.config.Configuration;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.Image;
 import vsdk.toolkit.render.jogl.Jogl4ImageRenderer;

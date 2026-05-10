@@ -12,7 +12,7 @@ import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 
 public final class Jogl4AxisAlignedBoundingBoxRenderer {
     public void drawForSelection(

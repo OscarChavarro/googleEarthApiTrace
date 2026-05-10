@@ -3,7 +3,7 @@ package frametexturenormalizer.model;
 import com.fasterxml.jackson.databind.JsonNode;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 
 public final class GoogleCameraState {
     private final double positionX;

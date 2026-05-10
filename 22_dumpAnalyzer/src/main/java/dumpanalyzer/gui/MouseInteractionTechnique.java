@@ -8,7 +8,7 @@ import java.awt.event.MouseWheelListener;
 
 import com.jogamp.opengl.GL4;
 
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 

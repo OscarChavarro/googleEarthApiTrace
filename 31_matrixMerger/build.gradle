@@ -30,9 +30,9 @@ repositories {
 
 dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
-    implementation 'co.cubestudio:base:1.0'
-    implementation 'co.cubestudio:awt:1.0'
-    implementation 'co.cubestudio:jogl4:1.0'
+    implementation 'co.cubestudio:base:1.1'
+    implementation 'co.cubestudio:awt:1.1'
+    implementation 'co.cubestudio:jogl4:1.1'
     implementation 'org.jogamp.jogl:jogl-all:2.5.0'
     implementation 'org.jogamp.gluegen:gluegen-rt:2.5.0'
     runtimeOnly 'org.jogamp.jogl:jogl-all-main:2.5.0'

@@ -12,7 +12,7 @@ import java.util.function.BiFunction;
 import com.jogamp.opengl.GL4;
 
 // Vitral classes
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 

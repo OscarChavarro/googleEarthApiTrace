@@ -3,7 +3,7 @@ package dumpanalyzer.io.parser;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import vsdk.toolkit.environment.Camera;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class CameraProcessor {
