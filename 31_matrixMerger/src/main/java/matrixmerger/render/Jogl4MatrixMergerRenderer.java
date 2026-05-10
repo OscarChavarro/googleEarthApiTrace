@@ -106,6 +106,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         boolean mergeFailed = model.hasLastMergeFailedForCurrentSelection();
         String selectedFrameLabel = model.getSelectedFrameLabel();
         String nextFrameLabel = model.getNextFrameLabelForSelection();
+        String hierarchyLabel = model.getSelectedHierarchyLabel();
         boolean selectedFrameInvalid = model.isSelectedFrameInvalid();
         MatrixMergerModel.UncleHudStatus uncleHudStatus = model.getSelectedMatrixUncleHudStatus();
 
@@ -143,9 +144,13 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             }
             printSelectedUncleIds(selectedFrameLabel, uncleHudStatus);
         }
+        if (!selectedFrameInvalid && hierarchyLabel != null && !hierarchyLabel.isBlank()) {
+            hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+            hudTextRenderer.draw("LEVEL: " + hierarchyLabel, 16, h - 94);
+        }
         if (!selectedFrameInvalid && hasNext && mergeFailed) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
-            hudTextRenderer.draw("ERROR: Could not merge with next frame!", 16, h - 94);
+            hudTextRenderer.draw("ERROR: Could not merge with next frame!", 16, h - 116);
         }
         if (selectedFrameInvalid) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
@@ -250,9 +255,6 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
                 + formatUncleTileIds(uncleHudStatus)
                 + " [" + uncleHudStatus.state() + "]"
         );
-        if (!uncleHudStatus.missingUncleIds().isEmpty()) {
-            System.out.println("Missing uncle tile ids: " + uncleHudStatus.missingUncleIds());
-        }
     }
 
     private static String formatUncleTileIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {

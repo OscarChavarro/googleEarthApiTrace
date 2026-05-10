@@ -276,6 +276,24 @@ public final class DumpAnalyzerModel {
         }
     }
 
+    public TileInstance getSelectedTile() {
+        List<Frame> frames = snapshotFrames();
+        if (frames.isEmpty()) {
+            return null;
+        }
+        int frameIdx = clamp(selectedFrameIndex.get(), 0, frames.size() - 1);
+        Frame selectedFrame = frames.get(frameIdx);
+        List<TileInstance> tiles = selectedFrame.getTiles();
+        if (tiles.isEmpty()) {
+            return null;
+        }
+        int tileIdx = selectedTileIndex.get();
+        if (tileIdx < 0 || tileIdx >= tiles.size()) {
+            return null;
+        }
+        return tiles.get(tileIdx);
+    }
+
     public RendererConfiguration getRendererConfiguration() {
         return rendererConfiguration;
     }

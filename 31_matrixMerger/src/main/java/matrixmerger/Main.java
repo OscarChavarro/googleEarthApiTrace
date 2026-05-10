@@ -33,6 +33,7 @@ public class Main {
         }
 
         MatrixMergerModel model = createModel();
+        Path outputPath = Path.of(OUTPUT_DIRECTORY);
         if (offline) {
             int before = model.getMatrixCount();
             model.mergeFullSet();
@@ -43,6 +44,7 @@ public class Main {
         if (mode == Mode.AUTO) {
             new AutomaticGrouper().run(model);
         }
+        printMissingTopLevelUncles(model, outputPath);
         Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
         InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
         interactiveDebugger.launchDesktop();
@@ -63,6 +65,40 @@ public class Main {
         model.setWestCutterTileIds(westCutterIds);
         model.setInvalidFrames(validation.getInvalidReasonByFrameId());
         return model;
+    }
+
+    private static void printMissingTopLevelUncles(MatrixMergerModel model, Path outputPath) {
+        if (model == null || outputPath == null) {
+            return;
+        }
+        for (String tileId : model.getMissingTopLevelUncleTileIds()) {
+            String path = toAbsoluteTilePath(outputPath, tileId);
+            if (path != null && !path.isBlank()) {
+                System.out.println(path);
+            }
+        }
+    }
+
+    private static String toAbsoluteTilePath(Path outputPath, String scopedTileId) {
+        String normalized = WestCutterReader.normalizeScopedTileId(scopedTileId);
+        if (normalized == null || normalized.isBlank()) {
+            return null;
+        }
+        int separator = normalized.indexOf('_');
+        if (separator <= 0 || separator >= normalized.length() - 1) {
+            return normalized;
+        }
+        try {
+            int frameId = Integer.parseInt(normalized.substring(0, separator));
+            int tileId = Integer.parseInt(normalized.substring(separator + 1));
+            return outputPath.resolve(String.format("%05d", frameId))
+                .resolve("256x256_" + tileId + ".png")
+                .toAbsolutePath()
+                .toString();
+        }
+        catch (NumberFormatException ex) {
+            return normalized;
+        }
     }
 
     private static String loadOutputDirectory() {

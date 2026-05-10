@@ -129,7 +129,12 @@ public final class Jogl4TileMatrixRenderer {
             if (!QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, y0, x1, y1)) {
                 continue;
             }
-            gl2.glColor3f(1.0f, 1.0f, 1.0f);
+            if (hasUncles(tile)) {
+                gl2.glColor3f(0.1f, 1.0f, 0.1f);
+            }
+            else {
+                gl2.glColor3f(1.0f, 1.0f, 1.0f);
+            }
             gl2.glBegin(GL2.GL_LINE_LOOP);
             gl2.glVertex3f(x0, y0, 0.001f);
             gl2.glVertex3f(x1, y0, 0.001f);
@@ -143,7 +148,6 @@ public final class Jogl4TileMatrixRenderer {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
-        gl2.glColor3f(1.0f, 0.1f, 0.1f);
         gl2.glLineWidth(2.0f);
         for (TileMatrix.TileCoord tile : matrix.getTiles()) {
             if (tile == null || !model.isWestCutterTileId(tile.getId())) {
@@ -157,6 +161,12 @@ public final class Jogl4TileMatrixRenderer {
             float y1 = -(i + 1.0f) + offsetY;
             if (!QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, y0, x1, y1)) {
                 continue;
+            }
+            if (hasUncles(tile)) {
+                gl2.glColor3f(0.1f, 1.0f, 0.1f);
+            }
+            else {
+                gl2.glColor3f(1.0f, 0.1f, 0.1f);
             }
             gl2.glBegin(GL2.GL_LINE_LOOP);
             gl2.glVertex3f(x0, y0, 0.002f);
@@ -269,6 +279,10 @@ public final class Jogl4TileMatrixRenderer {
             }
         }
         textureByPath.clear();
+    }
+
+    private static boolean hasUncles(TileMatrix.TileCoord tile) {
+        return tile != null && tile.getUncles() != null && !tile.getUncles().isEmpty();
     }
 
     private record TextureResident(Texture texture, long bytesAssigned) {

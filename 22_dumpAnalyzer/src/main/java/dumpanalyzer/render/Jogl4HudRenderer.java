@@ -88,6 +88,11 @@ public final class Jogl4HudRenderer {
             );
             if (state.selectedTileIndex() != DumpAnalyzerModel.SELECT_ALL_TILES) {
                 textRenderer.draw(
+                    "Geometry: " + formatGeometry(model),
+                    20,
+                    h - 130
+                );
+                textRenderer.draw(
                     "Texture: " + state.selectedTextureId(),
                     Math.max(20, w - 200),
                     h - 40
@@ -248,6 +253,55 @@ public final class Jogl4HudRenderer {
 
     private static long estimateTextureBytes(int width, int height) {
         return (long)width * (long)height * 4L;
+    }
+
+    private static String formatGeometry(DumpAnalyzerModel model) {
+        if (model == null) {
+            return "n/a";
+        }
+        var tile = model.getSelectedTile();
+        if (tile == null) {
+            return "n/a";
+        }
+        List<List<vsdk.toolkit.common.linealAlgebra.Vector3D>> strips = tile.getStrips();
+        if (strips == null || strips.isEmpty()) {
+            if (tile.getIndexArraySize() > 0) {
+                return primitiveDisplayName(tile.getPrimitive()) + "[" + tile.getIndexArraySize() + "]";
+            }
+            return "n/a";
+        }
+
+        String primitive = primitiveDisplayName(tile.getPrimitive());
+        StringBuilder sb = new StringBuilder();
+        for (List<vsdk.toolkit.common.linealAlgebra.Vector3D> strip : strips) {
+            if (strip == null || strip.isEmpty()) {
+                continue;
+            }
+            if (!sb.isEmpty()) {
+                sb.append(", ");
+            }
+            sb.append(primitive).append("[").append(strip.size()).append("]");
+        }
+        return sb.isEmpty() ? "n/a" : sb.toString();
+    }
+
+    private static String primitiveDisplayName(String primitive) {
+        if (primitive == null || primitive.isBlank() || "n/a".equalsIgnoreCase(primitive)) {
+            return "Geometry";
+        }
+        String value = primitive.startsWith("GL_") ? primitive.substring(3) : primitive;
+        String[] parts = value.toLowerCase().split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            sb.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) {
+                sb.append(part.substring(1));
+            }
+        }
+        return sb.isEmpty() ? value : sb.toString();
     }
 
     private record TextureResident(String path, Image image, int width, int height, int glTextureId, long bytesAssigned) {

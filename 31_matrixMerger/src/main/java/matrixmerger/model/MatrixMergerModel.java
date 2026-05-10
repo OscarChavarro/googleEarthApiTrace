@@ -28,6 +28,7 @@ public final class MatrixMergerModel {
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private final MatrixMerger matrixMerger = new MatrixMerger();
     private final MatrixByWestCutterSplitter matrixByWestCutterSplitter = new MatrixByWestCutterSplitter();
+    private final Map<Integer, Integer> hierarchyLevelByFrameId = new LinkedHashMap<>();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
     private int maximumRetryCount = 0;
@@ -60,6 +61,7 @@ public final class MatrixMergerModel {
         selectedFrameIndex = 0;
         lastMergeFailedForCurrentSelection = false;
         normalizeSelection();
+        refreshHierarchyOrdering();
     }
 
     public List<FrameMatrices> getFrameMatrices() {
@@ -92,6 +94,7 @@ public final class MatrixMergerModel {
             selectFirstInvalidFrame();
         }
         normalizeSelection();
+        refreshHierarchyOrdering();
     }
 
     public boolean isWestCutterTileId(String tileId) {
@@ -113,6 +116,33 @@ public final class MatrixMergerModel {
 
     public UncleHudStatus getSelectedMatrixUncleHudStatus() {
         TileMatrix selected = getSelectedMatrix();
+        if (selected == null || selected.getTiles() == null || selected.getTiles().isEmpty()) {
+            return new UncleHudStatus(0, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
+        }
+        return buildUncleHudStatus(selected, buildFrameIndexByTileId());
+    }
+
+    public List<String> getMissingTopLevelUncleTileIds() {
+        if (frameMatrices.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (FrameMatrices frame : frameMatrices) {
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+                continue;
+            }
+            TileMatrix matrix = frame.getMatrices().get(0);
+            UncleHudStatus status = buildUncleHudStatus(matrix, frameIndexByTileId);
+            if (status.state() != UncleHudState.TOPLEVEL || status.missingUncleIds().isEmpty()) {
+                continue;
+            }
+            out.addAll(status.missingUncleIds());
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private UncleHudStatus buildUncleHudStatus(TileMatrix selected, Map<String, Integer> frameIndexByTileId) {
         if (selected == null || selected.getTiles() == null || selected.getTiles().isEmpty()) {
             return new UncleHudStatus(0, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
         }
@@ -140,7 +170,6 @@ public final class MatrixMergerModel {
             return new UncleHudStatus(relationCount, UncleHudState.NORMAL, List.of(), List.of(), Map.of());
         }
 
-        Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
         LinkedHashSet<Integer> uncleFrameIndexes = new LinkedHashSet<>();
         List<String> missingUncleIds = new ArrayList<>();
         for (String uncleTileId : uncleCountsByTileId.keySet()) {
@@ -201,6 +230,14 @@ public final class MatrixMergerModel {
         return formatFrameLabel(getSelectedFrameId());
     }
 
+    public String getSelectedHierarchyLabel() {
+        Integer level = hierarchyLevelByFrameId.get(getSelectedFrameId());
+        if (level == null || level < 0) {
+            return null;
+        }
+        return level == 0 ? "l" : "l + " + level;
+    }
+
     public boolean selectPreviousMatrix() {
         if (frameMatrices.isEmpty() || selectedFrameIndex <= 0) {
             return false;
@@ -253,6 +290,7 @@ public final class MatrixMergerModel {
         frameMatrices.remove(nextFrameIndex.intValue());
         maximumRetryCount = frameMatrices.size();
         normalizeSelection();
+        refreshHierarchyOrdering();
         lastMergeFailedForCurrentSelection = false;
         return true;
     }
@@ -310,6 +348,7 @@ public final class MatrixMergerModel {
                 mergedAny = true;
             }
         }
+        refreshHierarchyOrdering();
         lastMergeFailedForCurrentSelection = !mergedAny;
         return changedAny;
     }
@@ -351,6 +390,7 @@ public final class MatrixMergerModel {
         }
         maximumRetryCount = frameMatrices.size();
         normalizeSelection();
+        refreshHierarchyOrdering();
         return true;
     }
 
@@ -375,6 +415,7 @@ public final class MatrixMergerModel {
                     mergedAny = true;
                     changed = true;
                     normalizeSelection();
+                    refreshHierarchyOrdering();
                     break;
                 }
                 if (changed) {
@@ -390,6 +431,7 @@ public final class MatrixMergerModel {
         frameMatrices.sort(Comparator.comparingInt(MatrixMergerModel::tileCountOfFrame));
         maximumRetryCount = frameMatrices.size();
         normalizeSelection();
+        refreshHierarchyOrdering();
         lastMergeFailedForCurrentSelection = false;
     }
 
@@ -528,6 +570,160 @@ public final class MatrixMergerModel {
         return frameId == -1 ? "transient" : Integer.toString(frameId);
     }
 
+    private void refreshHierarchyOrdering() {
+        hierarchyLevelByFrameId.clear();
+        if (frameMatrices.isEmpty()) {
+            return;
+        }
+
+        int selectedFrameId = getSelectedFrameId();
+        Map<String, Integer> frameIdByTileId = buildFrameIdByTileId();
+        List<FrameHierarchyNode> hierarchyNodes = new ArrayList<>(frameMatrices.size());
+        for (int frameIndex = 0; frameIndex < frameMatrices.size(); frameIndex++) {
+            FrameMatrices frame = frameMatrices.get(frameIndex);
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+                return;
+            }
+
+            TileMatrix matrix = frame.getMatrices().get(0);
+            if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+                return;
+            }
+
+            LinkedHashSet<Integer> resolvedUncleFrameIds = new LinkedHashSet<>();
+            for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null || tile.getUncles() == null) {
+                    continue;
+                }
+                for (var relationship : tile.getUncles()) {
+                    if (relationship == null || relationship.uncleContentId() == null) {
+                        continue;
+                    }
+                    String normalizedUncleId = WestCutterReader.normalizeScopedTileId(relationship.uncleContentId());
+                    if (normalizedUncleId == null || normalizedUncleId.isBlank()) {
+                        continue;
+                    }
+                    Integer uncleFrameId = frameIdByTileId.get(normalizedUncleId);
+                    if (uncleFrameId != null && uncleFrameId != frame.getFrameId()) {
+                        resolvedUncleFrameIds.add(uncleFrameId);
+                    }
+                }
+            }
+
+            UncleHudState state;
+            Integer parentFrameId = null;
+            if (resolvedUncleFrameIds.isEmpty()) {
+                state = UncleHudState.TOPLEVEL;
+            }
+            else if (resolvedUncleFrameIds.size() == 1) {
+                state = UncleHudState.NORMAL;
+                parentFrameId = resolvedUncleFrameIds.iterator().next();
+            }
+            else {
+                return;
+            }
+            hierarchyNodes.add(new FrameHierarchyNode(frame, frameIndex, state, parentFrameId));
+        }
+
+        List<FrameHierarchyNode> ordered = orderHierarchyNodes(hierarchyNodes);
+        if (ordered == null || ordered.size() != frameMatrices.size()) {
+            hierarchyLevelByFrameId.clear();
+            return;
+        }
+
+        boolean changedOrder = false;
+        for (int i = 0; i < ordered.size(); i++) {
+            if (frameMatrices.get(i) != ordered.get(i).frame()) {
+                changedOrder = true;
+                break;
+            }
+        }
+        if (changedOrder) {
+            frameMatrices.clear();
+            for (FrameHierarchyNode node : ordered) {
+                frameMatrices.add(node.frame());
+            }
+        }
+
+        for (FrameHierarchyNode node : ordered) {
+            hierarchyLevelByFrameId.put(node.frame().getFrameId(), node.level());
+        }
+
+        if (selectedFrameId != -1) {
+            for (int i = 0; i < frameMatrices.size(); i++) {
+                if (frameMatrices.get(i).getFrameId() == selectedFrameId) {
+                    selectedFrameIndex = i;
+                    break;
+                }
+            }
+        }
+        normalizeSelection();
+    }
+
+    private List<FrameHierarchyNode> orderHierarchyNodes(List<FrameHierarchyNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Integer, FrameHierarchyNode> byFrameId = new LinkedHashMap<>();
+        for (FrameHierarchyNode node : nodes) {
+            if (node == null || node.frame() == null) {
+                return null;
+            }
+            byFrameId.put(node.frame().getFrameId(), node);
+        }
+
+        List<FrameHierarchyNode> roots = new ArrayList<>();
+        for (FrameHierarchyNode node : nodes) {
+            if (node.state() == UncleHudState.TOPLEVEL) {
+                roots.add(node.withLevel(0));
+            }
+        }
+        if (roots.isEmpty()) {
+            return null;
+        }
+
+        Map<Integer, Integer> levelByFrameId = new LinkedHashMap<>();
+        for (FrameHierarchyNode root : roots) {
+            levelByFrameId.put(root.frame().getFrameId(), 0);
+        }
+
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (FrameHierarchyNode node : nodes) {
+                if (node == null || node.state() != UncleHudState.NORMAL || node.parentFrameId() == null) {
+                    continue;
+                }
+                Integer parentLevel = levelByFrameId.get(node.parentFrameId());
+                if (parentLevel == null) {
+                    continue;
+                }
+                int candidateLevel = parentLevel + 1;
+                Integer currentLevel = levelByFrameId.get(node.frame().getFrameId());
+                if (currentLevel == null || candidateLevel < currentLevel) {
+                    levelByFrameId.put(node.frame().getFrameId(), candidateLevel);
+                    changed = true;
+                }
+            }
+        }
+
+        if (levelByFrameId.size() != nodes.size()) {
+            return null;
+        }
+
+        List<FrameHierarchyNode> ordered = new ArrayList<>(nodes.size());
+        for (FrameHierarchyNode node : nodes) {
+            Integer level = levelByFrameId.get(node.frame().getFrameId());
+            if (level == null) {
+                return null;
+            }
+            ordered.add(node.withLevel(level));
+        }
+        ordered.sort(Comparator.comparingInt(FrameHierarchyNode::level).thenComparingInt(FrameHierarchyNode::originalIndex));
+        return ordered;
+    }
+
     private Map<String, Integer> buildFrameIndexByTileId() {
         Map<String, Integer> frameIndexByTileId = new LinkedHashMap<>();
         for (int frameIndex = 0; frameIndex < frameMatrices.size(); frameIndex++) {
@@ -550,6 +746,29 @@ public final class MatrixMergerModel {
             }
         }
         return frameIndexByTileId;
+    }
+
+    private Map<String, Integer> buildFrameIdByTileId() {
+        Map<String, Integer> frameIdByTileId = new LinkedHashMap<>();
+        for (FrameMatrices frame : frameMatrices) {
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+                continue;
+            }
+            TileMatrix matrix = frame.getMatrices().get(0);
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                String tileId = tile.getId();
+                if (tileId != null && !tileId.isBlank()) {
+                    frameIdByTileId.put(tileId, frame.getFrameId());
+                }
+            }
+        }
+        return frameIdByTileId;
     }
 
     private Map<String, UncleTileLocation> buildLocatedUncleTiles(Set<String> uncleTileIds) {
@@ -615,5 +834,21 @@ public final class MatrixMergerModel {
         NORMAL,
         BROKEN,
         TOPLEVEL
+    }
+
+    private record FrameHierarchyNode(
+        FrameMatrices frame,
+        int originalIndex,
+        UncleHudState state,
+        Integer parentFrameId,
+        int level
+    ) {
+        private FrameHierarchyNode(FrameMatrices frame, int originalIndex, UncleHudState state, Integer parentFrameId) {
+            this(frame, originalIndex, state, parentFrameId, -1);
+        }
+
+        private FrameHierarchyNode withLevel(int newLevel) {
+            return new FrameHierarchyNode(frame, originalIndex, state, parentFrameId, newLevel);
+        }
     }
 }
