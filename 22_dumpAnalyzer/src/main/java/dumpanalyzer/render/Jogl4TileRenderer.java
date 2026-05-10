@@ -41,6 +41,7 @@ final class Jogl4TileRenderer {
         boolean fullResolution = tile.isFullResolutionWithRespectToTexture();
         boolean forceRedWires = !fullResolution;
         boolean multiPrimitiveNonFullRes = forceRedWires && tile.getStrips() != null && tile.getStrips().size() > 1;
+        boolean hasBigTile = tile.getBigTile() != null;
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
         if (textured) {
@@ -104,7 +105,7 @@ final class Jogl4TileRenderer {
             }
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
-        if (quality.isWiresSet() || forceRedWires) {
+        if (quality.isWiresSet() || forceRedWires || hasBigTile) {
             if (textured) {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
                 gl2.glDisable(GL2.GL_TEXTURE_2D);
@@ -113,7 +114,10 @@ final class Jogl4TileRenderer {
             gl2.glEnable(GL2.GL_DEPTH_TEST);
             gl2.glDepthMask(false);
             gl2.glDepthFunc(GL2.GL_LEQUAL);
-            if (forceRedWires) {
+            if (hasBigTile) {
+                Jogl4BigTileRenderer.drawWireOverlay(gl2, tile, tile.getBigTile());
+            }
+            else if (forceRedWires) {
                 if (multiPrimitiveNonFullRes) {
                     gl2.glColor3d(128.0 / 255.0, 1.0, 1.0);
                 }
@@ -124,16 +128,18 @@ final class Jogl4TileRenderer {
             else {
                 gl2.glColor3d(1.0, 1.0, 1.0);
             }
-            gl2.glLineWidth(1.0f);
-            for (List<Vector3D> strip : tile.getStrips()) {
-                if (strip.size() < 2) {
-                    continue;
+            if (!hasBigTile) {
+                gl2.glLineWidth(1.0f);
+                for (List<Vector3D> strip : tile.getStrips()) {
+                    if (strip.size() < 2) {
+                        continue;
+                    }
+                    gl2.glBegin(GL2.GL_LINE_STRIP);
+                    for (Vector3D p : strip) {
+                        gl2.glVertex3d(p.x(), p.y(), p.z());
+                    }
+                    gl2.glEnd();
                 }
-                gl2.glBegin(GL2.GL_LINE_STRIP);
-                for (Vector3D p : strip) {
-                    gl2.glVertex3d(p.x(), p.y(), p.z());
-                }
-                gl2.glEnd();
             }
         }
         if (quality.isPointsSet()) {

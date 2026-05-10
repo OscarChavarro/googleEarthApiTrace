@@ -2,6 +2,7 @@ package dumpanalyzer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dumpanalyzer.model.BigTile;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
@@ -39,6 +40,7 @@ public final class TileInstance {
     private volatile String detectedEastNeighborContentId;
     private volatile String detectedWestNeighborContentId;
     private volatile List<ToUncleRelationship> uncles;
+    private volatile BigTile bigTile;
 
     public TileInstance(
         String contentId,
@@ -225,6 +227,15 @@ public final class TileInstance {
         this.uncles = uncles == null ? List.of() : List.copyOf(uncles);
     }
 
+    @JsonIgnore
+    public BigTile getBigTile() {
+        return bigTile;
+    }
+
+    public void setBigTile(BigTile bigTile) {
+        this.bigTile = bigTile;
+    }
+
     public boolean isFullResolutionWithRespectToTexture() {
         if (stripTexCoords.isEmpty()) {
             return false;
@@ -263,11 +274,33 @@ public final class TileInstance {
         if (skipped || !"GL_TRIANGLE_STRIP".equals(primitive)) {
             return null;
         }
-        if (strips.size() != 1 || stripTexCoords.size() != 1) {
+        List<TriangleStripGeometry> geometries = getTriangleStripGeometries();
+        if (geometries.size() != 1) {
             return null;
         }
-        List<Vector3D> strip = strips.get(0);
-        List<Vector3D> uv = stripTexCoords.get(0);
+        return geometries.get(0);
+    }
+
+    @JsonIgnore
+    public List<TriangleStripGeometry> getTriangleStripGeometries() {
+        if (!"GL_TRIANGLE_STRIP".equals(primitive)) {
+            return List.of();
+        }
+        int count = Math.min(strips.size(), stripTexCoords.size());
+        if (count <= 0) {
+            return List.of();
+        }
+        java.util.ArrayList<TriangleStripGeometry> geometries = new java.util.ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            TriangleStripGeometry geometry = toTriangleStripGeometry(strips.get(i), stripTexCoords.get(i));
+            if (geometry != null) {
+                geometries.add(geometry);
+            }
+        }
+        return List.copyOf(geometries);
+    }
+
+    private static TriangleStripGeometry toTriangleStripGeometry(List<Vector3D> strip, List<Vector3D> uv) {
         if (strip == null || uv == null || strip.size() < 3 || strip.size() != uv.size()) {
             return null;
         }

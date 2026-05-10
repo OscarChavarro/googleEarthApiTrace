@@ -4,6 +4,7 @@ import dumpanalyzer.config.Configuration;
 import dumpanalyzer.io.TracedModelReader;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.options.CommandLineOptions;
+import dumpanalyzer.processing.bigtiles.BigTilesProcessor;
 import dumpanalyzer.processing.NeighborsProcessor;
 import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
 
@@ -21,6 +22,7 @@ public class Main {
         tracedModelReader.importInto(model);
         System.out.flush();
         NeighborsProcessor.preprocessNeighbors(model, model.snapshotFrames(), config.width(), config.height());
+        BigTilesProcessor.preprocessBigTiles(model.snapshotFrames());
 
         if (!config.offline()) {
             InteractiveDebugger.start(model);
