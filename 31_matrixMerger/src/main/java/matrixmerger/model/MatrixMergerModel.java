@@ -15,8 +15,8 @@ import matrixmerger.io.TileMatrix;
 import matrixmerger.io.WestCutterReader;
 import matrixmerger.processing.MatrixByWestCutterSplitter;
 import matrixmerger.processing.MatrixMerger;
-import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.environment.camera.Camera;
+import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class MatrixMergerModel {
     private final Camera viewingCamera = new Camera();

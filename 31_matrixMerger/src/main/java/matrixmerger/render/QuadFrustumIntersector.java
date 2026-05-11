@@ -1,8 +1,8 @@
 package matrixmerger.render;
 
-import vsdk.toolkit.common.Ray;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.camera.Camera;
+import vsdk.toolkit.environment.geometry.elements.Ray;
 
 final class QuadFrustumIntersector {
     private static final double EPS = 1e-9;

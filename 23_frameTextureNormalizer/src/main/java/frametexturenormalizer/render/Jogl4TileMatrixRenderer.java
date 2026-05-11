@@ -15,8 +15,8 @@ import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
-import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class Jogl4TileMatrixRenderer {
     private static final float LINE_BASE_WIDTH = 4.0f;

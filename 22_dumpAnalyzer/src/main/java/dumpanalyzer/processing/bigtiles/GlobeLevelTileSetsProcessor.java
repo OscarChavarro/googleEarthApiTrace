@@ -1,13 +1,22 @@
 package dumpanalyzer.processing.bigtiles;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dumpanalyzer.config.Configuration;
+import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleStripNeighborDetector;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorConsumer;
@@ -15,6 +24,7 @@ import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorEvent;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorProducer;
 
 public final class GlobeLevelTileSetsProcessor {
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final BigAreaCoveringTile DETECTOR = new BigAreaCoveringTile();
     private static final int POISON_FRAME_INDEX = -1;
 
@@ -33,6 +43,9 @@ public final class GlobeLevelTileSetsProcessor {
         ParallelProgressMonitorProducer progressProducer = new ParallelProgressMonitorProducer(progressEvents);
         ParallelProgressMonitorConsumer progressConsumer = new ParallelProgressMonitorConsumer(progressEvents);
         Thread progressThread = new Thread(progressConsumer, "globe-level-tiles-progress-consumer");
+        AtomicIntegerArray processedTriangleStripsByFrame = new AtomicIntegerArray(frames.size());
+        AtomicIntegerArray biggestTriangleStripsPerTileByFrame = new AtomicIntegerArray(frames.size());
+        AtomicReferenceArray<List<VertexCountRecord>> quadSizeToCountMapByFrame = new AtomicReferenceArray<>(frames.size());
 
         progressProducer.init(frames.size());
         progressThread.start();
@@ -48,7 +61,14 @@ public final class GlobeLevelTileSetsProcessor {
         for (int i = 0; i < workerCount; i++) {
             int workerId = i;
             workers[i] = new Thread(
-                () -> consumeAndProcessFrames(frameQueue, frames, progressProducer),
+                () -> consumeAndProcessFrames(
+                    frameQueue,
+                    frames,
+                    progressProducer,
+                    processedTriangleStripsByFrame,
+                    biggestTriangleStripsPerTileByFrame,
+                    quadSizeToCountMapByFrame
+                ),
                 "globe-level-tiles-worker-" + workerId
             );
             workers[i].start();
@@ -59,15 +79,34 @@ public final class GlobeLevelTileSetsProcessor {
         }
         progressProducer.finish();
         joinOrFail(progressThread, "globe level tile progress");
+        writeGlobalPatches(
+            frames,
+            processedTriangleStripsByFrame,
+            biggestTriangleStripsPerTileByFrame,
+            quadSizeToCountMapByFrame
+        );
     }
 
-    private static void preprocessFrame(Frame frame) {
+    private static FramePatchStats preprocessFrame(Frame frame) {
         if (frame == null) {
-            return;
+            return new FramePatchStats(0, 0, List.of());
         }
+        int processedTriangleStrips = 0;
+        int biggestTriangleStripsPerTile = 0;
+        Map<Integer, Integer> quadSizeToCountMap = new HashMap<>();
         for (TileInstance tile : frame.getTiles()) {
             if (tile == null) {
                 continue;
+            }
+            List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
+            int triangleStripCount = geometries.size();
+            processedTriangleStrips += triangleStripCount;
+            biggestTriangleStripsPerTile = Math.max(biggestTriangleStripsPerTile, triangleStripCount);
+            for (TileInstance.TriangleStripGeometry geometry : geometries) {
+                if (geometry == null) {
+                    continue;
+                }
+                quadSizeToCountMap.merge(geometry.vertexCount(), 1, Integer::sum);
             }
             tile.setGlobeLevelTileSet(DETECTOR.buildGlobeLevelTileSet(tile));
         }
@@ -75,6 +114,11 @@ public final class GlobeLevelTileSetsProcessor {
         List<TileInstance> selectableTiles = buildSelectableTiles(frame);
         populateSelectableNeighbors(frame, selectableTiles);
         frame.setSelectableTilesOverride(selectableTiles);
+        return new FramePatchStats(
+            processedTriangleStrips,
+            biggestTriangleStripsPerTile,
+            toSortedVertexCountRecords(quadSizeToCountMap)
+        );
     }
 
     private static List<TileInstance> buildSelectableTiles(Frame frame) {
@@ -249,7 +293,10 @@ public final class GlobeLevelTileSetsProcessor {
     private static void consumeAndProcessFrames(
         BlockingQueue<Integer> frameQueue,
         List<Frame> frames,
-        ParallelProgressMonitorProducer progressProducer
+        ParallelProgressMonitorProducer progressProducer,
+        AtomicIntegerArray processedTriangleStripsByFrame,
+        AtomicIntegerArray biggestTriangleStripsPerTileByFrame,
+        AtomicReferenceArray<List<VertexCountRecord>> quadSizeToCountMapByFrame
     ) {
         while (true) {
             int frameIndex = takeFrameTask(frameQueue);
@@ -259,8 +306,39 @@ public final class GlobeLevelTileSetsProcessor {
             if (frameIndex < 0 || frameIndex >= frames.size()) {
                 continue;
             }
-            preprocessFrame(frames.get(frameIndex));
+            FramePatchStats stats = preprocessFrame(frames.get(frameIndex));
+            processedTriangleStripsByFrame.set(frameIndex, stats.triangleStripCount());
+            biggestTriangleStripsPerTileByFrame.set(frameIndex, stats.biggestTriangleStripsPerTile());
+            quadSizeToCountMapByFrame.set(frameIndex, stats.quadSizeToCountMap());
             progressProducer.update(0, 1, 1);
+        }
+    }
+
+    private static void writeGlobalPatches(
+        List<Frame> frames,
+        AtomicIntegerArray processedTriangleStripsByFrame,
+        AtomicIntegerArray biggestTriangleStripsPerTileByFrame,
+        AtomicReferenceArray<List<VertexCountRecord>> quadSizeToCountMapByFrame
+    ) {
+        Path outputFile = Configuration.OUTPUT_ROOT.resolve("globalPatches.json");
+        List<GlobalPatchFrameRecord> records = new ArrayList<>(frames.size());
+        for (int i = 0; i < frames.size(); i++) {
+            Frame frame = frames.get(i);
+            if (frame == null) {
+                continue;
+            }
+            records.add(new GlobalPatchFrameRecord(
+                frame.getId(),
+                processedTriangleStripsByFrame.get(i),
+                biggestTriangleStripsPerTileByFrame.get(i),
+                quadSizeToCountMapByFrame.get(i) == null ? List.of() : quadSizeToCountMapByFrame.get(i)
+            ));
+        }
+        try {
+            JSON_MAPPER.writerWithDefaultPrettyPrinter().writeValue(outputFile.toFile(), records);
+        }
+        catch (IOException e) {
+            FatalErrorHandler.fail(outputFile, "Cannot write globalPatches.json file: " + e.getMessage());
         }
     }
 
@@ -293,4 +371,27 @@ public final class GlobeLevelTileSetsProcessor {
             throw new IllegalStateException("Interrupted while waiting for " + threadRole + " thread", e);
         }
     }
+
+    private static List<VertexCountRecord> toSortedVertexCountRecords(Map<Integer, Integer> counts) {
+        List<VertexCountRecord> records = new ArrayList<>(counts.size());
+        counts.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> records.add(new VertexCountRecord(entry.getKey(), entry.getValue())));
+        return List.copyOf(records);
+    }
+
+    private record FramePatchStats(
+        int triangleStripCount,
+        int biggestTriangleStripsPerTile,
+        List<VertexCountRecord> quadSizeToCountMap
+    ) {}
+
+    private record VertexCountRecord(int vertices, int count) {}
+
+    private record GlobalPatchFrameRecord(
+        int frameId,
+        int triangleStripCount,
+        int biggestTriangleStripsPerTile,
+        List<VertexCountRecord> quadSizeToCountMap
+    ) {}
 }

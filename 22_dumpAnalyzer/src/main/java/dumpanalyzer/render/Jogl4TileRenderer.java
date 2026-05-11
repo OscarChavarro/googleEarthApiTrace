@@ -8,10 +8,10 @@ import com.jogamp.opengl.GL4;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
-import vsdk.toolkit.common.RendererConfiguration;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
 import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.environment.camera.Camera;
+import vsdk.toolkit.environment.material.RendererConfiguration;
 
 final class Jogl4TileRenderer {
     private static final float SURFACE_POLYGON_OFFSET_FACTOR = 1.0f;
