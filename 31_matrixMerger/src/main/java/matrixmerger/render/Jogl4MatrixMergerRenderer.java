@@ -159,6 +159,10 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
             hudTextRenderer.draw(model.getSelectedFrameInvalidReason(), 16, h - 50);
         }
+        if (model.getOutputFolder() == null) {
+            hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
+            hudTextRenderer.draw("NOT EXPORTING RESULTS - REVIEW PROGRAM PARAMETERS", 16, 16);
+        }
         hudTextRenderer.endRendering();
         gl2.glEnable(GL2.GL_DEPTH_TEST);
     }

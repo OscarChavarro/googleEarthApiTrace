@@ -3,7 +3,7 @@ package matrixmerger.io;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import java.util.ArrayList;
 import java.util.List;
-import processing.uncles.ToUncleRelationship;
+import matrixmerger.processing.uncles.ToUncleRelationship;
 
 public final class TileMatrix {
     private int frameId;

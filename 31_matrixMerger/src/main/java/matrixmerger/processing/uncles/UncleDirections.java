@@ -1,4 +1,4 @@
-package processing.uncles;
+package matrixmerger.processing.uncles;
 
 public enum UncleDirections {
     WEST_NORTH,

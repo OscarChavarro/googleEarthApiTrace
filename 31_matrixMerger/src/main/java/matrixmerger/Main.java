@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import matrixmerger.io.MatrixReader;
+import matrixmerger.io.ResultsExporter;
 import matrixmerger.io.WestCutterReader;
 import matrixmerger.io.WestCutterWriter;
 import matrixmerger.io.FrameMatrices;
@@ -33,7 +34,9 @@ public class Main {
         }
 
         MatrixMergerModel model = createModel();
+        model.setOutputFolder(parseOutputFolder(args));
         Path outputPath = Path.of(OUTPUT_DIRECTORY);
+        printMissingOutputFolderWarning(model);
         if (offline) {
             int before = model.getMatrixCount();
             model.mergeFullSet();
@@ -45,6 +48,9 @@ public class Main {
             new AutomaticGrouper().run(model);
         }
         printMissingTopLevelUncles(model, outputPath);
+        if (model.getOutputFolder() != null) {
+            new ResultsExporter(model, outputPath).export(model.getOutputFolder());
+        }
         Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
         InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
         interactiveDebugger.launchDesktop();
@@ -126,6 +132,13 @@ public class Main {
         return false;
     }
 
+    private static void printMissingOutputFolderWarning(MatrixMergerModel model) {
+        if (model == null || model.getOutputFolder() != null) {
+            return;
+        }
+        System.out.println("WARNING: No output folder was provided. Results will not be exported.");
+    }
+
     private static Mode parseMode(String[] args) {
         String value = argValue(args, "--mode");
         if (value == null || value.isBlank()) {
@@ -152,6 +165,29 @@ public class Main {
             String prefix = flag + "=";
             if (arg.startsWith(prefix)) {
                 return arg.substring(prefix.length());
+            }
+        }
+        return null;
+    }
+
+    private static String parseOutputFolder(String[] args) {
+        if (args == null) {
+            return null;
+        }
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg == null || arg.isBlank()) {
+                continue;
+            }
+            if (arg.startsWith("--mode=") || "--offline".equals(arg) || "--ofline".equals(arg)) {
+                continue;
+            }
+            if ("--mode".equals(arg)) {
+                i++;
+                continue;
+            }
+            if (!arg.startsWith("--")) {
+                return arg;
             }
         }
         return null;

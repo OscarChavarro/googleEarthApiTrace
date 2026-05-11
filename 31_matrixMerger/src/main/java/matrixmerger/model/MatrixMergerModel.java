@@ -29,6 +29,7 @@ public final class MatrixMergerModel {
     private final MatrixMerger matrixMerger = new MatrixMerger();
     private final MatrixByWestCutterSplitter matrixByWestCutterSplitter = new MatrixByWestCutterSplitter();
     private final Map<Integer, Integer> hierarchyLevelByFrameId = new LinkedHashMap<>();
+    private String outputFolder;
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
     private int maximumRetryCount = 0;
@@ -45,6 +46,14 @@ public final class MatrixMergerModel {
 
     public RendererConfiguration getRenderingConfiguration() {
         return renderingConfiguration;
+    }
+
+    public String getOutputFolder() {
+        return outputFolder;
+    }
+
+    public void setOutputFolder(String outputFolder) {
+        this.outputFolder = (outputFolder == null || outputFolder.isBlank()) ? null : outputFolder;
     }
 
     public void setFrameMatrices(List<FrameMatrices> frames) {
