@@ -5,10 +5,13 @@ import dumpanalyzer.config.Configuration;
 import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
+import dumpanalyzer.processing.TriangleMeshVertexComparator;
+import dumpanalyzer.processing.TriangleStripTileClassifier;
 import dumpanalyzer.processing.TriangleStripNeighborDetector;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +21,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorConsumer;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorEvent;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorProducer;
@@ -25,7 +29,10 @@ import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorProducer;
 public final class GlobeLevelTileSetsProcessor {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final BigAreaCoveringTile DETECTOR = new BigAreaCoveringTile();
+    private static final TriangleStripTileClassifier TRIANGLE_STRIP_CLASSIFIER = new TriangleStripTileClassifier();
     private static final int POISON_FRAME_INDEX = -1;
+    private static final int SPECIAL_TILE_TRIANGLE_STRIP_COUNT = 320;
+    private static volatile HashMap<GlobeLevelTileIdentity, Integer> globeLevelTileIdentityMap = new HashMap<>();
 
     private GlobeLevelTileSetsProcessor() {
     }
@@ -35,6 +42,7 @@ public final class GlobeLevelTileSetsProcessor {
             return;
         }
         System.out.println("\n[5/5] Processing GlobeLevelTileSets and synthetic tiles:");
+        initializeGlobeLevelTileIdentityMap(frames);
 
         int workerCount = Math.max(1, Runtime.getRuntime().availableProcessors());
         BlockingQueue<Integer> frameQueue = new LinkedBlockingQueue<>();
@@ -81,6 +89,24 @@ public final class GlobeLevelTileSetsProcessor {
         );
     }
 
+    public static Map<GlobeLevelTileIdentity, Integer> snapshotGlobeLevelTileIdentityMap() {
+        return Collections.unmodifiableMap(new HashMap<>(globeLevelTileIdentityMap));
+    }
+
+    public static Integer findGlobeLevelTileIdentityId(TileInstance.TriangleStripGeometry geometry) {
+        GlobeLevelTileIdentity probe = toIdentity(-1, geometry);
+        if (probe == null) {
+            return null;
+        }
+        for (Map.Entry<GlobeLevelTileIdentity, Integer> entry : globeLevelTileIdentityMap.entrySet()) {
+            GlobeLevelTileIdentity identity = entry.getKey();
+            if (identity != null && identity.compareTo(probe) == 0) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
     private static FramePatchStats preprocessFrame(Frame frame) {
         if (frame == null) {
             return new FramePatchStats(List.of());
@@ -113,18 +139,9 @@ public final class GlobeLevelTileSetsProcessor {
             if (tile == null) {
                 continue;
             }
-            if (!shouldHideSourceTile(tile)) {
-                selectableTiles.add(tile);
-            }
+            selectableTiles.add(tile);
         }
         return selectableTiles.isEmpty() ? List.of() : List.copyOf(selectableTiles);
-    }
-
-    private static boolean shouldHideSourceTile(TileInstance tile) {
-        if (tile == null || tile.isSyntheticGlobeLevelTile()) {
-            return false;
-        }
-        return tile.getGlobeLevelTileSet() != null && !tile.getGlobeLevelTileSet().shouldDrawSourceTile();
     }
 
     private static void populateSelectableNeighbors(Frame frame, List<TileInstance> selectableTiles) {
@@ -184,6 +201,35 @@ public final class GlobeLevelTileSetsProcessor {
             tileTriangleStripsToCountMapByFrame.set(frameIndex, stats.tileTriangleStripsToCountMap());
             progressProducer.update(0, 1, 1);
         }
+    }
+
+    private static void initializeGlobeLevelTileIdentityMap(List<Frame> frames) {
+        HashMap<GlobeLevelTileIdentity, Integer> identities = new HashMap<>();
+        if (frames != null) {
+            for (Frame frame : frames) {
+                if (frame == null) {
+                    continue;
+                }
+                for (TileInstance tile : frame.getTiles()) {
+                    if (tile == null) {
+                        continue;
+                    }
+                    List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
+                    if (geometries.size() != SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+                        continue;
+                    }
+                    for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
+                        GlobeLevelTileIdentity identity = toIdentity(stripIndex, geometries.get(stripIndex));
+                        if (identity != null) {
+                            identities.put(identity, stripIndex);
+                        }
+                    }
+                    globeLevelTileIdentityMap = identities;
+                    return;
+                }
+            }
+        }
+        globeLevelTileIdentityMap = identities;
     }
 
     private static void writeGlobalPatches(
@@ -246,6 +292,30 @@ public final class GlobeLevelTileSetsProcessor {
             .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> records.add(new TileGeometrySizeCountRecord(entry.getKey(), entry.getValue())));
         return List.copyOf(records);
+    }
+
+    private static GlobeLevelTileIdentity toIdentity(int id, TileInstance.TriangleStripGeometry geometry) {
+        if (geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
+            return null;
+        }
+        List<TileInstance.TriangleStripVertex> deDuplicated = TRIANGLE_STRIP_CLASSIFIER.deduplicateVertices(
+            geometry.vertices(),
+            TriangleMeshVertexComparator.VERTEX_EPSILON
+        );
+        if (deDuplicated.isEmpty()) {
+            return null;
+        }
+        List<Vector3D> positions = new ArrayList<>(deDuplicated.size());
+        for (TileInstance.TriangleStripVertex vertex : deDuplicated) {
+            if (vertex == null) {
+                continue;
+            }
+            positions.add(new Vector3D(vertex.x(), vertex.y(), vertex.z()));
+        }
+        if (positions.isEmpty()) {
+            return null;
+        }
+        return new GlobeLevelTileIdentity(id, positions);
     }
 
     private record FramePatchStats(

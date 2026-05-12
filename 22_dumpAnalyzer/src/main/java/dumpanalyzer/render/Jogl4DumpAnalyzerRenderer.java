@@ -28,6 +28,7 @@ import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
 import dumpanalyzer.processing.TriangleStripTileTopology;
+import dumpanalyzer.processing.bigtiles.GlobeLevelTileSetsProcessor;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
@@ -66,6 +67,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final double DIAGONAL_MIN_RATIO = 1.0e-3;
     private static final double DIAGONAL_MAX_RATIO = 1.0e3;
     private static final int SPECIAL_TILE_TRIANGLE_STRIP_COUNT = 320;
+    private static final int GROUPED_TILE_TRIANGLE_STRIP_MIN_COUNT = 2;
     private static final int VERTEX_LABEL_X_OFFSET_PIXELS = 6;
     private static final Color SPECIAL_TRIANGLE_STRIP_LABEL_COLOR = Color.CYAN;
 
@@ -415,12 +417,21 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
 
         List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
+        boolean frameContainsSpecial320Tile = false;
+        for (TileInstance tile : frameData.getSelectableTiles()) {
+            if (tile != null && tile.getTriangleStripGeometries().size() == SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+                frameContainsSpecial320Tile = true;
+                break;
+            }
+        }
         for (TileInstance tile : frameData.getSelectableTiles()) {
             if (tile == null) {
                 continue;
             }
             List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
-            if (geometries.size() != SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+            boolean isSpecial320Tile = geometries.size() == SPECIAL_TILE_TRIANGLE_STRIP_COUNT;
+            boolean isGroupedGreenTile = isGroupedGlobeLevelTile(tile);
+            if (!isSpecial320Tile && (!isGroupedGreenTile || frameContainsSpecial320Tile)) {
                 continue;
             }
 
@@ -434,6 +445,13 @@ public class Jogl4DumpAnalyzerRenderer implements
                 if (center == null) {
                     continue;
                 }
+                Integer identityId = GlobeLevelTileSetsProcessor.findGlobeLevelTileIdentityId(geometries.get(stripIndex));
+                if (identityId == null) {
+                    if (!isSpecial320Tile) {
+                        continue;
+                    }
+                    identityId = stripIndex;
+                }
                 int[] pixel = projectToViewportPixel(center, modelView, projection, viewportWidth, viewportHeight);
                 if (pixel == null) {
                     continue;
@@ -441,7 +459,7 @@ public class Jogl4DumpAnalyzerRenderer implements
                 labels.add(new Jogl4HudRenderer.ScreenLabel(
                     pixel[0],
                     pixel[1],
-                    String.valueOf(stripIndex),
+                    String.valueOf(identityId),
                     SPECIAL_TRIANGLE_STRIP_LABEL_COLOR
                 ));
             }
@@ -563,6 +581,15 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
         double inv = 1.0 / count;
         return new Vector3D(sx * inv, sy * inv, sz * inv);
+    }
+
+    private static boolean isGroupedGlobeLevelTile(TileInstance tile) {
+        if (tile == null || tile.isSyntheticGlobeLevelTile() || tile.getGlobeLevelTileSet() == null) {
+            return false;
+        }
+        return !tile.getGlobeLevelTileSet().shouldDrawSourceTile()
+            && tile.getStrips() != null
+            && tile.getStrips().size() >= GROUPED_TILE_TRIANGLE_STRIP_MIN_COUNT;
     }
 
     private static int[] projectToViewportPixel(

@@ -37,9 +37,6 @@ final class Jogl4TileRenderer {
         Jogl4HudRenderer hudRenderer,
         Camera camera
     ) {
-        if (shouldSkipSourceGlobeLevelTile(tile)) {
-            return;
-        }
         RendererConfiguration quality = model.getRendererConfiguration();
         boolean fullResolution = tile.isFullResolutionWithRespectToTexture();
         boolean forceRedWires = !fullResolution;
@@ -48,6 +45,11 @@ final class Jogl4TileRenderer {
         boolean drawGlobeLevelTileSetOverlay = hasGlobeLevelTileSet
             && !tile.isSyntheticGlobeLevelTile()
             && tile.getGlobeLevelTileSet().shouldDrawSourceTile();
+        boolean drawGroupedTriangleStripsInGreen = hasGlobeLevelTileSet
+            && !tile.isSyntheticGlobeLevelTile()
+            && !tile.getGlobeLevelTileSet().shouldDrawSourceTile()
+            && tile.getStrips() != null
+            && tile.getStrips().size() > 1;
         boolean textured = quality.isTextureSet();
         int activeTextureId = 0;
         if (textured) {
@@ -111,7 +113,7 @@ final class Jogl4TileRenderer {
             }
             gl2.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
-        if (quality.isWiresSet() || forceRedWires || drawGlobeLevelTileSetOverlay) {
+        if (quality.isWiresSet() || forceRedWires || drawGlobeLevelTileSetOverlay || drawGroupedTriangleStripsInGreen) {
             if (textured) {
                 gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
                 gl2.glDisable(GL2.GL_TEXTURE_2D);
@@ -122,6 +124,9 @@ final class Jogl4TileRenderer {
             gl2.glDepthFunc(GL2.GL_LEQUAL);
             if (drawGlobeLevelTileSetOverlay) {
                 Jogl4GlobeLevelTileSetRenderer.drawWireOverlay(gl2, tile, tile.getGlobeLevelTileSet());
+            }
+            else if (drawGroupedTriangleStripsInGreen) {
+                gl2.glColor3d(128.0 / 255.0, 1.0, 128.0 / 255.0);
             }
             else if (forceRedWires) {
                 if (multiPrimitiveNonFullRes) {
@@ -174,13 +179,6 @@ final class Jogl4TileRenderer {
             gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
-    }
-
-    private static boolean shouldSkipSourceGlobeLevelTile(TileInstance tile) {
-        if (tile == null || tile.isSyntheticGlobeLevelTile()) {
-            return false;
-        }
-        return tile.getGlobeLevelTileSet() != null && !tile.getGlobeLevelTileSet().shouldDrawSourceTile();
     }
 
     static void drawExtractedLineStrips(
