@@ -65,7 +65,9 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final double MAX_DIAGONAL = 1.0e6;
     private static final double DIAGONAL_MIN_RATIO = 1.0e-3;
     private static final double DIAGONAL_MAX_RATIO = 1.0e3;
+    private static final int SPECIAL_TILE_TRIANGLE_STRIP_COUNT = 320;
     private static final int VERTEX_LABEL_X_OFFSET_PIXELS = 6;
+    private static final Color SPECIAL_TRIANGLE_STRIP_LABEL_COLOR = Color.CYAN;
 
     public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
         this.model = model;
@@ -179,6 +181,13 @@ public class Jogl4DumpAnalyzerRenderer implements
             hudLabels.addAll(buildAabbLabelsForHud(
                 selectedFrame,
                 state.selectedTileIndex(),
+                projection,
+                model.isUsingGoogleCameraAsView(),
+                drawable.getSurfaceWidth(),
+                drawable.getSurfaceHeight()
+            ));
+            hudLabels.addAll(buildSpecialTriangleStripLabelsForHud(
+                selectedFrame,
                 projection,
                 model.isUsingGoogleCameraAsView(),
                 drawable.getSurfaceWidth(),
@@ -394,6 +403,52 @@ public class Jogl4DumpAnalyzerRenderer implements
         );
     }
 
+    private List<Jogl4HudRenderer.ScreenLabel> buildSpecialTriangleStripLabelsForHud(
+        Frame frameData,
+        Matrix4x4 projection,
+        boolean useGoogleCameraView,
+        int viewportWidth,
+        int viewportHeight
+    ) {
+        if (frameData == null || projection == null || viewportWidth <= 0 || viewportHeight <= 0) {
+            return List.of();
+        }
+
+        List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
+        for (TileInstance tile : frameData.getSelectableTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
+            if (geometries.size() != SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+                continue;
+            }
+
+            double[] modelView = CoordinatesTransforms.geometryModelView(useGoogleCameraView, viewingCamera, frameData);
+            if (useGoogleCameraView && tile.getModelViewMatrix() != null && tile.getModelViewMatrix().length == 16) {
+                modelView = tile.getModelViewMatrix();
+            }
+
+            for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
+                Vector3D center = centerOfTriangleStrip(geometries.get(stripIndex));
+                if (center == null) {
+                    continue;
+                }
+                int[] pixel = projectToViewportPixel(center, modelView, projection, viewportWidth, viewportHeight);
+                if (pixel == null) {
+                    continue;
+                }
+                labels.add(new Jogl4HudRenderer.ScreenLabel(
+                    pixel[0],
+                    pixel[1],
+                    String.valueOf(stripIndex),
+                    SPECIAL_TRIANGLE_STRIP_LABEL_COLOR
+                ));
+            }
+        }
+        return labels;
+    }
+
     private List<Jogl4HudRenderer.ScreenLabel> buildSelectedTileVertexLabelsForHud(
         Frame frameData,
         int selectedTileIndex,
@@ -484,6 +539,30 @@ public class Jogl4DumpAnalyzerRenderer implements
             }
         }
         return null;
+    }
+
+    private static Vector3D centerOfTriangleStrip(TileInstance.TriangleStripGeometry geometry) {
+        if (geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
+            return null;
+        }
+        double sx = 0.0;
+        double sy = 0.0;
+        double sz = 0.0;
+        int count = 0;
+        for (TileInstance.TriangleStripVertex vertex : geometry.vertices()) {
+            if (vertex == null) {
+                continue;
+            }
+            sx += vertex.x();
+            sy += vertex.y();
+            sz += vertex.z();
+            count++;
+        }
+        if (count <= 0) {
+            return null;
+        }
+        double inv = 1.0 / count;
+        return new Vector3D(sx * inv, sy * inv, sz * inv);
     }
 
     private static int[] projectToViewportPixel(

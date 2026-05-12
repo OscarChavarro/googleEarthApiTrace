@@ -18,7 +18,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorConsumer;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorEvent;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorProducer;
@@ -117,14 +116,6 @@ public final class GlobeLevelTileSetsProcessor {
             if (!shouldHideSourceTile(tile)) {
                 selectableTiles.add(tile);
             }
-            if (tile.getGlobeLevelTileSet() == null) {
-                continue;
-            }
-            for (TileInstance syntheticTile : splitGlobeLevelTileSetTile(tile)) {
-                if (syntheticTile != null && syntheticTile.isFullResolutionWithRespectToTexture()) {
-                    selectableTiles.add(syntheticTile);
-                }
-            }
         }
         return selectableTiles.isEmpty() ? List.of() : List.copyOf(selectableTiles);
     }
@@ -134,86 +125,6 @@ public final class GlobeLevelTileSetsProcessor {
             return false;
         }
         return tile.getGlobeLevelTileSet() != null && !tile.getGlobeLevelTileSet().shouldDrawSourceTile();
-    }
-
-    private static List<TileInstance> splitGlobeLevelTileSetTile(TileInstance sourceTile) {
-        List<TileInstance.TriangleStripGeometry> geometries = sourceTile == null ? List.of() : sourceTile.getTriangleStripGeometries();
-        if (geometries.isEmpty()) {
-            return List.of();
-        }
-        List<TileInstance> out = new ArrayList<>(geometries.size());
-        for (int i = 0; i < geometries.size(); i++) {
-            TileInstance.TriangleStripGeometry geometry = geometries.get(i);
-            TileInstance syntheticTile = toSyntheticTile(sourceTile, geometry, i);
-            if (syntheticTile != null) {
-                out.add(syntheticTile);
-            }
-        }
-        return out;
-    }
-
-    private static TileInstance toSyntheticTile(
-        TileInstance sourceTile,
-        TileInstance.TriangleStripGeometry geometry,
-        int geometryIndex
-    ) {
-        if (sourceTile == null || geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
-            return null;
-        }
-        List<Vector3D> strip = new ArrayList<>(geometry.vertices().size());
-        List<Vector3D> uv = new ArrayList<>(geometry.vertices().size());
-        Vector3D min = null;
-        Vector3D max = null;
-        for (TileInstance.TriangleStripVertex vertex : geometry.vertices()) {
-            if (vertex == null) {
-                continue;
-            }
-            Vector3D point = new Vector3D(vertex.x(), vertex.y(), vertex.z());
-            Vector3D texCoord = new Vector3D(vertex.u(), vertex.v(), 0.0);
-            strip.add(point);
-            uv.add(texCoord);
-            min = min == null
-                ? point
-                : new Vector3D(
-                    Math.min(min.x(), point.x()),
-                    Math.min(min.y(), point.y()),
-                    Math.min(min.z(), point.z())
-                );
-            max = max == null
-                ? point
-                : new Vector3D(
-                    Math.max(max.x(), point.x()),
-                    Math.max(max.y(), point.y()),
-                    Math.max(max.z(), point.z())
-                );
-        }
-        if (strip.size() < 3 || uv.size() != strip.size() || min == null || max == null) {
-            return null;
-        }
-        TileInstance syntheticTile = new TileInstance(
-            syntheticContentId(sourceTile.getContentId(), geometryIndex),
-            sourceTile.getTextureFile(),
-            null,
-            null,
-            null,
-            null,
-            min,
-            max,
-            strip,
-            List.of(strip),
-            List.of(uv),
-            "GL_TRIANGLE_STRIP",
-            sourceTile.getParserCall(),
-            sourceTile.getGlCall(),
-            geometry.vertexCount(),
-            geometry.vertexCount(),
-            false,
-            TileInstance.SYNTHETIC_GLOBE_LEVEL_TILE_SKIP_REASON,
-            sourceTile.getProjectionMatrix(),
-            sourceTile.getModelViewMatrix()
-        );
-        syntheticTile.setGlobeLevelTileSet(sourceTile.getGlobeLevelTileSet());
-        return syntheticTile;
     }
 
     private static void populateSelectableNeighbors(Frame frame, List<TileInstance> selectableTiles) {
@@ -240,25 +151,6 @@ public final class GlobeLevelTileSetsProcessor {
             frame.getModelViewMatrix(),
             true
         );
-    }
-
-    private static String syntheticContentId(String originalContentId, int geometryIndex) {
-        if (originalContentId == null || originalContentId.isBlank()) {
-            return "gltile_" + geometryIndex;
-        }
-        int separator = originalContentId.lastIndexOf('_');
-        if (separator < 0 || separator >= originalContentId.length() - 1) {
-            return originalContentId + "_gltile_" + geometryIndex;
-        }
-        String prefix = originalContentId.substring(0, separator);
-        String suffix = originalContentId.substring(separator + 1);
-        try {
-            Integer.parseInt(suffix);
-            return prefix + "_gltile_" + geometryIndex + "_" + suffix;
-        }
-        catch (NumberFormatException ignored) {
-            return originalContentId + "_gltile_" + geometryIndex;
-        }
     }
 
     private static Matrix4x4 matrixFromColumnMajor(double[] m) {
