@@ -8,10 +8,24 @@ import vsdk.toolkit.common.linealAlgebra.Vector3D;
 
 public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileIdentity> {
     private final int id;
+    private final List<Integer> pathFromRoot;
+    private final int row;
+    private final int col;
+    private final List<FrameAppearance> appearances;
     private final Vector3D[] deDuplicatedVertices;
 
-    public GlobeLevelTileIdentity(int id, List<Vector3D> deDuplicatedVertices) {
+    public GlobeLevelTileIdentity(
+        int id,
+        List<Integer> pathFromRoot,
+        int row,
+        int col,
+        List<Vector3D> deDuplicatedVertices
+    ) {
         this.id = id;
+        this.pathFromRoot = pathFromRoot == null ? List.of() : List.copyOf(pathFromRoot);
+        this.row = row;
+        this.col = col;
+        this.appearances = new java.util.ArrayList<>();
         if (deDuplicatedVertices == null || deDuplicatedVertices.isEmpty()) {
             this.deDuplicatedVertices = new Vector3D[0];
             return;
@@ -25,6 +39,38 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
 
     public int getId() {
         return id;
+    }
+
+    public List<Integer> getPathFromRoot() {
+        return pathFromRoot;
+    }
+
+    public int getRow() {
+        return row;
+    }
+
+    public int getCol() {
+        return col;
+    }
+
+    public List<FrameAppearance> getAppearances() {
+        synchronized (appearances) {
+            return List.copyOf(appearances);
+        }
+    }
+
+    public void addAppearance(int frameId, String imageId, String imagePath, TexCoordRange texCoord) {
+        if (frameId < 0 || texCoord == null) {
+            return;
+        }
+        synchronized (appearances) {
+            for (FrameAppearance appearance : appearances) {
+                if (sameImage(appearance, imageId, imagePath)) {
+                    return;
+                }
+            }
+            appearances.add(new FrameAppearance(frameId, imageId, imagePath, texCoord));
+        }
     }
 
     public Vector3D[] getDeDuplicatedVertices() {
@@ -80,8 +126,41 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
     public String toString() {
         return "GlobeLevelTileIdentity{"
             + "id=" + id
+            + ", pathFromRoot=" + pathFromRoot
+            + ", row=" + row
+            + ", col=" + col
+            + ", appearances=" + appearances
             + ", deDuplicatedVertices=" + Arrays.toString(deDuplicatedVertices)
             + '}';
+    }
+
+    private static boolean sameImage(FrameAppearance appearance, String imageId, String imagePath) {
+        if (appearance == null) {
+            return false;
+        }
+        String currentId = imageIdNormalize(imageId);
+        String existingId = imageIdNormalize(appearance.imageId());
+        String currentPath = imagePathNormalize(imagePath);
+        String existingPath = imagePathNormalize(appearance.imagePath());
+
+        if (currentId != null && existingId != null && currentPath != null && existingPath != null) {
+            return currentId.equals(existingId) && currentPath.equals(existingPath);
+        }
+        if (currentPath != null && existingPath != null) {
+            return currentPath.equals(existingPath);
+        }
+        if (currentId != null && existingId != null) {
+            return currentId.equals(existingId);
+        }
+        return false;
+    }
+
+    private static String imageIdNormalize(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private static String imagePathNormalize(String value) {
+        return value == null ? null : value.trim();
     }
 
     private boolean sameVertices(GlobeLevelTileIdentity other) {
@@ -146,4 +225,7 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
     private static long quantize(double value) {
         return Math.round(value / TriangleMeshVertexComparator.VERTEX_EPSILON);
     }
+
+    public record TexCoordRange(double u0, double v0, double u1, double v1) {}
+    public record FrameAppearance(int frameId, String imageId, String imagePath, TexCoordRange texCoord) {}
 }

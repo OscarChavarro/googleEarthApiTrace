@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -32,6 +33,8 @@ public final class GlobeLevelTileSetsProcessor {
     private static final TriangleStripTileClassifier TRIANGLE_STRIP_CLASSIFIER = new TriangleStripTileClassifier();
     private static final int POISON_FRAME_INDEX = -1;
     private static final int SPECIAL_TILE_TRIANGLE_STRIP_COUNT = 320;
+    private static final int TOP_LEVEL_TILE_COLS = 20;
+    private static final int TOP_LEVEL_TILE_ROWS = 16;
     private static volatile HashMap<GlobeLevelTileIdentity, Integer> globeLevelTileIdentityMap = new HashMap<>();
 
     private GlobeLevelTileSetsProcessor() {
@@ -83,6 +86,8 @@ public final class GlobeLevelTileSetsProcessor {
         }
         progressProducer.finish();
         joinOrFail(progressThread, "globe level tile progress");
+        propagateTopLevelTileAppearances(frames);
+        writeTopLevelTiles(globeLevelTileIdentityMap);
         writeGlobalPatches(
             frames,
             tileTriangleStripsToCountMapByFrame
@@ -315,7 +320,210 @@ public final class GlobeLevelTileSetsProcessor {
         if (positions.isEmpty()) {
             return null;
         }
-        return new GlobeLevelTileIdentity(id, positions);
+        GlobeLevelTileIdentity.TexCoordRange texCoord = getTexCoordRange(geometry.vertices());
+        int col = texCoord == null ? -1 : indexFromUnitRange((texCoord.u0() + texCoord.u1()) * 0.5, TOP_LEVEL_TILE_COLS);
+        int row = texCoord == null ? -1 : indexFromUnitRange((texCoord.v0() + texCoord.v1()) * 0.5, TOP_LEVEL_TILE_ROWS);
+        return new GlobeLevelTileIdentity(
+            id,
+            quadtreePathFromMatrixCell(row, col, TOP_LEVEL_TILE_ROWS, TOP_LEVEL_TILE_COLS),
+            row,
+            col,
+            positions
+        );
+    }
+
+    private static void propagateTopLevelTileAppearances(List<Frame> frames) {
+        if (frames == null || frames.isEmpty() || globeLevelTileIdentityMap.isEmpty()) {
+            return;
+        }
+        Map<Integer, GlobeLevelTileIdentity> byStripId = new HashMap<>();
+        for (Map.Entry<GlobeLevelTileIdentity, Integer> entry : globeLevelTileIdentityMap.entrySet()) {
+            if (entry != null && entry.getKey() != null && entry.getValue() != null) {
+                byStripId.put(entry.getValue(), entry.getKey());
+            }
+        }
+        for (Frame frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
+                if (geometries.size() < 2) {
+                    continue;
+                }
+                String imageId = normalizeScopedTileId(tile.getContentId());
+                String imagePath = toAbsolutePathString(tile.getTextureFile());
+                for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
+                    TileInstance.TriangleStripGeometry geometry = geometries.get(stripIndex);
+                    Integer identityId = findGlobeLevelTileIdentityId(geometry);
+                    if (identityId == null) {
+                        continue;
+                    }
+                    GlobeLevelTileIdentity identity = byStripId.get(identityId);
+                    if (identity == null) {
+                        continue;
+                    }
+                    identity.addAppearance(frame.getId(), imageId, imagePath, getTexCoordRange(geometry.vertices()));
+                }
+            }
+        }
+    }
+
+    private static void writeTopLevelTiles(HashMap<GlobeLevelTileIdentity, Integer> identities) {
+        Path outputFile = Configuration.OUTPUT_ROOT.resolve("topLevelTiles.json");
+        Map<String, GlobeLevelTileIdentity> byStripId = new LinkedHashMap<>();
+        if (identities != null && !identities.isEmpty()) {
+            List<Map.Entry<GlobeLevelTileIdentity, Integer>> entries = new ArrayList<>(identities.entrySet());
+            entries.sort(Map.Entry.comparingByValue());
+            for (Map.Entry<GlobeLevelTileIdentity, Integer> entry : entries) {
+                if (entry == null || entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                byStripId.put(Integer.toString(entry.getValue()), entry.getKey());
+            }
+        }
+        try {
+            JSON_MAPPER.writerWithDefaultPrettyPrinter().writeValue(outputFile.toFile(), new TopLevelTilesRecord(byStripId));
+        }
+        catch (IOException e) {
+            FatalErrorHandler.fail(outputFile, "Cannot write topLevelTiles.json file: " + e.getMessage());
+        }
+    }
+
+    private static GlobeLevelTileIdentity.TexCoordRange getTexCoordRange(List<TileInstance.TriangleStripVertex> vertices) {
+        if (vertices == null || vertices.isEmpty()) {
+            return null;
+        }
+        boolean hasAny = false;
+        double minU = Double.POSITIVE_INFINITY;
+        double maxU = Double.NEGATIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        double maxV = Double.NEGATIVE_INFINITY;
+        for (TileInstance.TriangleStripVertex vertex : vertices) {
+            if (vertex == null || !Double.isFinite(vertex.u()) || !Double.isFinite(vertex.v())) {
+                continue;
+            }
+            hasAny = true;
+            minU = Math.min(minU, vertex.u());
+            maxU = Math.max(maxU, vertex.u());
+            minV = Math.min(minV, vertex.v());
+            maxV = Math.max(maxV, vertex.v());
+        }
+        if (!hasAny) {
+            return null;
+        }
+        return new GlobeLevelTileIdentity.TexCoordRange(clamp01(minU), clamp01(minV), clamp01(maxU), clamp01(maxV));
+    }
+
+    private static int indexFromUnitRange(double value, int size) {
+        if (size <= 0 || !Double.isFinite(value)) {
+            return -1;
+        }
+        int out = (int) Math.floor(clamp01(value) * size);
+        if (out >= size) {
+            return size - 1;
+        }
+        if (out < 0) {
+            return 0;
+        }
+        return out;
+    }
+
+    private static List<Integer> quadtreePathFromMatrixCell(int row, int col, int totalRows, int totalCols) {
+        if (row < 0 || col < 0 || row >= totalRows || col >= totalCols) {
+            return List.of();
+        }
+        List<Integer> path = new ArrayList<>();
+        int localRow = row;
+        int localCol = col;
+        int height = totalRows;
+        int width = totalCols;
+        while (height > 1 || width > 1) {
+            int southRows = (height + 1) / 2;
+            int westCols = (width + 1) / 2;
+            boolean south = localRow < southRows;
+            boolean west = localCol < westCols;
+            if (south && west) {
+                path.add(0);
+            }
+            else if (south) {
+                path.add(1);
+            }
+            else if (!west) {
+                path.add(2);
+            }
+            else {
+                path.add(3);
+            }
+            if (!south) {
+                localRow -= southRows;
+                height -= southRows;
+            }
+            else {
+                height = southRows;
+            }
+            if (!west) {
+                localCol -= westCols;
+                width -= westCols;
+            }
+            else {
+                width = westCols;
+            }
+        }
+        return List.copyOf(path);
+    }
+
+    private static double clamp01(double value) {
+        if (!Double.isFinite(value)) {
+            return 0.0;
+        }
+        if (value < 0.0) {
+            return 0.0;
+        }
+        if (value > 1.0) {
+            return 1.0;
+        }
+        return value;
+    }
+
+    private static String toAbsolutePathString(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Path.of(value).toAbsolutePath().normalize().toString();
+        }
+        catch (RuntimeException ex) {
+            return value;
+        }
+    }
+
+    private static String normalizeScopedTileId(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.trim();
+        if (value.isBlank()) {
+            return null;
+        }
+        int separator = value.indexOf('_');
+        if (separator <= 0 || separator >= value.length() - 1) {
+            return value;
+        }
+        try {
+            int frameId = Integer.parseInt(value.substring(0, separator));
+            int tileId = Integer.parseInt(value.substring(separator + 1));
+            if (frameId < 0 || tileId < 0) {
+                return null;
+            }
+            return String.format("%05d_%d", frameId, tileId);
+        }
+        catch (NumberFormatException ex) {
+            return value;
+        }
     }
 
     private record FramePatchStats(
@@ -330,4 +538,6 @@ public final class GlobeLevelTileSetsProcessor {
         int frameId,
         List<TileGeometrySizeCountRecord> tileTriangleStripsToCountMap
     ) {}
+
+    private record TopLevelTilesRecord(Map<String, GlobeLevelTileIdentity> byStripId) {}
 }
