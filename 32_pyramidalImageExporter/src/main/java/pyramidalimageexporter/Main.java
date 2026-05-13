@@ -2,10 +2,15 @@ package pyramidalimageexporter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.io.MatrixLayerReader;
+import pyramidalimageexporter.io.TopLevelTilesReader;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
+import pyramidalimageexporter.model.TopLevelTiles;
+import pyramidalimageexporter.processing.toplevels.TopLevelsMatricesImporter;
 import pyramidalimageexporter.render.Jogl4PyramidalImageExporterRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
@@ -43,7 +48,16 @@ public class Main {
     private static PyramidalImageExporterModel createModel(Path inputPath) {
         PyramidalImageExporterModel model = new PyramidalImageExporterModel();
         model.setInputFolder(inputPath.toString());
-        List<MatrixLayer> layers = new MatrixLayerReader().readAllFromInput(inputPath);
+        List<MatrixLayer> importedLayers = new MatrixLayerReader().readAllFromInput(inputPath);
+        List<MatrixLayer> layers = new ArrayList<>();
+
+        Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
+        TopLevelTilesReader topLevelTilesReader = new TopLevelTilesReader();
+        TopLevelsMatricesImporter topLevelsImporter = new TopLevelsMatricesImporter();
+        TopLevelTiles topLevelTiles = topLevelTilesReader.read(outputDirectory).orElse(null);
+        layers.addAll(topLevelsImporter.importLayers(topLevelTiles));
+        layers.addAll(importedLayers);
+
         model.setMatrixLayers(layers);
         return model;
     }

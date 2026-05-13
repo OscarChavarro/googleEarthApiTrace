@@ -5,6 +5,7 @@ import java.applet.Applet;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import pyramidalimageexporter.gui.KeyboardInteractionTechniques;
 import pyramidalimageexporter.gui.MouseInteractionTechnique;
@@ -78,12 +79,31 @@ public class InteractiveDebugger extends Applet {
             return;
         }
         closing = true;
-        if (canvas != null) {
-            canvas.destroy();
+        Runnable closeTask = () -> {
+            try {
+                if (canvas != null) {
+                    canvas.setVisible(false);
+                    canvas.removeMouseListener(mouseInteraction);
+                    canvas.removeMouseMotionListener(mouseInteraction);
+                    canvas.removeMouseWheelListener(mouseInteraction);
+                    canvas.removeKeyListener(keyboardInteraction);
+                    canvas.destroy();
+                }
+            }
+            catch (Throwable t) {
+                System.out.println("InteractiveDebugger: error while destroying canvas: " + t.getMessage());
+            }
+            finally {
+                if (frame != null) {
+                    frame.dispose();
+                }
+            }
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            closeTask.run();
         }
-        if (frame != null) {
-            frame.dispose();
+        else {
+            SwingUtilities.invokeLater(closeTask);
         }
-        System.exit(0);
     }
 }
