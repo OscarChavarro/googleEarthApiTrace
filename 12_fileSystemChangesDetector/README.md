@@ -39,3 +39,11 @@ Or use:
 ```
 
 `run.sh` builds and runs the detector without `sudo`.
+
+## Notes for agentic coding agents
+
+- Fully scriptable, no GUI. One positional argument: the directory to watch.
+- Output protocol on stdout: one `Updated at <timestamp>` line per detected file
+  creation/move-in event. Consumers (like `13_googleEarthController`) parse these lines.
+- Control protocol on stdin: writing `exit` terminates the process gracefully.
+- No other command-line options exist.

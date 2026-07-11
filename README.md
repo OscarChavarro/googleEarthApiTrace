@@ -20,7 +20,11 @@ The extraction workflow is split into stages. Each stage has separate codebases,
   - They identify and remove repeated textures and represent texture groups as matrix-like structures for downstream processing.
 - Projects starting with `3` are the **Final Gigapixel Build stage**.
   - Goal: build a quadtree of tiles ("Pyramidal Image") from normalized data.
-  - Status: **not implemented yet** in this repository.
+  - Status: **in progress**. `31_matrixMerger` merges per-frame matrices into consolidated
+    layer matrices and exports them; `32_pyramidalImageExporter` imports those layers plus
+    the global top-level tile data. Images whose extent matches a fully covered quad work
+    well; synthesizing the topmost pyramid levels (which no single quad covers) is still
+    pending.
 
 ## Projects
 
@@ -31,7 +35,8 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 - [13_googleEarthController/README.md](13_googleEarthController/README.md): Automates Google Earth session progression based on detector inactivity.
 - [22_dumpAnalyzer/README.md](22_dumpAnalyzer/README.md): Parses per-frame GL logs (`gl.txt`) and counts/analyses OpenGL calls with ANTLR-based processing.
 - [23_frameTextureNormalizer/README.md](23_frameTextureNormalizer/README.md): Consumes frame-level artifacts and performs normalization-oriented preprocessing for later composition workflows.
-- [31_matrixMerger/README.md](31_matrixMerger/README.md): Loads per-frame tile matrices, visualizes one matrix at a time, and supports interactive/global matrix merging workflows.
+- [31_matrixMerger/README.md](31_matrixMerger/README.md): Loads per-frame tile matrices, visualizes one matrix at a time, supports interactive/automatic matrix merging and west-cutter splitting, and exports consolidated layer matrices.
+- [32_pyramidalImageExporter/README.md](32_pyramidalImageExporter/README.md): Imports consolidated layer matrices from `31_matrixMerger` plus global top-level tile data from `22_dumpAnalyzer`, and visualizes the quadtree layers of the future pyramidal image.
 
 ## Notes
 

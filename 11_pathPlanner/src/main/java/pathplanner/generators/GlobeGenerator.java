@@ -12,26 +12,27 @@ public final class GlobeGenerator implements CurveGenerator {
     private static final double MAX_LAT_DEG = 85.05112878;
     private static final double POLAR_MARGIN_MULTIPLIER = 2.0;
     private static final double RETURN_MARGIN_MULTIPLIER = 4.0;
-    private static final double EQUATOR_ALTITUDE_MULTIPLIER = 2.0;
+    private static final double EQUATOR_ALTITUDE_MULTIPLIER = 4;
     private static final double POLE_ALTITUDE_MULTIPLIER = 1.0;
+    private static final double EQUATOR_EXTRA_WIDTH_FRACTION = 3.0 / 32.0;
 
     @Override
     public List<Point> buildTurtleCurve(double startLat, double startLon, double stepMeters, double maxDistanceFromStartMeters) {
         List<Point> points = new ArrayList<>();
         double polarMargin = stepMeters * POLAR_MARGIN_MULTIPLIER;
         double returnMargin = stepMeters * RETURN_MARGIN_MULTIPLIER;
-        double minX = returnMargin;
-        double maxX = WORLD_SPAN_METERS - returnMargin;
-
-        if (minX >= maxX) {
-            return points;
-        }
 
         double northLatDeg = mercatorYToLatDeg(polarMargin);
         double southLatDeg = mercatorYToLatDeg(WORLD_SPAN_METERS - polarMargin);
         double rowLatDeg = northLatDeg;
         boolean leftToRight = true;
         for (int row = 0; row < 200000; row++) {
+            double rowHalfExtraWidth = extraHalfWidthForLatitude(rowLatDeg);
+            double minX = Math.max(0.0, returnMargin - rowHalfExtraWidth);
+            double maxX = Math.min(WORLD_SPAN_METERS, WORLD_SPAN_METERS - returnMargin + rowHalfExtraWidth);
+            if (minX >= maxX) {
+                break;
+            }
             double startLonDeg = mercatorXToLonDeg(leftToRight ? minX : maxX);
             double endLonDeg = mercatorXToLonDeg(leftToRight ? maxX : minX);
             double altitudeMeters = altitudeForLatitude(rowLatDeg, stepMeters);
@@ -54,11 +55,17 @@ public final class GlobeGenerator implements CurveGenerator {
     }
 
     private double altitudeForLatitude(double latDeg, double baseAltitudeMeters) {
-        double latitudeFactor = Math.abs(Math.sin(Math.toRadians(latDeg)));
+        double latitudeFactor = Math.pow(Math.abs(Math.sin(Math.toRadians(latDeg))), 0.4);
         double altitudeMultiplier =
                 EQUATOR_ALTITUDE_MULTIPLIER
                         - (EQUATOR_ALTITUDE_MULTIPLIER - POLE_ALTITUDE_MULTIPLIER) * latitudeFactor;
         return baseAltitudeMeters * altitudeMultiplier;
+    }
+
+    private double extraHalfWidthForLatitude(double latDeg) {
+        double latitudeFactor = Math.pow(Math.abs(Math.sin(Math.toRadians(latDeg))), 0.5);
+        double equatorWeight = 1.0 - latitudeFactor;
+        return WORLD_SPAN_METERS * EQUATOR_EXTRA_WIDTH_FRACTION * equatorWeight * 0.5;
     }
 
     private void appendParallel(

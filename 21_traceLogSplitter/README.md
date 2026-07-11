@@ -14,11 +14,19 @@ apitrace dump googleearth-bin.trace > textfile.txt
 - Splits the stream into per-frame files under `./output/%05d/gl.txt`.
 - Uses `glXSwapBuffers` as the frame boundary trigger.
 
-## Extra helper tool
+## Build and run
 
-The project also includes a line-analysis utility that reports:
+```bash
+cmake -S . -B build
+cmake --build build -j
+./build/traceLogSplitter <input_file>
+```
 
-- Total line count
-- Maximum line length
+## Notes for agentic coding agents
 
-This is useful for sizing buffers and validating very large trace logs.
+- Pure command-line batch tool, no GUI. Single positional argument: the input trace
+  text file.
+- Output goes to `./output/` relative to the current working directory (created if
+  missing), one numbered folder per frame.
+- On success it prints the number of files created and total lines processed, and
+  exits with code `0`; any I/O error exits with code `1`.

@@ -1,17 +1,34 @@
 # dumpAnalyzer
 
-`dumpAnalyzer` is a Java 17 + Gradle tool that scans OpenGL trace dumps under `/media/ramdisk/output` and counts OpenGL function calls found in each `gl.txt` file.
+`dumpAnalyzer` is a Java 17 + Gradle tool that scans OpenGL trace dumps under the configured
+output directory and rebuilds per-frame tile models (geometry, textures, neighborhood
+relationships) for the rest of the pipeline.
+
+The input/output directory is read from `output.directory` in
+[src/main/resources/application.properties](src/main/resources/application.properties)
+(default: `/media/ramdisk/output`).
 
 ## What It Does
 
-- Scans `/media/ramdisk/output` for frame folders named as numbers (for example `00413`).
+- Scans the output directory for frame folders named as numbers (for example `00413`).
 - For each frame folder containing `gl.txt`, calls frame processing with:
   - `frame`: numeric value from the folder name (for example `413`)
   - `filename`: absolute path to the file (for example `/media/ramdisk/output/00413/gl.txt`)
 - Normalizes multiline logical calls (for example long `glShaderSource` payloads split across multiple physical lines).
 - Parses content with ANTLR grammar (`GlTrace.g4`) tailored to the current trace format.
-- Collects a global map: `OpenGL function name -> total call count` across all frames.
-- Prints the final sorted function-count map.
+- Computes per-frame tile sets, axis-aligned bounding boxes, and tile neighborhood
+  relationships (including "uncle" relationships between quadtree levels), exporting the
+  result as `frame.json` inside each frame folder.
+- Processes globe-level tile sets covering quadtree levels 0-5 and writes a global
+  `topLevelTiles.json` file at the root of the output directory (consumed later by
+  `32_pyramidalImageExporter`).
+
+In the following image:
+- Triangle fans making up the geometry of the 3D scene are shown with white line borders.
+- Image pairs frame_id are show in yellow
+- Arrows shows detected neighbor relationships in the level with most samples
+
+![Analysis](doc/neighborRelations.png)
 
 ## Error Behavior
 
@@ -22,11 +39,14 @@ Parsing/lexing failures are treated as fatal:
 
 ## Project Layout
 
-- `src/java/Main.java`: application entry point and orchestration.
-- `src/java/FrameScanner.java`: scans frame folders and locates `gl.txt` files.
-- `src/java/GlTraceProcessor.java`: per-frame processing and ANTLR parse execution.
-- `src/java/LogicalLineNormalizer.java`: converts physical lines to logical lines.
-- `src/java/FunctionCounter.java`: global function token counting.
+- `src/main/java/dumpanalyzer/Main.java`: application entry point and orchestration.
+- `src/main/java/dumpanalyzer/io/`: frame scanning (`FrameScanner`), trace parsing helpers
+  (`parser/`), traced model import (`TracedModelReader`) and `frame.json` writing (`FrameWriter`).
+- `src/main/java/dumpanalyzer/processing/`: neighborhood detection, tile classification,
+  uncle relationships (`uncles/`) and globe-level tile sets (`bigtiles/`).
+- `src/main/java/dumpanalyzer/model/`: frames, tiles and visualization state.
+- `src/main/java/dumpanalyzer/render/`: JOGL renderers and HUD.
+- `src/main/java/dumpanalyzer/gui/`: keyboard and mouse interaction.
 - `src/main/java/dumpanalyzer/logger/FatalErrorHandler.java`: fatal error reporting and exit.
 - `src/main/antlr/GlTrace.g4`: ANTLR grammar for trace lines.
 
@@ -34,24 +54,7 @@ Parsing/lexing failures are treated as fatal:
 
 - Java 17
 - Gradle
-
-## Build
-
-From the `dumpAnalyzer` directory:
-
-```bash
-gradle build
-```
-
-## Run
-
-From the `dumpAnalyzer` directory:
-
-```bash
-gradle run
-```
-
-The application always processes `/media/ramdisk/output` in the current implementation.
+- Vitral artifacts available
 
 ## Execution Modes
 
@@ -65,27 +68,56 @@ Helper scripts:
 - `./run.sh` runs the interactive mode (`gradle run`).
 - `./runOffline.sh` runs offline mode and exports frame `00003` to `output/frame0003.png`.
 
-Besides visual debugging of the neighborhood calculation, neighbor values are also exported into per-frame files under the input directory tree `/media/ramdisk/output/<frame>/`.
-Note: the current file format is `frame.json`.
+## Interactive usage guide
+
+Program-specific keys (generic camera handling comes from Vitral and is not listed here):
+
+| Key | Action |
+|---|---|
+| `1` / `2` | Select previous / next frame |
+| `3` / `4` | Select previous / next tile (cycles through `ALL` and individual tiles) |
+| `c` | Toggle active camera: traced Google Earth camera vs. free orbiter camera |
+| `t` | Toggle textured rendering |
+| `T` | Toggle the on-screen texture preview for the selected tile |
+| `ESC` | Exit |
+
+The HUD shows the selected frame (`Frame [1, 2]`), tile count, selected tile
+(`Selected tile [3, 4]`), and for a single selected tile its geometry summary and texture id.
 
 ## Command-Line Options
 
-`dumpAnalyzer` supports these runtime options:
-
 - `--offline`: render a single frame to an image and exit (no interactive window).
-- `--start-frame <id>`: lowest frame id to load from `/media/ramdisk/output` (inclusive), and initial selected frame.
-- `--end-frame <id>`: highest frame id to load from `/media/ramdisk/output` (inclusive).
-- `--width <px>`: viewport/output width.
-- `--height <px>`: viewport/output height.
+- `--start-frame <id>`: lowest frame id to load (inclusive), and initial selected frame.
+- `--end-frame <id>`: highest frame id to load (inclusive).
+- `--width <px>`: viewport/output width (default 1280).
+- `--height <px>`: viewport/output height (default 720).
 - `--output <path>`: output image path used in offline mode.
+- `--tile-content-id <id>`: in offline mode, select a tile by content id and enable
+  bounding-volume + wireframe display for it.
 
 ### Example: load only first 500 frames
 
-If `/media/ramdisk/output` has 9634 frames and you want faster test cycles:
+If the output directory has 9634 frames and you want faster test cycles:
 
 ```bash
 gradle run --args="--end-frame 500"
 ```
+
+## Notes for agentic coding agents
+
+- The full processing pipeline (parsing, neighborhood detection, `frame.json` export,
+  `topLevelTiles.json` export) runs in **both** modes before any window opens, so batch
+  reprocessing can be driven headlessly with `--offline`.
+- Offline mode acts as a remote-controllable renderer: combine `--offline`,
+  `--start-frame <id>` (frame to render), `--width`, `--height` and `--output <path>`
+  to produce a PNG snapshot of any frame without user interaction, e.g.:
+
+  ```bash
+  gradle run --args="--offline --start-frame 3 --output output/frame0003.png"
+  ```
+
+- If no graphics system is available, offline image export prints a warning instead of
+  failing, but the data-processing side effects still happen.
 
 # Recognized OpenGL API calls
 
