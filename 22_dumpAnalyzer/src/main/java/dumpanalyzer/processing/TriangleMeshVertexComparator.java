@@ -2,8 +2,8 @@ package dumpanalyzer.processing;
 
 import dumpanalyzer.model.TileInstance;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class TriangleMeshVertexComparator {
     public static final double VERTEX_EPSILON = 1e-4;
@@ -22,7 +22,7 @@ public final class TriangleMeshVertexComparator {
     public ComparisonResult compare(
         TileInstance a,
         TileInstance b,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         int viewportWidth,
         int viewportHeight,
         double[] frameModelView,
@@ -69,14 +69,14 @@ public final class TriangleMeshVertexComparator {
         TileInstance b,
         Direction dirB
     ) {
-        List<Vector3D> borderA = TOPOLOGY_MAPPER.directionBorderPoints(a, toProcessingDirection(dirA));
-        List<Vector3D> borderB = TOPOLOGY_MAPPER.directionBorderPoints(b, toProcessingDirection(dirB));
+        List<Vector3Dd> borderA = TOPOLOGY_MAPPER.directionBorderPoints(a, toProcessingDirection(dirA));
+        List<Vector3Dd> borderB = TOPOLOGY_MAPPER.directionBorderPoints(b, toProcessingDirection(dirB));
         if (borderA.isEmpty() || borderB.isEmpty() || borderA.size() != borderB.size()) {
             return false;
         }
         for (int i = 0; i < borderA.size(); i++) {
-            Vector3D va = borderA.get(i);
-            Vector3D vb = borderB.get(i);
+            Vector3Dd va = borderA.get(i);
+            Vector3Dd vb = borderB.get(i);
             if (Math.abs(va.x() - vb.x()) > VERTEX_EPSILON
                 || Math.abs(va.y() - vb.y()) > VERTEX_EPSILON
                 || Math.abs(va.z() - vb.z()) > VERTEX_EPSILON) {

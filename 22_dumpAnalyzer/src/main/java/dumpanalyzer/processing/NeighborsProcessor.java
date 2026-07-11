@@ -7,7 +7,7 @@ import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.uncles.UncleDetector;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.feedback.ProgressMonitor;
 import vsdk.toolkit.gui.feedback.ProgressMonitorConsoleLongFormat;
 
@@ -56,9 +56,9 @@ public final class NeighborsProcessor {
                     frames.set(i, frame);
                     model.replaceFrame(frame);
                 }
-                Matrix4x4 projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
+                Matrix4x4d projection = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
                 if (projection == null) {
-                    projection = Matrix4x4.identityMatrix();
+                    projection = Matrix4x4d.identityMatrix();
                 }
                 double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
                 TriangleStripNeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
@@ -86,11 +86,11 @@ public final class NeighborsProcessor {
         void run(int index);
     }
 
-    private static Matrix4x4 matrixFromColumnMajor(double[] m) {
+    private static Matrix4x4d matrixFromColumnMajor(double[] m) {
         if (m == null || m.length != 16) {
             return null;
         }
-        Matrix4x4 out = new Matrix4x4();
+        Matrix4x4d out = new Matrix4x4d();
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {
                 out = out.withVal(row, col, m[col * 4 + row]);

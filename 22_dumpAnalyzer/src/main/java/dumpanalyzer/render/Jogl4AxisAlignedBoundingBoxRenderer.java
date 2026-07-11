@@ -10,8 +10,8 @@ import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
 public final class Jogl4AxisAlignedBoundingBoxRenderer {
@@ -19,7 +19,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         GL2 gl2,
         Frame frameData,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera
     ) {
@@ -30,7 +30,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
     public List<Jogl4HudRenderer.ScreenLabel> buildLabelsForSelection(
         Frame frameData,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -111,8 +111,8 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         gl2.glColor3d(c.getRed() / 255.0, c.getGreen() / 255.0, c.getBlue() / 255.0);
         gl2.glLineWidth(2.0f);
 
-        Vector3D min = aabb.getMin();
-        Vector3D max = aabb.getMax();
+        Vector3Dd min = aabb.getMin();
+        Vector3Dd max = aabb.getMax();
         double x0 = min.x();
         double y0 = min.y();
         double z0 = min.z();
@@ -144,7 +144,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         List<Jogl4HudRenderer.ScreenLabel> labels,
         AxisAlignedBoundingBox aabb,
         Frame frameData,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -157,7 +157,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         List<Jogl4HudRenderer.ScreenLabel> labels,
         AxisAlignedBoundingBox aabb,
         Frame frameData,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -167,7 +167,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         if (aabb == null || aabb.getMin() == null || aabb.getMax() == null) {
             return;
         }
-        Vector3D center = new Vector3D(
+        Vector3Dd center = new Vector3Dd(
             (aabb.getMin().x() + aabb.getMax().x()) * 0.5,
             (aabb.getMin().y() + aabb.getMax().y()) * 0.5,
             (aabb.getMin().z() + aabb.getMax().z()) * 0.5
@@ -213,9 +213,9 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
     }
 
     private static int[] projectToViewportPixel(
-        Vector3D p,
+        Vector3Dd p,
         double[] modelView,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         int viewportWidth,
         int viewportHeight
     ) {

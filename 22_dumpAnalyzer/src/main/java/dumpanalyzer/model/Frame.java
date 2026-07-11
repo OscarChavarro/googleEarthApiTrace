@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
 public final class Frame implements Comparable<Frame> {
@@ -177,10 +177,10 @@ public final class Frame implements Comparable<Frame> {
 
         private CameraJsonView(Camera camera) {
             camera.updateVectors();
-            Vector3D p = camera.getPosition();
-            Vector3D f = camera.getFront();
-            Vector3D l = camera.getLeft();
-            Vector3D u = camera.getUp();
+            Vector3Dd p = camera.getPosition();
+            Vector3Dd f = camera.getFront();
+            Vector3Dd l = camera.getLeft();
+            Vector3Dd u = camera.getUp();
             this.positionX = p.x();
             this.positionY = p.y();
             this.positionZ = p.z();

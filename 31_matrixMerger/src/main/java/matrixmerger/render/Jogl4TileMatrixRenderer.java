@@ -12,7 +12,7 @@ import java.util.Map;
 import matrixmerger.config.Configuration;
 import matrixmerger.io.TileMatrix;
 import matrixmerger.model.MatrixMergerModel;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class Jogl4TileMatrixRenderer {
@@ -241,7 +241,7 @@ public final class Jogl4TileMatrixRenderer {
     }
 
     private boolean isNearEnoughForTexture(MatrixMergerModel model, float x0, float yTop, float x1, float yBottom) {
-        Vector3D eye = model.getViewingCamera().getPosition();
+        Vector3Dd eye = model.getViewingCamera().getPosition();
         double cx = (x0 + x1) * 0.5;
         double cy = (yTop + yBottom) * 0.5;
         double dx = eye.x() - cx;

@@ -15,7 +15,7 @@ import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class Jogl4TileMatrixRenderer {
@@ -31,7 +31,7 @@ public final class Jogl4TileMatrixRenderer {
         GL2 gl2,
         List<TileInstance> tiles,
         List<Line> lines,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         double[] defaultModelViewMatrix,
         RendererConfiguration renderingConfiguration,
         FrameTextureNormalizerModel model,
@@ -331,7 +331,7 @@ public final class Jogl4TileMatrixRenderer {
     private static void drawExtractedLines(
         GL2 gl2,
         List<Line> lines,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         double[] defaultModelViewMatrix
     ) {
         if (gl2 == null || lines == null || lines.isEmpty()) {

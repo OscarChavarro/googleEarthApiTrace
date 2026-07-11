@@ -1,14 +1,14 @@
 package dumpanalyzer.model;
 
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class GlobeLevelTileSet {
     private final String contentId;
-    private final Vector3D center;
-    private final Vector3D northBorderCenter;
-    private final Vector3D southBorderCenter;
-    private final Vector3D eastBorderCenter;
-    private final Vector3D westBorderCenter;
+    private final Vector3Dd center;
+    private final Vector3Dd northBorderCenter;
+    private final Vector3Dd southBorderCenter;
+    private final Vector3Dd eastBorderCenter;
+    private final Vector3Dd westBorderCenter;
     private final int triangleStripCount;
     private final boolean drawSourceTile;
     private volatile String detectedNorthNeighborContentId;
@@ -18,20 +18,20 @@ public final class GlobeLevelTileSet {
 
     public GlobeLevelTileSet(
         String contentId,
-        Vector3D center,
-        Vector3D northBorderCenter,
-        Vector3D southBorderCenter,
-        Vector3D eastBorderCenter,
-        Vector3D westBorderCenter,
+        Vector3Dd center,
+        Vector3Dd northBorderCenter,
+        Vector3Dd southBorderCenter,
+        Vector3Dd eastBorderCenter,
+        Vector3Dd westBorderCenter,
         int triangleStripCount,
         boolean drawSourceTile
     ) {
         this.contentId = contentId;
-        this.center = center == null ? null : Vector3D.copyOf(center);
-        this.northBorderCenter = northBorderCenter == null ? null : Vector3D.copyOf(northBorderCenter);
-        this.southBorderCenter = southBorderCenter == null ? null : Vector3D.copyOf(southBorderCenter);
-        this.eastBorderCenter = eastBorderCenter == null ? null : Vector3D.copyOf(eastBorderCenter);
-        this.westBorderCenter = westBorderCenter == null ? null : Vector3D.copyOf(westBorderCenter);
+        this.center = center == null ? null : Vector3Dd.copyOf(center);
+        this.northBorderCenter = northBorderCenter == null ? null : Vector3Dd.copyOf(northBorderCenter);
+        this.southBorderCenter = southBorderCenter == null ? null : Vector3Dd.copyOf(southBorderCenter);
+        this.eastBorderCenter = eastBorderCenter == null ? null : Vector3Dd.copyOf(eastBorderCenter);
+        this.westBorderCenter = westBorderCenter == null ? null : Vector3Dd.copyOf(westBorderCenter);
         this.triangleStripCount = triangleStripCount;
         this.drawSourceTile = drawSourceTile;
     }
@@ -40,24 +40,24 @@ public final class GlobeLevelTileSet {
         return contentId;
     }
 
-    public Vector3D getCenter() {
-        return center == null ? null : Vector3D.copyOf(center);
+    public Vector3Dd getCenter() {
+        return center == null ? null : Vector3Dd.copyOf(center);
     }
 
-    public Vector3D getNorthBorderCenter() {
-        return northBorderCenter == null ? null : Vector3D.copyOf(northBorderCenter);
+    public Vector3Dd getNorthBorderCenter() {
+        return northBorderCenter == null ? null : Vector3Dd.copyOf(northBorderCenter);
     }
 
-    public Vector3D getSouthBorderCenter() {
-        return southBorderCenter == null ? null : Vector3D.copyOf(southBorderCenter);
+    public Vector3Dd getSouthBorderCenter() {
+        return southBorderCenter == null ? null : Vector3Dd.copyOf(southBorderCenter);
     }
 
-    public Vector3D getEastBorderCenter() {
-        return eastBorderCenter == null ? null : Vector3D.copyOf(eastBorderCenter);
+    public Vector3Dd getEastBorderCenter() {
+        return eastBorderCenter == null ? null : Vector3Dd.copyOf(eastBorderCenter);
     }
 
-    public Vector3D getWestBorderCenter() {
-        return westBorderCenter == null ? null : Vector3D.copyOf(westBorderCenter);
+    public Vector3Dd getWestBorderCenter() {
+        return westBorderCenter == null ? null : Vector3Dd.copyOf(westBorderCenter);
     }
 
     public int getTriangleStripCount() {

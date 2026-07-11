@@ -5,8 +5,8 @@ import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
 public final class Jogl4NeighborRelationshipRenderer {
@@ -14,7 +14,7 @@ public final class Jogl4NeighborRelationshipRenderer {
         GL2 gl2,
         Frame frameData,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -77,7 +77,7 @@ public final class Jogl4NeighborRelationshipRenderer {
         List<TileInstance> tiles,
         Frame frameData,
         int sourceTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -101,7 +101,7 @@ public final class Jogl4NeighborRelationshipRenderer {
         int[] sourcePixel,
         int targetTileIndex,
         int sourceIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -204,7 +204,7 @@ public final class Jogl4NeighborRelationshipRenderer {
     private static int[] centerOfTile(
         TileInstance tile,
         Frame frameData,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         Camera viewingCamera,
         int viewportWidth,
@@ -213,7 +213,7 @@ public final class Jogl4NeighborRelationshipRenderer {
         if (tile == null || tile.getMin() == null || tile.getMax() == null) {
             return null;
         }
-        Vector3D center = new Vector3D(
+        Vector3Dd center = new Vector3Dd(
             (tile.getMin().x() + tile.getMax().x()) * 0.5,
             (tile.getMin().y() + tile.getMax().y()) * 0.5,
             (tile.getMin().z() + tile.getMax().z()) * 0.5
@@ -226,9 +226,9 @@ public final class Jogl4NeighborRelationshipRenderer {
     }
 
     private static int[] projectToViewportPixel(
-        Vector3D p,
+        Vector3Dd p,
         double[] modelView,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         int viewportWidth,
         int viewportHeight
     ) {

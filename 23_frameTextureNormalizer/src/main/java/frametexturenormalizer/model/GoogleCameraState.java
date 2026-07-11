@@ -1,8 +1,8 @@
 package frametexturenormalizer.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
 public final class GoogleCameraState {
@@ -120,15 +120,15 @@ public final class GoogleCameraState {
         }
         camera.setProjectionMode(projectionMode);
         camera.setOrthogonalZoom(orthogonalZoom);
-        camera.setPosition(new Vector3D(positionX, positionY, positionZ));
-        Matrix4x4 rotation = fromArray16(rotationMatrix);
+        camera.setPosition(new Vector3Dd(positionX, positionY, positionZ));
+        Matrix4x4d rotation = fromArray16(rotationMatrix);
         if (rotation != null) {
             camera.setRotation(rotation);
         }
         else {
-            camera.setUpDirect(new Vector3D(upX, upY, upZ));
-            camera.setLeftDirect(new Vector3D(leftX, leftY, leftZ));
-            camera.setFocusedPositionDirect(new Vector3D(
+            camera.setUpDirect(new Vector3Dd(upX, upY, upZ));
+            camera.setLeftDirect(new Vector3Dd(leftX, leftY, leftZ));
+            camera.setFocusedPositionDirect(new Vector3Dd(
                 positionX + frontX,
                 positionY + frontY,
                 positionZ + frontZ
@@ -153,11 +153,11 @@ public final class GoogleCameraState {
         return out;
     }
 
-    private static Matrix4x4 fromArray16(double[] values) {
+    private static Matrix4x4d fromArray16(double[] values) {
         if (values == null || values.length != 16) {
             return null;
         }
-        Matrix4x4 matrix = new Matrix4x4();
+        Matrix4x4d matrix = new Matrix4x4d();
         int idx = 0;
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {

@@ -31,7 +31,7 @@ import dumpanalyzer.processing.TriangleStripTileTopology;
 import dumpanalyzer.processing.bigtiles.GlobeLevelTileSetsProcessor;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.io.image.ImagePersistence;
@@ -40,7 +40,7 @@ import vsdk.toolkit.render.jogl.Jogl4CameraRenderer;
 import vsdk.toolkit.render.jogl.Jogl4MatrixRenderer;
 import vsdk.toolkit.render.jogl.Jogl4MinMaxRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public class Jogl4DumpAnalyzerRenderer implements
     GLEventListener {
@@ -59,8 +59,8 @@ public class Jogl4DumpAnalyzerRenderer implements
     private String offlineOutputPath;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
-    private static final Vector3D DEFAULT_FRONT = new Vector3D(0.0, 0.0, -1.0);
-    private static final Vector3D WORLD_ORIGIN = new Vector3D(0.0, 0.0, 0.0);
+    private static final Vector3Dd DEFAULT_FRONT = new Vector3Dd(0.0, 0.0, -1.0);
+    private static final Vector3Dd WORLD_ORIGIN = new Vector3Dd(0.0, 0.0, 0.0);
     private static final double MAX_ABS_COORD = 1.0e6;
     private static final double MIN_DIAGONAL = 1.0e-6;
     private static final double MAX_DIAGONAL = 1.0e6;
@@ -155,7 +155,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         gl.glClearColor(0, 0, 0, 1);
         gl.glClear(GL4.GL_COLOR_BUFFER_BIT | GL4.GL_DEPTH_BUFFER_BIT);
         Camera activeCamera = model.getActiveCamera();
-        Matrix4x4 projection = projectionForCurrentState(state, frames, activeCamera, model.isUsingGoogleCameraAsView());
+        Matrix4x4d projection = projectionForCurrentState(state, frames, activeCamera, model.isUsingGoogleCameraAsView());
         drawObjectsGL(gl, projection, model.isUsingGoogleCameraAsView());
         List<Jogl4HudRenderer.ScreenLabel> hudLabels = new ArrayList<>();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
@@ -245,23 +245,23 @@ public class Jogl4DumpAnalyzerRenderer implements
             return;
         }
         TileInstance tile = selectableTiles.get(tileIndex);
-        Vector3D[] transformed = CoordinatesTransforms.transformAabb(
+        Vector3Dd[] transformed = CoordinatesTransforms.transformAabb(
             tile.getMin(), tile.getMax(), frameData.getModelViewMatrix()
         );
         if (!isValidAndConsistentAabb(transformed[0], transformed[1], frameStats)) {
             return;
         }
 
-        Vector3D min = transformed[0];
-        Vector3D max = transformed[1];
+        Vector3Dd min = transformed[0];
+        Vector3Dd max = transformed[1];
         double dx = max.x() - min.x();
         double dy = max.y() - min.y();
         double dz = max.z() - min.z();
         double diagonal = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double distance = Math.max(1e-6, 1.5 * diagonal);
 
-        Vector3D front = safeFront();
-        Vector3D newPosition = WORLD_ORIGIN.subtract(front.multiply(distance));
+        Vector3Dd front = safeFront();
+        Vector3Dd newPosition = WORLD_ORIGIN.subtract(front.multiply(distance));
         if (!isFiniteVector(newPosition) || !isFinite(distance)) {
             return;
         }
@@ -271,13 +271,13 @@ public class Jogl4DumpAnalyzerRenderer implements
         setSafePlanes(distance);
     }
 
-    private void drawObjectsGL(GL4 gl, Matrix4x4 projection, boolean useGoogleCameraView) {
-        Matrix4x4 helperProjection = projection;
+    private void drawObjectsGL(GL4 gl, Matrix4x4d projection, boolean useGoogleCameraView) {
+        Matrix4x4d helperProjection = projection;
         if (!useGoogleCameraView) {
-            Matrix4x4 view = viewingCamera.calculateTransformationMatrix();
+            Matrix4x4d view = viewingCamera.calculateTransformationMatrix();
             helperProjection = projection.multiply(view);
         }
-        Jogl4MatrixRenderer.draw(gl, helperProjection, Matrix4x4.identityMatrix());
+        Jogl4MatrixRenderer.draw(gl, helperProjection, Matrix4x4d.identityMatrix());
         Camera googleCamera = model.getGoogleCamera();
         if (googleCamera != null) {
             Jogl4CameraRenderer.draw(gl, googleCamera, helperProjection);
@@ -289,7 +289,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         GL2 gl2,
         Frame frameData,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView
     ) {
         if (!model.getRendererConfiguration().isTextureSet()) {
@@ -345,7 +345,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         Frame frameData,
         int tileIndex,
         TileInstance tile,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean drawAabb,
         boolean singleTileMode,
         boolean useGoogleCameraView
@@ -374,7 +374,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private void drawExtractedLinesForFrame(
         GL2 gl2,
         Frame frameData,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView
     ) {
         double[] combinedModelView = CoordinatesTransforms.geometryModelView(
@@ -386,7 +386,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private List<Jogl4HudRenderer.ScreenLabel> buildAabbLabelsForHud(
         Frame frameData,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         int viewportWidth,
         int viewportHeight
@@ -407,7 +407,7 @@ public class Jogl4DumpAnalyzerRenderer implements
 
     private List<Jogl4HudRenderer.ScreenLabel> buildSpecialTriangleStripLabelsForHud(
         Frame frameData,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         int viewportWidth,
         int viewportHeight
@@ -441,7 +441,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             }
 
             for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
-                Vector3D center = centerOfTriangleStrip(geometries.get(stripIndex));
+                Vector3Dd center = centerOfTriangleStrip(geometries.get(stripIndex));
                 if (center == null) {
                     continue;
                 }
@@ -470,7 +470,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private List<Jogl4HudRenderer.ScreenLabel> buildSelectedTileVertexLabelsForHud(
         Frame frameData,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         boolean useGoogleCameraView,
         int viewportWidth,
         int viewportHeight
@@ -510,7 +510,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         for (int i = 0; i < vertices.size(); i++) {
             TileInstance.TriangleStripVertex v = vertices.get(i);
             int[] pixel = projectToViewportPixel(
-                new Vector3D(v.x(), v.y(), v.z()),
+                new Vector3Dd(v.x(), v.y(), v.z()),
                 modelView,
                 projection,
                 viewportWidth,
@@ -559,7 +559,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         return null;
     }
 
-    private static Vector3D centerOfTriangleStrip(TileInstance.TriangleStripGeometry geometry) {
+    private static Vector3Dd centerOfTriangleStrip(TileInstance.TriangleStripGeometry geometry) {
         if (geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
             return null;
         }
@@ -580,7 +580,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             return null;
         }
         double inv = 1.0 / count;
-        return new Vector3D(sx * inv, sy * inv, sz * inv);
+        return new Vector3Dd(sx * inv, sy * inv, sz * inv);
     }
 
     private static boolean isGroupedGlobeLevelTile(TileInstance tile) {
@@ -593,9 +593,9 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private static int[] projectToViewportPixel(
-        Vector3D p,
+        Vector3Dd p,
         double[] modelView,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         int viewportWidth,
         int viewportHeight
     ) {
@@ -630,14 +630,14 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private void recenterCameraToAllTiles(Frame frameData, AabbStats frameStats) {
-        Vector3D min = null;
-        Vector3D max = null;
+        Vector3Dd min = null;
+        Vector3Dd max = null;
         for (TileInstance tile : frameData.getSelectableTiles()) {
-            Vector3D[] transformed = CoordinatesTransforms.transformAabb(
+            Vector3Dd[] transformed = CoordinatesTransforms.transformAabb(
                 tile.getMin(), tile.getMax(), frameData.getModelViewMatrix()
             );
-            Vector3D tileMin = transformed[0];
-            Vector3D tileMax = transformed[1];
+            Vector3Dd tileMin = transformed[0];
+            Vector3Dd tileMax = transformed[1];
             if (!isValidAndConsistentAabb(tileMin, tileMax, frameStats)) {
                 continue;
             }
@@ -646,12 +646,12 @@ public class Jogl4DumpAnalyzerRenderer implements
                 max = tileMax;
                 continue;
             }
-            min = new Vector3D(
+            min = new Vector3Dd(
                 Math.min(min.x(), tileMin.x()),
                 Math.min(min.y(), tileMin.y()),
                 Math.min(min.z(), tileMin.z())
             );
-            max = new Vector3D(
+            max = new Vector3Dd(
                 Math.max(max.x(), tileMax.x()),
                 Math.max(max.y(), tileMax.y()),
                 Math.max(max.z(), tileMax.z())
@@ -666,8 +666,8 @@ public class Jogl4DumpAnalyzerRenderer implements
         double diagonal = Math.sqrt(dx * dx + dy * dy + dz * dz);
         double distance = Math.max(1e-6, 1.5 * diagonal);
 
-        Vector3D front = safeFront();
-        Vector3D newPosition = WORLD_ORIGIN.subtract(front.multiply(distance));
+        Vector3Dd front = safeFront();
+        Vector3Dd newPosition = WORLD_ORIGIN.subtract(front.multiply(distance));
         if (!isFiniteVector(newPosition) || !isFinite(distance)) {
             return;
         }
@@ -677,7 +677,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         setSafePlanes(distance);
     }
 
-    private Matrix4x4 projectionForCurrentState(
+    private Matrix4x4d projectionForCurrentState(
         DumpAnalyzerModel.HudState state,
         List<Frame> frames,
         Camera activeCamera,
@@ -686,7 +686,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (useGoogleCameraView) {
             int frameIndex = state.selectedFrameIndex();
             if (frameIndex >= 0 && frameIndex < frames.size()) {
-                Matrix4x4 fromFrame = matrixFromColumnMajor(frames.get(frameIndex).getProjectionMatrix());
+                Matrix4x4d fromFrame = matrixFromColumnMajor(frames.get(frameIndex).getProjectionMatrix());
                 if (fromFrame != null) {
                     return fromFrame;
                 }
@@ -696,11 +696,11 @@ public class Jogl4DumpAnalyzerRenderer implements
         return activeCamera.calculateViewVolumeMatrix();
     }
 
-    private Matrix4x4 matrixFromColumnMajor(double[] m) {
+    private Matrix4x4d matrixFromColumnMajor(double[] m) {
         if (m == null || m.length != 16) {
             return null;
         }
-        Matrix4x4 out = new Matrix4x4();
+        Matrix4x4d out = new Matrix4x4d();
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {
                 out = out.withVal(row, col, m[col * 4 + row]);
@@ -709,8 +709,8 @@ public class Jogl4DumpAnalyzerRenderer implements
         return out;
     }
 
-    private Vector3D safeFront() {
-        Vector3D raw = viewingCamera.getFront();
+    private Vector3Dd safeFront() {
+        Vector3Dd raw = viewingCamera.getFront();
         if (raw == null || !isFiniteVector(raw)) {
             return DEFAULT_FRONT;
         }
@@ -718,7 +718,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         if (!isFinite(len) || len < 1e-12) {
             return DEFAULT_FRONT;
         }
-        Vector3D n = raw.normalized();
+        Vector3Dd n = raw.normalized();
         if (!isFiniteVector(n)) {
             return DEFAULT_FRONT;
         }
@@ -740,11 +740,11 @@ public class Jogl4DumpAnalyzerRenderer implements
         double sumDiagonal = 0.0;
         int count = 0;
         for (TileInstance tile : frameData.getSelectableTiles()) {
-            Vector3D[] transformed = CoordinatesTransforms.transformAabb(
+            Vector3Dd[] transformed = CoordinatesTransforms.transformAabb(
                 tile.getMin(), tile.getMax(), frameData.getModelViewMatrix()
             );
-            Vector3D min = transformed[0];
-            Vector3D max = transformed[1];
+            Vector3Dd min = transformed[0];
+            Vector3Dd max = transformed[1];
             if (!isValidAabb(min, max)) {
                 continue;
             }
@@ -760,7 +760,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         return new AabbStats(minDiagonal, maxDiagonal, sumDiagonal / count, count);
     }
 
-    private boolean isValidAndConsistentAabb(Vector3D min, Vector3D max, AabbStats frameStats) {
+    private boolean isValidAndConsistentAabb(Vector3Dd min, Vector3Dd max, AabbStats frameStats) {
         if (!isValidAabb(min, max)) {
             return false;
         }
@@ -773,7 +773,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         return diag >= lower && diag <= upper;
     }
 
-    private static boolean isValidAabb(Vector3D min, Vector3D max) {
+    private static boolean isValidAabb(Vector3Dd min, Vector3Dd max) {
         if (!isFiniteVector(min) || !isFiniteVector(max)) {
             return false;
         }
@@ -790,14 +790,14 @@ public class Jogl4DumpAnalyzerRenderer implements
         return isFinite(diagonal) && diagonal >= MIN_DIAGONAL && diagonal <= MAX_DIAGONAL;
     }
 
-    private static double diagonal(Vector3D min, Vector3D max) {
+    private static double diagonal(Vector3Dd min, Vector3Dd max) {
         double dx = max.x() - min.x();
         double dy = max.y() - min.y();
         double dz = max.z() - min.z();
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    private static boolean isFiniteVector(Vector3D v) {
+    private static boolean isFiniteVector(Vector3Dd v) {
         return v != null && isFinite(v.x()) && isFinite(v.y()) && isFinite(v.z());
     }
 

@@ -13,7 +13,7 @@ import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.TileCoord;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class Jogl4MatrixLayerRenderer {
@@ -185,7 +185,7 @@ public final class Jogl4MatrixLayerRenderer {
     }
 
     private boolean isNearEnoughForTexture(PyramidalImageExporterModel model, float x0, float yTop, float x1, float yBottom) {
-        Vector3D eye = model.getViewingCamera().getPosition();
+        Vector3Dd eye = model.getViewingCamera().getPosition();
         double cx = (x0 + x1) * 0.5;
         double cy = (yTop + yBottom) * 0.5;
         double dx = eye.x() - cx;

@@ -2,15 +2,15 @@ package dumpanalyzer.model;
 
 import java.awt.Color;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class AxisAlignedBoundingBox {
-    private final Vector3D min;
-    private final Vector3D max;
+    private final Vector3Dd min;
+    private final Vector3Dd max;
     private final String textureId;
     private final int sourceTileIndex;
     private final double[] modelViewMatrix;
-    private final List<Vector3D> geometryPoints;
+    private final List<Vector3Dd> geometryPoints;
     private volatile Color color = Color.YELLOW;
     private volatile Integer projectedMinX;
     private volatile Integer projectedMinY;
@@ -18,26 +18,26 @@ public final class AxisAlignedBoundingBox {
     private volatile Integer projectedMaxY;
 
     public AxisAlignedBoundingBox(
-        Vector3D min,
-        Vector3D max,
+        Vector3Dd min,
+        Vector3Dd max,
         String textureId,
         int sourceTileIndex,
         double[] modelViewMatrix,
-        List<Vector3D> geometryPoints
+        List<Vector3Dd> geometryPoints
     ) {
-        this.min = min == null ? null : Vector3D.copyOf(min);
-        this.max = max == null ? null : Vector3D.copyOf(max);
+        this.min = min == null ? null : Vector3Dd.copyOf(min);
+        this.max = max == null ? null : Vector3Dd.copyOf(max);
         this.textureId = textureId;
         this.sourceTileIndex = sourceTileIndex;
         this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
         this.geometryPoints = geometryPoints == null ? List.of() : List.copyOf(geometryPoints);
     }
 
-    public Vector3D getMin() {
+    public Vector3Dd getMin() {
         return min;
     }
 
-    public Vector3D getMax() {
+    public Vector3Dd getMax() {
         return max;
     }
 
@@ -53,7 +53,7 @@ public final class AxisAlignedBoundingBox {
         return modelViewMatrix == null ? null : modelViewMatrix.clone();
     }
 
-    public List<Vector3D> getGeometryPoints() {
+    public List<Vector3Dd> getGeometryPoints() {
         return geometryPoints;
     }
 

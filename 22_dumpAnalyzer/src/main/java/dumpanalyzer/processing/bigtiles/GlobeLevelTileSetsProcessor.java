@@ -21,8 +21,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorConsumer;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorEvent;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorProducer;
@@ -161,7 +161,7 @@ public final class GlobeLevelTileSetsProcessor {
             frame.getModelViewMatrix(),
             frame.getGoogleCamera()
         );
-        Matrix4x4 projection = matrixFromColumnMajor(frame.getProjectionMatrix());
+        Matrix4x4d projection = matrixFromColumnMajor(frame.getProjectionMatrix());
         if (projection == null) {
             return;
         }
@@ -175,11 +175,11 @@ public final class GlobeLevelTileSetsProcessor {
         );
     }
 
-    private static Matrix4x4 matrixFromColumnMajor(double[] m) {
+    private static Matrix4x4d matrixFromColumnMajor(double[] m) {
         if (m == null || m.length != 16) {
             return null;
         }
-        Matrix4x4 out = new Matrix4x4();
+        Matrix4x4d out = new Matrix4x4d();
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {
                 out = out.withVal(row, col, m[col * 4 + row]);
@@ -310,12 +310,12 @@ public final class GlobeLevelTileSetsProcessor {
         if (deDuplicated.isEmpty()) {
             return null;
         }
-        List<Vector3D> positions = new ArrayList<>(deDuplicated.size());
+        List<Vector3Dd> positions = new ArrayList<>(deDuplicated.size());
         for (TileInstance.TriangleStripVertex vertex : deDuplicated) {
             if (vertex == null) {
                 continue;
             }
-            positions.add(new Vector3D(vertex.x(), vertex.y(), vertex.z()));
+            positions.add(new Vector3Dd(vertex.x(), vertex.y(), vertex.z()));
         }
         if (positions.isEmpty()) {
             return null;

@@ -8,7 +8,7 @@ import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
 import dumpanalyzer.processing.TriangleStripTileTopology;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 final class Jogl4TileVertexRenderer {
     private static final TriangleStripTileClassifier TRIANGLE_STRIP_CLASSIFIER = new TriangleStripTileClassifier();
@@ -40,9 +40,9 @@ final class Jogl4TileVertexRenderer {
 
     private static void drawAllPoints(GL2 gl2, TileInstance tile) {
         gl2.glColor3d(1.0, 0.0, 0.0);
-        for (List<Vector3D> strip : tile.getStrips()) {
+        for (List<Vector3Dd> strip : tile.getStrips()) {
             gl2.glBegin(GL2.GL_POINTS);
-            for (Vector3D p : strip) {
+            for (Vector3Dd p : strip) {
                 gl2.glVertex3d(p.x(), p.y(), p.z());
             }
             gl2.glEnd();
@@ -78,10 +78,10 @@ final class Jogl4TileVertexRenderer {
         gl2.glEnd();
     }
 
-    private static void drawAllInColor(GL2 gl2, List<Vector3D> points, double r, double g, double b) {
+    private static void drawAllInColor(GL2 gl2, List<Vector3Dd> points, double r, double g, double b) {
         gl2.glColor3d(r, g, b);
         gl2.glBegin(GL2.GL_POINTS);
-        for (Vector3D p : points) {
+        for (Vector3Dd p : points) {
             gl2.glVertex3d(p.x(), p.y(), p.z());
         }
         gl2.glEnd();

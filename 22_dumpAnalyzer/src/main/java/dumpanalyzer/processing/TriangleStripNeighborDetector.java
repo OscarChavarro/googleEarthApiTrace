@@ -4,7 +4,7 @@ import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import java.util.ArrayList;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 
 public final class TriangleStripNeighborDetector {
     private static final TriangleMeshVertexComparator COMPARATOR = new TriangleMeshVertexComparator();
@@ -14,7 +14,7 @@ public final class TriangleStripNeighborDetector {
 
     public static void populateNeighbors(
         Frame frame,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         int viewportWidth,
         int viewportHeight,
         double[] frameModelView,

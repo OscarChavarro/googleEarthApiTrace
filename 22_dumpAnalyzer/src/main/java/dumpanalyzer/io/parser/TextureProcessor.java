@@ -10,7 +10,7 @@ import java.util.function.ToIntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class TextureProcessor {
     private static final Pattern MATRIX_VALUES_PATTERN = Pattern.compile("m\\s*=\\s*\\{([^}]*)\\}");
@@ -18,11 +18,11 @@ public final class TextureProcessor {
     private TextureProcessor() {
     }
 
-    public static List<Vector3D> buildTexCoords(
-        List<Vector3D> baseTexCoords,
-        List<Vector3D> points,
-        Vector3D min,
-        Vector3D max,
+    public static List<Vector3Dd> buildTexCoords(
+        List<Vector3Dd> baseTexCoords,
+        List<Vector3Dd> points,
+        Vector3Dd min,
+        Vector3Dd max,
         double[] textureMatrix
     ) {
         if (points == null || points.isEmpty()) {
@@ -32,13 +32,13 @@ public final class TextureProcessor {
         double dx = Math.max(1.0e-9, max.x() - min.x());
         double dy = Math.max(1.0e-9, max.y() - min.y());
         double[] m = textureMatrix == null ? identityTextureMatrix() : textureMatrix;
-        List<Vector3D> uv = new ArrayList<>(points.size());
+        List<Vector3Dd> uv = new ArrayList<>(points.size());
         for (int i = 0; i < points.size(); i++) {
-            Vector3D p = points.get(i);
+            Vector3Dd p = points.get(i);
             double u0;
             double v0;
             if (useBase) {
-                Vector3D t = baseTexCoords.get(i);
+                Vector3Dd t = baseTexCoords.get(i);
                 u0 = t.x();
                 v0 = t.y();
             }
@@ -47,12 +47,12 @@ public final class TextureProcessor {
                 v0 = (p.y() - min.y()) / dy;
             }
             double[] t = applyTextureMatrix(m, u0, v0);
-            uv.add(new Vector3D(t[0], t[1], 0.0));
+            uv.add(new Vector3Dd(t[0], t[1], 0.0));
         }
         return uv;
     }
 
-    public static List<Vector3D> computeTexCoords(byte[] texCoordBlob, int texCoordSize, int texCoordStride, int[] indices) {
+    public static List<Vector3Dd> computeTexCoords(byte[] texCoordBlob, int texCoordSize, int texCoordStride, int[] indices) {
         if (texCoordBlob == null || texCoordBlob.length == 0 || texCoordSize < 2 || indices == null || indices.length == 0) {
             return List.of();
         }
@@ -66,20 +66,20 @@ public final class TextureProcessor {
             return List.of();
         }
         ByteBuffer bb = ByteBuffer.wrap(texCoordBlob).order(ByteOrder.LITTLE_ENDIAN);
-        List<Vector3D> out = new ArrayList<>(indices.length);
+        List<Vector3Dd> out = new ArrayList<>(indices.length);
         for (int index : indices) {
             if (index < 0 || index >= vertexCount) {
-                out.add(new Vector3D(0.0, 0.0, 0.0));
+                out.add(new Vector3Dd(0.0, 0.0, 0.0));
                 continue;
             }
             int baseBytes = index * strideBytes;
             if (baseBytes + 8 > texCoordBlob.length) {
-                out.add(new Vector3D(0.0, 0.0, 0.0));
+                out.add(new Vector3Dd(0.0, 0.0, 0.0));
                 continue;
             }
             double u = bb.getFloat(baseBytes);
             double v = bb.getFloat(baseBytes + 4);
-            out.add(new Vector3D(u, v, 0.0));
+            out.add(new Vector3Dd(u, v, 0.0));
         }
         return out;
     }

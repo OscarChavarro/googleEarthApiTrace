@@ -3,12 +3,12 @@ package dumpanalyzer.processing;
 import java.util.List;
 
 import dumpanalyzer.model.TileInstance;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class TriangleStripTileTopology2DirectionMapper {
     private final TriangleStripTileClassifier classifier = new TriangleStripTileClassifier();
 
-    public List<Vector3D> directionBorderPoints(TileInstance tile, Direction direction) {
+    public List<Vector3Dd> directionBorderPoints(TileInstance tile, Direction direction) {
         if (tile == null || direction == null) {
             return List.of();
         }
@@ -31,7 +31,7 @@ public final class TriangleStripTileTopology2DirectionMapper {
         };
     }
 
-    private static List<Vector3D> mapQuad(Direction direction, List<TileInstance.TriangleStripVertex> deDuplicated) {
+    private static List<Vector3Dd> mapQuad(Direction direction, List<TileInstance.TriangleStripVertex> deDuplicated) {
         return switch (direction) {
             case WEST -> pick(deDuplicated, 7, 8, 1);
             case EAST -> pick(deDuplicated, 5, 4, 3);
@@ -40,7 +40,7 @@ public final class TriangleStripTileTopology2DirectionMapper {
         };
     }
 
-    private static List<Vector3D> mapNorthPoleTriangle(Direction direction, List<TileInstance.TriangleStripVertex> deDuplicated) {
+    private static List<Vector3Dd> mapNorthPoleTriangle(Direction direction, List<TileInstance.TriangleStripVertex> deDuplicated) {
         return switch (direction) {
             case NORTH -> List.of();
             //case WEST -> pick(deDuplicated, 5, 6, 1);
@@ -50,7 +50,7 @@ public final class TriangleStripTileTopology2DirectionMapper {
         };
     }
 
-    private static List<Vector3D> pick(List<TileInstance.TriangleStripVertex> vertices, int a, int b, int c) {
+    private static List<Vector3Dd> pick(List<TileInstance.TriangleStripVertex> vertices, int a, int b, int c) {
         int max = Math.max(a, Math.max(b, c));
         if (vertices == null || vertices.size() <= max) {
             return List.of();
@@ -58,7 +58,7 @@ public final class TriangleStripTileTopology2DirectionMapper {
         return List.of(toVector3D(vertices.get(a)), toVector3D(vertices.get(b)), toVector3D(vertices.get(c)));
     }
 
-    private static Vector3D toVector3D(TileInstance.TriangleStripVertex v) {
-        return new Vector3D(v.x(), v.y(), v.z());
+    private static Vector3Dd toVector3D(TileInstance.TriangleStripVertex v) {
+        return new Vector3Dd(v.x(), v.y(), v.z());
     }
 }

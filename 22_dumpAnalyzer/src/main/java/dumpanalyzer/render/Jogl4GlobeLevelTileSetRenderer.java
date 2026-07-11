@@ -4,7 +4,7 @@ import com.jogamp.opengl.GL2;
 import dumpanalyzer.model.GlobeLevelTileSet;
 import dumpanalyzer.model.TileInstance;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 final class Jogl4GlobeLevelTileSetRenderer {
     private Jogl4GlobeLevelTileSetRenderer() {
@@ -16,12 +16,12 @@ final class Jogl4GlobeLevelTileSetRenderer {
         }
         gl2.glColor3d(128.0 / 255.0, 1.0, 128.0 / 255.0);
         gl2.glLineWidth(1.0f);
-        for (List<Vector3D> strip : tile.getStrips()) {
+        for (List<Vector3Dd> strip : tile.getStrips()) {
             if (strip == null || strip.size() < 2) {
                 continue;
             }
             gl2.glBegin(GL2.GL_LINE_STRIP);
-            for (Vector3D p : strip) {
+            for (Vector3Dd p : strip) {
                 gl2.glVertex3d(p.x(), p.y(), p.z());
             }
             gl2.glEnd();

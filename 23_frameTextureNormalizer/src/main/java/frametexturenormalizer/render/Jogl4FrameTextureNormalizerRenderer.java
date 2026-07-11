@@ -27,7 +27,7 @@ import frametexturenormalizer.gui.MouseOrbiterInteraction;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;
@@ -155,7 +155,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
             return;
         }
 
-        Matrix4x4 projection = projectionForFrame(selected);
+        Matrix4x4d projection = projectionForFrame(selected);
         double[] modelViewForLines = modelViewForFrame(selected);
         float[] modelViewForDraw = toFloat16(modelViewForLines);
         if (modelViewForDraw == null) {
@@ -477,7 +477,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         GLU glu = GLU.createGLU(gl2);
         glu.gluPickMatrix(mouseX, viewport[3] - mouseY, PICK_REGION_PIXELS, PICK_REGION_PIXELS, viewport, 0);
         FrameData selected = model.getSelectedFrame();
-        Matrix4x4 projection = projectionForFrame(selected);
+        Matrix4x4d projection = projectionForFrame(selected);
         gl2.glMultMatrixf(projection.exportToFloatArrayColumnOrder(), 0);
 
         float[] modelViewForDraw = toFloat16(modelViewForFrame(selected));
@@ -559,8 +559,8 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         }
     }
 
-    private Matrix4x4 projectionForFrame(FrameData frame) {
-        Matrix4x4 fromFrame = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
+    private Matrix4x4d projectionForFrame(FrameData frame) {
+        Matrix4x4d fromFrame = matrixFromColumnMajor(frame == null ? null : frame.getProjectionMatrix());
         if (fromFrame != null) {
             return fromFrame;
         }
@@ -578,11 +578,11 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         return frame.getCameraState() == null ? null : frame.getCameraState().getModelViewMatrix();
     }
 
-    private static Matrix4x4 matrixFromColumnMajor(double[] m) {
+    private static Matrix4x4d matrixFromColumnMajor(double[] m) {
         if (m == null || m.length != 16) {
             return null;
         }
-        Matrix4x4 out = new Matrix4x4();
+        Matrix4x4d out = new Matrix4x4d();
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {
                 out = out.withVal(row, col, m[col * 4 + row]);

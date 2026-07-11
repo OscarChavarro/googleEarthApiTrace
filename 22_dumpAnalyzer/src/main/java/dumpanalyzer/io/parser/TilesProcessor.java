@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 
 import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 final class TilesProcessor {
     private static final String GL_TRIANGLE_STRIP = "GL_TRIANGLE_STRIP";
@@ -269,8 +269,8 @@ final class TilesProcessor {
                 }
                 Path texCoordPath = ManifestProcessor.resolveVertexBlobPath(frameDirectory, manifest, currentTexCoordVertexAttribCall, -1, 3);
                 byte[] texCoordBlob = loadBlob(texCoordPath);
-                List<Vector3D> baseTexCoords = TextureProcessor.computeTexCoords(texCoordBlob, currentTexCoordSize, currentTexCoordStride, drawIndices);
-                List<Vector3D> transformedTexCoords = TextureProcessor.buildTexCoords(baseTexCoords, candidate.points(), candidate.min(), candidate.max(), currentTextureMatrix);
+                List<Vector3Dd> baseTexCoords = TextureProcessor.computeTexCoords(texCoordBlob, currentTexCoordSize, currentTexCoordStride, drawIndices);
+                List<Vector3Dd> transformedTexCoords = TextureProcessor.buildTexCoords(baseTexCoords, candidate.points(), candidate.min(), candidate.max(), currentTextureMatrix);
 
                 if (GL_TRIANGLES.equals(mode)) {
                     TrianglesProcessor.addTrianglesAsStrips(
@@ -293,7 +293,7 @@ final class TilesProcessor {
                     continue;
                 }
                 lineDrawsWithGeometry++;
-                for (List<Vector3D> strip : lineGeometry.strips()) {
+                for (List<Vector3Dd> strip : lineGeometry.strips()) {
                     frameLines.add(new Line(mode, strip, currentModelViewMatrix));
                 }
             }
@@ -387,7 +387,7 @@ final class TilesProcessor {
 
         boolean hasAny = false;
         double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
-        List<Vector3D> points = new ArrayList<>();
+        List<Vector3Dd> points = new ArrayList<>();
 
         for (int index : indices) {
             if (index < 0 || index >= vertexCount) continue;
@@ -396,7 +396,7 @@ final class TilesProcessor {
             double x = bb.getFloat(baseBytes);
             double y = bb.getFloat(baseBytes + 4);
             double z = bb.getFloat(baseBytes + 8);
-            points.add(new Vector3D(x, y, z));
+            points.add(new Vector3Dd(x, y, z));
 
             if (!hasAny) {
                 minX = maxX = x;
@@ -415,7 +415,7 @@ final class TilesProcessor {
         }
 
         if (!hasAny) return null;
-        return new TileGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), points);
+        return new TileGeometry(new Vector3Dd(minX, minY, minZ), new Vector3Dd(maxX, maxY, maxZ), points);
     }
 
     private static LineGeometry computeLineGeometry(
@@ -435,8 +435,8 @@ final class TilesProcessor {
 
         boolean hasAny = false;
         double minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0;
-        List<List<Vector3D>> strips = new ArrayList<>();
-        List<Vector3D> currentStrip = new ArrayList<>();
+        List<List<Vector3Dd>> strips = new ArrayList<>();
+        List<Vector3Dd> currentStrip = new ArrayList<>();
 
         for (int index : indices) {
             if (index < 0 || index >= vertexCount) {
@@ -453,7 +453,7 @@ final class TilesProcessor {
             double x = bb.getFloat(baseBytes);
             double y = bb.getFloat(baseBytes + 4);
             double z = bb.getFloat(baseBytes + 8);
-            Vector3D p = new Vector3D(x, y, z);
+            Vector3Dd p = new Vector3Dd(x, y, z);
             currentStrip.add(p);
 
             if (!hasAny) {
@@ -475,8 +475,8 @@ final class TilesProcessor {
             strips.add(List.copyOf(currentStrip));
         }
         if (GL_LINES.equals(mode)) {
-            List<List<Vector3D>> pairs = new ArrayList<>();
-            for (List<Vector3D> strip : strips) {
+            List<List<Vector3Dd>> pairs = new ArrayList<>();
+            for (List<Vector3Dd> strip : strips) {
                 for (int i = 0; i + 1 < strip.size(); i += 2) {
                     pairs.add(List.of(strip.get(i), strip.get(i + 1)));
                 }
@@ -484,10 +484,10 @@ final class TilesProcessor {
             strips = pairs;
         }
         if (GL_LINE_LOOP.equals(mode)) {
-            List<List<Vector3D>> closed = new ArrayList<>();
-            for (List<Vector3D> strip : strips) {
+            List<List<Vector3Dd>> closed = new ArrayList<>();
+            for (List<Vector3Dd> strip : strips) {
                 if (strip.size() < 2) continue;
-                List<Vector3D> loop = new ArrayList<>(strip.size() + 1);
+                List<Vector3Dd> loop = new ArrayList<>(strip.size() + 1);
                 loop.addAll(strip);
                 loop.add(strip.get(0));
                 closed.add(List.copyOf(loop));
@@ -495,7 +495,7 @@ final class TilesProcessor {
             strips = closed;
         }
         if (!hasAny || strips.isEmpty()) return null;
-        return new LineGeometry(new Vector3D(minX, minY, minZ), new Vector3D(maxX, maxY, maxZ), strips);
+        return new LineGeometry(new Vector3Dd(minX, minY, minZ), new Vector3Dd(maxX, maxY, maxZ), strips);
     }
 
     private static int[] loadUnsignedShortBlob(Path path, int maxCount) {
@@ -536,8 +536,8 @@ final class TilesProcessor {
 
     record FrameGeometry(List<TileInstance> tiles, List<Line> lines) {}
 
-    private record TileGeometry(Vector3D min, Vector3D max, List<Vector3D> points) {}
-    private record LineGeometry(Vector3D min, Vector3D max, List<List<Vector3D>> strips) {}
+    private record TileGeometry(Vector3Dd min, Vector3Dd max, List<Vector3Dd> points) {}
+    private record LineGeometry(Vector3Dd min, Vector3Dd max, List<List<Vector3Dd>> strips) {}
 
     private record TileKey(int textureId, String projectionSignature, String modelViewSignature) {}
 
@@ -546,9 +546,9 @@ final class TilesProcessor {
         private final int textureId;
         private final double[] projectionMatrix;
         private final double[] modelViewMatrix;
-        private final List<List<Vector3D>> strips = new ArrayList<>();
-        private final List<List<Vector3D>> stripTexCoords = new ArrayList<>();
-        private final List<Vector3D> flatPoints = new ArrayList<>();
+        private final List<List<Vector3Dd>> strips = new ArrayList<>();
+        private final List<List<Vector3Dd>> stripTexCoords = new ArrayList<>();
+        private final List<Vector3Dd> flatPoints = new ArrayList<>();
         private String primitive = "n/a";
         private int parserCall = -1;
         private long glCall = -1L;
@@ -556,8 +556,8 @@ final class TilesProcessor {
         private int indexArraySize = 0;
         private boolean skipped = false;
         private String skipReason = "";
-        private Vector3D min;
-        private Vector3D max;
+        private Vector3Dd min;
+        private Vector3Dd max;
 
         private TileBuilder(int frameId, int textureId, double[] projectionMatrix, double[] modelViewMatrix) {
             this.frameId = frameId;
@@ -581,20 +581,20 @@ final class TilesProcessor {
             this.skipReason = skipReason == null ? "" : skipReason;
         }
 
-        private void addStrip(List<Vector3D> stripPoints, List<Vector3D> uvCoords, Vector3D stripMin, Vector3D stripMax) {
+        private void addStrip(List<Vector3Dd> stripPoints, List<Vector3Dd> uvCoords, Vector3Dd stripMin, Vector3Dd stripMax) {
             if (stripPoints == null || stripPoints.isEmpty()) return;
             strips.add(List.copyOf(stripPoints));
             stripTexCoords.add(uvCoords == null ? List.of() : List.copyOf(uvCoords));
             flatPoints.addAll(stripPoints);
 
             if (min == null || max == null) {
-                min = Vector3D.copyOf(stripMin);
-                max = Vector3D.copyOf(stripMax);
+                min = Vector3Dd.copyOf(stripMin);
+                max = Vector3Dd.copyOf(stripMax);
                 return;
             }
 
-            min = new Vector3D(Math.min(min.x(), stripMin.x()), Math.min(min.y(), stripMin.y()), Math.min(min.z(), stripMin.z()));
-            max = new Vector3D(Math.max(max.x(), stripMax.x()), Math.max(max.y(), stripMax.y()), Math.max(max.z(), stripMax.z()));
+            min = new Vector3Dd(Math.min(min.x(), stripMin.x()), Math.min(min.y(), stripMin.y()), Math.min(min.z(), stripMin.z()));
+            max = new Vector3Dd(Math.max(max.x(), stripMax.x()), Math.max(max.y(), stripMax.y()), Math.max(max.z(), stripMax.z()));
         }
 
         private TileInstance build() {

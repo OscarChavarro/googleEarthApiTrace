@@ -14,7 +14,7 @@ import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class KeyboardInteractionTechnique implements KeyListener {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
@@ -113,8 +113,8 @@ public final class KeyboardInteractionTechnique implements KeyListener {
     }
 
     private static String buildGlobalAabbSummary(Frame frame) {
-        Vector3D min = null;
-        Vector3D max = null;
+        Vector3Dd min = null;
+        Vector3Dd max = null;
         for (TileInstance tile : frame.getTiles()) {
             if (tile.getMin() == null || tile.getMax() == null) {
                 continue;
@@ -124,12 +124,12 @@ public final class KeyboardInteractionTechnique implements KeyListener {
                 max = tile.getMax();
                 continue;
             }
-            min = new Vector3D(
+            min = new Vector3Dd(
                 Math.min(min.x(), tile.getMin().x()),
                 Math.min(min.y(), tile.getMin().y()),
                 Math.min(min.z(), tile.getMin().z())
             );
-            max = new Vector3D(
+            max = new Vector3Dd(
                 Math.max(max.x(), tile.getMax().x()),
                 Math.max(max.y(), tile.getMax().y()),
                 Math.max(max.z(), tile.getMax().z())

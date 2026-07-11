@@ -6,7 +6,7 @@ import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import java.util.ArrayList;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class GlobeLevelTileSetNeighborDetector {
     private static final double BORDER_CENTER_EPSILON = 1e-4;
@@ -96,11 +96,11 @@ public final class GlobeLevelTileSetNeighborDetector {
         return null;
     }
 
-    private static boolean matches(Vector3D a, Vector3D b) {
+    private static boolean matches(Vector3Dd a, Vector3Dd b) {
         return distanceSquared(a, b) <= (BORDER_CENTER_EPSILON * BORDER_CENTER_EPSILON);
     }
 
-    private static double distanceSquared(Vector3D a, Vector3D b) {
+    private static double distanceSquared(Vector3Dd a, Vector3Dd b) {
         if (a == null || b == null) {
             return Double.POSITIVE_INFINITY;
         }

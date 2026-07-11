@@ -10,7 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class UncleDetector {
     private static final TriangleMeshVertexComparator COMPARATOR = new TriangleMeshVertexComparator();
@@ -145,15 +145,15 @@ public final class UncleDetector {
         if (tile == null) {
             return List.of();
         }
-        List<List<Vector3D>> strips = tile.getStrips();
-        List<List<Vector3D>> texCoords = tile.getStripTexCoords();
+        List<List<Vector3Dd>> strips = tile.getStrips();
+        List<List<Vector3Dd>> texCoords = tile.getStripTexCoords();
         if (strips.isEmpty() || strips.size() != texCoords.size()) {
             return List.of();
         }
         List<StripQuadrantInfo> out = new ArrayList<>();
         for (int i = 0; i < strips.size(); i++) {
-            List<Vector3D> strip = strips.get(i);
-            List<Vector3D> uv = texCoords.get(i);
+            List<Vector3Dd> strip = strips.get(i);
+            List<Vector3Dd> uv = texCoords.get(i);
             UvBounds bounds = computeUvBounds(uv);
             UncleDirections quadrant = classifyQuadrant(bounds);
             TileInstance proxy = buildProxyTile(tile, strip, uv, i);
@@ -162,7 +162,7 @@ public final class UncleDetector {
         return out;
     }
 
-    private static UvBounds computeUvBounds(List<Vector3D> uvValues) {
+    private static UvBounds computeUvBounds(List<Vector3Dd> uvValues) {
         if (uvValues == null || uvValues.isEmpty()) {
             return null;
         }
@@ -171,7 +171,7 @@ public final class UncleDetector {
         double minV = Double.POSITIVE_INFINITY;
         double maxV = Double.NEGATIVE_INFINITY;
         boolean hasAny = false;
-        for (Vector3D uv : uvValues) {
+        for (Vector3Dd uv : uvValues) {
             if (uv == null || !Double.isFinite(uv.x()) || !Double.isFinite(uv.y())) {
                 continue;
             }
@@ -254,8 +254,8 @@ public final class UncleDetector {
 
     private static TileInstance buildProxyTile(
         TileInstance source,
-        List<Vector3D> strip,
-        List<Vector3D> uv,
+        List<Vector3Dd> strip,
+        List<Vector3Dd> uv,
         int stripIndex
     ) {
         if (source == null || strip == null || uv == null || strip.isEmpty() || strip.size() != uv.size()) {

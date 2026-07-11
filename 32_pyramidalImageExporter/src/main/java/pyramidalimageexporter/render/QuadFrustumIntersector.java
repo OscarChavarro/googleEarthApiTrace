@@ -1,8 +1,8 @@
 package pyramidalimageexporter.render;
 
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
-import vsdk.toolkit.environment.geometry.elements.Ray;
+import vsdk.toolkit.environment.geometry.element.Ray;
 
 final class QuadFrustumIntersector {
     private static final double EPS = 1e-9;
@@ -20,10 +20,10 @@ final class QuadFrustumIntersector {
         float minY = Math.min(y0, y1);
         float maxY = Math.max(y0, y1);
 
-        Vector3D p00 = new Vector3D(minX, minY, 0.0);
-        Vector3D p10 = new Vector3D(maxX, minY, 0.0);
-        Vector3D p11 = new Vector3D(maxX, maxY, 0.0);
-        Vector3D p01 = new Vector3D(minX, maxY, 0.0);
+        Vector3Dd p00 = new Vector3Dd(minX, minY, 0.0);
+        Vector3Dd p10 = new Vector3Dd(maxX, minY, 0.0);
+        Vector3Dd p11 = new Vector3Dd(maxX, maxY, 0.0);
+        Vector3Dd p01 = new Vector3Dd(minX, maxY, 0.0);
 
         if (isProjected(camera, p00) || isProjected(camera, p10) || isProjected(camera, p11) || isProjected(camera, p01)) {
             return true;
@@ -37,12 +37,12 @@ final class QuadFrustumIntersector {
         return frustumCenterRayHitsQuad(camera, minX, maxX, minY, maxY);
     }
 
-    private static boolean isProjected(Camera camera, Vector3D point) {
-        return camera.projectPoint(point, new Vector3D());
+    private static boolean isProjected(Camera camera, Vector3Dd point) {
+        return camera.projectPoint(point, new Vector3Dd());
     }
 
-    private static boolean clipEdge(Camera camera, Vector3D a, Vector3D b) {
-        return camera.clipLineCohenSutherlandPlanes(a, b, new Vector3D(), new Vector3D());
+    private static boolean clipEdge(Camera camera, Vector3Dd a, Vector3Dd b) {
+        return camera.clipLineCohenSutherlandPlanes(a, b, new Vector3Dd(), new Vector3Dd());
     }
 
     private static boolean frustumCenterRayHitsQuad(Camera camera, float minX, float maxX, float minY, float maxY) {
@@ -50,16 +50,16 @@ final class QuadFrustumIntersector {
         int cy = (int)Math.round(camera.getViewportYSize() * 0.5);
         Ray ray = camera.generateRay(cx, cy);
 
-        double dz = ray.direction().z();
+        double dz = ray.getDirection().z();
         if (Math.abs(dz) <= EPS) {
             return false;
         }
-        double t = -ray.origin().z() / dz;
+        double t = -ray.getOrigin().z() / dz;
         if (t < 0.0) {
             return false;
         }
 
-        Vector3D hit = ray.origin().add(ray.direction().multiply(t));
+        Vector3Dd hit = ray.getOrigin().add(ray.getDirection().multiply(t));
         return hit.x() >= minX - EPS
             && hit.x() <= maxX + EPS
             && hit.y() >= minY - EPS

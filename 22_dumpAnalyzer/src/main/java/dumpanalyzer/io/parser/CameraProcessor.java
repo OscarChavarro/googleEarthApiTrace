@@ -4,7 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import vsdk.toolkit.environment.camera.Camera;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class CameraProcessor {
     private static final Pattern MATRIX_MODE_LINE_PATTERN = Pattern.compile("\\bglMatrixMode\\s*\\((.*)\\)");
@@ -129,9 +129,9 @@ public final class CameraProcessor {
         double fy = forward[1] / fLen;
         double fz = forward[2] / fLen;
 
-        camera.setPosition(new Vector3D(eye[0], eye[1], eye[2]));
+        camera.setPosition(new Vector3Dd(eye[0], eye[1], eye[2]));
         camera.setFocusedPositionMaintainingOrthogonality(
-            new Vector3D(eye[0] + fx, eye[1] + fy, eye[2] + fz)
+            new Vector3Dd(eye[0] + fx, eye[1] + fy, eye[2] + fz)
         );
     }
 

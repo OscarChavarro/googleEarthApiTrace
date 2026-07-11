@@ -4,7 +4,7 @@ import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileIdentity> {
     private final int id;
@@ -12,14 +12,14 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
     private final int row;
     private final int col;
     private final List<FrameAppearance> appearances;
-    private final Vector3D[] deDuplicatedVertices;
+    private final Vector3Dd[] deDuplicatedVertices;
 
     public GlobeLevelTileIdentity(
         int id,
         List<Integer> pathFromRoot,
         int row,
         int col,
-        List<Vector3D> deDuplicatedVertices
+        List<Vector3Dd> deDuplicatedVertices
     ) {
         this.id = id;
         this.pathFromRoot = pathFromRoot == null ? List.of() : List.copyOf(pathFromRoot);
@@ -27,13 +27,13 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
         this.col = col;
         this.appearances = new java.util.ArrayList<>();
         if (deDuplicatedVertices == null || deDuplicatedVertices.isEmpty()) {
-            this.deDuplicatedVertices = new Vector3D[0];
+            this.deDuplicatedVertices = new Vector3Dd[0];
             return;
         }
-        this.deDuplicatedVertices = new Vector3D[deDuplicatedVertices.size()];
+        this.deDuplicatedVertices = new Vector3Dd[deDuplicatedVertices.size()];
         for (int i = 0; i < deDuplicatedVertices.size(); i++) {
-            Vector3D v = deDuplicatedVertices.get(i);
-            this.deDuplicatedVertices[i] = v == null ? null : Vector3D.copyOf(v);
+            Vector3Dd v = deDuplicatedVertices.get(i);
+            this.deDuplicatedVertices[i] = v == null ? null : Vector3Dd.copyOf(v);
         }
     }
 
@@ -73,11 +73,11 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
         }
     }
 
-    public Vector3D[] getDeDuplicatedVertices() {
-        Vector3D[] copy = new Vector3D[deDuplicatedVertices.length];
+    public Vector3Dd[] getDeDuplicatedVertices() {
+        Vector3Dd[] copy = new Vector3Dd[deDuplicatedVertices.length];
         for (int i = 0; i < deDuplicatedVertices.length; i++) {
-            Vector3D v = deDuplicatedVertices[i];
-            copy[i] = v == null ? null : Vector3D.copyOf(v);
+            Vector3Dd v = deDuplicatedVertices[i];
+            copy[i] = v == null ? null : Vector3Dd.copyOf(v);
         }
         return copy;
     }
@@ -90,8 +90,8 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
         if (sameVertices(other)) {
             return 0;
         }
-        Vector3D thisCenter = averagePoint(deDuplicatedVertices);
-        Vector3D otherCenter = averagePoint(other.deDuplicatedVertices);
+        Vector3Dd thisCenter = averagePoint(deDuplicatedVertices);
+        Vector3Dd otherCenter = averagePoint(other.deDuplicatedVertices);
         int byX = compareCoordinate(thisCenter == null ? 0.0 : thisCenter.x(), otherCenter == null ? 0.0 : otherCenter.x());
         if (byX != 0) {
             return byX;
@@ -112,7 +112,7 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
 
     @Override
     public int hashCode() {
-        Vector3D center = averagePoint(deDuplicatedVertices);
+        Vector3Dd center = averagePoint(deDuplicatedVertices);
         if (center == null) {
             return Objects.hash(0L, 0L, 0L);
         }
@@ -168,8 +168,8 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
             return false;
         }
         for (int i = 0; i < deDuplicatedVertices.length; i++) {
-            Vector3D a = deDuplicatedVertices[i];
-            Vector3D b = other.deDuplicatedVertices[i];
+            Vector3Dd a = deDuplicatedVertices[i];
+            Vector3Dd b = other.deDuplicatedVertices[i];
             if (!samePoint(a, b)) {
                 return false;
             }
@@ -177,7 +177,7 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
         return true;
     }
 
-    private static boolean samePoint(Vector3D a, Vector3D b) {
+    private static boolean samePoint(Vector3Dd a, Vector3Dd b) {
         if (a == b) {
             return true;
         }
@@ -190,7 +190,7 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
             && Math.abs(a.z() - b.z()) <= epsilon;
     }
 
-    private static Vector3D averagePoint(Vector3D[] vertices) {
+    private static Vector3Dd averagePoint(Vector3Dd[] vertices) {
         if (vertices == null || vertices.length == 0) {
             return null;
         }
@@ -198,7 +198,7 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
         double sy = 0.0;
         double sz = 0.0;
         int count = 0;
-        for (Vector3D vertex : vertices) {
+        for (Vector3Dd vertex : vertices) {
             if (vertex == null) {
                 continue;
             }
@@ -211,7 +211,7 @@ public final class GlobeLevelTileIdentity implements Comparable<GlobeLevelTileId
             return null;
         }
         double inv = 1.0 / count;
-        return new Vector3D(sx * inv, sy * inv, sz * inv);
+        return new Vector3Dd(sx * inv, sy * inv, sz * inv);
     }
 
     private static int compareCoordinate(double a, double b) {

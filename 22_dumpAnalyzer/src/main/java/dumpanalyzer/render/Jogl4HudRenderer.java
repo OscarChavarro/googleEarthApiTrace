@@ -15,7 +15,7 @@ import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import dumpanalyzer.config.Configuration;
 import dumpanalyzer.model.DumpAnalyzerModel;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.Image;
@@ -242,7 +242,7 @@ public final class Jogl4HudRenderer {
         Jogl4ImageRenderer.drawTexturedQuad(
             gl,
             textureId,
-            Matrix4x4.identityMatrix(),
+            Matrix4x4d.identityMatrix(),
             positions,
             uv,
             (float)alpha,
@@ -263,7 +263,7 @@ public final class Jogl4HudRenderer {
         if (tile == null) {
             return "n/a";
         }
-        List<List<vsdk.toolkit.common.linealAlgebra.Vector3D>> strips = tile.getStrips();
+        List<List<vsdk.toolkit.common.linealAlgebra.Vector3Dd>> strips = tile.getStrips();
         if (strips == null || strips.isEmpty()) {
             if (tile.getIndexArraySize() > 0) {
                 return primitiveDisplayName(tile.getPrimitive()) + "[" + tile.getIndexArraySize() + "]";
@@ -273,7 +273,7 @@ public final class Jogl4HudRenderer {
 
         String primitive = primitiveDisplayName(tile.getPrimitive());
         StringBuilder sb = new StringBuilder();
-        for (List<vsdk.toolkit.common.linealAlgebra.Vector3D> strip : strips) {
+        for (List<vsdk.toolkit.common.linealAlgebra.Vector3Dd> strip : strips) {
             if (strip == null || strip.isEmpty()) {
                 continue;
             }

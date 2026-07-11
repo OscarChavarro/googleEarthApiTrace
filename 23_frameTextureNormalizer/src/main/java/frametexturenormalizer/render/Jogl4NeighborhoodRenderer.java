@@ -8,14 +8,14 @@ import frametexturenormalizer.model.FrameTextureNormalizerModel;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileInstance.TriangleStripGeometry;
 import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 
 public final class Jogl4NeighborhoodRenderer {
     public void drawForSelection(
         GL2 gl2,
         List<TileInstance> tiles,
         int selectedTileIndex,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         float[] modelView,
         int viewportWidth,
         int viewportHeight
@@ -66,7 +66,7 @@ public final class Jogl4NeighborhoodRenderer {
         List<TileInstance> tiles,
         int sourceIndex,
         Map<Integer, Integer> indexById,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         float[] modelView,
         int viewportWidth,
         int viewportHeight
@@ -89,7 +89,7 @@ public final class Jogl4NeighborhoodRenderer {
         Integer targetTileId,
         int sourceIndex,
         Map<Integer, Integer> indexById,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         float[] modelView,
         int viewportWidth,
         int viewportHeight,
@@ -188,7 +188,7 @@ public final class Jogl4NeighborhoodRenderer {
 
     private static int[] centerOfTile(
         TileInstance tile,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         float[] modelView,
         int viewportWidth,
         int viewportHeight
@@ -209,7 +209,7 @@ public final class Jogl4NeighborhoodRenderer {
         double y,
         double z,
         float[] modelView,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         int viewportWidth,
         int viewportHeight
     ) {

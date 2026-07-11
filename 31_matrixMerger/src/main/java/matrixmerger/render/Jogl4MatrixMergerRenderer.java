@@ -14,7 +14,7 @@ import java.awt.geom.Rectangle2D;
 import matrixmerger.io.TileMatrix;
 import matrixmerger.model.MatrixMergerModel;
 import com.jogamp.opengl.glu.GLU;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public final class Jogl4MatrixMergerRenderer implements GLEventListener {
@@ -71,7 +71,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
 
         TileMatrix selected = model.getSelectedMatrix();
         if (selected != null) {
-            Matrix4x4 projection = model.getViewingCamera().calculateViewVolumeMatrix();
+            Matrix4x4d projection = model.getViewingCamera().calculateViewVolumeMatrix();
             float[] modelView = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
 
             gl2.glMatrixMode(GL2.GL_PROJECTION);

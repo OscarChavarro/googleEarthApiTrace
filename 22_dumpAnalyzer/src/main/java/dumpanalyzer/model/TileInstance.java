@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class TileInstance {
     public static final int NO_NEIGHBOR = -1;
@@ -17,11 +17,11 @@ public final class TileInstance {
     private final String northNeighbor;
     private final String eastNeighbor;
     private final String westNeighbor;
-    private final Vector3D min;
-    private final Vector3D max;
-    private final List<Vector3D> points;
-    private final List<List<Vector3D>> strips;
-    private final List<List<Vector3D>> stripTexCoords;
+    private final Vector3Dd min;
+    private final Vector3Dd max;
+    private final List<Vector3Dd> points;
+    private final List<List<Vector3Dd>> strips;
+    private final List<List<Vector3Dd>> stripTexCoords;
     private final String primitive;
     private final int parserCall;
     private final long glCall;
@@ -49,11 +49,11 @@ public final class TileInstance {
         String northNeighbor,
         String eastNeighbor,
         String westNeighbor,
-        Vector3D min,
-        Vector3D max,
-        List<Vector3D> points,
-        List<List<Vector3D>> strips,
-        List<List<Vector3D>> stripTexCoords,
+        Vector3Dd min,
+        Vector3Dd max,
+        List<Vector3Dd> points,
+        List<List<Vector3Dd>> strips,
+        List<List<Vector3Dd>> stripTexCoords,
         String primitive,
         int parserCall,
         long glCall,
@@ -70,8 +70,8 @@ public final class TileInstance {
         this.northNeighbor = northNeighbor;
         this.eastNeighbor = eastNeighbor;
         this.westNeighbor = westNeighbor;
-        this.min = min == null ? null : Vector3D.copyOf(min);
-        this.max = max == null ? null : Vector3D.copyOf(max);
+        this.min = min == null ? null : Vector3Dd.copyOf(min);
+        this.max = max == null ? null : Vector3Dd.copyOf(max);
         this.points = points == null ? List.of() : List.copyOf(points);
         this.strips = strips == null ? List.of() : strips.stream().map(List::copyOf).toList();
         this.stripTexCoords = stripTexCoords == null ? List.of() : stripTexCoords.stream().map(List::copyOf).toList();
@@ -119,16 +119,16 @@ public final class TileInstance {
         return uncles;
     }
 
-    public Vector3D getMin() {
+    public Vector3Dd getMin() {
         return min;
     }
 
-    public Vector3D getMax() {
+    public Vector3Dd getMax() {
         return max;
     }
 
     @JsonIgnore
-    public List<Vector3D> getPoints() {
+    public List<Vector3Dd> getPoints() {
         return points;
     }
 
@@ -137,12 +137,12 @@ public final class TileInstance {
     }
 
     @JsonIgnore
-    public List<List<Vector3D>> getStrips() {
+    public List<List<Vector3Dd>> getStrips() {
         return strips;
     }
 
     @JsonIgnore
-    public List<List<Vector3D>> getStripTexCoords() {
+    public List<List<Vector3Dd>> getStripTexCoords() {
         return stripTexCoords;
     }
 
@@ -250,11 +250,11 @@ public final class TileInstance {
         double minV = Double.POSITIVE_INFINITY;
         double maxV = Double.NEGATIVE_INFINITY;
 
-        for (List<Vector3D> strip : stripTexCoords) {
+        for (List<Vector3Dd> strip : stripTexCoords) {
             if (strip == null || strip.isEmpty()) {
                 continue;
             }
-            for (Vector3D uv : strip) {
+            for (Vector3Dd uv : strip) {
                 if (uv == null || !Double.isFinite(uv.x()) || !Double.isFinite(uv.y())) {
                     continue;
                 }
@@ -304,14 +304,14 @@ public final class TileInstance {
         return List.copyOf(geometries);
     }
 
-    private static TriangleStripGeometry toTriangleStripGeometry(List<Vector3D> strip, List<Vector3D> uv) {
+    private static TriangleStripGeometry toTriangleStripGeometry(List<Vector3Dd> strip, List<Vector3Dd> uv) {
         if (strip == null || uv == null || strip.size() < 3 || strip.size() != uv.size()) {
             return null;
         }
         List<TriangleStripVertex> vertices = new java.util.ArrayList<>(strip.size());
         for (int i = 0; i < strip.size(); i++) {
-            Vector3D p = strip.get(i);
-            Vector3D t = uv.get(i);
+            Vector3Dd p = strip.get(i);
+            Vector3Dd t = uv.get(i);
             vertices.add(new TriangleStripVertex(p.x(), p.y(), p.z(), t.x(), t.y()));
         }
         return new TriangleStripGeometry(vertices.size(), List.copyOf(vertices));

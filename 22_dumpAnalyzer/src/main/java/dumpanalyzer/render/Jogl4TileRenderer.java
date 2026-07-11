@@ -8,8 +8,8 @@ import com.jogamp.opengl.GL4;
 import dumpanalyzer.model.DumpAnalyzerModel;
 import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
@@ -29,7 +29,7 @@ final class Jogl4TileRenderer {
         GL2 gl2,
         TileInstance tile,
         int frameId,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         double[] frameModelViewMatrix,
         boolean drawAabb,
         boolean singleTileMode,
@@ -92,19 +92,19 @@ final class Jogl4TileRenderer {
             gl2.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
             gl2.glPolygonOffset(SURFACE_POLYGON_OFFSET_FACTOR, SURFACE_POLYGON_OFFSET_UNITS);
             gl2.glColor3d(0.85, 0.85, 0.85);
-            List<List<Vector3D>> strips = tile.getStrips();
-            List<List<Vector3D>> stripTexCoords = tile.getStripTexCoords();
+            List<List<Vector3Dd>> strips = tile.getStrips();
+            List<List<Vector3Dd>> stripTexCoords = tile.getStripTexCoords();
             for (int stripIndex = 0; stripIndex < strips.size(); stripIndex++) {
-                List<Vector3D> strip = strips.get(stripIndex);
+                List<Vector3Dd> strip = strips.get(stripIndex);
                 if (strip.size() < 3) {
                     continue;
                 }
-                List<Vector3D> uvStrip = stripIndex < stripTexCoords.size() ? stripTexCoords.get(stripIndex) : List.of();
+                List<Vector3Dd> uvStrip = stripIndex < stripTexCoords.size() ? stripTexCoords.get(stripIndex) : List.of();
                 gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
                 for (int i = 0; i < strip.size(); i++) {
-                    Vector3D p = strip.get(i);
+                    Vector3Dd p = strip.get(i);
                     if (textured && i < uvStrip.size()) {
-                        Vector3D uv = uvStrip.get(i);
+                        Vector3Dd uv = uvStrip.get(i);
                         gl2.glTexCoord2d(uv.x(), uv.y());
                     }
                     gl2.glVertex3d(p.x(), p.y(), p.z());
@@ -141,12 +141,12 @@ final class Jogl4TileRenderer {
             }
             if (!drawGlobeLevelTileSetOverlay) {
                 gl2.glLineWidth(1.0f);
-                for (List<Vector3D> strip : tile.getStrips()) {
+                for (List<Vector3Dd> strip : tile.getStrips()) {
                     if (strip.size() < 2) {
                         continue;
                     }
                     gl2.glBegin(GL2.GL_LINE_STRIP);
-                    for (Vector3D p : strip) {
+                    for (Vector3Dd p : strip) {
                         gl2.glVertex3d(p.x(), p.y(), p.z());
                     }
                     gl2.glEnd();
@@ -184,7 +184,7 @@ final class Jogl4TileRenderer {
     static void drawExtractedLineStrips(
         GL2 gl2,
         List<Line> lines,
-        Matrix4x4 projection,
+        Matrix4x4d projection,
         double[] defaultModelViewMatrix
     ) {
         if (lines == null || lines.isEmpty()) {
@@ -207,7 +207,7 @@ final class Jogl4TileRenderer {
         gl2.glColor3d(1.0, 1.0, 0.0);
         gl2.glLineWidth(2.0f);
         for (Line line : lines) {
-            List<Vector3D> lineStrip = line == null ? List.of() : line.getPoints();
+            List<Vector3Dd> lineStrip = line == null ? List.of() : line.getPoints();
             if (lineStrip.size() < 2) {
                 continue;
             }
@@ -226,7 +226,7 @@ final class Jogl4TileRenderer {
                 gl2.glLoadIdentity();
             }
             gl2.glBegin(GL2.GL_LINE_STRIP);
-            for (Vector3D p : lineStrip) {
+            for (Vector3Dd p : lineStrip) {
                 gl2.glVertex3d(p.x(), p.y(), p.z());
             }
             gl2.glEnd();

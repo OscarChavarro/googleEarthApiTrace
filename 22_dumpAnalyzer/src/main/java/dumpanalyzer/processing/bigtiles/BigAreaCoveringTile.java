@@ -7,7 +7,7 @@ import dumpanalyzer.processing.TriangleStripTileClassifier;
 import dumpanalyzer.processing.TriangleStripTileTopology;
 import java.util.ArrayList;
 import java.util.List;
-import vsdk.toolkit.common.linealAlgebra.Vector3D;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class BigAreaCoveringTile {
     private static final double UV_TOLERANCE = 1e-3;
@@ -48,11 +48,11 @@ public final class BigAreaCoveringTile {
         }
 
         UvBounds bounds = computeBounds(allVertices);
-        Vector3D center = average(allVertices, v -> true);
-        Vector3D north = average(allVertices, v -> Math.abs(v.v() - bounds.maxV) <= UV_TOLERANCE);
-        Vector3D south = average(allVertices, v -> Math.abs(v.v() - bounds.minV) <= UV_TOLERANCE);
-        Vector3D east = average(allVertices, v -> Math.abs(v.u() - bounds.maxU) <= UV_TOLERANCE);
-        Vector3D west = average(allVertices, v -> Math.abs(v.u() - bounds.minU) <= UV_TOLERANCE);
+        Vector3Dd center = average(allVertices, v -> true);
+        Vector3Dd north = average(allVertices, v -> Math.abs(v.v() - bounds.maxV) <= UV_TOLERANCE);
+        Vector3Dd south = average(allVertices, v -> Math.abs(v.v() - bounds.minV) <= UV_TOLERANCE);
+        Vector3Dd east = average(allVertices, v -> Math.abs(v.u() - bounds.maxU) <= UV_TOLERANCE);
+        Vector3Dd west = average(allVertices, v -> Math.abs(v.u() - bounds.minU) <= UV_TOLERANCE);
         if (center == null || north == null || south == null || east == null || west == null) {
             return new GlobeLevelTileSet(tile.getContentId(), null, null, null, null, null, geometries.size(), false);
         }
@@ -77,7 +77,7 @@ public final class BigAreaCoveringTile {
         return new UvBounds(minU, maxU, minV, maxV);
     }
 
-    private static Vector3D average(
+    private static Vector3Dd average(
         List<TileInstance.TriangleStripVertex> vertices,
         java.util.function.Predicate<TileInstance.TriangleStripVertex> predicate
     ) {
@@ -98,7 +98,7 @@ public final class BigAreaCoveringTile {
             return null;
         }
         double inv = 1.0 / count;
-        return new Vector3D(sx * inv, sy * inv, sz * inv);
+        return new Vector3Dd(sx * inv, sy * inv, sz * inv);
     }
 
     private record UvBounds(double minU, double maxU, double minV, double maxV) {
