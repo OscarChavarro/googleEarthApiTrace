@@ -10,26 +10,31 @@ public final class GlobeGenerator implements CurveGenerator {
     private static final double WORLD_SPAN_METERS = 2.0 * Math.PI * WEB_MERCATOR_R;
     private static final double MIN_LAT_DEG = -85.05112878;
     private static final double MAX_LAT_DEG = 85.05112878;
+    private static final double POLAR_MARGIN_MULTIPLIER = 2.0;
+    private static final double RETURN_MARGIN_MULTIPLIER = 4.0;
+    private static final double EQUATOR_ALTITUDE_MULTIPLIER = 2.0;
+    private static final double POLE_ALTITUDE_MULTIPLIER = 1.0;
 
     @Override
     public List<Point> buildTurtleCurve(double startLat, double startLon, double stepMeters, double maxDistanceFromStartMeters) {
         List<Point> points = new ArrayList<>();
-        double altitudeMeters = stepMeters;
-        double margin = stepMeters;
-        double minX = margin;
-        double maxX = WORLD_SPAN_METERS - margin;
+        double polarMargin = stepMeters * POLAR_MARGIN_MULTIPLIER;
+        double returnMargin = stepMeters * RETURN_MARGIN_MULTIPLIER;
+        double minX = returnMargin;
+        double maxX = WORLD_SPAN_METERS - returnMargin;
 
         if (minX >= maxX) {
             return points;
         }
 
-        double northLatDeg = mercatorYToLatDeg(margin);
-        double southLatDeg = mercatorYToLatDeg(WORLD_SPAN_METERS - margin);
+        double northLatDeg = mercatorYToLatDeg(polarMargin);
+        double southLatDeg = mercatorYToLatDeg(WORLD_SPAN_METERS - polarMargin);
         double rowLatDeg = northLatDeg;
         boolean leftToRight = true;
         for (int row = 0; row < 200000; row++) {
             double startLonDeg = mercatorXToLonDeg(leftToRight ? minX : maxX);
             double endLonDeg = mercatorXToLonDeg(leftToRight ? maxX : minX);
+            double altitudeMeters = altitudeForLatitude(rowLatDeg, stepMeters);
 
             appendParallel(points, rowLatDeg, startLonDeg, endLonDeg, stepMeters, leftToRight, altitudeMeters);
             leftToRight = !leftToRight;
@@ -46,6 +51,14 @@ public final class GlobeGenerator implements CurveGenerator {
             }
         }
         return points;
+    }
+
+    private double altitudeForLatitude(double latDeg, double baseAltitudeMeters) {
+        double latitudeFactor = Math.abs(Math.sin(Math.toRadians(latDeg)));
+        double altitudeMultiplier =
+                EQUATOR_ALTITUDE_MULTIPLIER
+                        - (EQUATOR_ALTITUDE_MULTIPLIER - POLE_ALTITUDE_MULTIPLIER) * latitudeFactor;
+        return baseAltitudeMeters * altitudeMultiplier;
     }
 
     private void appendParallel(

@@ -1,54 +1,41 @@
-# fileSystemChangesDetector
+# 12_fileSystemChangesDetector
 
-`fileSystemChangesDetector` is a Linux utility used by `13_googleEarthController` to decide when Google Earth navigation can continue.
+`12_fileSystemChangesDetector` is a Linux utility used by `13_googleEarthController` to decide the best moment to make Google Earth navigation to continue movement, based on disk write
+activity.
 
-It watches a target output directory (typically `/media/ramdisk/output`) with `fanotify` and reports new file activity.
+It watches a target output directory (typically `/media/ramdisk/output`) with `inotify` and reports new file activity.
 
 ## Why it exists
 
-The tracer writes texture/frame artifacts asynchronously. While writes are still happening, the controller should not advance. When writes stop for a configured time window, the controller can safely continue.
+The `01_tracer` writes texture/frame artifacts asynchronously. While writes are still happening, the `13_googleEarthController` should not advance in order to avoid machine performance degradation or data being droped. When writes stop for a configured time window, the controller can safely continue.
 
 ## Runtime behavior
 
-- Watches one directory for `FAN_CREATE` and `FAN_MOVED_TO` events.
+- Watches one directory tree recursively for `IN_CREATE` and `IN_MOVED_TO` events.
 - Prints one line per detected update:
   - `Updated at <timestamp>`
 - Accepts `exit` on stdin for graceful shutdown.
+- Adds watches dynamically for newly created subdirectories.
 
-## Important privilege requirement (fanotify)
+## Privileges
 
-Due to `fanotify` privilege limitations, this executable must run with elevated privileges.
-
-In this project workflow, it is expected to be:
-
-- Owned by `root`
-- Marked with the `setuid` (`suid`) bit
-
-Without that, `fanotify_init` can fail with a permission error.
-
-## Set owner and `suid`
-
-From this folder, after building:
-
-```bash
-sudo chown root:root ./build/fileSystemChangesDetector
-sudo chmod 4755 ./build/fileSystemChangesDetector
-```
-
-Optional check:
-
-```bash
-ls -l ./build/fileSystemChangesDetector
-```
-
-You should see owner `root root` and permissions similar to `-rwsr-xr-x`.
+The current implementation uses `inotify`, so it normally does not require `root`, `sudo`, or `setuid`.
+Standard read/execute access to the watched directory tree is sufficient.
 
 ## Build and run
 
 From this folder:
 
 ```bash
+cmake -S . -B build
+cmake --build build -j
+./build/fileSystemChangesDetector /media/ramdisk/output
+```
+
+Or use:
+
+```bash
 ./run.sh
 ```
 
-`run.sh` builds and runs the detector with `sudo`.
+`run.sh` builds and runs the detector without `sudo`.

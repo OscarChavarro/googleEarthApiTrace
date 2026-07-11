@@ -1,17 +1,30 @@
 # Tracer Overview
 
-This directory contains a minimal `apitrace` fork focused on capture + runtime export.
+This directory contains a minimal [apitrace](https://apitrace.github.io) fork focused on capture + runtime export.
 
 During execution, the tracer:
 
-1. Keeps writing the standard `.trace`.
-2. Exports per-frame blobs/artifacts to `/media/ramdisk/output/%05d/`.
+1. Keeps writing the standard `.trace` (standard apitrace behavior).
+2. Exports per-frame blobs/artifacts to `/media/ramdisk/output/%05d/` (modified/added behavior in this fork).
 
 ## Goal of this variant
 
 - Keep compatibility with the normal `apitrace` workflow (`.trace`).
 - Extract large binary data during tracing (without relying only on post-processing).
 - Export textures when they appear as blobs in relevant GL calls.
+
+## Using apitrace to intercept Google Earth desktop app OpenGL calls
+
+In linux, `google-earth-pro` script is modified to end with `apitrace trace "$(dirname "$(readlink -f "$0")")/googleearth-bin" "$@"`.
+When running, a `googleearth-bin.trace` or similar (appending numbers on each new run) will be written at program folder.
+
+After closing the Google Earth session, the main .trace file can be opened with `qapitrace` program, which allows to debug information
+captured for each frame. Next figure shows an advance in the back buffer showing partial drawing of a single frame.
+
+![qapitrace](doc/qapitraceInspector.png)
+
+Note that this program will also write additional binary data to the folder configured by `OUTPUT_DIRECTORY` variable in the [CMakeLists.txt](CMakeLists.txt)
+file.
 
 ## Relevant GL hooks for textures
 

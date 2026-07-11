@@ -1,6 +1,6 @@
 # FrameTextureNormalizer
 
-`FrameTextureNormalizer` is a Java 17 + Gradle utility that consumes preprocessed frame data from `/media/ramdisk/output`.
+`FrameTextureNormalizer` is a Java 17 + Gradle utility that consumes preprocessed frame data from `/media/ramdisk/output` (or value configured at [src/main/resources/application.properties](src/main/resources/application.properties) ).
 
 ## Input
 

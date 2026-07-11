@@ -2,6 +2,12 @@
 
 `traceLogSplitter` is a small C++ utility for post-processing OpenGL trace text logs.
 
+## Obtaining big text file from trace session data
+
+```
+apitrace dump googleearth-bin.trace > textfile.txt
+```
+
 ## What it does
 
 - Reads a large input GL trace text file.
