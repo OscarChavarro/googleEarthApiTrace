@@ -1,4 +1,10 @@
 build/
 .gradle/
+.gradle-user-home/
 .codex
+**/.codex/
 .idea/
+__pycache__/
+*.py[cod]
+\#*#
+*~
