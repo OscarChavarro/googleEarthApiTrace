@@ -16,6 +16,8 @@ public final class PyramidalImageExporterModel {
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private String inputFolder;
+    private String sessionPyramidalImageExportPath;
+    private String lastExportStatus;
     private long gpuTextureBytesAssigned = 0L;
     private int selectedLayerIndex = 0;
 
@@ -38,6 +40,24 @@ public final class PyramidalImageExporterModel {
 
     public void setInputFolder(String inputFolder) {
         this.inputFolder = (inputFolder == null || inputFolder.isBlank()) ? null : inputFolder;
+    }
+
+    public String getSessionPyramidalImageExportPath() {
+        return sessionPyramidalImageExportPath;
+    }
+
+    public void setSessionPyramidalImageExportPath(String sessionPyramidalImageExportPath) {
+        this.sessionPyramidalImageExportPath = (sessionPyramidalImageExportPath == null || sessionPyramidalImageExportPath.isBlank())
+            ? null
+            : sessionPyramidalImageExportPath;
+    }
+
+    public String getLastExportStatus() {
+        return lastExportStatus;
+    }
+
+    public void setLastExportStatus(String lastExportStatus) {
+        this.lastExportStatus = lastExportStatus;
     }
 
     public void setMatrixLayers(List<MatrixLayer> layers) {

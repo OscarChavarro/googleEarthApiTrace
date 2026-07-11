@@ -11,6 +11,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final PyramidalImageExporterModel model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
+    private final Runnable exportAction;
     private final CameraControllerOrbiter cameraController;
     private final RendererConfigurationController renderingConfigurationController;
 
@@ -18,12 +19,14 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         PyramidalImageExporterModel model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
-        Runnable repaintAction
+        Runnable repaintAction,
+        Runnable exportAction
     ) {
         this.model = model;
         this.closeAction = closeAction;
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
+        this.exportAction = exportAction;
         this.renderingConfigurationController = model == null
             ? null
             : new RendererConfigurationController(model.getRenderingConfiguration());
@@ -48,6 +51,13 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (keyChar == '2') {
             if (model.selectNextLayer()) {
+                repaintAction.run();
+            }
+            return;
+        }
+        if (keyChar == 'e') {
+            if (exportAction != null) {
+                exportAction.run();
                 repaintAction.run();
             }
             return;

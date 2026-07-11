@@ -21,11 +21,13 @@ public class Main {
 
     public static void main(String[] args) {
         boolean offline = hasArg(args, "--ofline") || hasArg(args, "--offline");
-        String inputFolder = parseInputFolder(args);
-        if (inputFolder == null) {
-            System.err.println("ERROR: Missing input directory parameter.");
+        List<String> positionalArgs = parsePositionalArgs(args);
+        if (positionalArgs.size() < 2) {
+            printUsage();
             System.exit(1);
         }
+        String inputFolder = positionalArgs.get(0);
+        String sessionPyramidalImageExportPath = positionalArgs.get(1);
 
         Path inputPath = Path.of(inputFolder).toAbsolutePath().normalize();
         if (!Files.isDirectory(inputPath) || !Files.isReadable(inputPath)) {
@@ -34,6 +36,9 @@ public class Main {
         }
 
         PyramidalImageExporterModel model = createModel(inputPath);
+        model.setSessionPyramidalImageExportPath(
+            Path.of(sessionPyramidalImageExportPath).toAbsolutePath().normalize().toString()
+        );
         if (offline) {
             System.out.println("Offline mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
             int layerIndex = intArgValue(args, "--layer", 0);
@@ -140,9 +145,10 @@ public class Main {
         }
     }
 
-    private static String parseInputFolder(String[] args) {
+    private static List<String> parsePositionalArgs(String[] args) {
+        List<String> positional = new ArrayList<>();
         if (args == null) {
-            return null;
+            return positional;
         }
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -159,10 +165,22 @@ public class Main {
                 continue;
             }
             if (!arg.startsWith("--")) {
-                return arg;
+                positional.add(arg);
             }
         }
-        return null;
+        return positional;
+    }
+
+    private static void printUsage() {
+        System.err.println(
+            "Usage: gradle run --args=\"<inputFolder> <sessionPyramidalImageExportPath> "
+                + "[--offline] [--layer <i>] [--width <px>] [--height <px>] [--output <path>] [--wires]\""
+        );
+        System.err.println("  <inputFolder>: directory with the matrix_<n> folders exported by 31_matrixMerger.");
+        System.err.println(
+            "  <sessionPyramidalImageExportPath>: destination directory for the pyramidal image quadtree "
+                + "export triggered with the 'e' key in the interactive viewer."
+        );
     }
 
     private static boolean isValueFlag(String arg) {

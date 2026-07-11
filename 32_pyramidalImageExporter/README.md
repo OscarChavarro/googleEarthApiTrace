@@ -10,16 +10,26 @@ Image".
 The top quadtree levels (`0..5`) are now fully reconstructed: every cell of every
 top-level layer is textured and the layer visualization corresponds to the map of planet
 Earth. What remains pending is anchoring the deeper `matrix_<n>` layers into absolute
-quadtree coordinates and writing the final pyramidal image to disk.
+quadtree coordinates. The reconstructed top-level pyramid can already be exported to disk
+as a quadtree of PNG files with the `e` key (see "Exporting the pyramidal image" below).
 
 ## Inputs
 
 - `<inputFolder>` (positional, required): directory containing the `matrix_<n>` folders
-  exported by `31_matrixMerger`, each with a `matrixLayer.json` and its tile textures.
-  Example: `/samples/datasets/googleEarth/take01` (used by `./run.sh`).
+  exported by `31_matrixMerger`, each with a `matrixLayer.json` and its tile textures. The
+  top-level pyramid (levels `0..5`, see below) does not depend on this folder having any
+  `matrix_<n>` subfolders, only `topLevelTiles.json` does; `./run.sh` defaults it to
+  `/media/ramdisk/output`, the same folder `output.directory` points to.
+- `<sessionPyramidalImageExportPath>` (positional, required): destination directory for
+  the pyramidal image quadtree export triggered with the `e` key (see below), e.g.
+  `/samples/datasets/googleEarth` (the default used by `./run.sh`). It does not need to
+  exist beforehand; it is created on first export. This is an output-only folder — do not
+  point it at `<inputFolder>` or at `output.directory`, both of which are read from, not
+  written to.
 - `topLevelTiles.json` read from the root of `output.directory` (configured in
   [src/main/resources/application.properties](src/main/resources/application.properties),
-  default `/media/ramdisk/output`).
+  default `/media/ramdisk/output`). This is where the actual source data (strips,
+  appearances and their images) comes from.
 
 ### Top-level reconstruction from texCoords
 
@@ -39,18 +49,17 @@ the corresponding texture sub-rectangle (`TileCoord.texU0/texV0/texU1/texV1`, Op
 convention: `v = 0` at the image bottom / south side). The legacy `pathFromRoot`,
 `row` and `col` fields of `topLevelTiles.json` are no longer used.
 
-The `pyramidal.image.directory` property is reserved for the final pyramid output
-location and is not used by the code yet.
-
 ## Execution
 
 From this directory:
 
 ```bash
-gradle run --args="/samples/datasets/googleEarth/take01"
+gradle run --args="/media/ramdisk/output /samples/datasets/googleEarth"
 ```
 
-or `./run.sh`.
+or `./run.sh`, which forwards its own positional arguments to the same two parameters
+(`./run.sh <inputFolder> <sessionPyramidalImageExportPath>`) and otherwise defaults to the
+command above.
 
 ## Interactive usage guide
 
@@ -60,14 +69,33 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 |---|---|
 | `1` / `2` | Select previous / next matrix layer |
 | `t` | Toggle textured rendering |
+| `e` | Export the pyramidal image quadtree to `<sessionPyramidalImageExportPath>` |
 | `ESC` | Exit |
 
 HUD:
 
 - `Layer [1, 2]: i/N | frame <id> | Matrix: <rows>x<cols>`: selected layer and its size.
-- `Toggle textures [t], orbit camera with mouse, source: <inputFolder>`.
+- `Toggle textures [t], Export [e], orbit camera with mouse, source: <inputFolder>`.
+- `Export destination: <sessionPyramidalImageExportPath> | <last export status>`.
 - When the bounding-volume display mode is enabled, each visible tile is annotated with
   its id and `(i, j)` cell coordinates.
+
+## Exporting the pyramidal image
+
+Pressing `e` writes the reconstructed top-level pyramid (levels `0..5`) to
+`<sessionPyramidalImageExportPath>` as a quadtree of PNG files, matching the pyramid
+already drawn in the interactive viewer:
+
+- The root tile is `0.png`, directly in the destination directory.
+- Its 4 children are folders `00`, `01`, `02`, `03`; each one holds its own tile image
+  (e.g. `00/00.png`) and, recursively, its own 4 child folders (e.g. `00/000/`, `00/001/`,
+  `00/002/`, `00/003/`), one level deeper per quadtree level.
+- Each tile image is a `256x256` PNG cropped (nearest-neighbor) from its source texture's
+  sub-rectangle, the same sub-rectangle used to texture that tile on screen.
+
+This replaces the earlier `matrix_<n>/matrixLayer.json` copy-based layout used by
+`31_matrixMerger`'s `ResultsExporter`: the pyramidal image is written directly as a
+quadtree of images, with no JSON manifest.
 
 The selected layer is drawn as textured quads on plane `Z=0`, with frustum culling,
 distance-based LOD (near: textured; far: untextured, 98% scale) and a FIFO GPU texture
@@ -82,6 +110,7 @@ texture source:
 ## Command-line options
 
 - `<inputFolder>` (positional, required): see Inputs.
+- `<sessionPyramidalImageExportPath>` (positional, required): see Inputs.
 - `--ofline` / `--offline`: loads all layers and renders the selected layer to a PNG
   snapshot without opening a window, using an orthographic top view that frames the
   whole matrix (all tiles textured, no culling/LOD).
@@ -93,10 +122,13 @@ texture source:
 - `--wires`: also draw tile borders in the offline snapshot (white = native resolution,
   green = borrowed from an ancestor image).
 
+Both positional arguments may appear in either order relative to the flags. If either is
+missing, an English usage message is printed to stderr and the program exits with code `1`.
+
 ### Offline example (level-4 world map, 16x16 tiles)
 
 ```bash
-gradle run --args="--offline /samples/datasets/googleEarth/take01 --layer 4 --output /tmp/level4.png"
+gradle run --args="--offline /media/ramdisk/output /samples/datasets/googleEarth --layer 4 --output /tmp/level4.png"
 ```
 
 ## Notes for agentic coding agents
@@ -106,9 +138,11 @@ gradle run --args="--offline /samples/datasets/googleEarth/take01 --layer 4 --ou
   without user interaction. On a machine without a display, run it under `xvfb-run -a`.
 - Startup diagnostics on stdout are parseable: `TopLevelTilesReader: loaded strips=...`,
   `TopLevelsMatricesImporter: level L matrix=SxS, nativeResolutionCells=..., derivedCells=...,
-  emptyCells=...`, and `Offline image written to: <path>`.
-- Missing or unreadable `<inputFolder>` exits with code `1` and an `ERROR:` message on
-  stderr.
+  emptyCells=...`, `Offline image written to: <path>`, and `PyramidalImageExporter: Export
+  complete: N tiles written to <path>` after pressing `e`.
+- Missing required positional arguments prints a `Usage: ...` message to stderr and exits
+  with code `1`. Missing or unreadable `<inputFolder>` exits with code `1` and an `ERROR:`
+  message on stderr.
 
 ## Configuration
 

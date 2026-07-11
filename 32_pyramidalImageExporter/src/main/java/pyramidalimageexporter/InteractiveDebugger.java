@@ -9,6 +9,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import pyramidalimageexporter.gui.KeyboardInteractionTechniques;
 import pyramidalimageexporter.gui.MouseInteractionTechnique;
+import pyramidalimageexporter.io.PyramidalImageExporter;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
 import pyramidalimageexporter.render.Jogl4PyramidalImageExporterRenderer;
 
@@ -68,7 +69,8 @@ public class InteractiveDebugger extends Applet {
             model,
             this::requestClose,
             renderer.getCameraController(),
-            canvas::repaint
+            canvas::repaint,
+            () -> new PyramidalImageExporter().export(model)
         );
         canvas.addKeyListener(keyboardInteraction);
         canvas.setFocusable(true);
