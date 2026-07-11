@@ -17,13 +17,16 @@ public class GoogleEarthController {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final Object timerLock = new Object();
     private final Object spinnerLock = new Object();
-    private final AtomicLong inactivityToken = new AtomicLong(0);
+    // Invalidates pending inactivity timers: bumped on every reschedule (e.g. detector activity).
+    private final AtomicLong timerToken = new AtomicLong(0);
+    // Invalidates in-flight interaction sequences: bumped only when the session stops.
+    private final AtomicLong sessionToken = new AtomicLong(0);
 
     private final DetectorProcessClient detectorClient = new DetectorProcessClient();
     private GoogleEarthUi ui;
 
     private volatile boolean running;
-    private volatile ScheduledFuture<?> inactivityTimer;
+    private ScheduledFuture<?> inactivityTimer;
     private int spinnerIndex;
 
     public static void main(String[] args) {
@@ -81,8 +84,8 @@ public class GoogleEarthController {
         }
 
         running = false;
+        sessionToken.incrementAndGet();
         cancelInactivityTimer();
-        inactivityToken.incrementAndGet();
         detectorClient.stop();
         System.out.println("[OK] Navigation session stopped.");
     }
@@ -105,55 +108,56 @@ public class GoogleEarthController {
     }
 
     private void scheduleInactivityCycle() {
-        long token = inactivityToken.incrementAndGet();
-        cancelInactivityTimer();
-
-        ScheduledFuture<?> timer = scheduler.schedule(
-            () -> onInactivityTimeout(token),
-            CONTINUE_DELAY_SECONDS,
-            TimeUnit.SECONDS
-        );
+        long session = sessionToken.get();
 
         synchronized (timerLock) {
-            inactivityTimer = timer;
+            long token = timerToken.incrementAndGet();
+            if (inactivityTimer != null) {
+                inactivityTimer.cancel(false);
+            }
+            inactivityTimer = scheduler.schedule(
+                () -> onInactivityTimeout(token, session),
+                CONTINUE_DELAY_SECONDS,
+                TimeUnit.SECONDS
+            );
         }
     }
 
-    private void onInactivityTimeout(long token) {
-        if (!isCurrentToken(token)) {
+    private void onInactivityTimeout(long token, long session) {
+        if (!isCurrentSession(session) || timerToken.get() != token) {
             return;
         }
 
         System.out.println("!");
-        runInteractionSequence(token);
+        runInteractionSequence(session);
 
-        if (isCurrentToken(token)) {
+        if (isCurrentSession(session)) {
             scheduleInactivityCycle();
         }
     }
 
-    private boolean isCurrentToken(long token) {
-        return running && inactivityToken.get() == token;
+    private boolean isCurrentSession(long session) {
+        return running && sessionToken.get() == session;
     }
 
-    private void runInteractionSequence(long token) {
+    private void runInteractionSequence(long session) {
         runBlockingSync();
-        if (!isCurrentToken(token)) {
+        if (!isCurrentSession(session)) {
             return;
         }
 
         ui.pressAndHoldKey(java.awt.event.KeyEvent.VK_DOWN, KEY_HOLD_MILLIS);
-        if (!isCurrentToken(token)) {
+        if (!isCurrentSession(session)) {
             return;
         }
 
         sleepInterruptibly(BETWEEN_KEYS_MILLIS);
-        if (!isCurrentToken(token)) {
+        if (!isCurrentSession(session)) {
             return;
         }
 
         ui.pressAndHoldKey(java.awt.event.KeyEvent.VK_ENTER, KEY_HOLD_MILLIS);
-        if (!isCurrentToken(token)) {
+        if (!isCurrentSession(session)) {
             return;
         }
 
