@@ -27,7 +27,7 @@ public final class Jogl4MatrixLayerRenderer {
             drawSurfaces(gl2, matrixLayer, renderingConfiguration.isTextureSet(), model);
         }
         if (renderingConfiguration.isWiresSet()) {
-            drawWires(gl2, matrixLayer, model);
+            drawWires(gl2, matrixLayer, model, false);
         }
         if (renderingConfiguration.isPointsSet()) {
             drawPoints(gl2, matrixLayer, model);
@@ -61,15 +61,7 @@ public final class Jogl4MatrixLayerRenderer {
             TextureResident resident = drawTextured ? acquireTexture(gl2, tile.getTextureFile(), model) : null;
             Texture texture = resident == null ? null : resident.texture();
             if (drawTextured && texture != null) {
-                texture.bind(gl2);
-                TextureCoords tc = texture.getImageTexCoords();
-                gl2.glColor3f(1f, 1f, 1f);
-                gl2.glBegin(GL2.GL_QUADS);
-                gl2.glTexCoord2f(tc.left(), tc.bottom()); gl2.glVertex3f(x0, yBottom, 0f);
-                gl2.glTexCoord2f(tc.right(), tc.bottom()); gl2.glVertex3f(x1, yBottom, 0f);
-                gl2.glTexCoord2f(tc.right(), tc.top()); gl2.glVertex3f(x1, yTop, 0f);
-                gl2.glTexCoord2f(tc.left(), tc.top()); gl2.glVertex3f(x0, yTop, 0f);
-                gl2.glEnd();
+                drawTexturedQuad(gl2, texture, tile, x0, yTop, x1, yBottom);
             }
             else {
                 float rx0 = x0;
@@ -100,12 +92,11 @@ public final class Jogl4MatrixLayerRenderer {
         gl2.glDisable(GL2.GL_TEXTURE_2D);
     }
 
-    private void drawWires(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model) {
+    private void drawWires(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model, boolean skipCulling) {
         float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glLineWidth(1.1f);
-        gl2.glColor3f(1.0f, 1.0f, 1.0f);
         for (TileCoord tile : matrixLayer.getTiles()) {
             if (tile == null) {
                 continue;
@@ -114,8 +105,15 @@ public final class Jogl4MatrixLayerRenderer {
             float y0 = -tile.getI() + offsetY;
             float x1 = tile.getJ() + 1.0f + offsetX;
             float y1 = -(tile.getI() + 1.0f) + offsetY;
-            if (!QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, y0, x1, y1)) {
+            if (!skipCulling
+                && !QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, y0, x1, y1)) {
                 continue;
+            }
+            if (usesFullTextureResolution(tile)) {
+                gl2.glColor3f(1.0f, 1.0f, 1.0f);
+            }
+            else {
+                gl2.glColor3f(0.2f, 0.9f, 0.2f);
             }
             gl2.glBegin(GL2.GL_LINE_LOOP);
             gl2.glVertex3f(x0, y0, 0.001f);
@@ -124,6 +122,16 @@ public final class Jogl4MatrixLayerRenderer {
             gl2.glVertex3f(x0, y1, 0.001f);
             gl2.glEnd();
         }
+    }
+
+    /**
+     * A tile drawn with its whole texture has native (full) resolution; a
+     * partial sub-rectangle means the pixels are borrowed from a parent or
+     * ancestor level image.
+     */
+    private static boolean usesFullTextureResolution(TileCoord tile) {
+        return tile.getTexU0() == 0.0 && tile.getTexV0() == 0.0
+            && tile.getTexU1() == 1.0 && tile.getTexV1() == 1.0;
     }
 
     private void drawPoints(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model) {
@@ -147,6 +155,62 @@ public final class Jogl4MatrixLayerRenderer {
             gl2.glVertex3f(tile.getJ() + 0.5f + offsetX, -(tile.getI() + 0.5f) + offsetY, 0.002f);
         }
         gl2.glEnd();
+    }
+
+    /**
+     * Offline variant: draws every tile textured, without frustum culling and
+     * without the distance-based LOD, so a full layer snapshot can be taken
+     * from an orthographic view.
+     */
+    public void drawAllTilesTextured(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model) {
+        if (gl2 == null || matrixLayer == null || model == null) {
+            return;
+        }
+        float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
+        gl2.glEnable(GL2.GL_TEXTURE_2D);
+        for (TileCoord tile : matrixLayer.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            float x0 = tile.getJ() + offsetX;
+            float yTop = -tile.getI() + offsetY;
+            float x1 = tile.getJ() + 1.0f + offsetX;
+            float yBottom = -(tile.getI() + 1.0f) + offsetY;
+            TextureResident resident = acquireTexture(gl2, tile.getTextureFile(), model);
+            Texture texture = resident == null ? null : resident.texture();
+            if (texture != null) {
+                drawTexturedQuad(gl2, texture, tile, x0, yTop, x1, yBottom);
+            }
+        }
+        gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        if (model.getRenderingConfiguration().isWiresSet()) {
+            drawWires(gl2, matrixLayer, model, true);
+        }
+    }
+
+    private static void drawTexturedQuad(GL2 gl2, Texture texture, TileCoord tile, float x0, float yTop, float x1, float yBottom) {
+        texture.bind(gl2);
+        TextureCoords tc = texture.getImageTexCoords();
+        // Tile sub-rectangle (GL convention: v = 0 at image bottom),
+        // interpolated over the texture's own coordinate range so that
+        // vertically flipped loads keep working.
+        float left = interpolate(tc.left(), tc.right(), tile.getTexU0());
+        float right = interpolate(tc.left(), tc.right(), tile.getTexU1());
+        float bottom = interpolate(tc.bottom(), tc.top(), tile.getTexV0());
+        float top = interpolate(tc.bottom(), tc.top(), tile.getTexV1());
+        gl2.glColor3f(1f, 1f, 1f);
+        gl2.glBegin(GL2.GL_QUADS);
+        gl2.glTexCoord2f(left, bottom); gl2.glVertex3f(x0, yBottom, 0f);
+        gl2.glTexCoord2f(right, bottom); gl2.glVertex3f(x1, yBottom, 0f);
+        gl2.glTexCoord2f(right, top); gl2.glVertex3f(x1, yTop, 0f);
+        gl2.glTexCoord2f(left, top); gl2.glVertex3f(x0, yTop, 0f);
+        gl2.glEnd();
+    }
+
+    private static float interpolate(float from, float to, double fraction) {
+        return (float) (from + fraction * (to - from));
     }
 
     private TextureResident acquireTexture(GL2 gl2, String texturePath, PyramidalImageExporterModel model) {

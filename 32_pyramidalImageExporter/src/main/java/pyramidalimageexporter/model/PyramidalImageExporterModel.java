@@ -76,6 +76,14 @@ public final class PyramidalImageExporterModel {
         return String.format("%05d", selected.getFrameId());
     }
 
+    public boolean selectLayerIndex(int index) {
+        if (matrixLayers.isEmpty() || index < 0 || index >= matrixLayers.size()) {
+            return false;
+        }
+        selectedLayerIndex = index;
+        return true;
+    }
+
     public boolean selectPreviousLayer() {
         if (matrixLayers.isEmpty() || selectedLayerIndex <= 0) {
             return false;

@@ -15,6 +15,10 @@ import pyramidalimageexporter.render.Jogl4PyramidalImageExporterRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public class Main {
+    private static final int DEFAULT_OFFLINE_WIDTH = 1024;
+    private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
+    private static final String DEFAULT_OFFLINE_OUTPUT = "/tmp/pyramidalImageExporter_offline.png";
+
     public static void main(String[] args) {
         boolean offline = hasArg(args, "--ofline") || hasArg(args, "--offline");
         String inputFolder = parseInputFolder(args);
@@ -32,6 +36,22 @@ public class Main {
         PyramidalImageExporterModel model = createModel(inputPath);
         if (offline) {
             System.out.println("Offline mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
+            int layerIndex = intArgValue(args, "--layer", 0);
+            if (!model.selectLayerIndex(layerIndex) && model.getMatrixLayerCount() > 0) {
+                System.out.println(
+                    "Offline warning: layer index " + layerIndex + " is out of range [0, "
+                        + (model.getMatrixLayerCount() - 1) + "]; using layer 0."
+                );
+            }
+            if (hasArg(args, "--wires")) {
+                model.getRenderingConfiguration().setWires(true);
+            }
+            renderOffline(
+                model,
+                stringArgValue(args, "--output", DEFAULT_OFFLINE_OUTPUT),
+                intArgValue(args, "--width", DEFAULT_OFFLINE_WIDTH),
+                intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT)
+            );
             return;
         }
 
@@ -43,6 +63,18 @@ public class Main {
         Jogl4PyramidalImageExporterRenderer renderer = new Jogl4PyramidalImageExporterRenderer(model);
         InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
         interactiveDebugger.launchDesktop();
+    }
+
+    private static void renderOffline(PyramidalImageExporterModel model, String outputPath, int width, int height) {
+        try {
+            Jogl4PyramidalImageExporterRenderer renderer = new Jogl4PyramidalImageExporterRenderer(model);
+            renderer.startOffscreen(outputPath, width, height);
+        }
+        catch (Throwable t) {
+            System.out.println(
+                "Warning: Offline image export is not available because there is no access to a graphics system."
+            );
+        }
     }
 
     private static PyramidalImageExporterModel createModel(Path inputPath) {
@@ -74,15 +106,56 @@ public class Main {
         return false;
     }
 
+    private static final String[] VALUE_FLAGS = {"--layer", "--width", "--height", "--output"};
+
+    private static String stringArgValue(String[] args, String flag, String fallback) {
+        if (args == null || flag == null) {
+            return fallback;
+        }
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg == null) {
+                continue;
+            }
+            if (arg.equals(flag) && i + 1 < args.length) {
+                return args[i + 1];
+            }
+            if (arg.startsWith(flag + "=")) {
+                return arg.substring(flag.length() + 1);
+            }
+        }
+        return fallback;
+    }
+
+    private static int intArgValue(String[] args, String flag, int fallback) {
+        String raw = stringArgValue(args, flag, null);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        }
+        catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
     private static String parseInputFolder(String[] args) {
         if (args == null) {
             return null;
         }
-        for (String arg : args) {
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
             if (arg == null || arg.isBlank()) {
                 continue;
             }
-            if ("--offline".equals(arg) || "--ofline".equals(arg)) {
+            if ("--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg)) {
+                continue;
+            }
+            if (isValueFlag(arg)) {
+                if (!arg.contains("=")) {
+                    i++;
+                }
                 continue;
             }
             if (!arg.startsWith("--")) {
@@ -90,5 +163,14 @@ public class Main {
             }
         }
         return null;
+    }
+
+    private static boolean isValueFlag(String arg) {
+        for (String flag : VALUE_FLAGS) {
+            if (arg.equals(flag) || arg.startsWith(flag + "=")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

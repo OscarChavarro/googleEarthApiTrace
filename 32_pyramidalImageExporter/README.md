@@ -7,10 +7,10 @@ Image".
 
 ## Status
 
-Work in progress. The program currently loads and visualizes all layers, but it does not
-yet write the final pyramidal image. Layers whose extent matches a fully covered quad are
-in good shape; synthesizing complete images for the topmost quadtree levels (0 and up),
-which no single quad covers, is the pending goal.
+The top quadtree levels (`0..5`) are now fully reconstructed: every cell of every
+top-level layer is textured and the layer visualization corresponds to the map of planet
+Earth. What remains pending is anchoring the deeper `matrix_<n>` layers into absolute
+quadtree coordinates and writing the final pyramidal image to disk.
 
 ## Inputs
 
@@ -19,10 +19,25 @@ which no single quad covers, is the pending goal.
   Example: `/samples/datasets/googleEarth/take01` (used by `./run.sh`).
 - `topLevelTiles.json` read from the root of `output.directory` (configured in
   [src/main/resources/application.properties](src/main/resources/application.properties),
-  default `/media/ramdisk/output`). From it, `TopLevelsMatricesImporter` synthesizes one
-  matrix layer per quadtree level `0..5` (sizes `1x1` to `32x32`), mapping each tile's
-  path-from-root to row/column cells. These synthetic top-level layers are prepended to
-  the imported `matrix_<n>` layers.
+  default `/media/ramdisk/output`).
+
+### Top-level reconstruction from texCoords
+
+`TopLevelsMatricesImporter` rebuilds levels `0..5` (sizes `1x1` to `32x32`) from the
+per-appearance `texCoord` data in `topLevelTiles.json`, using two facts of the traced
+data:
+
+- Each globe strip covers exactly `1/32 x 1/32` of the world texture space, so the strip
+  lattice is the level-5 quadtree grid.
+- Each appearance image is itself a quadtree-aligned `256x256` tile at some level
+  `k (0..4)`. An appearance whose `texCoord` spans `1/32` identifies a whole-world image
+  and anchors the strip's world rectangle; every other appearance is affinely unmapped to
+  recover its image's level and world cell.
+
+Each layer cell is then textured with the deepest catalogued image containing it, using
+the corresponding texture sub-rectangle (`TileCoord.texU0/texV0/texU1/texV1`, OpenGL
+convention: `v = 0` at the image bottom / south side). The legacy `pathFromRoot`,
+`row` and `col` fields of `topLevelTiles.json` are no longer used.
 
 The `pyramidal.image.directory` property is reserved for the final pyramid output
 location and is not used by the code yet.
@@ -58,19 +73,40 @@ The selected layer is drawn as textured quads on plane `Z=0`, with frustum culli
 distance-based LOD (near: textured; far: untextured, 98% scale) and a FIFO GPU texture
 memory budget, like `31_matrixMerger`.
 
+When tile borders are shown (Vitral wires toggle, `F2`), the border color encodes the
+texture source:
+
+- White: the tile has a texture at native (full) resolution for its level.
+- Green: the tile borrows a partial sub-rectangle from a parent/ancestor level image.
+
 ## Command-line options
 
 - `<inputFolder>` (positional, required): see Inputs.
-- `--ofline` / `--offline`: loads all layers, prints how many were loaded, and exits
-  without opening a window. No image is exported yet.
+- `--ofline` / `--offline`: loads all layers and renders the selected layer to a PNG
+  snapshot without opening a window, using an orthographic top view that frames the
+  whole matrix (all tiles textured, no culling/LOD).
+- `--layer <i>`: 0-based index of the layer to render offline (default `0`; top-level
+  layers `0..5` come first, then the imported `matrix_<n>` layers).
+- `--width <px>` / `--height <px>`: offline snapshot size (default `1024x1024`).
+- `--output <path>`: offline snapshot path (default
+  `/tmp/pyramidalImageExporter_offline.png`).
+- `--wires`: also draw tile borders in the offline snapshot (white = native resolution,
+  green = borrowed from an ancestor image).
+
+### Offline example (level-4 world map, 16x16 tiles)
+
+```bash
+gradle run --args="--offline /samples/datasets/googleEarth/take01 --layer 4 --output /tmp/level4.png"
+```
 
 ## Notes for agentic coding agents
 
-- The only headless capability today is `--offline`, which just validates that the input
-  can be loaded (`Offline mode loaded N matrix layers.`). There is no offline image
-  renderer yet, unlike `22`/`23`; that is part of the pending work.
+- `--offline` is a full headless renderer: it runs the whole import (including top-level
+  reconstruction) and writes a PNG snapshot of one layer, so results can be verified
+  without user interaction. On a machine without a display, run it under `xvfb-run -a`.
 - Startup diagnostics on stdout are parseable: `TopLevelTilesReader: loaded strips=...`,
-  `TopLevelsMatricesImporter: level L matrix=SxS, occupiedCells=...`.
+  `TopLevelsMatricesImporter: level L matrix=SxS, nativeResolutionCells=..., derivedCells=...,
+  emptyCells=...`, and `Offline image written to: <path>`.
 - Missing or unreadable `<inputFolder>` exits with code `1` and an `ERROR:` message on
   stderr.
 

@@ -5,24 +5,35 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.GLCapabilities;
+import com.jogamp.opengl.GLDrawableFactory;
 import com.jogamp.opengl.GLEventListener;
+import com.jogamp.opengl.GLOffscreenAutoDrawable;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
 import java.awt.geom.Rectangle2D;
+import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.TileCoord;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBImageUncompressed;
 
 public final class Jogl4PyramidalImageExporterRenderer implements GLEventListener {
     private final PyramidalImageExporterModel model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4MatrixLayerRenderer matrixLayerRenderer;
     private TextRenderer hudTextRenderer;
+    private boolean offlineMode;
+    private boolean offlineCaptureDone;
+    private String offlineOutputPath;
 
     public Jogl4PyramidalImageExporterRenderer(PyramidalImageExporterModel model) {
         this.model = model;
@@ -42,6 +53,46 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
 
     public CameraControllerOrbiter getCameraController() {
         return cameraController;
+    }
+
+    /**
+     * Renders the currently selected layer to an image file using an
+     * orthographic top view that frames the whole matrix, without opening a
+     * window.
+     */
+    public void startOffscreen(String outputPath, int width, int height) {
+        if (!vsdk.toolkit.render.jogl.Jogl4Renderer.verifyOpenGLAvailability()) {
+            System.out.println("Can not start OpenGL/JOGL renderer.");
+            return;
+        }
+        offlineMode = true;
+        offlineCaptureDone = false;
+        offlineOutputPath = outputPath;
+
+        GLProfile profile = GLProfile.get(GLProfile.GL4bc);
+        GLCapabilities caps = new GLCapabilities(profile);
+        caps.setDoubleBuffered(false);
+
+        GLDrawableFactory creator = GLDrawableFactory.getFactory(profile);
+        GLOffscreenAutoDrawable pBuffer = creator.createOffscreenAutoDrawable(
+            null, caps, null, Math.max(1, width), Math.max(1, height)
+        );
+        try {
+            pBuffer.addGLEventListener(this);
+            pBuffer.display();
+        }
+        finally {
+            try {
+                pBuffer.removeGLEventListener(this);
+            }
+            catch (Exception ignored) {
+            }
+            try {
+                pBuffer.destroy();
+            }
+            catch (Exception ignored) {
+            }
+        }
     }
 
     @Override
@@ -70,6 +121,17 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
         gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
 
         MatrixLayer selected = model.getSelectedMatrixLayer();
+        if (offlineMode) {
+            if (selected != null) {
+                applyOrthographicLayerFraming(gl2, drawable, selected);
+                matrixLayerRenderer.drawAllTilesTextured(gl2, selected, model);
+            }
+            if (!offlineCaptureDone) {
+                offlineCaptureDone = true;
+                captureOffscreen(drawable, gl2);
+            }
+            return;
+        }
         if (selected != null) {
             Matrix4x4d projection = model.getViewingCamera().calculateViewVolumeMatrix();
             float[] modelView = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
@@ -90,6 +152,50 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
         GL4 gl = drawable.getGL().getGL4();
         gl.glViewport(0, 0, xSize, ySize);
         model.getViewingCamera().updateViewportResize(xSize, ySize);
+    }
+
+    private static void applyOrthographicLayerFraming(GL2 gl2, GLAutoDrawable drawable, MatrixLayer layer) {
+        double neededHalfWidth = Math.max(1, layer.getCols()) * 0.5 + 0.5;
+        double neededHalfHeight = Math.max(1, layer.getRows()) * 0.5 + 0.5;
+        double aspect = (double) Math.max(1, drawable.getSurfaceWidth()) / Math.max(1, drawable.getSurfaceHeight());
+        double halfHeight = Math.max(neededHalfHeight, neededHalfWidth / aspect);
+        double halfWidth = halfHeight * aspect;
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glLoadIdentity();
+        gl2.glOrtho(-halfWidth, halfWidth, -halfHeight, halfHeight, -10.0, 10.0);
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        gl2.glLoadIdentity();
+    }
+
+    private void captureOffscreen(GLAutoDrawable drawable, GL2 gl2) {
+        int width = Math.max(1, drawable.getSurfaceWidth());
+        int height = Math.max(1, drawable.getSurfaceHeight());
+        ByteBuffer bb = ByteBuffer.allocateDirect(3 * width * height);
+        gl2.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1);
+        gl2.glReadPixels(0, 0, width, height, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, bb);
+
+        RGBImageUncompressed image = new RGBImageUncompressed();
+        image.init(width, height);
+        int k = 0;
+        for (int y = height - 1; y >= 0; y--) {
+            for (int x = 0; x < width; x++) {
+                image.putPixel(x, y, bb.get(k++), bb.get(k++), bb.get(k++));
+            }
+        }
+        File out = new File(offlineOutputPath == null || offlineOutputPath.isBlank()
+            ? "/tmp/pyramidalImageExporter_offline.png"
+            : offlineOutputPath);
+        try {
+            Path parent = out.toPath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            ImagePersistence.exportPNG(out, image);
+            System.out.println("Offline image written to: " + out.getAbsolutePath());
+        }
+        catch (Exception e) {
+            System.out.println("Could not write offline image: " + e.getMessage());
+        }
     }
 
     private void drawHud(GLAutoDrawable drawable) {

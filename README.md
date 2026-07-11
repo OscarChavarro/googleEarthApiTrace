@@ -22,9 +22,9 @@ The extraction workflow is split into stages. Each stage has separate codebases,
   - Goal: build a quadtree of tiles ("Pyramidal Image") from normalized data.
   - Status: **in progress**. `31_matrixMerger` merges per-frame matrices into consolidated
     layer matrices and exports them; `32_pyramidalImageExporter` imports those layers plus
-    the global top-level tile data. Images whose extent matches a fully covered quad work
-    well; synthesizing the topmost pyramid levels (which no single quad covers) is still
-    pending.
+    the global top-level tile data, and fully reconstructs quadtree levels 0-5 (whole-Earth
+    map) from per-appearance texture coordinates. Pending: anchoring the deeper layer
+    matrices into absolute quadtree coordinates and writing the final pyramid to disk.
 
 ## Projects
 
