@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.material.RendererConfiguration;
@@ -20,6 +21,7 @@ public final class PyramidalImageExporterModel {
     private String lastExportStatus;
     private long gpuTextureBytesAssigned = 0L;
     private int selectedLayerIndex = 0;
+    private Map<String, String> cataloguedQuadPathsByImagePath = Map.of();
 
     public PyramidalImageExporterModel() {
         viewingCamera.setName("OrbiterCamera");
@@ -40,6 +42,16 @@ public final class PyramidalImageExporterModel {
 
     public void setInputFolder(String inputFolder) {
         this.inputFolder = (inputFolder == null || inputFolder.isBlank()) ? null : inputFolder;
+    }
+
+    public Map<String, String> getCataloguedQuadPathsByImagePath() {
+        return cataloguedQuadPathsByImagePath;
+    }
+
+    public void setCataloguedQuadPathsByImagePath(Map<String, String> cataloguedQuadPathsByImagePath) {
+        this.cataloguedQuadPathsByImagePath = cataloguedQuadPathsByImagePath == null
+            ? Map.of()
+            : Map.copyOf(cataloguedQuadPathsByImagePath);
     }
 
     public String getSessionPyramidalImageExportPath() {

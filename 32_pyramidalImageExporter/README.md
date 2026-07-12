@@ -16,21 +16,26 @@ of PNG files with the `e` key.
 
 ## Inputs
 
-- `<inputFolder>` (positional, required): directory containing the `matrix_<n>` folders
-  exported by `31_matrixMerger`, each with a `matrixLayer.json` and its tile textures. The
-  top-level pyramid (levels `0..5`, see below) does not depend on this folder having any
-  `matrix_<n>` subfolders, only `topLevelTiles.json` does; `./run.sh` defaults it to
-  `/media/ramdisk/output`, the same folder `output.directory` points to.
-- `<sessionPyramidalImageExportPath>` (positional, required): destination directory for
-  the pyramidal image quadtree export triggered with the `e` key (see below), e.g.
-  `/samples/datasets/googleEarth` (the default used by `./run.sh`). It does not need to
-  exist beforehand; it is created on first export. This is an output-only folder — do not
-  point it at `<inputFolder>` or at `output.directory`, both of which are read from, not
-  written to.
+- `<inputFolder>` (positional, required, no default): directory containing the
+  `matrix_<n>` folders exported by `31_matrixMerger`, each with a `matrixLayer.json` and
+  its tile textures. The top-level pyramid (levels `0..5`, see below) does not depend on
+  this folder having any `matrix_<n>` subfolders, only `topLevelTiles.json` does. Neither
+  the program nor `./run.sh` assumes a default: if this argument is missing, both exit
+  with code `1` and an English error message explaining that it must point to
+  `31_matrixMerger`'s export folder.
 - `topLevelTiles.json` read from the root of `output.directory` (configured in
   [src/main/resources/application.properties](src/main/resources/application.properties),
   default `/media/ramdisk/output`). This is where the actual source data (strips,
   appearances and their images) comes from.
+
+There is no destination argument: the session's pyramidal image quadtree is always
+written inside the input folder itself, to `<inputFolder>/pyramidalImage` (created on
+first export). This tool is strictly **session-local**: it never reads tiles from any
+existing pyramidal image (not even its own previous export) and never writes anywhere
+outside `<inputFolder>`. Merging the pyramidal images of different capture sessions into
+one consolidated pyramid is the responsibility of a separate, future program. Passing a
+second positional argument (the old destination parameter) is an error: the program
+prints an English message explaining this contract and exits with code `1`.
 
 ### Top-level reconstruction from texCoords
 
@@ -55,12 +60,13 @@ convention: `v = 0` at the image bottom / south side). The legacy `pathFromRoot`
 From this directory:
 
 ```bash
-gradle run --args="/media/ramdisk/output /samples/datasets/googleEarth"
+gradle run --args="<inputFolder>"
 ```
 
-or `./run.sh`, which forwards its own positional arguments to the same two parameters
-(`./run.sh <inputFolder> <sessionPyramidalImageExportPath>`) and otherwise defaults to the
-command above.
+or `./run.sh <inputFolder>`, which forwards its arguments unchanged. The single
+positional argument is mandatory and has no default; when it is missing, `./run.sh` (and
+the program itself) prints an English error message explaining the missing argument and
+exits with code `1`. The exported pyramid always lands in `<inputFolder>/pyramidalImage`.
 
 ## Interactive usage guide
 
@@ -70,21 +76,21 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 |---|---|
 | `1` / `2` | Select previous / next matrix layer |
 | `t` | Toggle textured rendering |
-| `e` | Export the pyramidal image quadtree to `<sessionPyramidalImageExportPath>` |
+| `e` | Export the pyramidal image quadtree to `<inputFolder>/pyramidalImage` |
 | `ESC` | Exit |
 
 HUD:
 
 - `Layer [1, 2]: i/N | frame <id> | Matrix: <rows>x<cols>`: selected layer and its size.
 - `Toggle textures [t], Export [e], orbit camera with mouse, source: <inputFolder>`.
-- `Export destination: <sessionPyramidalImageExportPath> | <last export status>`.
+- `Export destination: <inputFolder>/pyramidalImage | <last export status>`.
 - When the bounding-volume display mode is enabled, each visible tile is annotated with
   its id and `(i, j)` cell coordinates.
 
 ## Exporting the pyramidal image
 
 Pressing `e` writes every tile that can be anchored to an absolute quadtree path to
-`<sessionPyramidalImageExportPath>` as a quadtree of PNG files, matching the pyramid
+`<inputFolder>/pyramidalImage` as a quadtree of PNG files, matching the pyramid
 already drawn in the interactive viewer:
 
 - The root tile is `0.png`, directly in the destination directory.
@@ -116,23 +122,23 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   reports how many tiles were discarded this way.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
 
-### Additive-destructive export
+### Session-local export
 
-The destination directory is treated as additive-destructive: if it does not exist yet,
-it is created and filled as described above. If it already exists, no extra validation of
-its prior contents is performed (the caller is responsible for the integrity of whatever
-is already there); each tile about to be written is instead compared against whatever PNG
-already occupies its slot:
+The export is strictly session-local: `<inputFolder>/pyramidalImage` is created if
+missing, and every placed tile is simply written there from this session's data. No
+existing pyramidal image is ever read — not the tiles of a shared/consolidated pyramid
+(the tool has no access to one), and not even the PNGs left by a previous export of the
+same session (a re-export regenerates them without reading them back). Two counters are
+accumulated in `pyramidalimageexporter.common.statistics.PyramidalImageAdditionStatistics`
+and printed to the console (via its `toString()`) once the export finishes:
 
-- No existing file at that slot: the new image is written (a "new" tile).
-- An existing file with pixel-identical content: the existing file is left untouched (an
-  "ignored" tile).
-- An existing file with different content: it is overwritten with the new image (an
-  "updated" tile).
+- `new`: the slot did not exist yet and was written.
+- `rewritten`: the slot existed (from a previous run over the same input folder) and was
+  written again.
 
-These three counters are accumulated in
-`pyramidalimageexporter.common.statistics.PyramidalImageAdditionStatistics` and printed to
-the console (via its `toString()`) once the export finishes.
+Combining this session pyramid with the pyramids of other capture sessions into one
+consolidated pyramidal image — including any cross-session verification, conflict
+handling or overwrite policy — is the responsibility of a separate, future program.
 
 The selected layer is drawn as textured quads on plane `Z=0`, with frustum culling,
 distance-based LOD (near: textured; far: untextured, 98% scale) and a FIFO GPU texture
@@ -146,8 +152,10 @@ texture source:
 
 ## Command-line options
 
-- `<inputFolder>` (positional, required): see Inputs.
-- `<sessionPyramidalImageExportPath>` (positional, required): see Inputs.
+- `<inputFolder>` (positional, required, the only positional argument): see Inputs.
+- `--export`: writes the pyramidal image quadtree to `<inputFolder>/pyramidalImage` and
+  exits, with no GUI and no OpenGL/JOGL required (same operation as pressing `e`
+  interactively).
 - `--ofline` / `--offline`: loads all layers and renders the selected layer to a PNG
   snapshot without opening a window, using an orthographic top view that frames the
   whole matrix (all tiles textured, no culling/LOD).
@@ -159,13 +167,14 @@ texture source:
 - `--wires`: also draw tile borders in the offline snapshot (white = native resolution,
   green = borrowed from an ancestor image).
 
-Both positional arguments may appear in either order relative to the flags. If either is
-missing, an English usage message is printed to stderr and the program exits with code `1`.
+The positional argument may appear in any order relative to the flags. If it is missing,
+or an extra positional argument is passed (there is no destination parameter), an English
+message explaining the problem is printed to stderr and the program exits with code `1`.
 
 ### Offline example (level-4 world map, 16x16 tiles)
 
 ```bash
-gradle run --args="--offline /media/ramdisk/output /samples/datasets/googleEarth --layer 4 --output /tmp/level4.png"
+gradle run --args="--offline <inputFolder> --layer 4 --output /tmp/level4.png"
 ```
 
 ## Notes for agentic coding agents
@@ -175,13 +184,13 @@ gradle run --args="--offline /media/ramdisk/output /samples/datasets/googleEarth
   without user interaction. On a machine without a display, run it under `xvfb-run -a`.
 - Startup diagnostics on stdout are parseable: `TopLevelTilesReader: loaded strips=...`,
   `TopLevelsMatricesImporter: level L matrix=SxS, nativeResolutionCells=..., derivedCells=...,
-  emptyCells=...`, `Offline image written to: <path>`, and, after pressing `e`,
-  `PyramidalImageExporter: PyramidalImageAdditionStatistics{new=..., ignoredExisting=...,
-  updated=...}` followed by `PyramidalImageExporter: Export complete: N tiles processed to
-  <path>`.
-- Missing required positional arguments prints a `Usage: ...` message to stderr and exits
-  with code `1`. Missing or unreadable `<inputFolder>` exits with code `1` and an `ERROR:`
-  message on stderr.
+  emptyCells=...`, `Offline image written to: <path>`, and, after pressing `e` (or with
+  `--export`), a per-layer placement report followed by
+  `PyramidalImageExporter: PyramidalImageAdditionStatistics{new=..., rewritten=...}` and
+  `PyramidalImageExporter: Export complete: N tiles processed to <inputFolder>/pyramidalImage`.
+- A missing `<inputFolder>`, an extra positional argument, or an unreadable
+  `<inputFolder>` prints an English `ERROR: ...` message to stderr and exits with
+  code `1`.
 
 ## Configuration
 
@@ -200,7 +209,7 @@ In `pyramidalimageexporter.config.Configuration`:
 - `processing/toplevels`: synthesis of top-level (0..5) matrix layers.
 - `processing/uncles`: uncle relationship metadata and `RootPathResolver`, which anchors
   tiles to a full quadtree path from the root.
-- `common/statistics`: `PyramidalImageAdditionStatistics`, the new/ignored/updated tile
-  counters accumulated during an additive-destructive export.
+- `common/statistics`: `PyramidalImageAdditionStatistics`, the new/rewritten tile
+  counters accumulated during a session-local export.
 - `render`: JOGL renderer, culling, LOD and HUD.
 - `gui`: keyboard/mouse handling.

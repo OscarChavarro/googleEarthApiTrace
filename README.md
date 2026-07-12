@@ -22,9 +22,12 @@ The extraction workflow is split into stages. Each stage has separate codebases,
   - Goal: build a quadtree of tiles ("Pyramidal Image") from normalized data.
   - Status: **in progress**. `31_matrixMerger` merges per-frame matrices into consolidated
     layer matrices and exports them; `32_pyramidalImageExporter` imports those layers plus
-    the global top-level tile data, and fully reconstructs quadtree levels 0-5 (whole-Earth
-    map) from per-appearance texture coordinates. Pending: anchoring the deeper layer
-    matrices into absolute quadtree coordinates and writing the final pyramid to disk.
+    the global top-level tile data, anchors every layer into absolute quadtree coordinates
+    (reconstructing levels 0-5 from per-appearance texture coordinates and resolving deeper
+    layers through uncle relationships), and writes the session's pyramidal image as a
+    quadtree of PNG files inside its own input folder. Each capture session produces its
+    own independent pyramid; merging the pyramidal images of different sessions into one
+    consolidated pyramid is the responsibility of a separate program (pending).
 
 ## Projects
 
@@ -36,7 +39,7 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 - [22_dumpAnalyzer/README.md](22_dumpAnalyzer/README.md): Parses per-frame GL logs (`gl.txt`) and counts/analyses OpenGL calls with ANTLR-based processing.
 - [23_frameTextureNormalizer/README.md](23_frameTextureNormalizer/README.md): Consumes frame-level artifacts and performs normalization-oriented preprocessing for later composition workflows.
 - [31_matrixMerger/README.md](31_matrixMerger/README.md): Loads per-frame tile matrices, visualizes one matrix at a time, supports interactive/automatic matrix merging and west-cutter splitting, and exports consolidated layer matrices.
-- [32_pyramidalImageExporter/README.md](32_pyramidalImageExporter/README.md): Imports consolidated layer matrices from `31_matrixMerger` plus global top-level tile data from `22_dumpAnalyzer`, and visualizes the quadtree layers of the future pyramidal image.
+- [32_pyramidalImageExporter/README.md](32_pyramidalImageExporter/README.md): Imports consolidated layer matrices from `31_matrixMerger` plus global top-level tile data from `22_dumpAnalyzer`, visualizes the quadtree layers, and exports the session's pyramidal image into the input folder itself (`<inputFolder>/pyramidalImage`); it never reads or writes any other pyramidal image — cross-session merging belongs to a separate, future program.
 
 ## Notes
 

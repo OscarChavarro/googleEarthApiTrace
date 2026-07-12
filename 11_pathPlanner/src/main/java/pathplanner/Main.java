@@ -18,7 +18,6 @@ public class Main {
     private static final String GENERATOR_SPIRAL = "spiral";
     private static final String GENERATOR_ZIGZAG = "zigzag";
     private static final String GENERATOR_GLOBE = "globe";
-    private static final int ALTITUDE_LANDMARK_COUNT = 18;
 
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
@@ -50,7 +49,7 @@ public class Main {
         if (usesAltitudeLandmarks(generatorName) && !curve.isEmpty()) {
             List<Point> altitudeLandmarks = new AltitudeGenerator().buildAltitudeLandmarks(curve.get(0));
             markerPoints.addAll(0, altitudeLandmarks);
-            altitudeLandmarkCount = ALTITUDE_LANDMARK_COUNT;
+            altitudeLandmarkCount = altitudeLandmarks.size();
         }
         kmlPersistence.updateKml(
             KML_PATH,

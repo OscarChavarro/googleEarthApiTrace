@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.io.MatrixLayerReader;
+import pyramidalimageexporter.io.PyramidalImageExporter;
 import pyramidalimageexporter.io.TopLevelTilesReader;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
@@ -18,16 +19,33 @@ public class Main {
     private static final int DEFAULT_OFFLINE_WIDTH = 1024;
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
     private static final String DEFAULT_OFFLINE_OUTPUT = "/tmp/pyramidalImageExporter_offline.png";
+    private static final String SESSION_PYRAMID_SUBFOLDER = "pyramidalImage";
 
     public static void main(String[] args) {
         boolean offline = hasArg(args, "--ofline") || hasArg(args, "--offline");
         List<String> positionalArgs = parsePositionalArgs(args);
-        if (positionalArgs.size() < 2) {
+        if (positionalArgs.isEmpty()) {
+            System.err.println("ERROR: Missing required <inputFolder> argument: no default paths are assumed.");
+            System.err.println(
+                "It must point to the folder exported by 31_matrixMerger "
+                    + "(the one containing the matrix_<n> subfolders)."
+            );
+            printUsage();
+            System.exit(1);
+        }
+        if (positionalArgs.size() > 1) {
+            System.err.println(
+                "ERROR: Unexpected extra positional argument(s): " + positionalArgs.subList(1, positionalArgs.size())
+            );
+            System.err.println(
+                "This tool only processes <inputFolder> and writes the session's pyramidal image inside it "
+                    + "(<inputFolder>/" + SESSION_PYRAMID_SUBFOLDER + "). It never reads or writes any other "
+                    + "pyramidal image; merging different capture sessions is the responsibility of a separate program."
+            );
             printUsage();
             System.exit(1);
         }
         String inputFolder = positionalArgs.get(0);
-        String sessionPyramidalImageExportPath = positionalArgs.get(1);
 
         Path inputPath = Path.of(inputFolder).toAbsolutePath().normalize();
         if (!Files.isDirectory(inputPath) || !Files.isReadable(inputPath)) {
@@ -36,9 +54,14 @@ public class Main {
         }
 
         PyramidalImageExporterModel model = createModel(inputPath);
-        model.setSessionPyramidalImageExportPath(
-            Path.of(sessionPyramidalImageExportPath).toAbsolutePath().normalize().toString()
-        );
+        model.setSessionPyramidalImageExportPath(inputPath.resolve(SESSION_PYRAMID_SUBFOLDER).toString());
+
+        if (hasArg(args, "--export")) {
+            System.out.println("Export mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
+            new PyramidalImageExporter().export(model);
+            return;
+        }
+
         if (offline) {
             System.out.println("Offline mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
             int layerIndex = intArgValue(args, "--layer", 0);
@@ -96,6 +119,7 @@ public class Main {
         layers.addAll(importedLayers);
 
         model.setMatrixLayers(layers);
+        model.setCataloguedQuadPathsByImagePath(topLevelsImporter.catalogedQuadPathsByImagePath(topLevelTiles));
         return model;
     }
 
@@ -155,7 +179,7 @@ public class Main {
             if (arg == null || arg.isBlank()) {
                 continue;
             }
-            if ("--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg)) {
+            if ("--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg) || "--export".equals(arg)) {
                 continue;
             }
             if (isValueFlag(arg)) {
@@ -173,13 +197,19 @@ public class Main {
 
     private static void printUsage() {
         System.err.println(
-            "Usage: gradle run --args=\"<inputFolder> <sessionPyramidalImageExportPath> "
-                + "[--offline] [--layer <i>] [--width <px>] [--height <px>] [--output <path>] [--wires]\""
+            "Usage: gradle run --args=\"<inputFolder> "
+                + "[--export] [--offline] [--layer <i>] [--width <px>] [--height <px>] [--output <path>] [--wires]\""
         );
         System.err.println("  <inputFolder>: directory with the matrix_<n> folders exported by 31_matrixMerger.");
         System.err.println(
-            "  <sessionPyramidalImageExportPath>: destination directory for the pyramidal image quadtree "
-                + "export triggered with the 'e' key in the interactive viewer."
+            "  The session's pyramidal image quadtree is written inside it, to <inputFolder>/"
+                + SESSION_PYRAMID_SUBFOLDER + ", when pressing the 'e' key in the interactive viewer or with "
+                + "--export below. No other pyramidal image is ever read or written; merging different capture "
+                + "sessions' pyramidal images is the responsibility of a separate program."
+        );
+        System.err.println(
+            "  --export: writes the pyramidal image quadtree to <inputFolder>/" + SESSION_PYRAMID_SUBFOLDER
+                + " and exits, with no GUI and no OpenGL/JOGL required (same operation as pressing 'e' interactively)."
         );
     }
 

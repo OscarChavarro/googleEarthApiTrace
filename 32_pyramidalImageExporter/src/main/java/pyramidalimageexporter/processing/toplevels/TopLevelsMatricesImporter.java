@@ -65,6 +65,37 @@ public final class TopLevelsMatricesImporter {
     }
 
     /**
+     * Exposes the same catalogued images used by {@link #importLayers}, keyed
+     * by their own file path and mapped to their resolved quadtree path
+     * instead of being baked into a MatrixLayer. Lets a caller recognize any
+     * other tile (from any other source) as the same real-world cell purely
+     * by matching its texture file's content against these paths, with no
+     * dependency on ids or uncles.
+     */
+    public Map<String, String> catalogedQuadPathsByImagePath(TopLevelTiles topLevelTiles) {
+        if (topLevelTiles == null || topLevelTiles.getByStripId() == null || topLevelTiles.getByStripId().isEmpty()) {
+            return Map.of();
+        }
+        Map<String, double[]> stripWorldOriginByStripId = computeStripWorldOrigins(topLevelTiles);
+        if (stripWorldOriginByStripId.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ImageTile> imagesByCellKey = catalogImages(topLevelTiles, stripWorldOriginByStripId);
+        Map<String, String> out = new LinkedHashMap<>();
+        for (ImageTile image : imagesByCellKey.values()) {
+            out.put(image.path(), quadtreePathForCell(image.level(), image.cellU(), image.cellV()));
+        }
+        return out;
+    }
+
+    private static String quadtreePathForCell(int level, int cellU, int cellV) {
+        int side = 1 << level;
+        int row = side - 1 - cellV;
+        int col = cellU;
+        return quadtreePathLabel(level, row, col);
+    }
+
+    /**
      * Pass 1: a strip's world rectangle equals its texCoord inside any
      * whole-world appearance (texCoord size exactly one strip).
      */

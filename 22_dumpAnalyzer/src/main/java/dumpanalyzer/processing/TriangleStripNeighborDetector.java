@@ -44,6 +44,9 @@ public final class TriangleStripNeighborDetector {
             if (geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
                 continue;
             }
+            if (isDegenerateGeometry(geometry)) {
+                continue;
+            }
             candidates.add(new Candidate(i));
         }
 
@@ -177,6 +180,31 @@ public final class TriangleStripNeighborDetector {
         }
         double inv = 1.0 / vertices.size();
         return new double[] {sx * inv, sy * inv, sz * inv};
+    }
+
+    /**
+     * A tile whose strip collapses to a point or a line (zero extent along x
+     * or y) can not be a grid cell: it is a mid-transition quad that was
+     * fully clipped. Excluding it from neighbor candidacy keeps it from
+     * stealing a cardinal-neighbor slot from the real abutting tile (the
+     * closest candidate wins in {@link #selectClosest}, and a collapsed quad
+     * sitting on a tile's edge is always closest), which would otherwise
+     * leave a hole in the grid once downstream filtering drops the
+     * degenerate tile. Real tiles keep their neighbor analysis intact.
+     */
+    private static boolean isDegenerateGeometry(TileInstance.TriangleStripGeometry geometry) {
+        double minX = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        for (TileInstance.TriangleStripVertex vertex : geometry.vertices()) {
+            minX = Math.min(minX, vertex.x());
+            maxX = Math.max(maxX, vertex.x());
+            minY = Math.min(minY, vertex.y());
+            maxY = Math.max(maxY, vertex.y());
+        }
+        double epsilon = 1.0e-9;
+        return (maxX - minX) <= epsilon || (maxY - minY) <= epsilon;
     }
 
     private static String contentIdAt(List<TileInstance> tiles, int index) {

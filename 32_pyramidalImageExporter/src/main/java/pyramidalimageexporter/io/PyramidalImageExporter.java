@@ -4,31 +4,48 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import pyramidalimageexporter.common.statistics.PyramidalImageAdditionStatistics;
+import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
 import pyramidalimageexporter.model.TileCoord;
+import pyramidalimageexporter.processing.content.ContentHashAnchorResolver;
+import pyramidalimageexporter.processing.uncles.DanglingUncleBridge;
+import pyramidalimageexporter.processing.uncles.MergedUncleRecovery;
 import pyramidalimageexporter.processing.uncles.RootPathResolver;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;
 
 /**
- * Writes the reconstructed pyramid to disk as a quadtree of PNG files: the
- * root tile is "0.png" in the destination directory, and every deeper tile
- * "0xy..." lives in a folder named after its own full quadkey, nested one
- * folder per ancestor, e.g. 00/000/0000.png. Any tile from any matrix layer
- * is eligible as long as {@link RootPathResolver} can anchor it to a full
- * path from the root, either directly (its own id already is a quadkey) or
- * through a chain of "uncle" relationships to an already-anchored tile.
+ * Writes this session's reconstructed pyramid to disk as a quadtree of PNG
+ * files inside the session's own input folder: the root tile is "0.png" in
+ * the destination directory, and every deeper tile "0xy..." lives in a
+ * folder named after its own full quadkey, nested one folder per ancestor,
+ * e.g. 00/000/0000.png. Any tile from any matrix layer is eligible as long
+ * as {@link RootPathResolver} can anchor it to a full path from the root,
+ * either directly (its own id already is a quadkey) or through a chain of
+ * "uncle" relationships to an already-anchored tile.
  *
- * The export is additive-destructive: an existing destination directory is
- * reused as-is (no extra validation of its prior contents), and each tile
- * is compared against whatever image already occupies its slot, so a
- * pre-existing identical image is left untouched, a pre-existing different
- * image is overwritten, and a new slot is simply written.
+ * Before that resolution runs, {@link ContentHashAnchorResolver} gives any
+ * tile whose id isn't already a quadkey one more chance: if its texture file
+ * is a byte-for-byte duplicate of an already-catalogued top-level image, its
+ * id is rewritten in place to that quadkey, both in memory and in its source
+ * matrix_&lt;n&gt;/matrixLayer.json, so the tile (and every future run
+ * reading that file) becomes directly anchored with no uncle chain needed.
+ *
+ * The export is strictly session-local: it never reads tiles from any
+ * existing pyramidal image (its own destination included) and each slot is
+ * simply (re)written from this session's data. Merging different capture
+ * sessions' pyramidal images is the responsibility of a separate program.
  */
 public final class PyramidalImageExporter {
     private static final int TILE_PIXEL_SIZE = 256;
@@ -52,13 +69,27 @@ public final class PyramidalImageExporter {
             return;
         }
 
-        RootPathResolver.Resolution resolution = rootPathResolver.resolve(model.getMatrixLayers());
-        if (!resolution.discardedIds().isEmpty()) {
-            System.out.println(
-                "PyramidalImageExporter: " + resolution.discardedIds().size()
-                    + " tile(s) discarded due to ambiguous uncle relationships (inconsistent root paths)."
-            );
-        }
+        applyContentHashAnchors(model);
+
+        Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
+        new MergedUncleRecovery().enrich(model.getMatrixLayers(), outputDirectory);
+
+        Map<String, String> externalFullPaths =
+            buildExternalUncleFullPaths(model.getCataloguedQuadPathsByImagePath());
+        DanglingUncleBridge.Bridge bridge = new DanglingUncleBridge().build(
+            model.getMatrixLayers(),
+            model.getCataloguedQuadPathsByImagePath(),
+            outputDirectory
+        );
+        externalFullPaths.putAll(bridge.fullPathByExternalId());
+        System.out.println(
+            "PyramidalImageExporter: " + externalFullPaths.size()
+                + " externally anchored id(s) and " + bridge.aliasById().size()
+                + " dangling-uncle alias(es) available for root path resolution."
+        );
+        RootPathResolver.Resolution resolution =
+            rootPathResolver.resolve(model.getMatrixLayers(), externalFullPaths, bridge.aliasById());
+        reportPlacement(model, resolution);
 
         sourceImageCache.clear();
         int totalTiles = countExportableTiles(model, resolution);
@@ -94,6 +125,156 @@ public final class PyramidalImageExporter {
             "Export complete: " + processed + " tiles processed to " + rootDirectory
                 + (failed > 0 ? " (" + failed + " failed)" : "")
         );
+    }
+
+    /**
+     * Placement audit printed before writing: per layer, how many tiles got
+     * an absolute root path (and at which pyramid level(s)), how many were
+     * left out and why is visible instead of silently skipped — a layer with
+     * zero placed tiles is a whole group of the traced session that will NOT
+     * appear in the destination pyramid.
+     */
+    private static void reportPlacement(PyramidalImageExporterModel model, RootPathResolver.Resolution resolution) {
+        System.out.println("PyramidalImageExporter: placement report:");
+        List<String> unplacedLayers = new ArrayList<>();
+        Map<Integer, Integer> placedTilesByLevel = new TreeMap<>();
+        for (MatrixLayer layer : model.getMatrixLayers()) {
+            if (layer == null || layer.getTiles() == null || layer.getTiles().isEmpty()) {
+                continue;
+            }
+            int total = 0;
+            int placed = 0;
+            int ambiguous = 0;
+            Set<Integer> levels = new TreeSet<>();
+            List<String> unplacedSample = new ArrayList<>();
+            for (TileCoord tile : layer.getTiles()) {
+                if (tile == null || tile.getId().isBlank()) {
+                    continue;
+                }
+                total++;
+                String fullPath = resolution.pathById().get(tile.getId());
+                if (fullPath != null) {
+                    placed++;
+                    int level = fullPath.length() - 1;
+                    levels.add(level);
+                    placedTilesByLevel.merge(level, 1, Integer::sum);
+                }
+                else {
+                    if (resolution.discardedIds().contains(tile.getId())) {
+                        ambiguous++;
+                    }
+                    if (unplacedSample.size() < 3) {
+                        unplacedSample.add(tile.getId());
+                    }
+                }
+            }
+            StringBuilder line = new StringBuilder("  ")
+                .append(layer.getSourceFolderName())
+                .append(": ").append(placed).append("/").append(total).append(" tiles placed");
+            if (!levels.isEmpty()) {
+                line.append(" at level(s) ").append(levels);
+            }
+            if (placed < total) {
+                line.append(" | ").append(total - placed).append(" NOT placed");
+                if (ambiguous > 0) {
+                    line.append(" (").append(ambiguous).append(" ambiguous)");
+                }
+                line.append(", e.g. ").append(unplacedSample);
+            }
+            System.out.println(line);
+            if (placed == 0) {
+                unplacedLayers.add(layer.getSourceFolderName() + " (" + total + " tiles)");
+            }
+        }
+        System.out.println("PyramidalImageExporter: placed tiles per pyramid level: " + placedTilesByLevel);
+        if (!unplacedLayers.isEmpty()) {
+            System.out.println(
+                "PyramidalImageExporter: WARNING - " + unplacedLayers.size()
+                    + " layer(s) with NO placed tiles will NOT appear in the destination pyramid: "
+                    + unplacedLayers
+            );
+        }
+        if (!resolution.discardedIds().isEmpty()) {
+            List<String> sample = resolution.discardedIds().stream().sorted().limit(20).toList();
+            System.out.println(
+                "PyramidalImageExporter: " + resolution.discardedIds().size()
+                    + " tile(s) discarded due to ambiguous uncle relationships (inconsistent root paths): " + sample
+            );
+        }
+    }
+
+    private static void applyContentHashAnchors(PyramidalImageExporterModel model) {
+        String inputFolder = model.getInputFolder();
+        if (inputFolder == null) {
+            return;
+        }
+        ContentHashAnchorResolver resolver = new ContentHashAnchorResolver();
+        resolver.indexCataloguedImages(model.getCataloguedQuadPathsByImagePath());
+
+        MatrixLayerJsonIdRewriter rewriter = new MatrixLayerJsonIdRewriter();
+        for (MatrixLayer layer : model.getMatrixLayers()) {
+            if (layer == null || layer.getTiles() == null || layer.getSourceFolderName() == null) {
+                continue;
+            }
+            Map<String, String> newIdByOldId = new HashMap<>();
+            for (TileCoord tile : layer.getTiles()) {
+                if (tile == null || isQuadPath(tile.getId())) {
+                    continue;
+                }
+                Optional<String> resolvedQuadPath = resolver.resolveQuadPath(tile.getTextureFile());
+                if (resolvedQuadPath.isEmpty()) {
+                    continue;
+                }
+                newIdByOldId.put(tile.getId(), resolvedQuadPath.get());
+                tile.setId(resolvedQuadPath.get());
+            }
+            if (newIdByOldId.isEmpty()) {
+                continue;
+            }
+            Path matrixLayerJsonFile = Path.of(inputFolder)
+                .resolve(layer.getSourceFolderName())
+                .resolve("matrixLayer.json");
+            rewriter.rewriteIds(matrixLayerJsonFile, newIdByOldId);
+            System.out.println(
+                "PyramidalImageExporter: anchored " + newIdByOldId.size() + " tile(s) in "
+                    + layer.getSourceFolderName() + " by content match, persisted to " + matrixLayerJsonFile
+            );
+        }
+    }
+
+    private static boolean isQuadPath(String id) {
+        return id != null && id.matches("[0-3]+");
+    }
+
+    /**
+     * Catalogued top-level images live at &lt;outputDir&gt;/&lt;frame&gt;/256x256_&lt;n&gt;.png
+     * and matrix tiles reference them in their uncles as "&lt;frame&gt;_&lt;n&gt;" (the
+     * pre-normalization tile id, e.g. "00012_61"). Rebuilding that id from
+     * each catalogued path yields the id-to-full-root-path bridge that lets
+     * RootPathResolver anchor a new session's tiles to the absolute quadtree.
+     */
+    private static Map<String, String> buildExternalUncleFullPaths(Map<String, String> quadLabelByImagePath) {
+        Map<String, String> out = new HashMap<>();
+        if (quadLabelByImagePath == null) {
+            return out;
+        }
+        for (Map.Entry<String, String> entry : quadLabelByImagePath.entrySet()) {
+            Path imagePath = Path.of(entry.getKey());
+            String fileName = imagePath.getFileName().toString();
+            Path frameDirectory = imagePath.getParent();
+            if (frameDirectory == null || frameDirectory.getFileName() == null
+                || !fileName.startsWith("256x256_") || !fileName.endsWith(".png")) {
+                continue;
+            }
+            String tileNumber = fileName.substring("256x256_".length(), fileName.length() - ".png".length());
+            String frameToken = frameDirectory.getFileName().toString();
+            String label = entry.getValue();
+            String fullPath = "0".equals(label) ? "0" : "0" + label;
+            out.put(frameToken + "_" + tileNumber, fullPath);
+            String unpaddedFrameToken = frameToken.replaceFirst("^0+(?=.)", "");
+            out.putIfAbsent(unpaddedFrameToken + "_" + tileNumber, fullPath);
+        }
+        return out;
     }
 
     private static int countExportableTiles(PyramidalImageExporterModel model, RootPathResolver.Resolution resolution) {
@@ -133,30 +314,18 @@ public final class PyramidalImageExporter {
         RGBImageUncompressed tileImage = cropTile(sourceImage, tile);
         File outputFile = tileDirectory.resolve(fullPath + ".png").toFile();
 
-        if (outputFile.isFile()) {
-            RGBImageUncompressed existingImage;
-            try {
-                existingImage = ImagePersistence.importRGB(outputFile);
-            }
-            catch (Exception ex) {
-                System.out.println("PyramidalImageExporter: could not read existing " + outputFile + ": " + ex.getMessage());
-                return false;
-            }
-            if (imagesAreEqual(existingImage, tileImage)) {
-                statistics.incrementIgnoredExistingImages();
-                return true;
-            }
-            if (!writeImage(outputFile, tileImage)) {
-                return false;
-            }
-            statistics.incrementUpdatedImages();
-            return true;
-        }
-
+        // Session-local export: the slot is simply (re)written from this
+        // session's data, without ever reading what a previous run left there.
+        boolean existedBefore = outputFile.isFile();
         if (!writeImage(outputFile, tileImage)) {
             return false;
         }
-        statistics.incrementNewImages();
+        if (existedBefore) {
+            statistics.incrementRewrittenImages();
+        }
+        else {
+            statistics.incrementNewImages();
+        }
         return true;
     }
 
@@ -169,16 +338,6 @@ public final class PyramidalImageExporter {
             return false;
         }
         return true;
-    }
-
-    private static boolean imagesAreEqual(RGBImageUncompressed a, RGBImageUncompressed b) {
-        if (a == null || b == null) {
-            return false;
-        }
-        if (a.getXSize() != b.getXSize() || a.getYSize() != b.getYSize()) {
-            return false;
-        }
-        return a.getRawImageDirectBuffer().equals(b.getRawImageDirectBuffer());
     }
 
     /**
