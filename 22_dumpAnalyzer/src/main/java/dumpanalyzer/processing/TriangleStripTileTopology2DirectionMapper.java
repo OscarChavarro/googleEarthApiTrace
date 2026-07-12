@@ -18,10 +18,8 @@ public final class TriangleStripTileTopology2DirectionMapper {
             return List.of();
         }
 
-        List<TileInstance.TriangleStripVertex> deDuplicated = classifier.deduplicateVertices(
-            geometry.vertices(),
-            TriangleMeshVertexComparator.VERTEX_EPSILON
-        );
+        double epsilon = TriangleMeshVertexComparator.vertexEpsilon(geometry);
+        List<TileInstance.TriangleStripVertex> deDuplicated = classifier.deduplicateVertices(geometry.vertices(), epsilon);
         TriangleStripTileTopology topology = classifier.classify(geometry);
 
         return switch (topology) {

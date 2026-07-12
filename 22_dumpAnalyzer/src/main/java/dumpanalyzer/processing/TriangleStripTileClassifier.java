@@ -14,9 +14,10 @@ public final class TriangleStripTileClassifier {
         if (geometry == null || geometry.vertexCount() != TRIANGLE_STRIP_VERTEX_COUNT) {
             return TriangleStripTileTopology.UNKNOWN;
         }
+        double epsilon = TriangleMeshVertexComparator.vertexEpsilon(geometry);
         List<TileInstance.TriangleStripVertex> unique = deduplicateVertices(
             geometry.vertices(),
-            TriangleMeshVertexComparator.VERTEX_EPSILON
+            epsilon
         );
         if (unique.size() == DEDUPLICATED_QUAD_VERTEX_COUNT) {
             return TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD;

@@ -1,3 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-gradle run --quiet --args="--mode auto"
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir"
+
+if (($# == 0)); then
+    exec gradle run --quiet --args="--mode auto"
+fi
+
+exec gradle run --quiet --args="--mode auto $*"

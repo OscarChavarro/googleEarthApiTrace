@@ -7,6 +7,8 @@ import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 public final class TriangleMeshVertexComparator {
     public static final double VERTEX_EPSILON = 1e-4;
+    private static final double MIN_VERTEX_EPSILON = 1e-12;
+    private static final double RELATIVE_VERTEX_EPSILON_FACTOR = 1e-3;
     private static final TriangleStripTileTopology2DirectionMapper TOPOLOGY_MAPPER =
         new TriangleStripTileTopology2DirectionMapper();
 
@@ -74,16 +76,108 @@ public final class TriangleMeshVertexComparator {
         if (borderA.isEmpty() || borderB.isEmpty() || borderA.size() != borderB.size()) {
             return false;
         }
+        double epsilon = vertexEpsilon(borderA, borderB);
         for (int i = 0; i < borderA.size(); i++) {
             Vector3Dd va = borderA.get(i);
             Vector3Dd vb = borderB.get(i);
-            if (Math.abs(va.x() - vb.x()) > VERTEX_EPSILON
-                || Math.abs(va.y() - vb.y()) > VERTEX_EPSILON
-                || Math.abs(va.z() - vb.z()) > VERTEX_EPSILON) {
+            if (Math.abs(va.x() - vb.x()) > epsilon
+                || Math.abs(va.y() - vb.y()) > epsilon
+                || Math.abs(va.z() - vb.z()) > epsilon) {
                 return false;
             }
         }
         return true;
+    }
+
+    public static double vertexEpsilon(TileInstance tile) {
+        if (tile == null) {
+            return MIN_VERTEX_EPSILON;
+        }
+        return vertexEpsilon(tile.getTriangleStrip());
+    }
+
+    public static double vertexEpsilon(TileInstance.TriangleStripGeometry geometry) {
+        if (geometry == null) {
+            return MIN_VERTEX_EPSILON;
+        }
+        return vertexEpsilonForVertices(geometry.vertices());
+    }
+
+    public static double vertexEpsilon(List<TileInstance.TriangleStripVertex> vertices) {
+        return vertexEpsilonForVertices(vertices);
+    }
+
+    public static double vertexEpsilon(Vector3Dd[] vertices) {
+        if (vertices == null || vertices.length == 0) {
+            return MIN_VERTEX_EPSILON;
+        }
+        double minX = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        boolean found = false;
+        for (Vector3Dd vertex : vertices) {
+            if (vertex == null) {
+                continue;
+            }
+            found = true;
+            minX = Math.min(minX, vertex.x());
+            maxX = Math.max(maxX, vertex.x());
+            minY = Math.min(minY, vertex.y());
+            maxY = Math.max(maxY, vertex.y());
+            minZ = Math.min(minZ, vertex.z());
+            maxZ = Math.max(maxZ, vertex.z());
+        }
+        if (!found) {
+            return MIN_VERTEX_EPSILON;
+        }
+        return scaleToEpsilon(maxX - minX, maxY - minY, maxZ - minZ);
+    }
+
+    public static double vertexEpsilon(List<Vector3Dd> a, List<Vector3Dd> b) {
+        return Math.max(vertexEpsilonFromVectors(a), vertexEpsilonFromVectors(b));
+    }
+
+    private static double vertexEpsilonForVertices(List<TileInstance.TriangleStripVertex> vertices) {
+        if (vertices == null || vertices.isEmpty()) {
+            return MIN_VERTEX_EPSILON;
+        }
+        double minX = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        for (TileInstance.TriangleStripVertex vertex : vertices) {
+            if (vertex == null) {
+                continue;
+            }
+            minX = Math.min(minX, vertex.x());
+            maxX = Math.max(maxX, vertex.x());
+            minY = Math.min(minY, vertex.y());
+            maxY = Math.max(maxY, vertex.y());
+            minZ = Math.min(minZ, vertex.z());
+            maxZ = Math.max(maxZ, vertex.z());
+        }
+        return scaleToEpsilon(maxX - minX, maxY - minY, maxZ - minZ);
+    }
+
+    private static double vertexEpsilonFromVectors(List<Vector3Dd> vertices) {
+        if (vertices == null || vertices.isEmpty()) {
+            return MIN_VERTEX_EPSILON;
+        }
+        return vertexEpsilon(vertices.toArray(Vector3Dd[]::new));
+    }
+
+    private static double scaleToEpsilon(double dx, double dy, double dz) {
+        double scale = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+        if (!Double.isFinite(scale) || scale <= 0.0) {
+            return MIN_VERTEX_EPSILON;
+        }
+        double relative = scale * RELATIVE_VERTEX_EPSILON_FACTOR;
+        return Math.max(MIN_VERTEX_EPSILON, Math.min(VERTEX_EPSILON, relative));
     }
 
     private static double distanceSquaredBetweenCenters(

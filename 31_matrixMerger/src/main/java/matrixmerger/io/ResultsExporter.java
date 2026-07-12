@@ -38,6 +38,10 @@ public final class ResultsExporter {
             writeFrameJson(exportedFrame, frameDirectory.resolve("matrixLayer.json"));
             System.out.println("Export folder ready: " + frameDirectory);
         }
+        System.out.println(
+            "Exported matrix-layer JSON files and image tiles to absolute folder: "
+                + outputDirectory.toAbsolutePath().normalize()
+        );
     }
 
     private Path prepareOutputDirectory(String path) {

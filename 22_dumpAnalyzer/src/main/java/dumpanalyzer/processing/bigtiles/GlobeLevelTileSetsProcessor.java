@@ -305,7 +305,7 @@ public final class GlobeLevelTileSetsProcessor {
         }
         List<TileInstance.TriangleStripVertex> deDuplicated = TRIANGLE_STRIP_CLASSIFIER.deduplicateVertices(
             geometry.vertices(),
-            TriangleMeshVertexComparator.VERTEX_EPSILON
+            TriangleMeshVertexComparator.vertexEpsilon(geometry)
         );
         if (deDuplicated.isEmpty()) {
             return null;

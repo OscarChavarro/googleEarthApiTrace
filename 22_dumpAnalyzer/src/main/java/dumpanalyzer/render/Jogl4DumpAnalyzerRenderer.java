@@ -495,7 +495,7 @@ public class Jogl4DumpAnalyzerRenderer implements
 
         List<TileInstance.TriangleStripVertex> vertices = classifier.deduplicateVertices(
             geometry.vertices(),
-            TriangleMeshVertexComparator.VERTEX_EPSILON
+            TriangleMeshVertexComparator.vertexEpsilon(geometry)
         );
         if (vertices.isEmpty()) {
             return List.of();

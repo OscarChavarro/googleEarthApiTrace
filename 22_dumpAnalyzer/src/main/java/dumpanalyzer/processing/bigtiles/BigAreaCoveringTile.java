@@ -40,7 +40,7 @@ public final class BigAreaCoveringTile {
             }
             allVertices.addAll(classifier.deduplicateVertices(
                 geometry.vertices(),
-                TriangleMeshVertexComparator.VERTEX_EPSILON
+                TriangleMeshVertexComparator.vertexEpsilon(geometry)
             ));
         }
         if (allVertices.isEmpty()) {

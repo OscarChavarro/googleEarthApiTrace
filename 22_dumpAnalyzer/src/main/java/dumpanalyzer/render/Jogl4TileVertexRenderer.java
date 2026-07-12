@@ -65,7 +65,7 @@ final class Jogl4TileVertexRenderer {
         }
         List<TileInstance.TriangleStripVertex> unique = TRIANGLE_STRIP_CLASSIFIER.deduplicateVertices(
             triangleStrip.vertices(),
-            TriangleMeshVertexComparator.VERTEX_EPSILON
+            TriangleMeshVertexComparator.vertexEpsilon(triangleStrip)
         );
 
         gl2.glBegin(GL2.GL_POINTS);
