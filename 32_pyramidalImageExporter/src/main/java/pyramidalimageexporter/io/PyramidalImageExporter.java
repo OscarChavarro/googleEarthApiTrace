@@ -6,28 +6,36 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import pyramidalimageexporter.common.statistics.PyramidalImageAdditionStatistics;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.PyramidalImageExporterModel;
 import pyramidalimageexporter.model.TileCoord;
+import pyramidalimageexporter.processing.uncles.RootPathResolver;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;
 
 /**
- * Writes the reconstructed top-level pyramid (levels 0..5, the layers whose
- * sourceFolderName starts with "topLevel_matrix_") to disk as a quadtree of
- * PNG files: the root tile is "0.png" in the destination directory, and
- * every deeper tile "0xy..." lives in a folder named after its own full
- * quadkey, nested one folder per ancestor, e.g. 00/000/0000.png. This
- * mirrors the pyramid already drawn in the interactive viewer instead of the
- * matrix_&lt;n&gt;/matrixLayer.json layout used by 31_matrixMerger's exporter.
+ * Writes the reconstructed pyramid to disk as a quadtree of PNG files: the
+ * root tile is "0.png" in the destination directory, and every deeper tile
+ * "0xy..." lives in a folder named after its own full quadkey, nested one
+ * folder per ancestor, e.g. 00/000/0000.png. Any tile from any matrix layer
+ * is eligible as long as {@link RootPathResolver} can anchor it to a full
+ * path from the root, either directly (its own id already is a quadkey) or
+ * through a chain of "uncle" relationships to an already-anchored tile.
+ *
+ * The export is additive-destructive: an existing destination directory is
+ * reused as-is (no extra validation of its prior contents), and each tile
+ * is compared against whatever image already occupies its slot, so a
+ * pre-existing identical image is left untouched, a pre-existing different
+ * image is overwritten, and a new slot is simply written.
  */
 public final class PyramidalImageExporter {
     private static final int TILE_PIXEL_SIZE = 256;
-    private static final String TOP_LEVEL_SOURCE_FOLDER_PREFIX = "topLevel_matrix_";
     private static final int PROGRESS_REPORT_INTERVAL = 100;
 
     private final Map<String, RGBImageUncompressed> sourceImageCache = new HashMap<>();
+    private final RootPathResolver rootPathResolver = new RootPathResolver();
 
     public void export(PyramidalImageExporterModel model) {
         if (model == null) {
@@ -44,51 +52,61 @@ public final class PyramidalImageExporter {
             return;
         }
 
+        RootPathResolver.Resolution resolution = rootPathResolver.resolve(model.getMatrixLayers());
+        if (!resolution.discardedIds().isEmpty()) {
+            System.out.println(
+                "PyramidalImageExporter: " + resolution.discardedIds().size()
+                    + " tile(s) discarded due to ambiguous uncle relationships (inconsistent root paths)."
+            );
+        }
+
         sourceImageCache.clear();
-        int totalTiles = countExportableTiles(model);
+        int totalTiles = countExportableTiles(model, resolution);
         System.out.println("PyramidalImageExporter: export starting, " + totalTiles + " tiles to write to " + rootDirectory);
-        int exported = 0;
-        int skipped = 0;
+        PyramidalImageAdditionStatistics statistics = new PyramidalImageAdditionStatistics();
+        int failed = 0;
         int processed = 0;
         for (MatrixLayer layer : model.getMatrixLayers()) {
-            if (layer == null || layer.getSourceFolderName() == null
-                || !layer.getSourceFolderName().startsWith(TOP_LEVEL_SOURCE_FOLDER_PREFIX)
-                || layer.getTiles() == null) {
+            if (layer == null || layer.getTiles() == null) {
                 continue;
             }
             for (TileCoord tile : layer.getTiles()) {
-                if (exportTile(rootDirectory, layer.getFrameId(), tile)) {
-                    exported++;
+                String fullPath = tile == null ? null : resolution.pathById().get(tile.getId());
+                if (fullPath == null) {
+                    continue;
                 }
-                else {
-                    skipped++;
+                if (!exportTile(rootDirectory, fullPath, tile, statistics)) {
+                    failed++;
                 }
                 processed++;
                 if (processed % PROGRESS_REPORT_INTERVAL == 0) {
                     System.out.println(
-                        "PyramidalImageExporter: exported " + processed + "/" + totalTiles + " tiles..."
+                        "PyramidalImageExporter: processed " + processed + "/" + totalTiles + " tiles..."
                     );
                 }
             }
         }
         sourceImageCache.clear();
 
+        System.out.println("PyramidalImageExporter: " + statistics);
         reportStatus(
             model,
-            "Export complete: " + exported + " tiles written to " + rootDirectory
-                + (skipped > 0 ? " (" + skipped + " skipped)" : "")
+            "Export complete: " + processed + " tiles processed to " + rootDirectory
+                + (failed > 0 ? " (" + failed + " failed)" : "")
         );
     }
 
-    private static int countExportableTiles(PyramidalImageExporterModel model) {
+    private static int countExportableTiles(PyramidalImageExporterModel model, RootPathResolver.Resolution resolution) {
         int total = 0;
         for (MatrixLayer layer : model.getMatrixLayers()) {
-            if (layer == null || layer.getSourceFolderName() == null
-                || !layer.getSourceFolderName().startsWith(TOP_LEVEL_SOURCE_FOLDER_PREFIX)
-                || layer.getTiles() == null) {
+            if (layer == null || layer.getTiles() == null) {
                 continue;
             }
-            total += layer.getTiles().size();
+            for (TileCoord tile : layer.getTiles()) {
+                if (tile != null && resolution.pathById().get(tile.getId()) != null) {
+                    total++;
+                }
+            }
         }
         return total;
     }
@@ -98,34 +116,69 @@ public final class PyramidalImageExporter {
         System.out.println("PyramidalImageExporter: " + message);
     }
 
-    private boolean exportTile(Path rootDirectory, int level, TileCoord tile) {
-        if (tile == null) {
-            return false;
-        }
-        String localId = tile.getId();
-        if (localId == null || localId.isBlank()) {
-            return false;
-        }
-        String fullId = level <= 0 ? localId : "0" + localId;
-
+    private boolean exportTile(
+        Path rootDirectory,
+        String fullPath,
+        TileCoord tile,
+        PyramidalImageAdditionStatistics statistics
+    ) {
         RGBImageUncompressed sourceImage = loadSourceImage(tile.getTextureFile());
         if (sourceImage == null) {
             return false;
         }
-        Path tileDirectory = directoryFor(rootDirectory, fullId);
+        Path tileDirectory = directoryFor(rootDirectory, fullPath);
         if (!ensureDirectory(tileDirectory)) {
             return false;
         }
         RGBImageUncompressed tileImage = cropTile(sourceImage, tile);
-        File outputFile = tileDirectory.resolve(fullId + ".png").toFile();
+        File outputFile = tileDirectory.resolve(fullPath + ".png").toFile();
+
+        if (outputFile.isFile()) {
+            RGBImageUncompressed existingImage;
+            try {
+                existingImage = ImagePersistence.importRGB(outputFile);
+            }
+            catch (Exception ex) {
+                System.out.println("PyramidalImageExporter: could not read existing " + outputFile + ": " + ex.getMessage());
+                return false;
+            }
+            if (imagesAreEqual(existingImage, tileImage)) {
+                statistics.incrementIgnoredExistingImages();
+                return true;
+            }
+            if (!writeImage(outputFile, tileImage)) {
+                return false;
+            }
+            statistics.incrementUpdatedImages();
+            return true;
+        }
+
+        if (!writeImage(outputFile, tileImage)) {
+            return false;
+        }
+        statistics.incrementNewImages();
+        return true;
+    }
+
+    private static boolean writeImage(File outputFile, RGBImageUncompressed image) {
         try {
-            ImagePersistence.exportPNG(outputFile, tileImage);
+            ImagePersistence.exportPNG(outputFile, image);
         }
         catch (Exception ex) {
             System.out.println("PyramidalImageExporter: could not write " + outputFile + ": " + ex.getMessage());
             return false;
         }
         return true;
+    }
+
+    private static boolean imagesAreEqual(RGBImageUncompressed a, RGBImageUncompressed b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.getXSize() != b.getXSize() || a.getYSize() != b.getYSize()) {
+            return false;
+        }
+        return a.getRawImageDirectBuffer().equals(b.getRawImageDirectBuffer());
     }
 
     /**

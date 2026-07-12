@@ -9,9 +9,10 @@ Image".
 
 The top quadtree levels (`0..5`) are now fully reconstructed: every cell of every
 top-level layer is textured and the layer visualization corresponds to the map of planet
-Earth. What remains pending is anchoring the deeper `matrix_<n>` layers into absolute
-quadtree coordinates. The reconstructed top-level pyramid can already be exported to disk
-as a quadtree of PNG files with the `e` key (see "Exporting the pyramidal image" below).
+Earth. Deeper `matrix_<n>` tiles are exported too whenever they can be anchored to an
+absolute quadtree path, either directly or through their `uncles` relationships (see
+"Exporting the pyramidal image" below). The pyramid can be exported to disk as a quadtree
+of PNG files with the `e` key.
 
 ## Inputs
 
@@ -82,7 +83,7 @@ HUD:
 
 ## Exporting the pyramidal image
 
-Pressing `e` writes the reconstructed top-level pyramid (levels `0..5`) to
+Pressing `e` writes every tile that can be anchored to an absolute quadtree path to
 `<sessionPyramidalImageExportPath>` as a quadtree of PNG files, matching the pyramid
 already drawn in the interactive viewer:
 
@@ -96,6 +97,42 @@ already drawn in the interactive viewer:
 This replaces the earlier `matrix_<n>/matrixLayer.json` copy-based layout used by
 `31_matrixMerger`'s `ResultsExporter`: the pyramidal image is written directly as a
 quadtree of images, with no JSON manifest.
+
+### Which tiles are exported
+
+A tile is exportable only if `pyramidalimageexporter.processing.uncles.RootPathResolver`
+can anchor it to a full path from the root (a string of quadrant digits, e.g. `"0021"`):
+
+- Tiles whose own `id` already is such a path (every `topLevel_matrix_*` tile, by
+  construction) are anchored directly.
+- Any other tile can still be anchored if one of its `uncles` relationships
+  (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
+  already anchored: the uncle is the immediately coarser tile that contains this tile in
+  one of its 4 quadrants, `direction` names that quadrant, and the tile's path is the
+  uncle's path with that quadrant digit appended. This propagates as a fixpoint, so a
+  chain of several uncle hops resolves one hop per pass.
+- If a tile has several `uncles` relationships that resolve to different candidate paths,
+  the tile is ambiguous and is permanently discarded (never exported); the export log
+  reports how many tiles were discarded this way.
+- A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
+
+### Additive-destructive export
+
+The destination directory is treated as additive-destructive: if it does not exist yet,
+it is created and filled as described above. If it already exists, no extra validation of
+its prior contents is performed (the caller is responsible for the integrity of whatever
+is already there); each tile about to be written is instead compared against whatever PNG
+already occupies its slot:
+
+- No existing file at that slot: the new image is written (a "new" tile).
+- An existing file with pixel-identical content: the existing file is left untouched (an
+  "ignored" tile).
+- An existing file with different content: it is overwritten with the new image (an
+  "updated" tile).
+
+These three counters are accumulated in
+`pyramidalimageexporter.common.statistics.PyramidalImageAdditionStatistics` and printed to
+the console (via its `toString()`) once the export finishes.
 
 The selected layer is drawn as textured quads on plane `Z=0`, with frustum culling,
 distance-based LOD (near: textured; far: untextured, 98% scale) and a FIFO GPU texture
@@ -138,8 +175,10 @@ gradle run --args="--offline /media/ramdisk/output /samples/datasets/googleEarth
   without user interaction. On a machine without a display, run it under `xvfb-run -a`.
 - Startup diagnostics on stdout are parseable: `TopLevelTilesReader: loaded strips=...`,
   `TopLevelsMatricesImporter: level L matrix=SxS, nativeResolutionCells=..., derivedCells=...,
-  emptyCells=...`, `Offline image written to: <path>`, and `PyramidalImageExporter: Export
-  complete: N tiles written to <path>` after pressing `e`.
+  emptyCells=...`, `Offline image written to: <path>`, and, after pressing `e`,
+  `PyramidalImageExporter: PyramidalImageAdditionStatistics{new=..., ignoredExisting=...,
+  updated=...}` followed by `PyramidalImageExporter: Export complete: N tiles processed to
+  <path>`.
 - Missing required positional arguments prints a `Usage: ...` message to stderr and exits
   with code `1`. Missing or unreadable `<inputFolder>` exits with code `1` and an `ERROR:`
   message on stderr.
@@ -155,9 +194,13 @@ In `pyramidalimageexporter.config.Configuration`:
 
 ## Package structure
 
-- `io`: `matrixLayer.json` and `topLevelTiles.json` reading.
+- `io`: `matrixLayer.json` and `topLevelTiles.json` reading, and the pyramidal image
+  quadtree writer (`PyramidalImageExporter`).
 - `model`: matrix layers, tile coordinates, selection state, GPU texture budget.
 - `processing/toplevels`: synthesis of top-level (0..5) matrix layers.
-- `processing/uncles`: uncle relationship metadata support.
+- `processing/uncles`: uncle relationship metadata and `RootPathResolver`, which anchors
+  tiles to a full quadtree path from the root.
+- `common/statistics`: `PyramidalImageAdditionStatistics`, the new/ignored/updated tile
+  counters accumulated during an additive-destructive export.
 - `render`: JOGL renderer, culling, LOD and HUD.
 - `gui`: keyboard/mouse handling.
