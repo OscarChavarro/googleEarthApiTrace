@@ -1,6 +1,7 @@
 package frametexturenormalizer.processing.filtering;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,10 @@ import frametexturenormalizer.model.TileInstance;
 
 public final class TileFiltererByConnectedComponents {
     public List<TileInstance> filter(List<TileInstance> tiles) {
+        return flattenComponents(partitionReciprocalComponents(tiles));
+    }
+
+    public List<List<TileInstance>> partitionReciprocalComponents(List<TileInstance> tiles) {
         if (tiles == null || tiles.isEmpty()) {
             return List.of();
         }
@@ -42,61 +47,51 @@ public final class TileFiltererByConnectedComponents {
             addUndirectedEdge(graph, tile.getTileId(), tile.getWestNeighbor(), byId);
         }
 
-        // If no reciprocal neighbor edges exist, do not collapse to a single singleton component.
-        if (graph.edgeSet().isEmpty()) {
-            List<TileInstance> out = new ArrayList<>(tiles.size());
-            for (TileInstance tile : tiles) {
-                if (tile != null) {
-                    out.add(tile);
-                }
-            }
-            return out;
-        }
-
         ConnectivityInspector<Integer, DefaultEdge> inspector = new ConnectivityInspector<>(graph);
         List<Set<Integer>> components = inspector.connectedSets();
         if (components.isEmpty()) {
             return List.of();
         }
 
-        List<Set<Integer>> biggestCandidates = new ArrayList<>();
-        int max = -1;
-        for (Set<Integer> c : components) {
-            if (c == null) {
+        List<Set<Integer>> sortedComponents = new ArrayList<>();
+        for (Set<Integer> component : components) {
+            if (component != null && component.size() >= 2) {
+                sortedComponents.add(component);
+            }
+        }
+        sortedComponents.sort(
+            Comparator.<Set<Integer>>comparingInt(Set::size).reversed()
+                .thenComparingInt(component -> minOrder(component, orderByTileId))
+        );
+
+        List<List<TileInstance>> out = new ArrayList<>(sortedComponents.size());
+        for (Set<Integer> component : sortedComponents) {
+            List<TileInstance> members = new ArrayList<>(component.size());
+            for (TileInstance tile : tiles) {
+                if (tile != null && component.contains(tile.getTileId())) {
+                    members.add(tile);
+                }
+            }
+            if (members.size() >= 2) {
+                out.add(List.copyOf(members));
+            }
+        }
+        return out;
+    }
+
+    public List<TileInstance> flattenComponents(List<List<TileInstance>> components) {
+        if (components == null || components.isEmpty()) {
+            return List.of();
+        }
+        List<TileInstance> out = new ArrayList<>();
+        for (List<TileInstance> component : components) {
+            if (component == null || component.size() < 2) {
                 continue;
             }
-            int size = c.size();
-            if (size > max) {
-                max = size;
-                biggestCandidates.clear();
-                biggestCandidates.add(c);
-            } else if (size == max) {
-                biggestCandidates.add(c);
-            }
-        }
-        if (biggestCandidates.isEmpty()) {
-            return List.of();
-        }
-
-        // Tie-breaker: keep the first component by input tile order.
-        Set<Integer> biggest = biggestCandidates.get(0);
-        int bestOrder = minOrder(biggest, orderByTileId);
-        for (int i = 1; i < biggestCandidates.size(); i++) {
-            Set<Integer> candidate = biggestCandidates.get(i);
-            int candidateOrder = minOrder(candidate, orderByTileId);
-            if (candidateOrder < bestOrder) {
-                bestOrder = candidateOrder;
-                biggest = candidate;
-            }
-        }
-        if (biggest == null || biggest.isEmpty()) {
-            return List.of();
-        }
-
-        List<TileInstance> out = new ArrayList<>(biggest.size());
-        for (TileInstance tile : tiles) {
-            if (tile != null && biggest.contains(tile.getTileId())) {
-                out.add(tile);
+            for (TileInstance tile : component) {
+                if (tile != null) {
+                    out.add(tile);
+                }
             }
         }
         return out;

@@ -25,17 +25,26 @@ public final class WestCutterFrameSetValidator {
         }
 
         for (FrameMatrixSet frame : frames) {
-            FrameTileMatrix matrix = firstMatrix(frame);
-            if (frame == null || matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
                 continue;
             }
-            Set<Integer> markedColumns = new LinkedHashSet<>();
-            for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
-                if (tile != null && normalizedIds.contains(tile.getId())) {
-                    markedColumns.add(tile.getJ());
+            boolean invalid = false;
+            for (FrameTileMatrix matrix : frame.getMatrices()) {
+                if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+                    continue;
+                }
+                Set<Integer> markedColumns = new LinkedHashSet<>();
+                for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                    if (tile != null && normalizedIds.contains(tile.getId())) {
+                        markedColumns.add(tile.getJ());
+                    }
+                }
+                if (markedColumns.size() > 1) {
+                    invalid = true;
+                    break;
                 }
             }
-            if (markedColumns.size() > 1) {
+            if (invalid) {
                 invalidReasonByFrameId.put(
                     frame.getFrameId(),
                     "INVALID FRAME: multiple west-cutter columns detected"
@@ -43,12 +52,5 @@ public final class WestCutterFrameSetValidator {
             }
         }
         return new FrameValidationSummary(invalidReasonByFrameId);
-    }
-
-    private static FrameTileMatrix firstMatrix(FrameMatrixSet frame) {
-        if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
-            return null;
-        }
-        return frame.getMatrices().get(0);
     }
 }

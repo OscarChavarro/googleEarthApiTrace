@@ -110,32 +110,66 @@ final class MatrixMergerStateTest {
             .toList());
     }
 
+    @Test
+    void flattensMultiMatrixFramesIntoSelectableComponents() {
+        MatrixMergerState state = new MatrixMergerState();
+        FrameMatrixSet frame = new FrameMatrixSet();
+        frame.setFrameId(20);
+        frame.setMatrices(List.of(
+            matrix(20, List.of(tile("20_1", 0, 0), tile("20_2", 0, 1)), 1, 2),
+            matrix(20, List.of(tile("20_3", 0, 0), tile("20_4", 1, 0)), 2, 1)
+        ));
+
+        state.setFrameMatrices(List.of(frame));
+
+        assertEquals(2, state.getMatrixCount());
+        assertEquals(List.of(20, 20), state.getFrameMatrices().stream().map(FrameMatrixSet::getFrameId).toList());
+        assertEquals("00020_1", tileId(state.getFrameMatrices().get(0)));
+        assertEquals("00020_3", tileId(state.getFrameMatrices().get(1)));
+    }
+
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId) {
         return frame(frameId, tileId, uncleId, null);
     }
 
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId, String extraTileId) {
-        FrameTileMatrix.TileCoord tile = new FrameTileMatrix.TileCoord();
-        tile.setId(tileId);
+        FrameTileMatrix.TileCoord tile = tile(tileId, 0, 0);
         if (uncleId != null) {
             tile.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, uncleId)));
         }
-        FrameTileMatrix.TileCoord extraTile = null;
-        if (extraTileId != null) {
-            extraTile = new FrameTileMatrix.TileCoord();
-            extraTile.setId(extraTileId);
-        }
+        String secondTileId = extraTileId == null ? siblingTileId(tileId) : extraTileId;
+        FrameTileMatrix.TileCoord extraTile = tile(secondTileId, 0, 1);
 
-        FrameTileMatrix matrix = new FrameTileMatrix();
-        matrix.setFrameId(frameId);
-        matrix.setRows(1);
-        matrix.setCols(extraTile == null ? 1 : 2);
-        matrix.setTiles(extraTile == null ? List.of(tile) : List.of(tile, extraTile));
+        FrameTileMatrix matrix = matrix(frameId, List.of(tile, extraTile), 1, 2);
 
         FrameMatrixSet frame = new FrameMatrixSet();
         frame.setFrameId(frameId);
         frame.setMatrices(List.of(matrix));
         return frame;
+    }
+
+    private static FrameTileMatrix matrix(int frameId, List<FrameTileMatrix.TileCoord> tiles, int rows, int cols) {
+        FrameTileMatrix matrix = new FrameTileMatrix();
+        matrix.setFrameId(frameId);
+        matrix.setRows(rows);
+        matrix.setCols(cols);
+        matrix.setTiles(tiles);
+        return matrix;
+    }
+
+    private static FrameTileMatrix.TileCoord tile(String tileId, int i, int j) {
+        FrameTileMatrix.TileCoord tile = new FrameTileMatrix.TileCoord();
+        tile.setId(tileId);
+        tile.setI(i);
+        tile.setJ(j);
+        tile.setTextureFile("/tmp/" + tileId + ".png");
+        return tile;
+    }
+
+    private static String siblingTileId(String tileId) {
+        int separator = tileId.indexOf('_');
+        String framePart = separator > 0 ? tileId.substring(0, separator) : "0";
+        return framePart + "_9999";
     }
 
     private static String tileId(FrameMatrixSet frame) {

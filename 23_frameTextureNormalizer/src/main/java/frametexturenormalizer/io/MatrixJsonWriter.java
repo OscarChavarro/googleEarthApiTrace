@@ -23,7 +23,7 @@ public final class MatrixJsonWriter {
     private MatrixJsonWriter() {
     }
 
-    private static MatrixJson toJsonMatrix(TileMatrix matrix) {
+    private static MatrixJson toJsonMatrix(int frameId, TileMatrix matrix) {
         if (matrix == null) {
             return null;
         }
@@ -33,7 +33,7 @@ public final class MatrixJsonWriter {
             if (tile == null) {
                 continue;
             }
-            String id = ScopedTileIds.formatFromTextureFile(tile.textureFile(), matrix.getFrameId(), tile.tileId());
+            String id = ScopedTileIds.formatFromTextureFile(tile.textureFile(), frameId, tile.tileId());
             tiles.add(new TileJson(
                 id,
                 tile.i(),
@@ -45,15 +45,28 @@ public final class MatrixJsonWriter {
         return new MatrixJson(matrix.getRows(), matrix.getCols(), tiles);
     }
 
-    public static void writeMatrixJson(TileMatrix matrix) {
-        if (matrix == null) {
+    public static void writeMatricesJson(int frameId, List<TileMatrix> matrices) {
+        if (frameId < 0 || matrices == null || matrices.isEmpty()) {
             return;
         }
-        Path frameDir = Path.of(Configuration.INPUT_PATH, String.format("%05d", matrix.getFrameId()));
+        List<MatrixJson> matrixJsons = new ArrayList<>();
+        for (TileMatrix matrix : matrices) {
+            if (matrix == null || matrix.getTiles() == null || matrix.getTiles().size() < 2) {
+                continue;
+            }
+            MatrixJson json = toJsonMatrix(frameId, matrix);
+            if (json != null && json.tiles() != null && json.tiles().size() >= 2) {
+                matrixJsons.add(json);
+            }
+        }
+        if (matrixJsons.isEmpty()) {
+            return;
+        }
+        Path frameDir = Path.of(Configuration.INPUT_PATH, String.format("%05d", frameId));
         Path matrixJson = frameDir.resolve("matrix.json");
         try {
             Files.createDirectories(frameDir);
-            JSON.writerWithDefaultPrettyPrinter().writeValue(matrixJson.toFile(), toJsonMatrix(matrix));
+            JSON.writerWithDefaultPrettyPrinter().writeValue(matrixJson.toFile(), new FrameMatricesJson(2, frameId, matrixJsons));
         }
         catch (IOException ex) {
             System.out.println("Unable to write " + matrixJson + ": " + ex.getMessage());
@@ -122,6 +135,9 @@ public final class MatrixJsonWriter {
     }
 
     private record MatrixJson(int rows, int cols, List<TileJson> tiles) {
+    }
+
+    private record FrameMatricesJson(int contractVersion, int frameId, List<MatrixJson> matrices) {
     }
 
     private record TileJson(String id, int i, int j, String textureFile, List<ToUncleRelationshipJson> uncles) {

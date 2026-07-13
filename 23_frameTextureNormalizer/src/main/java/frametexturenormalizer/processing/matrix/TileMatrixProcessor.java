@@ -3,6 +3,7 @@ package frametexturenormalizer.processing.matrix;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -11,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileMatrix;
+import frametexturenormalizer.processing.filtering.TileFiltererByConnectedComponents;
 import frametexturenormalizer.processing.filtering.TileFiltererByIsolatedTiles;
 import frametexturenormalizer.processing.filtering.TileFiltererByTextureCoverage;
 import frametexturenormalizer.processing.neighborhood.GeometricNeighborhoodSanitizer;
@@ -55,14 +57,14 @@ public final class TileMatrixProcessor {
         ordered.sort(Comparator.comparingInt(IndexedFrameResult::index));
 
         List<FrameData> out = new ArrayList<>(ordered.size());
-        List<TileMatrix> matrices = new ArrayList<>(ordered.size());
+        List<TileMatrix> matrices = new ArrayList<>();
         for (IndexedFrameResult result : ordered) {
             if (result == null) {
                 continue;
             }
             out.add(result.frame());
-            if (result.matrix() != null) {
-                matrices.add(result.matrix());
+            if (result.matrices() != null && !result.matrices().isEmpty()) {
+                matrices.addAll(result.matrices());
             }
         }
         return new TileMatrixProcessingResult(out, matrices);
@@ -144,50 +146,46 @@ public final class TileMatrixProcessor {
         TileFiltererByTextureCoverage textureCoverageFilterer,
         TileFiltererByIsolatedTiles isolatedTileFilterer,
         GeometricNeighborhoodSanitizer sanitizer,
+        TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileSetToMatrixConverter localConvertor
     ) {
         if (request == null || request.frame() == null) {
             return null;
         }
         FrameData normalized = TileTextureNormalizer.normalizeFrame(request.frame(), canonicalTextureByTexture);
-        FrameData sanitized = sanitizer.sanitizeFrame(normalized);
-        FrameData fullResolutionFiltered = textureCoverageFilterer.removeNonFullResolutionTiles(sanitized);
-        FrameData filtered = isolatedTileFilterer.removeIsolatedTiles(fullResolutionFiltered);
-        TileMatrix matrix = localConvertor.convert(filtered);
-        if (matrix == null) {
-            Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();
-            Map<Integer, MatrixTileCoordinate> partialCoords = localConvertor.getLastCoordinatesByTileId();
-            List<TileInstance> flaggedTiles = markIncorrectMatrixMappings(
-                filtered.getTiles(),
-                conflictIds,
-                partialCoords
-            );
-            return new IndexedFrameResult(
-                request.index(),
-                new FrameData(
-                    filtered.getId(),
-                    flaggedTiles,
-                    filtered.getLines(),
-                    filtered.getCameraState(),
-                    filtered.getProjectionMatrix(),
-                    filtered.getModelViewMatrix(),
-                    true
-                ),
-                null
-            );
+        List<List<TileInstance>> components = connectedComponentsFilterer.partitionReciprocalComponents(normalized.getTiles());
+        components = repartitionFilteredComponents(normalized, components, connectedComponentsFilterer, tiles ->
+            sanitizer.sanitizeFrame(copyFrameWithTiles(normalized, tiles, false)).getTiles()
+        );
+        components = repartitionFilteredComponents(normalized, components, connectedComponentsFilterer, tiles ->
+            textureCoverageFilterer.removeNonFullResolutionTiles(copyFrameWithTiles(normalized, tiles, false)).getTiles()
+        );
+        components = repartitionFilteredComponents(normalized, components, connectedComponentsFilterer, tiles ->
+            isolatedTileFilterer.removeIsolatedTiles(copyFrameWithTiles(normalized, tiles, false)).getTiles()
+        );
+
+        List<TileMatrix> matrices = new ArrayList<>();
+        List<TileInstance> displayTiles = new ArrayList<>();
+        boolean hadErrors = false;
+        for (List<TileInstance> component : components) {
+            if (component == null || component.size() < 2) {
+                continue;
+            }
+            FrameData componentFrame = copyFrameWithTiles(normalized, component, false);
+            TileMatrix matrix = localConvertor.convert(componentFrame);
+            if (!isValidMatrix(matrix)) {
+                hadErrors = true;
+                Set<Integer> conflictIds = localConvertor.getLastConflictingTileIds();
+                Map<Integer, MatrixTileCoordinate> partialCoords = localConvertor.getLastCoordinatesByTileId();
+                displayTiles.addAll(markIncorrectMatrixMappings(component, conflictIds, partialCoords));
+                continue;
+            }
+            matrices.add(matrix);
+            displayTiles.addAll(applyMatrixCoordinates(component, matrix));
         }
 
-        List<TileInstance> tilesWithCoords = applyMatrixCoordinates(filtered.getTiles(), matrix);
-        FrameData frameWithMatrix = new FrameData(
-            filtered.getId(),
-            tilesWithCoords,
-            filtered.getLines(),
-            filtered.getCameraState(),
-            filtered.getProjectionMatrix(),
-            filtered.getModelViewMatrix(),
-            false
-        );
-        return new IndexedFrameResult(request.index(), frameWithMatrix, matrix);
+        FrameData frameWithMatrices = copyFrameWithTiles(normalized, displayTiles, hadErrors && matrices.isEmpty());
+        return new IndexedFrameResult(request.index(), frameWithMatrices, List.copyOf(matrices));
     }
 
     private void consumeFrameQueue(
@@ -200,6 +198,7 @@ public final class TileMatrixProcessor {
         TileFiltererByTextureCoverage textureCoverageFilterer = new TileFiltererByTextureCoverage();
         TileFiltererByIsolatedTiles isolatedTileFilterer = new TileFiltererByIsolatedTiles();
         GeometricNeighborhoodSanitizer sanitizer = new GeometricNeighborhoodSanitizer();
+        TileFiltererByConnectedComponents connectedComponentsFilterer = new TileFiltererByConnectedComponents();
         while (true) {
             FrameRequest request = pendingFrames.poll();
             if (request == null) {
@@ -215,6 +214,7 @@ public final class TileMatrixProcessor {
                 textureCoverageFilterer,
                 isolatedTileFilterer,
                 sanitizer,
+                connectedComponentsFilterer,
                 localConvertor
             );
             if (result != null) {
@@ -255,6 +255,109 @@ public final class TileMatrixProcessor {
                 Thread.currentThread().interrupt();
                 done = true;
             }
+        }
+    }
+
+    private static FrameData copyFrameWithTiles(FrameData source, List<TileInstance> tiles, boolean withMatrixErrors) {
+        if (source == null) {
+            return null;
+        }
+        return new FrameData(
+            source.getId(),
+            tiles,
+            source.getLines(),
+            source.getCameraState(),
+            source.getProjectionMatrix(),
+            source.getModelViewMatrix(),
+            withMatrixErrors
+        );
+    }
+
+    private static List<List<TileInstance>> repartitionFilteredComponents(
+        FrameData frame,
+        List<List<TileInstance>> components,
+        TileFiltererByConnectedComponents connectedComponentsFilterer,
+        java.util.function.Function<List<TileInstance>, List<TileInstance>> filter
+    ) {
+        if (frame == null || components == null || components.isEmpty()) {
+            return List.of();
+        }
+        List<List<TileInstance>> out = new ArrayList<>();
+        for (List<TileInstance> component : components) {
+            if (component == null || component.isEmpty()) {
+                continue;
+            }
+            List<TileInstance> filteredTiles = filter.apply(component);
+            if (filteredTiles == null || filteredTiles.isEmpty()) {
+                continue;
+            }
+            out.addAll(connectedComponentsFilterer.partitionReciprocalComponents(filteredTiles));
+        }
+        return out;
+    }
+
+    private static boolean isValidMatrix(TileMatrix matrix) {
+        if (matrix == null || matrix.getTiles() == null || matrix.getTiles().size() < 2) {
+            return false;
+        }
+        Set<Integer> tileIds = new HashSet<>();
+        Set<String> coordinates = new HashSet<>();
+        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null) {
+                return false;
+            }
+            if (tile.i() < 0 || tile.j() < 0 || tile.i() >= matrix.getRows() || tile.j() >= matrix.getCols()) {
+                return false;
+            }
+            if (!tileIds.add(tile.tileId())) {
+                return false;
+            }
+            if (!coordinates.add(tile.i() + ":" + tile.j())) {
+                return false;
+            }
+        }
+        return isOrthogonallyConnected(matrix.getTiles());
+    }
+
+    private static boolean isOrthogonallyConnected(List<TileMatrix.TileCoord> tiles) {
+        if (tiles == null || tiles.isEmpty()) {
+            return false;
+        }
+        Map<String, TileMatrix.TileCoord> byPosition = new HashMap<>();
+        for (TileMatrix.TileCoord tile : tiles) {
+            if (tile != null) {
+                byPosition.put(tile.i() + ":" + tile.j(), tile);
+            }
+        }
+        ArrayList<TileMatrix.TileCoord> queue = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        TileMatrix.TileCoord start = tiles.get(0);
+        if (start == null) {
+            return false;
+        }
+        queue.add(start);
+        visited.add(start.i() + ":" + start.j());
+        for (int index = 0; index < queue.size(); index++) {
+            TileMatrix.TileCoord current = queue.get(index);
+            visitNeighbor(current.i() - 1, current.j(), byPosition, visited, queue);
+            visitNeighbor(current.i() + 1, current.j(), byPosition, visited, queue);
+            visitNeighbor(current.i(), current.j() - 1, byPosition, visited, queue);
+            visitNeighbor(current.i(), current.j() + 1, byPosition, visited, queue);
+        }
+        return visited.size() == byPosition.size();
+    }
+
+    private static void visitNeighbor(
+        int i,
+        int j,
+        Map<String, TileMatrix.TileCoord> byPosition,
+        Set<String> visited,
+        List<TileMatrix.TileCoord> queue
+    ) {
+        String key = i + ":" + j;
+        TileMatrix.TileCoord neighbor = byPosition.get(key);
+        if (neighbor != null && visited.add(key)) {
+            queue.add(neighbor);
         }
     }
 }

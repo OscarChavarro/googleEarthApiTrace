@@ -61,16 +61,21 @@ public final class FrameMatrixReader {
         }
         if (root.has("matrices") && root.get("matrices").isArray()) {
             FrameMatrixSet frameMatrices = new FrameMatrixSet();
+            frameMatrices.setContractVersion(root.path("contractVersion").isIntegralNumber() ? root.path("contractVersion").intValue() : null);
             frameMatrices.setFrameId(root.path("frameId").asInt(fallbackFrameId));
+            List<FrameTileMatrix> matrices = new ArrayList<>();
             for (JsonNode matrixNode : root.path("matrices")) {
                 FrameTileMatrix matrix = JSON.treeToValue(matrixNode, FrameTileMatrix.class);
                 if (matrix != null && matrix.getTiles() != null && !matrix.getTiles().isEmpty()) {
                     matrix.setFrameId(frameMatrices.getFrameId());
-                    frameMatrices.setMatrices(List.of(matrix));
-                    return frameMatrices;
+                    matrices.add(matrix);
                 }
             }
-            return null;
+            if (matrices.isEmpty()) {
+                return null;
+            }
+            frameMatrices.setMatrices(matrices);
+            return frameMatrices;
         }
 
         FrameTileMatrix singleMatrix = JSON.treeToValue(root, FrameTileMatrix.class);
@@ -78,6 +83,7 @@ public final class FrameMatrixReader {
             return null;
         }
         FrameMatrixSet frameMatrices = new FrameMatrixSet();
+        frameMatrices.setContractVersion(root.path("contractVersion").isIntegralNumber() ? root.path("contractVersion").intValue() : null);
         int frameId = singleMatrix.getFrameId() > 0 ? singleMatrix.getFrameId() : fallbackFrameId;
         singleMatrix.setFrameId(frameId);
         frameMatrices.setFrameId(frameId);

@@ -24,7 +24,8 @@ final class VisualHierarchyRelationshipInferrerTest {
         Path parentFile = tempDir.resolve("parent.png");
         ImageIO.write(parentImage, "png", parentFile.toFile());
         FrameTileMatrix.TileCoord parentTile = tile("00010_1", 0, 0, parentFile);
-        FrameMatrixSet parent = frame(10, 1, 1, List.of(parentTile));
+        FrameTileMatrix.TileCoord siblingParentTile = tile("00010_2", 0, 1, parentFile);
+        FrameMatrixSet parent = frame(10, 1, 2, List.of(parentTile, siblingParentTile));
 
         List<FrameTileMatrix.TileCoord> children = new ArrayList<>();
         for (int quadrant = 0; quadrant < 4; quadrant++) {

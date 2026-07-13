@@ -64,10 +64,7 @@ public final class MatrixMergerState {
         frameMatrices.clear();
         if (frames != null) {
             for (FrameMatrixSet frame : frames) {
-                FrameMatrixSet normalized = normalizeFrame(frame);
-                if (normalized != null) {
-                    frameMatrices.add(normalized);
-                }
+                frameMatrices.addAll(normalizeFrame(frame));
             }
         }
         maximumRetryCount = frameMatrices.size();
@@ -607,20 +604,26 @@ public final class MatrixMergerState {
         return matrix != null && matrix.getTiles() != null && matrix.getTiles().size() <= 2;
     }
 
-    private static FrameMatrixSet normalizeFrame(FrameMatrixSet frame) {
+    private static List<FrameMatrixSet> normalizeFrame(FrameMatrixSet frame) {
         if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
-            return null;
+            return List.of();
         }
-        FrameTileMatrix matrix = frame.getMatrices().get(0);
-        if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
-            return null;
+        List<FrameMatrixSet> normalized = new ArrayList<>();
+        for (FrameTileMatrix sourceMatrix : frame.getMatrices()) {
+            if (!isValidMatrix(sourceMatrix)) {
+                continue;
+            }
+            FrameTileMatrix matrix = copyMatrix(sourceMatrix, frame.getFrameId());
+            FrameMatrixSet normalizedFrame = new FrameMatrixSet();
+            normalizedFrame.setContractVersion(frame.getContractVersion());
+            normalizedFrame.setHierarchyLevel(frame.getHierarchyLevel());
+            normalizedFrame.setParentMatrixIndex(frame.getParentMatrixIndex());
+            normalizedFrame.setFrameId(frame.getFrameId());
+            normalizedFrame.setMatrices(List.of(matrix));
+            normalizedFrame.setHierarchyUnclesByTileId(buildHierarchyUnclesByTileId(frame, matrix));
+            normalizedFrame.setHierarchyRelationshipsByTileId(buildHierarchyRelationshipsByTileId(frame, matrix));
+            normalized.add(normalizedFrame);
         }
-        matrix.setFrameId(frame.getFrameId());
-        FrameMatrixSet normalized = new FrameMatrixSet();
-        normalized.setFrameId(frame.getFrameId());
-        normalized.setMatrices(List.of(matrix));
-        normalized.setHierarchyUnclesByTileId(buildHierarchyUnclesByTileId(frame, matrix));
-        normalized.setHierarchyRelationshipsByTileId(buildHierarchyRelationshipsByTileId(frame, matrix));
         return normalized;
     }
 
@@ -634,6 +637,85 @@ public final class MatrixMergerState {
         }
         FrameTileMatrix matrix = frame.getMatrices().get(0);
         return matrix == null || matrix.getTiles() == null ? 0 : matrix.getTiles().size();
+    }
+
+    private static boolean isValidMatrix(FrameTileMatrix matrix) {
+        if (matrix == null || matrix.getTiles() == null || matrix.getTiles().size() < 2) {
+            return false;
+        }
+        Set<String> tileIds = new LinkedHashSet<>();
+        Set<String> coordinates = new LinkedHashSet<>();
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                return false;
+            }
+            if (tile.getI() < 0 || tile.getJ() < 0 || tile.getI() >= matrix.getRows() || tile.getJ() >= matrix.getCols()) {
+                return false;
+            }
+            if (!tileIds.add(tile.getId())) {
+                return false;
+            }
+            if (!coordinates.add(tile.getI() + ":" + tile.getJ())) {
+                return false;
+            }
+        }
+        return isOrthogonallyConnected(matrix);
+    }
+
+    private static boolean isOrthogonallyConnected(FrameTileMatrix matrix) {
+        Map<String, FrameTileMatrix.TileCoord> byPosition = new LinkedHashMap<>();
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            byPosition.put(tile.getI() + ":" + tile.getJ(), tile);
+        }
+        FrameTileMatrix.TileCoord start = matrix.getTiles().get(0);
+        ArrayDeque<FrameTileMatrix.TileCoord> pending = new ArrayDeque<>();
+        Set<String> visited = new LinkedHashSet<>();
+        pending.add(start);
+        visited.add(start.getI() + ":" + start.getJ());
+        while (!pending.isEmpty()) {
+            FrameTileMatrix.TileCoord current = pending.removeFirst();
+            enqueueNeighbor(current.getI() - 1, current.getJ(), byPosition, visited, pending);
+            enqueueNeighbor(current.getI() + 1, current.getJ(), byPosition, visited, pending);
+            enqueueNeighbor(current.getI(), current.getJ() - 1, byPosition, visited, pending);
+            enqueueNeighbor(current.getI(), current.getJ() + 1, byPosition, visited, pending);
+        }
+        return visited.size() == byPosition.size();
+    }
+
+    private static void enqueueNeighbor(
+        int i,
+        int j,
+        Map<String, FrameTileMatrix.TileCoord> byPosition,
+        Set<String> visited,
+        ArrayDeque<FrameTileMatrix.TileCoord> pending
+    ) {
+        String key = i + ":" + j;
+        FrameTileMatrix.TileCoord neighbor = byPosition.get(key);
+        if (neighbor != null && visited.add(key)) {
+            pending.addLast(neighbor);
+        }
+    }
+
+    private static FrameTileMatrix copyMatrix(FrameTileMatrix source, int frameId) {
+        FrameTileMatrix copy = new FrameTileMatrix();
+        copy.setFrameId(frameId);
+        copy.setRows(source.getRows());
+        copy.setCols(source.getCols());
+        List<FrameTileMatrix.TileCoord> tiles = new ArrayList<>();
+        for (FrameTileMatrix.TileCoord sourceTile : source.getTiles()) {
+            if (sourceTile == null) {
+                continue;
+            }
+            FrameTileMatrix.TileCoord tile = new FrameTileMatrix.TileCoord();
+            tile.setId(sourceTile.getId());
+            tile.setI(sourceTile.getI());
+            tile.setJ(sourceTile.getJ());
+            tile.setTextureFile(sourceTile.getTextureFile());
+            tile.setUncles(sourceTile.getUncles());
+            tiles.add(tile);
+        }
+        copy.setTiles(tiles);
+        return copy;
     }
 
     private static String formatFrameLabel(int frameId) {

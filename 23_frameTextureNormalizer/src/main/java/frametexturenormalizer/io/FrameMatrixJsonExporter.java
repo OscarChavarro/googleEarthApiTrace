@@ -3,49 +3,51 @@ package frametexturenormalizer.io;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.TileMatrix;
 
 public final class FrameMatrixJsonExporter {
     public void export(List<TileMatrix> matrices) {
-        List<TileMatrix> oneMatrixPerFrame = oneMatrixPerFrame(matrices);
-        cleanupObsoleteMatrices(oneMatrixPerFrame);
-        if (oneMatrixPerFrame.isEmpty()) {
+        Map<Integer, List<TileMatrix>> matricesByFrame = groupByFrame(matrices);
+        cleanupObsoleteMatrices(matricesByFrame.keySet());
+        if (matricesByFrame.isEmpty()) {
             return;
         }
-        for (TileMatrix matrix : oneMatrixPerFrame) {
-            MatrixJsonWriter.writeMatrixJson(matrix);
+        for (Map.Entry<Integer, List<TileMatrix>> entry : matricesByFrame.entrySet()) {
+            MatrixJsonWriter.writeMatricesJson(entry.getKey(), entry.getValue());
         }
     }
 
-    private static List<TileMatrix> oneMatrixPerFrame(List<TileMatrix> matrices) {
+    private static Map<Integer, List<TileMatrix>> groupByFrame(List<TileMatrix> matrices) {
         if (matrices == null || matrices.isEmpty()) {
-            return List.of();
+            return Map.of();
         }
-        Set<Integer> emittedFrames = new LinkedHashSet<>();
-        List<TileMatrix> out = new java.util.ArrayList<>();
+        Map<Integer, List<TileMatrix>> out = new LinkedHashMap<>();
         for (TileMatrix matrix : matrices) {
-            if (matrix == null || !emittedFrames.add(matrix.getFrameId())) {
+            if (matrix == null || matrix.getTiles() == null || matrix.getTiles().size() < 2) {
                 continue;
             }
-            out.add(matrix);
+            out.computeIfAbsent(matrix.getFrameId(), unused -> new ArrayList<>()).add(matrix);
         }
         return out;
     }
 
-    private static void cleanupObsoleteMatrices(List<TileMatrix> matrices) {
+    private static void cleanupObsoleteMatrices(Set<Integer> keptFrameIds) {
         Path outputRoot = Path.of(Configuration.INPUT_PATH);
         if (!Files.isDirectory(outputRoot)) {
             return;
         }
         Set<String> keptFrameDirs = new LinkedHashSet<>();
-        if (matrices != null) {
-            for (TileMatrix matrix : matrices) {
-                if (matrix != null) {
-                    keptFrameDirs.add(String.format("%05d", matrix.getFrameId()));
+        if (keptFrameIds != null) {
+            for (Integer frameId : keptFrameIds) {
+                if (frameId != null) {
+                    keptFrameDirs.add(String.format("%05d", frameId));
                 }
             }
         }
