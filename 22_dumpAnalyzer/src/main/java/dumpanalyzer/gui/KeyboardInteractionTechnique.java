@@ -9,7 +9,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.List;
 
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.gui.AwtSystem;
@@ -20,13 +20,13 @@ public final class KeyboardInteractionTechnique implements KeyListener {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final DefaultPrettyPrinter JSON_PRETTY_PRINTER = createPrettyPrinter();
 
-    private final DumpAnalyzerModel model;
+    private final DumpAnalyzerState model;
     private final Runnable closeAction;
     private final CameraControllerOrbiter cameraController;
     private final Runnable repaintAction;
 
     public KeyboardInteractionTechnique(
-        DumpAnalyzerModel model,
+        DumpAnalyzerState model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
         Runnable repaintAction
@@ -93,7 +93,7 @@ public final class KeyboardInteractionTechnique implements KeyListener {
     }
 
     private void printSelectedFrameJson() {
-        DumpAnalyzerModel.HudState state = model.snapshotHudState();
+        DumpAnalyzerState.HudState state = model.snapshotHudState();
         List<Frame> frames = model.snapshotFrames();
 
         int idx = state.selectedFrameIndex();

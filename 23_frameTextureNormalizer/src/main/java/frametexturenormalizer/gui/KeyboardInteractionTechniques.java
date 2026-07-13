@@ -12,18 +12,18 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 
 // App classes
 import frametexturenormalizer.model.FrameData;
-import frametexturenormalizer.model.FrameTextureNormalizerModel;
+import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 import frametexturenormalizer.processing.neighborhood.TileCutter;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
-    private final FrameTextureNormalizerModel model;
+    private final FrameTextureNormalizerState model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
     private final CameraControllerOrbiter cameraController;
     private final RendererConfigurationController renderingConfigurationController;
 
     public KeyboardInteractionTechniques(
-        FrameTextureNormalizerModel model,
+        FrameTextureNormalizerState model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
         Runnable repaintAction

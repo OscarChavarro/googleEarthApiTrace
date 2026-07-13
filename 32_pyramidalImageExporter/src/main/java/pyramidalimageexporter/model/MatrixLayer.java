@@ -10,7 +10,7 @@ public final class MatrixLayer {
     private int rows;
     private int cols;
     private String sourceFolderName;
-    private List<TileCoord> tiles = new ArrayList<>();
+    private List<MatrixLayerTile> tiles = new ArrayList<>();
 
     public int getFrameId() {
         return frameId;
@@ -44,11 +44,11 @@ public final class MatrixLayer {
         this.sourceFolderName = sourceFolderName;
     }
 
-    public List<TileCoord> getTiles() {
+    public List<MatrixLayerTile> getTiles() {
         return tiles;
     }
 
-    public void setTiles(List<TileCoord> tiles) {
+    public void setTiles(List<MatrixLayerTile> tiles) {
         this.tiles = tiles == null ? new ArrayList<>() : new ArrayList<>(tiles);
     }
 }

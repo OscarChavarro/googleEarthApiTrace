@@ -1,7 +1,7 @@
 package dumpanalyzer.render;
 
 import com.jogamp.opengl.GL2;
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import java.util.List;
@@ -35,7 +35,7 @@ public final class Jogl4NeighborRelationshipRenderer {
         gl2.glDisable(GL2.GL_DEPTH_TEST);
         gl2.glDepthMask(false);
         gl2.glLineWidth(2.0f);
-        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
+        if (selectedTileIndex == DumpAnalyzerState.SELECT_ALL_TILES) {
             List<TileInstance> selectableTiles = frameData.getSelectableTiles();
             for (int i = 0; i < selectableTiles.size(); i++) {
                 drawNeighborsForTile(

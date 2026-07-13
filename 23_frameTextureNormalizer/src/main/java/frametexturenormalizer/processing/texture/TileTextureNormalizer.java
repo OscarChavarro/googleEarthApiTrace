@@ -9,8 +9,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
-import frametexturenormalizer.util.ScopedTileIds;
-import processing.uncles.ToUncleRelationship;
+import frametexturenormalizer.model.contract.ScopedTileIds;
+import frametexturenormalizer.processing.uncles.ToUncleRelationship;
 
 public final class TileTextureNormalizer {
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");

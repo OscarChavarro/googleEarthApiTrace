@@ -10,15 +10,15 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import matrixmerger.config.Configuration;
-import matrixmerger.io.TileMatrix;
-import matrixmerger.model.MatrixMergerModel;
+import matrixmerger.model.contract.FrameTileMatrix;
+import matrixmerger.model.state.MatrixMergerState;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class Jogl4TileMatrixRenderer {
     private final Map<String, TextureResident> textureByPath = new HashMap<>();
 
-    public void draw(GL2 gl2, TileMatrix matrix, RendererConfiguration renderingConfiguration, MatrixMergerModel model) {
+    public void draw(GL2 gl2, FrameTileMatrix matrix, RendererConfiguration renderingConfiguration, MatrixMergerState model) {
         if (gl2 == null || matrix == null || renderingConfiguration == null || model == null) {
             return;
         }
@@ -35,7 +35,7 @@ public final class Jogl4TileMatrixRenderer {
         }
     }
 
-    private void drawSurfaces(GL2 gl2, TileMatrix matrix, boolean textured, MatrixMergerModel model) {
+    private void drawSurfaces(GL2 gl2, FrameTileMatrix matrix, boolean textured, MatrixMergerState model) {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
         if (textured) {
@@ -44,7 +44,7 @@ public final class Jogl4TileMatrixRenderer {
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
 
-        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
             
             if (tile == null) {
                 continue;
@@ -108,12 +108,12 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glDisable(GL2.GL_TEXTURE_2D);
     }
 
-    private void drawWires(GL2 gl2, TileMatrix matrix, MatrixMergerModel model) {
+    private void drawWires(GL2 gl2, FrameTileMatrix matrix, MatrixMergerState model) {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glLineWidth(1.1f);
-        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
             if (tile == null) {
                 continue;
             }
@@ -144,12 +144,12 @@ public final class Jogl4TileMatrixRenderer {
         }
     }
 
-    private void drawWestCutterWires(GL2 gl2, TileMatrix matrix, MatrixMergerModel model) {
+    private void drawWestCutterWires(GL2 gl2, FrameTileMatrix matrix, MatrixMergerState model) {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glLineWidth(2.0f);
-        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
             if (tile == null || !model.isWestCutterTileId(tile.getId())) {
                 continue;
             }
@@ -177,14 +177,14 @@ public final class Jogl4TileMatrixRenderer {
         }
     }
 
-    private void drawPoints(GL2 gl2, TileMatrix matrix, MatrixMergerModel model) {
+    private void drawPoints(GL2 gl2, FrameTileMatrix matrix, MatrixMergerState model) {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glColor3f(1.0f, 0.2f, 0.2f);
         gl2.glPointSize(3.0f);
         gl2.glBegin(GL2.GL_POINTS);
-        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
             
             if (tile == null) {
                 continue;
@@ -203,7 +203,7 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glEnd();
     }
 
-    private TextureResident acquireTexture(GL2 gl2, String texturePath, MatrixMergerModel model) {
+    private TextureResident acquireTexture(GL2 gl2, String texturePath, MatrixMergerState model) {
         if (texturePath == null || texturePath.isBlank()) {
             return null;
         }
@@ -240,7 +240,7 @@ public final class Jogl4TileMatrixRenderer {
         return textureByPath.get(texturePath);
     }
 
-    private boolean isNearEnoughForTexture(MatrixMergerModel model, float x0, float yTop, float x1, float yBottom) {
+    private boolean isNearEnoughForTexture(MatrixMergerState model, float x0, float yTop, float x1, float yBottom) {
         Vector3Dd eye = model.getViewingCamera().getPosition();
         double cx = (x0 + x1) * 0.5;
         double cy = (yTop + yBottom) * 0.5;
@@ -251,7 +251,7 @@ public final class Jogl4TileMatrixRenderer {
         return distance <= Configuration.MAX_TEXTURED_QUAD_DISTANCE;
     }
 
-    private void enforceTextureBudget(GL2 gl2, MatrixMergerModel model) {
+    private void enforceTextureBudget(GL2 gl2, MatrixMergerState model) {
         while (model.getGpuTextureBytesAssigned() > Configuration.MAX_GPU_TEXTURE_MEMORY) {
             String oldest = model.popOldestResidentTexturePath();
             if (oldest == null) {
@@ -268,7 +268,7 @@ public final class Jogl4TileMatrixRenderer {
         }
     }
 
-    public void dispose(GL2 gl2, MatrixMergerModel model) {
+    public void dispose(GL2 gl2, MatrixMergerState model) {
         for (Map.Entry<String, TextureResident> entry : textureByPath.entrySet()) {
             TextureResident resident = entry.getValue();
             if (resident != null && resident.texture() != null) {
@@ -281,7 +281,7 @@ public final class Jogl4TileMatrixRenderer {
         textureByPath.clear();
     }
 
-    private static boolean hasUncles(TileMatrix.TileCoord tile) {
+    private static boolean hasUncles(FrameTileMatrix.TileCoord tile) {
         return tile != null && tile.getUncles() != null && !tile.getUncles().isEmpty();
     }
 

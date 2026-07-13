@@ -1,21 +1,21 @@
 package matrixmerger.gui;
 
 import java.awt.event.KeyListener;
-import matrixmerger.model.MatrixMergerModel;
+import matrixmerger.model.state.MatrixMergerState;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
-    private final MatrixMergerModel model;
+    private final MatrixMergerState model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
     private final CameraControllerOrbiter cameraController;
     private final RendererConfigurationController renderingConfigurationController;
 
     public KeyboardInteractionTechniques(
-        MatrixMergerModel model,
+        MatrixMergerState model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
         Runnable repaintAction

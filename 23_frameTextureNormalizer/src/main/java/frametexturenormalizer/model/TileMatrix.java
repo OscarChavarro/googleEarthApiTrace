@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import processing.uncles.ToUncleRelationship;
+import frametexturenormalizer.processing.uncles.ToUncleRelationship;
 
 public final class TileMatrix {
     private final int frameId;

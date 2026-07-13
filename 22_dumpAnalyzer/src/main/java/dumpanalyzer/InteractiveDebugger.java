@@ -3,7 +3,7 @@ package dumpanalyzer;
 import com.jogamp.opengl.awt.GLCanvas;
 import dumpanalyzer.gui.KeyboardInteractionTechnique;
 import dumpanalyzer.gui.MouseInteractionTechnique;
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.render.Jogl4DumpAnalyzerRenderer;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -11,12 +11,12 @@ public final class InteractiveDebugger {
     private InteractiveDebugger() {
     }
 
-    public static void start(DumpAnalyzerModel model) {
+    public static void start(DumpAnalyzerState model) {
         Thread rendererThread = createRendererThread(model);
         rendererThread.start();
     }
 
-    private static Thread createRendererThread(DumpAnalyzerModel model) {
+    private static Thread createRendererThread(DumpAnalyzerState model) {
         return new Thread(() -> {
             try {
                 Jogl4DumpAnalyzerRenderer renderer = new Jogl4DumpAnalyzerRenderer(model, InteractiveDebugger::shutdownNow);
@@ -32,7 +32,7 @@ public final class InteractiveDebugger {
     }
 
     private static void installInteractionTechniques(
-        DumpAnalyzerModel model,
+        DumpAnalyzerState model,
         GLCanvas canvas,
         CameraControllerOrbiter cameraController,
         Runnable closeAction,

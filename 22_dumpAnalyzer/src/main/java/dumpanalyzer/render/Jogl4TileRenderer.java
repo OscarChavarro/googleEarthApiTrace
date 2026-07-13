@@ -5,7 +5,7 @@ import java.util.List;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
@@ -33,7 +33,7 @@ final class Jogl4TileRenderer {
         double[] frameModelViewMatrix,
         boolean drawAabb,
         boolean singleTileMode,
-        DumpAnalyzerModel model,
+        DumpAnalyzerState model,
         Jogl4HudRenderer hudRenderer,
         Camera camera
     ) {
@@ -123,7 +123,7 @@ final class Jogl4TileRenderer {
             gl2.glDepthMask(false);
             gl2.glDepthFunc(GL2.GL_LEQUAL);
             if (drawGlobeLevelTileSetOverlay) {
-                Jogl4GlobeLevelTileSetRenderer.drawWireOverlay(gl2, tile, tile.getGlobeLevelTileSet());
+                Jogl4TopLevelTileSetRenderer.drawWireOverlay(gl2, tile, tile.getGlobeLevelTileSet());
             }
             else if (drawGroupedTriangleStripsInGreen) {
                 gl2.glColor3d(128.0 / 255.0, 1.0, 128.0 / 255.0);

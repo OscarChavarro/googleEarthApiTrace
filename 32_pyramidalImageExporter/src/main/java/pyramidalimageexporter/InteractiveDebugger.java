@@ -9,13 +9,13 @@ import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import pyramidalimageexporter.gui.KeyboardInteractionTechniques;
 import pyramidalimageexporter.gui.MouseInteractionTechnique;
-import pyramidalimageexporter.io.PyramidalImageExporter;
-import pyramidalimageexporter.model.PyramidalImageExporterModel;
+import pyramidalimageexporter.processing.SessionPyramidalImageExportService;
+import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.render.Jogl4PyramidalImageExporterRenderer;
 
 @SuppressWarnings("removal")
 public class InteractiveDebugger extends Applet {
-    private final PyramidalImageExporterModel model;
+    private final PyramidalImageExporterState model;
     private final Jogl4PyramidalImageExporterRenderer renderer;
 
     private boolean closing;
@@ -24,7 +24,7 @@ public class InteractiveDebugger extends Applet {
     private GLCanvas canvas;
     private JFrame frame;
 
-    public InteractiveDebugger(PyramidalImageExporterModel model, Jogl4PyramidalImageExporterRenderer renderer) {
+    public InteractiveDebugger(PyramidalImageExporterState model, Jogl4PyramidalImageExporterRenderer renderer) {
         this.model = model;
         this.renderer = renderer;
     }
@@ -70,7 +70,7 @@ public class InteractiveDebugger extends Applet {
             this::requestClose,
             renderer.getCameraController(),
             canvas::repaint,
-            () -> new PyramidalImageExporter().export(model)
+            () -> new SessionPyramidalImageExportService().export(model)
         );
         canvas.addKeyListener(keyboardInteraction);
         canvas.setFocusable(true);

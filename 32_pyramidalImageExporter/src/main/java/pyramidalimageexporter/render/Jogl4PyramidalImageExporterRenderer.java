@@ -19,15 +19,15 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import pyramidalimageexporter.model.MatrixLayer;
-import pyramidalimageexporter.model.TileCoord;
-import pyramidalimageexporter.model.PyramidalImageExporterModel;
+import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;
 
 public final class Jogl4PyramidalImageExporterRenderer implements GLEventListener {
-    private final PyramidalImageExporterModel model;
+    private final PyramidalImageExporterState model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4MatrixLayerRenderer matrixLayerRenderer;
     private TextRenderer hudTextRenderer;
@@ -35,7 +35,7 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
     private boolean offlineCaptureDone;
     private String offlineOutputPath;
 
-    public Jogl4PyramidalImageExporterRenderer(PyramidalImageExporterModel model) {
+    public Jogl4PyramidalImageExporterRenderer(PyramidalImageExporterState model) {
         this.model = model;
         this.cameraController = new CameraControllerOrbiter(model.getViewingCamera());
         this.cameraController.setDeltaMovement(0.2);
@@ -262,7 +262,7 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
 
         gl2.glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(drawable.getSurfaceWidth(), h);
-        for (TileCoord tile : matrixLayer.getTiles()) {
+        for (MatrixLayerTile tile : matrixLayer.getTiles()) {
             if (tile == null) {
                 continue;
             }

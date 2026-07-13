@@ -22,13 +22,13 @@ import com.jogamp.opengl.GLOffscreenAutoDrawable;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
 import dumpanalyzer.processing.TriangleStripTileTopology;
-import dumpanalyzer.processing.bigtiles.GlobeLevelTileSetsProcessor;
+import dumpanalyzer.processing.topleveltiles.TopLevelTilesJsonBuilder;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
@@ -45,7 +45,7 @@ import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 public class Jogl4DumpAnalyzerRenderer implements
     GLEventListener {
     private final Runnable shutdownHook;
-    private final DumpAnalyzerModel model;
+    private final DumpAnalyzerState model;
     private final Jogl4HudRenderer hudRenderer;
     private final Jogl4AxisAlignedBoundingBoxRenderer axisAlignedBoundingBoxRenderer;
     private final Jogl4NeighborRelationshipRenderer neighborhoodRenderer;
@@ -71,7 +71,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private static final int VERTEX_LABEL_X_OFFSET_PIXELS = 6;
     private static final Color SPECIAL_TRIANGLE_STRIP_LABEL_COLOR = Color.CYAN;
 
-    public Jogl4DumpAnalyzerRenderer(DumpAnalyzerModel model, Runnable shutdownHook) {
+    public Jogl4DumpAnalyzerRenderer(DumpAnalyzerState model, Runnable shutdownHook) {
         this.model = model;
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
@@ -145,7 +145,7 @@ public class Jogl4DumpAnalyzerRenderer implements
 
     @Override
     public void display(GLAutoDrawable drawable) {
-        DumpAnalyzerModel.HudState state = model.snapshotHudState();
+        DumpAnalyzerState.HudState state = model.snapshotHudState();
         List<Frame> frames = model.snapshotFrames();
         if (model.isUsingGoogleCameraAsView()) {
             recenterCameraIfSelectionChanged(state, frames);
@@ -222,7 +222,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
     }
 
-    private void recenterCameraIfSelectionChanged(DumpAnalyzerModel.HudState state, List<Frame> frames) {
+    private void recenterCameraIfSelectionChanged(DumpAnalyzerState.HudState state, List<Frame> frames) {
         int frameIndex = state.selectedFrameIndex();
         int tileIndex = state.selectedTileIndex();
         if (frameIndex == lastSelectedFrameIndex && tileIndex == lastSelectedTileIndex) {
@@ -236,7 +236,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         }
         Frame frameData = frames.get(frameIndex);
         AabbStats frameStats = computeAabbStats(frameData);
-        if (tileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
+        if (tileIndex == DumpAnalyzerState.SELECT_ALL_TILES) {
             recenterCameraToAllTiles(frameData, frameStats);
             return;
         }
@@ -298,7 +298,7 @@ public class Jogl4DumpAnalyzerRenderer implements
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
 
-        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
+        if (selectedTileIndex == DumpAnalyzerState.SELECT_ALL_TILES) {
             int tileOrdinal = 0;
             for (TileInstance tile : frameData.getSelectableTiles()) {
                 drawTileWireframe(gl, gl2, frameData, tileOrdinal, tile, projection, false, false, useGoogleCameraView);
@@ -445,7 +445,7 @@ public class Jogl4DumpAnalyzerRenderer implements
                 if (center == null) {
                     continue;
                 }
-                Integer identityId = GlobeLevelTileSetsProcessor.findGlobeLevelTileIdentityId(geometries.get(stripIndex));
+                Integer identityId = TopLevelTilesJsonBuilder.findGlobeLevelTileIdentityId(geometries.get(stripIndex));
                 if (identityId == null) {
                     if (!isSpecial320Tile) {
                         continue;
@@ -476,7 +476,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         int viewportHeight
     ) {
         if (frameData == null
-            || selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES
+            || selectedTileIndex == DumpAnalyzerState.SELECT_ALL_TILES
             || selectedTileIndex < 0
             || selectedTileIndex >= frameData.getSelectableTiles().size()
             || projection == null
@@ -678,7 +678,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private Matrix4x4d projectionForCurrentState(
-        DumpAnalyzerModel.HudState state,
+        DumpAnalyzerState.HudState state,
         List<Frame> frames,
         Camera activeCamera,
         boolean useGoogleCameraView

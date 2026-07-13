@@ -7,7 +7,7 @@ import javax.swing.JFrame;
 import javax.swing.WindowConstants;
 import frametexturenormalizer.gui.KeyboardInteractionTechniques;
 import frametexturenormalizer.gui.MouseOrbiterInteraction;
-import frametexturenormalizer.model.FrameTextureNormalizerModel;
+import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 import frametexturenormalizer.render.Jogl4FrameTextureNormalizerRenderer;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -15,7 +15,7 @@ public final class InteractiveDebugger {
     private InteractiveDebugger() {
     }
 
-    public static void runDesktopGui(FrameTextureNormalizerModel model) {
+    public static void runDesktopGui(FrameTextureNormalizerState model) {
         Jogl4FrameTextureNormalizerRenderer renderer = new Jogl4FrameTextureNormalizerRenderer(model);
         GLCanvas canvas = renderer.createCanvas();
 

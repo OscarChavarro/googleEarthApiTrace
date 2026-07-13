@@ -1,9 +1,9 @@
 package frametexturenormalizer.model;
 
-import frametexturenormalizer.util.ScopedTileIds;
+import frametexturenormalizer.model.contract.ScopedTileIds;
 
 import java.util.List;
-import processing.uncles.ToUncleRelationship;
+import frametexturenormalizer.processing.uncles.ToUncleRelationship;
 
 public final class TileInstance {
     private static final double FULL_RESOLUTION_TOLERANCE = 1.0e-6;

@@ -8,12 +8,12 @@ import javax.swing.JFrame;
 import javax.swing.WindowConstants;
 import matrixmerger.gui.KeyboardInteractionTechniques;
 import matrixmerger.gui.MouseInteractionTechnique;
-import matrixmerger.model.MatrixMergerModel;
+import matrixmerger.model.state.MatrixMergerState;
 import matrixmerger.render.Jogl4MatrixMergerRenderer;
 
 @SuppressWarnings("removal")
 public class InteractiveDebugger extends Applet {
-    private final MatrixMergerModel model;
+    private final MatrixMergerState model;
     private final Jogl4MatrixMergerRenderer renderer;
 
     private boolean closing;
@@ -22,7 +22,7 @@ public class InteractiveDebugger extends Applet {
     private GLCanvas canvas;
     private JFrame frame;
 
-    public InteractiveDebugger(MatrixMergerModel model, Jogl4MatrixMergerRenderer renderer) {
+    public InteractiveDebugger(MatrixMergerState model, Jogl4MatrixMergerRenderer renderer) {
         this.model = model;
         this.renderer = renderer;
     }

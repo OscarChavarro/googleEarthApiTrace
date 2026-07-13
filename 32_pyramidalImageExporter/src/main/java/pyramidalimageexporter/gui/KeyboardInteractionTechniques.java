@@ -1,14 +1,14 @@
 package pyramidalimageexporter.gui;
 
 import java.awt.event.KeyListener;
-import pyramidalimageexporter.model.PyramidalImageExporterModel;
+import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.KeyEvent;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 public final class KeyboardInteractionTechniques implements KeyListener {
-    private final PyramidalImageExporterModel model;
+    private final PyramidalImageExporterState model;
     private final Runnable closeAction;
     private final Runnable repaintAction;
     private final Runnable exportAction;
@@ -16,7 +16,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final RendererConfigurationController renderingConfigurationController;
 
     public KeyboardInteractionTechniques(
-        PyramidalImageExporterModel model,
+        PyramidalImageExporterState model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
         Runnable repaintAction,

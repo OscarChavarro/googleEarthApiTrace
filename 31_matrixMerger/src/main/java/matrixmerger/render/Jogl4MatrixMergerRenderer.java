@@ -11,20 +11,20 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
 import java.awt.geom.Rectangle2D;
-import matrixmerger.io.TileMatrix;
-import matrixmerger.model.MatrixMergerModel;
+import matrixmerger.model.contract.FrameTileMatrix;
+import matrixmerger.model.state.MatrixMergerState;
 import com.jogamp.opengl.glu.GLU;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
 public final class Jogl4MatrixMergerRenderer implements GLEventListener {
-    private final MatrixMergerModel model;
+    private final MatrixMergerState model;
     private final CameraControllerOrbiter cameraController;
     private final Jogl4TileMatrixRenderer tileMatrixRenderer;
     private TextRenderer hudTextRenderer;
     private String lastPrintedUncleSignature;
 
-    public Jogl4MatrixMergerRenderer(MatrixMergerModel model) {
+    public Jogl4MatrixMergerRenderer(MatrixMergerState model) {
         this.model = model;
         this.cameraController = new CameraControllerOrbiter(model.getViewingCamera());
         this.cameraController.setDeltaMovement(0.2);
@@ -69,7 +69,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         gl.glClearColor(0.05f, 0.06f, 0.08f, 1.0f);
         gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
 
-        TileMatrix selected = model.getSelectedMatrix();
+        FrameTileMatrix selected = model.getSelectedMatrix();
         if (selected != null) {
             Matrix4x4d projection = model.getViewingCamera().calculateViewVolumeMatrix();
             float[] modelView = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
@@ -102,14 +102,14 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         int i = model.getSelectedMatrixOrdinal();
         int total = model.getFrameCount();
         boolean hasNext = model.hasNextMatrixForSelection();
-        TileMatrix nextMatrix = model.getNextMatrixForSelection();
-        TileMatrix selectedMatrix = model.getSelectedMatrix();
+        FrameTileMatrix nextMatrix = model.getNextMatrixForSelection();
+        FrameTileMatrix selectedMatrix = model.getSelectedMatrix();
         boolean mergeFailed = model.hasLastMergeFailedForCurrentSelection();
         String selectedFrameLabel = model.getSelectedFrameLabel();
         String nextFrameLabel = model.getNextFrameLabelForSelection();
         String hierarchyLabel = model.getSelectedHierarchyLabel();
         boolean selectedFrameInvalid = model.isSelectedFrameInvalid();
-        MatrixMergerModel.UncleHudStatus uncleHudStatus = model.getSelectedMatrixUncleHudStatus();
+        MatrixMergerState.UncleHudStatus uncleHudStatus = model.getSelectedMatrixUncleHudStatus();
 
         GL2 gl2 = drawable.getGL().getGL2();
         gl2.glDisable(GL2.GL_DEPTH_TEST);
@@ -167,14 +167,14 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         gl2.glEnable(GL2.GL_DEPTH_TEST);
     }
 
-    private static String matrixSizeLabel(TileMatrix matrix) {
+    private static String matrixSizeLabel(FrameTileMatrix matrix) {
         if (matrix == null) {
             return "?x?";
         }
         return matrix.getRows() + "x" + matrix.getCols();
     }
 
-    private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, TileMatrix matrix, boolean enabled) {
+    private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, FrameTileMatrix matrix, boolean enabled) {
         if (!enabled || hudTextRenderer == null || matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
             return;
         }
@@ -194,7 +194,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
 
         gl2.glDisable(GL2.GL_DEPTH_TEST);
         hudTextRenderer.beginRendering(drawable.getSurfaceWidth(), h);
-        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
             if (tile == null) {
                 continue;
             }
@@ -246,7 +246,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         return out;
     }
 
-    private void printSelectedUncleIds(String selectedFrameLabel, MatrixMergerModel.UncleHudStatus uncleHudStatus) {
+    private void printSelectedUncleIds(String selectedFrameLabel, MatrixMergerState.UncleHudStatus uncleHudStatus) {
         if (uncleHudStatus == null) {
             lastPrintedUncleSignature = null;
             return;
@@ -271,7 +271,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         );
     }
 
-    private static String formatUncleTileIds(MatrixMergerModel.UncleHudStatus uncleHudStatus) {
+    private static String formatUncleTileIds(MatrixMergerState.UncleHudStatus uncleHudStatus) {
         StringBuilder sb = new StringBuilder("[");
         boolean first = true;
         for (String uncleTileId : uncleHudStatus.uncleTileIds()) {
@@ -279,7 +279,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
                 sb.append(", ");
             }
             first = false;
-            MatrixMergerModel.UncleTileLocation location = uncleHudStatus.locatedUncleTiles().get(uncleTileId);
+            MatrixMergerState.UncleTileLocation location = uncleHudStatus.locatedUncleTiles().get(uncleTileId);
             if (location != null && location.tileId() != null && !location.tileId().isBlank()) {
                 sb.append(location.tileId());
                 sb.append(" (frame ").append(location.frameIndex()).append(")");

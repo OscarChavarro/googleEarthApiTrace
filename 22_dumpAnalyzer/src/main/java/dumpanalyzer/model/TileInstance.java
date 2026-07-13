@@ -40,7 +40,7 @@ public final class TileInstance {
     private volatile String detectedEastNeighborContentId;
     private volatile String detectedWestNeighborContentId;
     private volatile List<ToUncleRelationship> uncles;
-    private volatile GlobeLevelTileSet globeLevelTileSet;
+    private volatile TopLevelTileSet globeLevelTileSet;
 
     public TileInstance(
         String contentId,
@@ -228,11 +228,11 @@ public final class TileInstance {
     }
 
     @JsonIgnore
-    public GlobeLevelTileSet getGlobeLevelTileSet() {
+    public TopLevelTileSet getGlobeLevelTileSet() {
         return globeLevelTileSet;
     }
 
-    public void setGlobeLevelTileSet(GlobeLevelTileSet globeLevelTileSet) {
+    public void setGlobeLevelTileSet(TopLevelTileSet globeLevelTileSet) {
         this.globeLevelTileSet = globeLevelTileSet;
     }
 

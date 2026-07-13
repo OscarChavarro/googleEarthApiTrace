@@ -11,15 +11,15 @@ import java.util.HashMap;
 import java.util.Map;
 import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.model.MatrixLayer;
-import pyramidalimageexporter.model.TileCoord;
-import pyramidalimageexporter.model.PyramidalImageExporterModel;
+import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
 public final class Jogl4MatrixLayerRenderer {
     private final Map<String, TextureResident> textureByPath = new HashMap<>();
 
-    public void draw(GL2 gl2, MatrixLayer matrixLayer, RendererConfiguration renderingConfiguration, PyramidalImageExporterModel model) {
+    public void draw(GL2 gl2, MatrixLayer matrixLayer, RendererConfiguration renderingConfiguration, PyramidalImageExporterState model) {
         if (gl2 == null || matrixLayer == null || renderingConfiguration == null || model == null) {
             return;
         }
@@ -34,7 +34,7 @@ public final class Jogl4MatrixLayerRenderer {
         }
     }
 
-    private void drawSurfaces(GL2 gl2, MatrixLayer matrixLayer, boolean textured, PyramidalImageExporterModel model) {
+    private void drawSurfaces(GL2 gl2, MatrixLayer matrixLayer, boolean textured, PyramidalImageExporterState model) {
         float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
         if (textured) {
@@ -44,7 +44,7 @@ public final class Jogl4MatrixLayerRenderer {
             gl2.glDisable(GL2.GL_TEXTURE_2D);
         }
 
-        for (TileCoord tile : matrixLayer.getTiles()) {
+        for (MatrixLayerTile tile : matrixLayer.getTiles()) {
             if (tile == null) {
                 continue;
             }
@@ -92,12 +92,12 @@ public final class Jogl4MatrixLayerRenderer {
         gl2.glDisable(GL2.GL_TEXTURE_2D);
     }
 
-    private void drawWires(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model, boolean skipCulling) {
+    private void drawWires(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterState model, boolean skipCulling) {
         float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glLineWidth(1.1f);
-        for (TileCoord tile : matrixLayer.getTiles()) {
+        for (MatrixLayerTile tile : matrixLayer.getTiles()) {
             if (tile == null) {
                 continue;
             }
@@ -129,19 +129,19 @@ public final class Jogl4MatrixLayerRenderer {
      * partial sub-rectangle means the pixels are borrowed from a parent or
      * ancestor level image.
      */
-    private static boolean usesFullTextureResolution(TileCoord tile) {
+    private static boolean usesFullTextureResolution(MatrixLayerTile tile) {
         return tile.getTexU0() == 0.0 && tile.getTexV0() == 0.0
             && tile.getTexU1() == 1.0 && tile.getTexV1() == 1.0;
     }
 
-    private void drawPoints(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model) {
+    private void drawPoints(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterState model) {
         float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
         gl2.glColor3f(1.0f, 0.2f, 0.2f);
         gl2.glPointSize(3.0f);
         gl2.glBegin(GL2.GL_POINTS);
-        for (TileCoord tile : matrixLayer.getTiles()) {
+        for (MatrixLayerTile tile : matrixLayer.getTiles()) {
             if (tile == null) {
                 continue;
             }
@@ -162,14 +162,14 @@ public final class Jogl4MatrixLayerRenderer {
      * without the distance-based LOD, so a full layer snapshot can be taken
      * from an orthographic view.
      */
-    public void drawAllTilesTextured(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterModel model) {
+    public void drawAllTilesTextured(GL2 gl2, MatrixLayer matrixLayer, PyramidalImageExporterState model) {
         if (gl2 == null || matrixLayer == null || model == null) {
             return;
         }
         float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
         gl2.glEnable(GL2.GL_TEXTURE_2D);
-        for (TileCoord tile : matrixLayer.getTiles()) {
+        for (MatrixLayerTile tile : matrixLayer.getTiles()) {
             if (tile == null) {
                 continue;
             }
@@ -190,7 +190,7 @@ public final class Jogl4MatrixLayerRenderer {
         }
     }
 
-    private static void drawTexturedQuad(GL2 gl2, Texture texture, TileCoord tile, float x0, float yTop, float x1, float yBottom) {
+    private static void drawTexturedQuad(GL2 gl2, Texture texture, MatrixLayerTile tile, float x0, float yTop, float x1, float yBottom) {
         texture.bind(gl2);
         TextureCoords tc = texture.getImageTexCoords();
         // Tile sub-rectangle (GL convention: v = 0 at image bottom),
@@ -213,7 +213,7 @@ public final class Jogl4MatrixLayerRenderer {
         return (float) (from + fraction * (to - from));
     }
 
-    private TextureResident acquireTexture(GL2 gl2, String texturePath, PyramidalImageExporterModel model) {
+    private TextureResident acquireTexture(GL2 gl2, String texturePath, PyramidalImageExporterState model) {
         if (texturePath == null || texturePath.isBlank()) {
             return null;
         }
@@ -248,7 +248,7 @@ public final class Jogl4MatrixLayerRenderer {
         return textureByPath.get(texturePath);
     }
 
-    private boolean isNearEnoughForTexture(PyramidalImageExporterModel model, float x0, float yTop, float x1, float yBottom) {
+    private boolean isNearEnoughForTexture(PyramidalImageExporterState model, float x0, float yTop, float x1, float yBottom) {
         Vector3Dd eye = model.getViewingCamera().getPosition();
         double cx = (x0 + x1) * 0.5;
         double cy = (yTop + yBottom) * 0.5;
@@ -259,7 +259,7 @@ public final class Jogl4MatrixLayerRenderer {
         return distance <= Configuration.MAX_TEXTURED_QUAD_DISTANCE;
     }
 
-    private void enforceTextureBudget(GL2 gl2, PyramidalImageExporterModel model) {
+    private void enforceTextureBudget(GL2 gl2, PyramidalImageExporterState model) {
         while (model.getGpuTextureBytesAssigned() > Configuration.MAX_GPU_TEXTURE_MEMORY) {
             String oldest = model.popOldestResidentTexturePath();
             if (oldest == null) {
@@ -276,7 +276,7 @@ public final class Jogl4MatrixLayerRenderer {
         }
     }
 
-    public void dispose(GL2 gl2, PyramidalImageExporterModel model) {
+    public void dispose(GL2 gl2, PyramidalImageExporterState model) {
         for (Map.Entry<String, TextureResident> entry : textureByPath.entrySet()) {
             TextureResident resident = entry.getValue();
             if (resident != null && resident.texture() != null) {

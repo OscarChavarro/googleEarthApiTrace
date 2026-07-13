@@ -14,7 +14,7 @@ import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import dumpanalyzer.config.Configuration;
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.io.image.ImagePersistence;
@@ -40,8 +40,8 @@ public final class Jogl4HudRenderer {
 
     public void render(
         GLAutoDrawable drawable,
-        DumpAnalyzerModel model,
-        DumpAnalyzerModel.HudState state,
+        DumpAnalyzerState model,
+        DumpAnalyzerState.HudState state,
         Camera camera,
         String texturePath,
         List<ScreenLabel> aabbLabels
@@ -80,13 +80,13 @@ public final class Jogl4HudRenderer {
             );
             textRenderer.draw(
                 "Selected tile [3, 4]: "
-                    + (state.selectedTileIndex() == DumpAnalyzerModel.SELECT_ALL_TILES ? "ALL" : state.selectedTileIndex())
+                    + (state.selectedTileIndex() == DumpAnalyzerState.SELECT_ALL_TILES ? "ALL" : state.selectedTileIndex())
                     + "/"
-                    + Math.max(DumpAnalyzerModel.SELECT_ALL_TILES, state.tilesInSelectedFrame() - 1),
+                    + Math.max(DumpAnalyzerState.SELECT_ALL_TILES, state.tilesInSelectedFrame() - 1),
                 20,
                 h - 100
             );
-            if (state.selectedTileIndex() != DumpAnalyzerModel.SELECT_ALL_TILES) {
+            if (state.selectedTileIndex() != DumpAnalyzerState.SELECT_ALL_TILES) {
                 textRenderer.draw(
                     "Geometry: " + formatGeometry(model),
                     20,
@@ -118,7 +118,7 @@ public final class Jogl4HudRenderer {
         }
     }
 
-    private void drawSelectedTexturePreview(GL4 gl, DumpAnalyzerModel model, Camera camera, String texturePath) {
+    private void drawSelectedTexturePreview(GL4 gl, DumpAnalyzerState model, Camera camera, String texturePath) {
         int textureId = activateTexture(gl, model, texturePath);
         if (textureId == 0 || camera == null) {
             return;
@@ -126,7 +126,7 @@ public final class Jogl4HudRenderer {
         drawTextureOn2DWindowScaled(gl, camera, 10, 10, 2.0, 1.0);
     }
 
-    public int activateTexture(GL4 gl, DumpAnalyzerModel model, String texturePath) {
+    public int activateTexture(GL4 gl, DumpAnalyzerState model, String texturePath) {
         if (texturePath == null || texturePath.isBlank()) {
             activeResident = null;
             return 0;
@@ -146,7 +146,7 @@ public final class Jogl4HudRenderer {
         return created.glTextureId();
     }
 
-    private TextureResident createResident(GL4 gl, DumpAnalyzerModel model, String texturePath) {
+    private TextureResident createResident(GL4 gl, DumpAnalyzerState model, String texturePath) {
         Image image;
         try {
             image = ImagePersistence.importRGB(new File(texturePath));
@@ -180,7 +180,7 @@ public final class Jogl4HudRenderer {
         return resident;
     }
 
-    private void ensureCapacityBeforeAssign(GL4 gl, DumpAnalyzerModel model, long incomingBytes) {
+    private void ensureCapacityBeforeAssign(GL4 gl, DumpAnalyzerState model, long incomingBytes) {
         if (model == null) {
             return;
         }
@@ -190,14 +190,14 @@ public final class Jogl4HudRenderer {
         }
     }
 
-    private void unloadAllTextures(GL4 gl, DumpAnalyzerModel model) {
+    private void unloadAllTextures(GL4 gl, DumpAnalyzerState model) {
         while (!residentsFifo.isEmpty()) {
             evictOldest(gl, model);
         }
         activeResident = null;
     }
 
-    private void evictOldest(GL4 gl, DumpAnalyzerModel model) {
+    private void evictOldest(GL4 gl, DumpAnalyzerState model) {
         TextureResident oldest = residentsFifo.pollFirst();
         if (oldest == null) {
             return;
@@ -255,7 +255,7 @@ public final class Jogl4HudRenderer {
         return (long)width * (long)height * 4L;
     }
 
-    private static String formatGeometry(DumpAnalyzerModel model) {
+    private static String formatGeometry(DumpAnalyzerState model) {
         if (model == null) {
             return "n/a";
         }

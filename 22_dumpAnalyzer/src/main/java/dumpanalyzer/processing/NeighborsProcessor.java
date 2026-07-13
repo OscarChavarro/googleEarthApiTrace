@@ -1,8 +1,8 @@
 package dumpanalyzer.processing;
 
 import dumpanalyzer.config.Configuration;
-import dumpanalyzer.io.FrameWriter;
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.io.FrameJsonWriter;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.uncles.UncleDetector;
@@ -19,7 +19,7 @@ public final class NeighborsProcessor {
     }
 
     public static void preprocessNeighbors(
-        DumpAnalyzerModel model,
+        DumpAnalyzerState model,
         List<Frame> frames,
         int viewportWidth,
         int viewportHeight
@@ -66,7 +66,7 @@ public final class NeighborsProcessor {
                 debugFrame(frame);
             }
         );
-        FrameWriter.writeFramesParallelWithProgress(Configuration.OUTPUT_ROOT, frames);
+        FrameJsonWriter.writeFramesParallelWithProgress(Configuration.OUTPUT_ROOT, frames);
     }
 
     private static void runStageWithProgress(String stageTitle, int totalWorkUnits, IndexedTask task) {

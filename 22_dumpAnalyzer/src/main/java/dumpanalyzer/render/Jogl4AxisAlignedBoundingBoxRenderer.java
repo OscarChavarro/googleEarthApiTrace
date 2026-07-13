@@ -6,7 +6,7 @@ import java.util.List;
 
 import com.jogamp.opengl.GL2;
 import dumpanalyzer.model.AxisAlignedBoundingBox;
-import dumpanalyzer.model.DumpAnalyzerModel;
+import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
@@ -42,7 +42,7 @@ public final class Jogl4AxisAlignedBoundingBoxRenderer {
         List<AxisAlignedBoundingBox> aabbs = frameData.getSelectableAxisAlignedBoundingBoxes();
         List<TileInstance> tiles = frameData.getSelectableTiles();
         List<Jogl4HudRenderer.ScreenLabel> labels = new ArrayList<>();
-        if (selectedTileIndex == DumpAnalyzerModel.SELECT_ALL_TILES) {
+        if (selectedTileIndex == DumpAnalyzerState.SELECT_ALL_TILES) {
             for (AxisAlignedBoundingBox aabb : aabbs) {
                 appendLabel(labels, aabb, frameData, projection, useGoogleCameraView, viewingCamera, viewportWidth, viewportHeight);
             }
