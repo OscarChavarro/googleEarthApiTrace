@@ -100,7 +100,11 @@ Iterates through the full list:
 Repeats retry-merge sweeps and west-cutter split sweeps over all frames until the frame
 count stabilizes. It then follows the uncle relationships between the resulting matrices,
 orders them from the top quadtree level to the deepest one, and selects the top level for
-the viewer. This is the batch equivalent of pressing `n` and `c` over every frame.
+the viewer. If a later hierarchy root has lost its parent relationship, a final visual
+inference compares its textures with quadrants of earlier matrices. It accepts a parent
+only when confident matches form a strict majority for one rigid grid offset, persists
+those inferred relationships, and reorders the hierarchy. This is the batch equivalent
+of pressing `n` and `c` over every frame plus hierarchy repair.
 
 ## Execution
 
@@ -121,8 +125,11 @@ them.
 - `<exportFolder>` (positional): destination folder for exported results. If omitted,
   nothing is exported and the HUD shows a red warning.
 - `--mode auto`: run the automatic grouper before opening the viewer (default: `manual`).
-- `--offline`: without `--level`, run only the global full-set merge and exit. With
-  `--level <n>`, render the zero-based matrix level to `/tmp/frame<n>.png` without GUI.
+- `--offline`: run without opening the GUI. Without `--level`, it performs the legacy
+  global full-set merge and exits; together with `--mode auto`, it runs the complete
+  automatic grouping pipeline instead. If `<exportFolder>` is present, the resulting
+  matrices are exported before exiting. With `--level <n>`, it renders the zero-based
+  matrix level to `/tmp/frame<n>.png` and also exports when `<exportFolder>` is present.
 - `--output <path>`, `--width <px>`, `--height <px>`: configure an offline level capture.
 - `--all-levels`: with `--offline`, render every final level to
   `/tmp/frame00.png`, `/tmp/frame01.png`, and so on in one grouping run.
@@ -137,24 +144,37 @@ remaining frame is written as:
 - `<exportFolder>/matrix_<n>/matrixLayer.json`
 - `<exportFolder>/matrix_<n>/<tileId>.png` (tile textures copied from the source data)
 
+`matrixLayer.json` uses contract version 2. Besides the matrix and its tiles, it exports
+`hierarchyLevel`, `parentMatrixIndex`, `hierarchyUnclesByTileId`, and the lossless
+`hierarchyRelationshipsByTileId` map containing full `{direction, uncleContentId}`
+records. This metadata is required by `32_pyramidalImageExporter`; directory order alone
+is not treated as a hierarchy edge.
+
 These folders are the input of `32_pyramidalImageExporter`.
 
 Note: the export happens once at startup (after `--mode auto` processing when requested),
 before the viewer opens. Merges done interactively afterwards are not re-exported.
 
+For a completely non-interactive automatic grouping and export:
+
+```bash
+./gradlew :31_matrixMerger:run --args="--mode auto --offline /tmp/matrix"
+```
+
+Export-only offline execution does not initialize or require OpenGL. Offline rendering
+with `--level` or `--all-levels` still requires JOGL/OpenGL.
+
 ## Notes for agentic coding agents
 
 - Batch/automated run without interaction:
-  Note: the current implementation checks JOGL/OpenGL availability before any mode
-  selection, so even `--offline` still depends on that verification succeeding.
 
   ```bash
-  ./gradlew :31_matrixMerger:run --args="--mode auto /path/to/exportFolder"
+  ./gradlew :31_matrixMerger:run --args="--mode auto --offline /path/to/exportFolder"
   ```
 
-  runs the automatic grouper and exports results; the GUI still opens at the end (close
-  with `ESC`). `--offline` is the only non-interactive mode and currently performs just
-  the full-set merge without exporting.
+  runs the automatic grouper, exports the results and exits without opening a GUI or
+  requiring OpenGL. Omitting `--mode auto` preserves the simpler global full-set merge;
+  it also exports when a destination folder is supplied.
 - Startup side effects regardless of mode: `westCutters.json` may be rewritten (column
   propagation), and missing top-level uncle tile paths are printed to stdout one per line
   (useful for scripted collection).

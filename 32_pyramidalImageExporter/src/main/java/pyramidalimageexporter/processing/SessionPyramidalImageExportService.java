@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,6 +56,9 @@ public final class SessionPyramidalImageExportService {
     private final Map<String, RGBImageUncompressed> sourceImageCache = new HashMap<>();
     private final TileRootPathResolver rootPathResolver = new TileRootPathResolver();
 
+    private record ExportEntry(MatrixLayer layer, MatrixLayerTile tile, String fullPath) {}
+    private record ExportManifest(List<ExportEntry> entries, int localReplacementsOfDerivedTop) {}
+
     public void export(PyramidalImageExporterState model) {
         if (model == null) {
             return;
@@ -92,30 +96,35 @@ public final class SessionPyramidalImageExportService {
             rootPathResolver.resolve(model.getMatrixLayers(), externalFullPaths, bridge.aliasById());
         reportPlacement(model, resolution);
 
+        ExportManifest manifest;
+        try {
+            manifest = buildExportManifest(model, resolution);
+        }
+        catch (IllegalStateException ex) {
+            reportStatus(model, "Export failed before writing: " + ex.getMessage());
+            return;
+        }
+        System.out.println(
+            "SessionPyramidalImageExportService: manifest contains " + manifest.entries().size()
+                + " unique paths; local tiles replace " + manifest.localReplacementsOfDerivedTop()
+                + " derived TOP cells."
+        );
+
         sourceImageCache.clear();
-        int totalTiles = countExportableTiles(model, resolution);
+        int totalTiles = manifest.entries().size();
         System.out.println("SessionPyramidalImageExportService: export starting, " + totalTiles + " tiles to write to " + rootDirectory);
         PyramidalImageWriteStatistics statistics = new PyramidalImageWriteStatistics();
         int failed = 0;
         int processed = 0;
-        for (MatrixLayer layer : model.getMatrixLayers()) {
-            if (layer == null || layer.getTiles() == null) {
-                continue;
+        for (ExportEntry entry : manifest.entries()) {
+            if (!exportTile(rootDirectory, entry.fullPath(), entry.tile(), statistics)) {
+                failed++;
             }
-            for (MatrixLayerTile tile : layer.getTiles()) {
-                String fullPath = tile == null ? null : resolution.pathById().get(tile.getId());
-                if (fullPath == null) {
-                    continue;
-                }
-                if (!exportTile(rootDirectory, fullPath, tile, statistics)) {
-                    failed++;
-                }
-                processed++;
-                if (processed % PROGRESS_REPORT_INTERVAL == 0) {
-                    System.out.println(
-                        "SessionPyramidalImageExportService: processed " + processed + "/" + totalTiles + " tiles..."
-                    );
-                }
+            processed++;
+            if (processed % PROGRESS_REPORT_INTERVAL == 0) {
+                System.out.println(
+                    "SessionPyramidalImageExportService: processed " + processed + "/" + totalTiles + " tiles..."
+                );
             }
         }
         sourceImageCache.clear();
@@ -244,7 +253,7 @@ public final class SessionPyramidalImageExportService {
     }
 
     private static boolean isQuadPath(String id) {
-        return id != null && id.matches("[0-3]+");
+        return id != null && id.matches("0[0-3]*");
     }
 
     /**
@@ -269,8 +278,14 @@ public final class SessionPyramidalImageExportService {
             }
             String tileNumber = fileName.substring("256x256_".length(), fileName.length() - ".png".length());
             String frameToken = frameDirectory.getFileName().toString();
-            String label = entry.getValue();
-            String fullPath = "0".equals(label) ? "0" : "0" + label;
+            String fullPath = entry.getValue();
+            if (!isQuadPath(fullPath) || fullPath.charAt(0) != '0') {
+                System.out.println(
+                    "SessionPyramidalImageExportService: ignoring non-absolute catalog path "
+                        + fullPath + " for " + imagePath
+                );
+                continue;
+            }
             out.put(frameToken + "_" + tileNumber, fullPath);
             String unpaddedFrameToken = frameToken.replaceFirst("^0+(?=.)", "");
             out.putIfAbsent(unpaddedFrameToken + "_" + tileNumber, fullPath);
@@ -278,19 +293,58 @@ public final class SessionPyramidalImageExportService {
         return out;
     }
 
-    private static int countExportableTiles(PyramidalImageExporterState model, TileRootPathResolver.Resolution resolution) {
-        int total = 0;
+    private static ExportManifest buildExportManifest(
+        PyramidalImageExporterState model,
+        TileRootPathResolver.Resolution resolution
+    ) {
+        Map<String, ExportEntry> selectedByPath = new LinkedHashMap<>();
+        int replacements = 0;
         for (MatrixLayer layer : model.getMatrixLayers()) {
             if (layer == null || layer.getTiles() == null) {
                 continue;
             }
             for (MatrixLayerTile tile : layer.getTiles()) {
-                if (tile != null && resolution.pathById().get(tile.getId()) != null) {
-                    total++;
+                String fullPath = tile == null ? null : resolution.pathById().get(tile.getId());
+                if (fullPath == null) {
+                    continue;
                 }
+                ExportEntry candidate = new ExportEntry(layer, tile, fullPath);
+                ExportEntry current = selectedByPath.get(fullPath);
+                if (current == null) {
+                    selectedByPath.put(fullPath, candidate);
+                    continue;
+                }
+                boolean currentTop = isTopLayer(current.layer());
+                boolean candidateTop = isTopLayer(candidate.layer());
+                if (currentTop && !candidateTop) {
+                    selectedByPath.put(fullPath, candidate);
+                    replacements++;
+                    continue;
+                }
+                if (!currentTop && candidateTop) {
+                    continue;
+                }
+                if (current.tile().getId().equals(candidate.tile().getId())) {
+                    continue;
+                }
+                throw new IllegalStateException(
+                    "incompatible duplicate full path " + fullPath
+                        + " claimed by " + describe(current) + " and " + describe(candidate)
+                );
             }
         }
-        return total;
+        return new ExportManifest(List.copyOf(selectedByPath.values()), replacements);
+    }
+
+    private static boolean isTopLayer(MatrixLayer layer) {
+        return layer != null
+            && layer.getSourceFolderName() != null
+            && layer.getSourceFolderName().startsWith("topLevel_matrix_");
+    }
+
+    private static String describe(ExportEntry entry) {
+        String layer = entry.layer() == null ? "<unknown layer>" : entry.layer().getSourceFolderName();
+        return layer + "/" + entry.tile().getId();
     }
 
     private static void reportStatus(PyramidalImageExporterState model, String message) {

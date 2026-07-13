@@ -17,11 +17,9 @@ import pyramidalimageexporter.model.MatrixLayerTile;
  * format the interactive viewer and {@code SessionPyramidalImageExportService} already
  * use to place a tile in the output directory tree).
  *
- * A tile is a "seed": its own id already IS a full root path, i.e. it is
- * exactly "0" (the root) or a string made only of quadrant digits 0-3 (the
- * convention used by {@code TopLevelMatrixRebuilder.quadtreePathLabel}: a
- * level-N tile is labeled with N quadrant digits, with an implicit "0" root
- * marker prepended to form the actual full path).
+ * A tile is a "seed" when its own id already is a full root path. The root is
+ * exactly "0" and every descendant begins with that root marker followed by
+ * one quadrant digit per level. No relative quad labels are accepted here.
  *
  * A non-seed tile can still be anchored if one of its {@code uncles}
  * relationships points (by {@code uncleContentId}) to a tile whose path is
@@ -64,7 +62,7 @@ public final class TileRootPathResolver {
         for (Map.Entry<String, MatrixLayerTile> entry : tilesById.entrySet()) {
             String id = entry.getKey();
             if (isSeed(id)) {
-                resolvedPath.put(id, seedPath(id));
+                resolvedPath.put(id, id);
             }
             else {
                 String externalPath = externalFullPaths.get(id);
@@ -136,7 +134,7 @@ public final class TileRootPathResolver {
                     continue;
                 }
                 String id = tile.getId();
-                if (id == null || id.isBlank() || resolvedPath.containsKey(id) || discarded.contains(id)) {
+                if (id == null || id.isBlank()) {
                     continue;
                 }
                 int row = tile.getI() + anchor[1];
@@ -144,8 +142,12 @@ public final class TileRootPathResolver {
                 if (row < 0 || col < 0 || row >= side || col >= side) {
                     continue;
                 }
-                resolvedPath.put(id, "0" + encodeQuadtreeLabel(level, row, col));
-                progress = true;
+                String canonicalPath = "0" + encodeQuadtreeLabel(level, row, col);
+                String previousPath = resolvedPath.put(id, canonicalPath);
+                if (!canonicalPath.equals(previousPath)) {
+                    progress = true;
+                }
+                discarded.remove(id);
             }
         }
         return progress;
@@ -194,13 +196,15 @@ public final class TileRootPathResolver {
                 System.out.println(
                     "TileRootPathResolver: layer " + layer.getSourceFolderName()
                         + " has no majority among its inconsistent anchors ("
-                        + votes.size() + " candidates); skipping grid propagation for it."
+                        + votes.size() + " candidates " + votes
+                        + "); skipping grid propagation for it."
                 );
                 return null;
             }
             System.out.println(
                 "TileRootPathResolver: layer " + layer.getSourceFolderName()
-                    + " has inconsistent anchors; keeping majority (" + bestCount + "/" + totalCount + ")."
+                    + " has inconsistent anchors " + votes + "; keeping majority ("
+                    + bestCount + "/" + totalCount + ")."
             );
         }
         return new int[]{best.get(0), best.get(1), best.get(2)};
@@ -308,11 +312,7 @@ public final class TileRootPathResolver {
     }
 
     private static boolean isSeed(String id) {
-        return QUADKEY_PATTERN.matcher(id).matches();
-    }
-
-    private static String seedPath(String id) {
-        return "0".equals(id) ? "0" : "0" + id;
+        return QUADKEY_PATTERN.matcher(id).matches() && id.charAt(0) == '0';
     }
 
     /**

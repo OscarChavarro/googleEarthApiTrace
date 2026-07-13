@@ -71,7 +71,7 @@ public final class ExternalUncleBridgeBuilder {
                 tileIdByTexture.putIfAbsent(canonicalTexture, tile.getId());
                 String label = catalogued.get(canonicalTexture);
                 if (label != null) {
-                    fullPathByExternalId.putIfAbsent(tile.getId(), toFullPath(label));
+                    fullPathByExternalId.putIfAbsent(tile.getId(), requireFullPath(label));
                 }
             }
         }
@@ -96,7 +96,7 @@ public final class ExternalUncleBridgeBuilder {
                     }
                     String label = catalogued.get(textureFile);
                     if (label != null) {
-                        fullPathByExternalId.put(uncleId, toFullPath(label));
+                        fullPathByExternalId.put(uncleId, requireFullPath(label));
                         continue;
                     }
                     String survivingTileId = tileIdByTexture.get(textureFile);
@@ -184,7 +184,10 @@ public final class ExternalUncleBridgeBuilder {
             .toString();
     }
 
-    private static String toFullPath(String label) {
-        return "0".equals(label) ? "0" : "0" + label;
+    private static String requireFullPath(String path) {
+        if (path == null || !path.matches("0[0-3]*")) {
+            throw new IllegalArgumentException("Catalogued quadtree path is not absolute: " + path);
+        }
+        return path;
     }
 }

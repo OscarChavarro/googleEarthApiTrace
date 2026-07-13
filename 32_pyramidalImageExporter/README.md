@@ -18,7 +18,9 @@ of PNG files with the `e` key.
 
 - `<inputFolder>` (positional, required, no default): directory containing the
   `matrix_<n>` folders exported by `31_matrixMerger`, each with a `matrixLayer.json` and
-  its tile textures. The top-level pyramid (levels `0..5`, see below) does not depend on
+  its tile textures. Contract-v2 files also contain `hierarchyLevel`,
+  `parentMatrixIndex`, and full `hierarchyRelationshipsByTileId`; these relationships are
+  merged back into the tiles before placement. The top-level pyramid (levels `0..5`, see below) does not depend on
   this folder having any `matrix_<n>` subfolders, only `topLevelTiles.json` does. Neither
   the program nor `./run.sh` assumes a default: if this argument is missing, both exit
   with code `1` and an English error message explaining that it must point to
@@ -118,9 +120,19 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   uncle's path with that quadrant digit appended. This propagates as a fixpoint, so a
   chain of several uncle hops resolves one hop per pass.
 - If a tile has several `uncles` relationships that resolve to different candidate paths,
-  the tile is ambiguous and is permanently discarded (never exported); the export log
-  reports how many tiles were discarded this way.
+  the matrix grid votes for a common `(level,rowOffset,colOffset)`. A strict majority
+  canonicalizes every tile in that rigid grid, correcting minority and individually
+  ambiguous anchors. Without a majority the unresolved tiles remain unexported.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
+
+Contract-v2 hierarchy roots repaired by `31_matrixMerger` carry explicit inferred uncle
+relationships. The exporter never assumes that `matrix_<n+1>` is the child of
+`matrix_<n>` merely because of folder order.
+
+Before writing any PNG, the exporter builds a manifest with one selected tile per full
+path. A native local tile has documented priority over a derived TOP tile at the same
+cell. Any other incompatible duplicate path fails the export before writing, so output
+correctness no longer depends on layer iteration order.
 
 ### Session-local export
 

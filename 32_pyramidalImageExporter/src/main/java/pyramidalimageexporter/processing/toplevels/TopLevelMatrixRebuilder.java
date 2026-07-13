@@ -306,7 +306,11 @@ public final class TopLevelMatrixRebuilder {
         if (level <= 0) {
             return "0";
         }
-        StringBuilder sb = new StringBuilder(level);
+        // Paths are always absolute.  The leading zero is the root marker;
+        // quadrant zero at level 1 is therefore "00", never the ambiguous
+        // relative label "0".
+        StringBuilder sb = new StringBuilder(level + 1);
+        sb.append('0');
         for (int depth = level - 1; depth >= 0; depth--) {
             boolean south = ((row >> depth) & 1) == 1;
             boolean east = ((col >> depth) & 1) == 1;

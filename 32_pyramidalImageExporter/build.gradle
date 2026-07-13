@@ -36,4 +36,11 @@ dependencies {
     implementation 'org.jogamp.gluegen:gluegen-rt:2.5.0'
     runtimeOnly 'org.jogamp.jogl:jogl-all-main:2.5.0'
     runtimeOnly 'org.jogamp.gluegen:gluegen-rt-main:2.5.0'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }

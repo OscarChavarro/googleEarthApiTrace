@@ -1,5 +1,6 @@
 package pyramidalimageexporter.io;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -7,10 +8,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import pyramidalimageexporter.model.MatrixLayer;
+import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.processing.uncles.ToUncleRelationship;
 
 public final class MatrixLayerJsonReader {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -62,6 +67,7 @@ public final class MatrixLayerJsonReader {
             if (layer != null && layer.getFrameId() <= 0) {
                 layer.setFrameId(root.path("frameId").asInt(fallbackIndex));
             }
+            importHierarchyContract(root, layer);
             return layer;
         }
         MatrixLayer layer = JSON.treeToValue(root, MatrixLayer.class);
@@ -69,6 +75,50 @@ public final class MatrixLayerJsonReader {
             layer.setFrameId(fallbackIndex);
         }
         return layer;
+    }
+
+    private static void importHierarchyContract(JsonNode root, MatrixLayer layer) {
+        if (root == null || layer == null) {
+            return;
+        }
+        layer.setContractVersion(nullableInt(root.get("contractVersion")));
+        layer.setHierarchyLevel(nullableInt(root.get("hierarchyLevel")));
+        layer.setParentMatrixIndex(nullableInt(root.get("parentMatrixIndex")));
+
+        JsonNode legacy = root.get("hierarchyUnclesByTileId");
+        if (legacy != null && legacy.isObject()) {
+            layer.setHierarchyUnclesByTileId(JSON.convertValue(legacy, new TypeReference<Map<String, List<String>>>() {}));
+        }
+        JsonNode relationships = root.get("hierarchyRelationshipsByTileId");
+        if (relationships != null && relationships.isObject()) {
+            layer.setHierarchyRelationshipsByTileId(
+                JSON.convertValue(
+                    relationships,
+                    new TypeReference<Map<String, List<ToUncleRelationship>>>() {}
+                )
+            );
+        }
+
+        Map<String, List<ToUncleRelationship>> byTileId = layer.getHierarchyRelationshipsByTileId();
+        if (byTileId.isEmpty()) {
+            return;
+        }
+        for (MatrixLayerTile tile : layer.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            List<ToUncleRelationship> inherited = byTileId.get(tile.getId());
+            if (inherited == null || inherited.isEmpty()) {
+                continue;
+            }
+            LinkedHashSet<ToUncleRelationship> merged = new LinkedHashSet<>(tile.getUncles());
+            merged.addAll(inherited);
+            tile.setUncles(new ArrayList<>(merged));
+        }
+    }
+
+    private static Integer nullableInt(JsonNode value) {
+        return value == null || value.isNull() || !value.isIntegralNumber() ? null : value.intValue();
     }
 
     private static int layerIndexOf(Path path) {

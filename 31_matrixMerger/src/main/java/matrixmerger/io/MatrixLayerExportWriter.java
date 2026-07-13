@@ -32,11 +32,14 @@ public final class MatrixLayerExportWriter {
             fatal("Can not export results: source output.directory is not accessible: " + sourceOutputDirectory);
         }
         List<FrameMatrixSet> frames = model.getFrameMatrices();
+        List<MatrixMergerState.HierarchyOrderDiagnostic> hierarchy = model.getHierarchyOrderDiagnostics();
         for (int frameIndex = 0; frameIndex < frames.size(); frameIndex++) {
             FrameMatrixSet frame = frames.get(frameIndex);
             Path frameDirectory = outputDirectory.resolve("matrix_" + frameIndex);
             createDirectory(frameDirectory, "frame export directory");
-            FrameMatrixSet exportedFrame = copyFrameAssets(frame, frameDirectory);
+            MatrixMergerState.HierarchyOrderDiagnostic hierarchyItem =
+                frameIndex < hierarchy.size() ? hierarchy.get(frameIndex) : null;
+            FrameMatrixSet exportedFrame = copyFrameAssets(frame, frameDirectory, hierarchyItem);
             writeFrameJson(exportedFrame, frameDirectory.resolve("matrixLayer.json"));
             System.out.println("Export folder ready: " + frameDirectory);
         }
@@ -73,13 +76,26 @@ public final class MatrixLayerExportWriter {
         }
     }
 
-    private FrameMatrixSet copyFrameAssets(FrameMatrixSet frame, Path frameDirectory) {
+    private FrameMatrixSet copyFrameAssets(
+        FrameMatrixSet frame,
+        Path frameDirectory,
+        MatrixMergerState.HierarchyOrderDiagnostic hierarchy
+    ) {
         FrameMatrixSet exportedFrame = new FrameMatrixSet();
         if (frame == null) {
             exportedFrame.setMatrices(List.of());
             return exportedFrame;
         }
+        exportedFrame.setContractVersion(2);
         exportedFrame.setFrameId(frame.getFrameId());
+        exportedFrame.setHierarchyLevel(hierarchy == null ? null : hierarchy.level());
+        exportedFrame.setParentMatrixIndex(
+            hierarchy == null || hierarchy.resolvedParentIndexes().size() != 1
+                ? null
+                : hierarchy.resolvedParentIndexes().get(0)
+        );
+        exportedFrame.setHierarchyUnclesByTileId(frame.getHierarchyUnclesByTileId());
+        exportedFrame.setHierarchyRelationshipsByTileId(frame.getHierarchyRelationshipsByTileId());
         List<FrameTileMatrix> exportedMatrices = new ArrayList<>();
         List<FrameTileMatrix> matrices = frame.getMatrices();
         if (matrices != null) {

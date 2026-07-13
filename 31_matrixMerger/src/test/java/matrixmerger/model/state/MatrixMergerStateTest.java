@@ -70,9 +70,10 @@ final class MatrixMergerStateTest {
         assertEquals(List.of("00010_1", "00020_1", "00030_1", "00090_1"), state.getFrameMatrices().stream()
             .map(MatrixMergerStateTest::tileId)
             .toList());
+        List<String> expectedLevels = List.of("l", "l + 1", "l + 2", "l");
         for (int i = 0; i < state.getFrameMatrices().size(); i++) {
             state.selectFrameIndex(i);
-            assertEquals(i == 0 ? "l" : "l + " + i, state.getSelectedHierarchyLabel());
+            assertEquals(expectedLevels.get(i), state.getSelectedHierarchyLabel());
         }
     }
 

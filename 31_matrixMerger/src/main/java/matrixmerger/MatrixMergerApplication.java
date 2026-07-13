@@ -34,7 +34,7 @@ public final class MatrixMergerApplication {
         boolean renderAllLevels = hasArg(args, "--all-levels");
         boolean renderLevel = argValue(args, "--level") != null || renderAllLevels;
         Mode mode = parseMode(args);
-        if (!Jogl4Renderer.verifyOpenGLAvailability()) {
+        if (!offline && !Jogl4Renderer.verifyOpenGLAvailability()) {
             AppLogger.warn("Can not start OpenGL/JOGL.");
             return;
         }
@@ -44,19 +44,19 @@ public final class MatrixMergerApplication {
         Path outputPath = Path.of(OUTPUT_DIRECTORY);
         printMissingOutputFolderWarning(model);
         if (offline && !renderLevel) {
-            int before = model.getMatrixCount();
-            model.mergeFullSet();
-            int after = model.getMatrixCount();
-            AppLogger.info("Offline full-set merge done. Matrices: " + before + " -> " + after);
+            processOfflineWithoutRendering(model, mode);
+            finishProcessing(model, outputPath, args);
             return;
         }
         if (mode == Mode.AUTO) {
             new AutomaticMatrixGroupingPipeline().run(model);
         }
-        if (hasArg(args, "--diagnose-order")) {
-            printHierarchyOrderDiagnostics(model);
-        }
+        finishProcessing(model, outputPath, args);
         if (offline) {
+            if (!Jogl4Renderer.verifyOpenGLAvailability()) {
+                AppLogger.warn("Can not start OpenGL/JOGL.");
+                return;
+            }
             if (renderAllLevels) {
                 renderAllOfflineLevels(model, args);
             }
@@ -65,13 +65,35 @@ public final class MatrixMergerApplication {
             }
             return;
         }
+        Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
+        InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
+        interactiveDebugger.launchDesktop();
+    }
+
+    private static void processOfflineWithoutRendering(MatrixMergerState model, Mode mode) {
+        if (mode == Mode.AUTO) {
+            new AutomaticMatrixGroupingPipeline().run(model);
+            return;
+        }
+        int before = model.getMatrixCount();
+        model.mergeFullSet();
+        int after = model.getMatrixCount();
+        AppLogger.info("Offline full-set merge done. Matrices: " + before + " -> " + after);
+    }
+
+    /**
+     * Runs the non-graphical finalization shared by interactive and offline
+     * execution. A positional output folder therefore has the same export
+     * contract in both modes.
+     */
+    private static void finishProcessing(MatrixMergerState model, Path outputPath, String[] args) {
+        if (hasArg(args, "--diagnose-order")) {
+            printHierarchyOrderDiagnostics(model);
+        }
         printMissingTopLevelUncles(model, outputPath);
         if (model.getOutputFolder() != null) {
             new MatrixLayerExportWriter(model, outputPath).export(model.getOutputFolder());
         }
-        Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
-        InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
-        interactiveDebugger.launchDesktop();
     }
 
     private static void renderOfflineLevel(MatrixMergerState model, String[] args) {

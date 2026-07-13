@@ -16,6 +16,7 @@ public final class AutomaticMatrixGroupingPipeline {
             countChanged |= runCutSweep(model);
             if (!countChanged && model.getFrameCount() == before) {
                 model.sortFramesByUncleHierarchy();
+                new VisualHierarchyRelationshipInferrer().inferMissingParents(model);
                 return;
             }
         }

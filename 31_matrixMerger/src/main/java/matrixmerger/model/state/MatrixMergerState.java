@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -17,6 +18,7 @@ import matrixmerger.model.contract.FrameTileMatrix;
 import matrixmerger.io.WestCuttersJsonReader;
 import matrixmerger.processing.WestCutterMatrixSplitter;
 import matrixmerger.processing.PairwiseMatrixMerger;
+import matrixmerger.processing.uncles.ToUncleRelationship;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
@@ -603,6 +605,7 @@ public final class MatrixMergerState {
         normalized.setFrameId(frame.getFrameId());
         normalized.setMatrices(List.of(matrix));
         normalized.setHierarchyUnclesByTileId(buildHierarchyUnclesByTileId(frame, matrix));
+        normalized.setHierarchyRelationshipsByTileId(buildHierarchyRelationshipsByTileId(frame, matrix));
         return normalized;
     }
 
@@ -732,9 +735,17 @@ public final class MatrixMergerState {
         }
 
         List<FrameHierarchyNode> ordered = new ArrayList<>(nodes.size());
+        Map<Integer, Integer> levelByOriginalIndex = new HashMap<>();
         while (!available.isEmpty()) {
             FrameHierarchyNode next = available.remove();
-            ordered.add(next.withLevel(ordered.size()));
+            int level = next.parentFrameIndex() == null
+                ? 0
+                : levelByOriginalIndex.getOrDefault(next.parentFrameIndex(), -1) + 1;
+            if (level < 0) {
+                return null;
+            }
+            ordered.add(next.withLevel(level));
+            levelByOriginalIndex.put(next.originalIndex(), level);
             for (FrameHierarchyNode child : childrenByParentIndex.getOrDefault(next.originalIndex(), List.of())) {
                 int remaining = remainingParentsByFrameIndex.get(child.originalIndex()) - 1;
                 remainingParentsByFrameIndex.put(child.originalIndex(), remaining);
@@ -856,6 +867,38 @@ public final class MatrixMergerState {
         return out;
     }
 
+    private static Map<String, List<ToUncleRelationship>> buildHierarchyRelationshipsByTileId(
+        FrameMatrixSet frame,
+        FrameTileMatrix matrix
+    ) {
+        Map<String, List<ToUncleRelationship>> inherited =
+            frame == null ? null : frame.getHierarchyRelationshipsByTileId();
+        if (inherited != null && !inherited.isEmpty()) {
+            Map<String, List<ToUncleRelationship>> filtered = new LinkedHashMap<>();
+            for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                    continue;
+                }
+                List<ToUncleRelationship> relationships = inherited.get(tile.getId());
+                if (relationships != null) {
+                    filtered.put(tile.getId(), new ArrayList<>(relationships));
+                }
+            }
+            if (!filtered.isEmpty()) {
+                return filtered;
+            }
+        }
+
+        Map<String, List<ToUncleRelationship>> out = new LinkedHashMap<>();
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                continue;
+            }
+            out.put(tile.getId(), tile.getUncles() == null ? List.of() : new ArrayList<>(tile.getUncles()));
+        }
+        return out;
+    }
+
     private static void mergeHierarchyUncles(FrameMatrixSet current, FrameMatrixSet mergedAway) {
         if (current == null || mergedAway == null) {
             return;
@@ -864,6 +907,31 @@ public final class MatrixMergerState {
         mergeHierarchyUncleMap(merged, current.getHierarchyUnclesByTileId());
         mergeHierarchyUncleMap(merged, mergedAway.getHierarchyUnclesByTileId());
         current.setHierarchyUnclesByTileId(merged);
+
+        Map<String, List<ToUncleRelationship>> relationships = new LinkedHashMap<>();
+        mergeHierarchyRelationshipMap(relationships, current.getHierarchyRelationshipsByTileId());
+        mergeHierarchyRelationshipMap(relationships, mergedAway.getHierarchyRelationshipsByTileId());
+        current.setHierarchyRelationshipsByTileId(relationships);
+    }
+
+    private static void mergeHierarchyRelationshipMap(
+        Map<String, List<ToUncleRelationship>> target,
+        Map<String, List<ToUncleRelationship>> source
+    ) {
+        if (source == null || source.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, List<ToUncleRelationship>> entry : source.entrySet()) {
+            if (entry == null || entry.getKey() == null || entry.getKey().isBlank()) {
+                continue;
+            }
+            LinkedHashSet<ToUncleRelationship> merged =
+                new LinkedHashSet<>(target.getOrDefault(entry.getKey(), List.of()));
+            if (entry.getValue() != null) {
+                merged.addAll(entry.getValue());
+            }
+            target.put(entry.getKey(), new ArrayList<>(merged));
+        }
     }
 
     private static void mergeHierarchyUncleMap(

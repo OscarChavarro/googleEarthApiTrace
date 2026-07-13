@@ -290,10 +290,20 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerReader`.
 - **Location**: `<exportFolder>/matrix_<n>/`, one folder per surviving merged matrix
   (`n` = 0-based export order), containing:
-  - `matrixLayer.json`: same shape as `matrix.json` (Contract 5) — `{ rows, cols, tiles[] }`
-    with `tiles[].id/i/j/textureFile/uncles[]` — but `textureFile` now points at a copy
-    made by the exporter, `<exportFolder>/matrix_<n>/<tileId>.png`, **not** the original
-    Contract-1 path anymore.
+  - `matrixLayer.json`: versioned envelope (current `contractVersion: 2`) with:
+    - `frameId`: representative frame of the merged matrix.
+    - `hierarchyLevel`: real depth in the matrix hierarchy (`0` for the first matrix,
+      increasing by one through each parent edge; it is not inferred from `<n>`).
+    - `parentMatrixIndex`: index `<n>` of the immediate parent, or `null` only for a
+      genuinely disconnected root.
+    - `hierarchyUnclesByTileId`: compatibility map `tileId -> [uncleId]` used for graph
+      ordering and diagnostics.
+    - `hierarchyRelationshipsByTileId`: lossless map
+      `tileId -> [{direction, uncleContentId}]`. It preserves the quadrant direction even
+      when a merge keeps a duplicate tile record that originally had no `uncles`.
+    - `matrices`: one `{frameId, rows, cols, tiles[]}` matrix with
+      `tiles[].id/i/j/textureFile/uncles[]`. `textureFile` points at the exported copy
+      `<exportFolder>/matrix_<n>/<tileId>.png`, not the Contract-1 path.
   - One `<tileId>.png` per tile, copied from the tile's original texture.
 - **`<exportFolder>` becomes `32_pyramidalImageExporter`'s `<inputFolder>` argument.**
 - **Invariants**:
@@ -305,6 +315,16 @@ model with quadtree neighborhood information — everything downstream depends o
     path, since the copied `matrix_<n>/<tileId>.png` path is not in that catalogue.
   - `uncles[]` must survive the merge/copy step unchanged in shape, since anchoring
     (Contract 7) depends on walking them.
+  - `hierarchyRelationshipsByTileId` is authoritative when it contains relationships
+    lost from `tiles[].uncles`; the consumer merges both sets by value.
+  - A hierarchy root without recorded `uncles` may be joined to an earlier matrix only
+    by `31_matrixMerger`'s visual parent inference: child textures are compared with
+    parent quadrants, matches must pass RMSE and best/second confidence thresholds, and a
+    strict majority must agree on one rigid `(parent,rowOffset,colOffset)`. Accepted
+    relationships are persisted in both hierarchy maps. A non-confident root stays
+    disconnected; ordering alone is never an anchor.
+  - `parentMatrixIndex` must refer to an earlier exported matrix and
+    `hierarchyLevel == parent.hierarchyLevel + 1`.
   - Folder naming `matrix_<n>` (not zero-padded) and file naming `matrixLayer.json` (not
     `matrix.json`) are both significant — `32_pyramidalImageExporter` only recognizes this
     exact layout.
@@ -333,22 +353,28 @@ In addition to feeding `23_frameTextureNormalizer`/`31_matrixMerger` (Contracts 
 Internal to `32_pyramidalImageExporter`, but this is the contract that decides which tiles
 make it into the final pyramidal image, so it is worth stating explicitly:
 
-- A tile is exportable only if `RootPathResolver` can anchor it to an absolute quadtree
-  path string of quadrant digits (e.g. `"0021"`, see "Quadtree conventions"):
+- A tile is exportable only if `TileRootPathResolver` can anchor it to an absolute
+  quadtree path. The root is exactly `"0"`; every descendant begins with that marker and
+  adds one quadrant digit per level (e.g. `"0021"`):
   - Directly, if its own `id` already is such a path (true by construction for every
     top-level tile synthesized from `topLevelTiles.json`).
   - Transitively, if one of its `uncles[]` resolves (directly, through Contract 6b's
     bridge, or through a chain of several uncle hops resolved one hop per fixpoint pass)
     to an already-anchored tile: the child's path is the uncle's path with the matching
     quadrant digit appended.
-  - A tile with `uncles[]` resolving to two different candidate paths is ambiguous and is
-    permanently discarded (counted, never exported).
+  - `hierarchyRelationshipsByTileId` is merged into `tiles[].uncles` before resolution.
+  - Once a strict majority chooses one `(level,rowOffset,colOffset)` for a rigid matrix,
+    that grid canonicalizes every path in the matrix. Minority/outlier anchors and an
+    individually ambiguous tile are corrected by the winning grid instead of being
+    allowed to create duplicate output paths.
+  - Before writing, the exporter builds a unique `fullPath -> tile` manifest. A local
+    native tile deliberately replaces a derived TOP cell at the same path; any duplicate
+    between incompatible peers aborts the export before the first PNG is written.
   - A tile with no resolvable path (directly or transitively) is skipped.
-- **Invariant**: this resolution is a pure function of `id`/`uncles[]`/the Contract-6b
-  bridge — it does not consult pixel data — so any upstream change to how `id` or
-  `uncleContentId` strings are generated must keep them mutually consistent across
-  `frame.json`, `matrix.json`/`matrixLayer.json`, and the top-level catalogue, or tiles
-  will silently become unanchorable (discarded, not an error).
+- **Invariant**: `32_pyramidalImageExporter` resolves paths from ids, relationships and
+  the Contract-6b bridge; visual inference happens upstream in `31_matrixMerger` and its
+  accepted result is explicit Contract-6 metadata. Any id-format change must remain
+  consistent across `frame.json`, `matrix.json`, `matrixLayer.json` and the TOP catalogue.
 
 ## Contract 8: `32_pyramidalImageExporter` → `41_planetViewer`
 
