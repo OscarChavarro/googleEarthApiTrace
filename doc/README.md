@@ -68,7 +68,8 @@ coordinate) back into the global quadtree.
   (`spiral`/`zigzag`/`globe`) plus altitude-calibration and zero-longitude-seam markers.
 - **Consumer**: the user double-clicks the first placemark in Google Earth to start
   navigation there; `13_googleEarthController` reads the same KML file only to count total
-  placemarks in `turtle` for its progress label — it does not otherwise interpret the
+  placemarks in `turtle` for its progress label and, when that count can be read, to stop
+  automatically after advancing that many steps — it does not otherwise interpret the
   route, it just advances through whatever is currently selected in Google Earth.
 - **Invariant**: placemarks must remain inside a folder literally named `turtle` directly
   under `~/.googleearth/myplaces.kml`'s root, since that is the only thing both programs

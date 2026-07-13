@@ -23,19 +23,21 @@ public class GoogleEarthController {
     private final AtomicLong sessionToken = new AtomicLong(0);
 
     private final DetectorProcessClient detectorClient = new DetectorProcessClient();
+    private final KmlTurtlePlacemarkCounter.CountResult placemarkCountResult =
+        new KmlTurtlePlacemarkCounter().countFromUserHome();
     private GoogleEarthUi ui;
 
     private volatile boolean running;
     private ScheduledFuture<?> inactivityTimer;
     private int spinnerIndex;
+    private int completedAdvanceCount;
 
     public static void main(String[] args) {
         new GoogleEarthController().run();
     }
 
     private void run() {
-        int totalPlacemarks = new KmlTurtlePlacemarkCounter().countFromUserHome();
-        ui = new GoogleEarthUi(this::toggleStartStop, this::onQuit, totalPlacemarks);
+        ui = new GoogleEarthUi(this::toggleStartStop, this::onQuit, placemarkCountResult.getCount());
         ui.initializeRobot();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -55,7 +57,6 @@ public class GoogleEarthController {
         } else {
             stop();
         }
-        ui.setRunning(running);
     }
 
     private void start() {
@@ -63,23 +64,33 @@ public class GoogleEarthController {
             return;
         }
 
+        ui.setCompleted(false);
         Path executable = Path.of("..", "12_fileSystemChangesDetector", "build", "fileSystemChangesDetector");
         boolean started = detectorClient.start(executable, OUTPUT_DIRECTORY, this::onDetectorLine);
         if (!started) {
             running = false;
             System.out.println("[ERROR] fileSystemChangesDetector could not be executed.");
+            syncRunningStateToUi();
             return;
         }
 
         running = true;
         System.out.println("[OK] fileSystemChangesDetector is running.");
+        if (shouldAutoStopAfterCompletedAdvance()) {
+            System.out.println("[OK] Route already complete according to ~/.googleearth/myplaces.kml.");
+            ui.setCompleted(true);
+            stop();
+            return;
+        }
         scheduleInactivityCycle();
+        syncRunningStateToUi();
     }
 
     private void stop() {
         if (!running) {
             System.out.println("[STEP] Stop requested while controller is idle.");
             detectorClient.stop();
+            syncRunningStateToUi();
             return;
         }
 
@@ -88,6 +99,7 @@ public class GoogleEarthController {
         cancelInactivityTimer();
         detectorClient.stop();
         System.out.println("[OK] Navigation session stopped.");
+        syncRunningStateToUi();
     }
 
     private void onDetectorLine(String line) {
@@ -162,6 +174,12 @@ public class GoogleEarthController {
         }
 
         ui.markAdvanceCompleted();
+        completedAdvanceCount++;
+        if (shouldAutoStopAfterCompletedAdvance()) {
+            System.out.println("[OK] Reached planned placemark count from ~/.googleearth/myplaces.kml.");
+            ui.setCompleted(true);
+            stop();
+        }
     }
 
     private void runBlockingSync() {
@@ -203,6 +221,17 @@ public class GoogleEarthController {
                 inactivityTimer.cancel(false);
                 inactivityTimer = null;
             }
+        }
+    }
+
+    private boolean shouldAutoStopAfterCompletedAdvance() {
+        return placemarkCountResult.isAvailable()
+            && completedAdvanceCount >= placemarkCountResult.getCount();
+    }
+
+    private void syncRunningStateToUi() {
+        if (ui != null) {
+            ui.setRunning(running);
         }
     }
 

@@ -10,11 +10,37 @@ final class KmlTurtlePlacemarkCounter {
     private static final String KML_RELATIVE_PATH = ".googleearth/myplaces.kml";
     private static final String TARGET_FOLDER_NAME = "turtle";
 
-    int countFromUserHome() {
+    static final class CountResult {
+        private final boolean available;
+        private final int count;
+
+        private CountResult(boolean available, int count) {
+            this.available = available;
+            this.count = count;
+        }
+
+        static CountResult available(int count) {
+            return new CountResult(true, count);
+        }
+
+        static CountResult unavailable() {
+            return new CountResult(false, 0);
+        }
+
+        boolean isAvailable() {
+            return available;
+        }
+
+        int getCount() {
+            return count;
+        }
+    }
+
+    CountResult countFromUserHome() {
         Path kmlPath = Path.of(System.getProperty("user.home"), KML_RELATIVE_PATH);
         if (!Files.exists(kmlPath)) {
             System.err.println("KML file not found: " + kmlPath);
-            return 0;
+            return CountResult.unavailable();
         }
 
         try {
@@ -34,13 +60,15 @@ final class KmlTurtlePlacemarkCounter {
                     continue;
                 }
 
-                return countDirectPlacemarkChildren(folder);
+                return CountResult.available(countDirectPlacemarkChildren(folder));
             }
+
+            System.err.println("Folder '" + TARGET_FOLDER_NAME + "' not found in KML file: " + kmlPath);
         } catch (Exception ex) {
             System.err.println("Failed to parse KML file " + kmlPath + ": " + ex.getMessage());
         }
 
-        return 0;
+        return CountResult.unavailable();
     }
 
     private int countDirectPlacemarkChildren(Element folder) {

@@ -39,7 +39,9 @@ This program is driven by its Swing panel buttons (there are no keyboard shortcu
 | `QUIT` button | Stops the detector process and exits |
 
 The progress label shows how many route placemarks have been advanced out of the total
-counted in the `turtle` folder of `~/.googleearth/myplaces.kml`.
+counted in the `turtle` folder of `~/.googleearth/myplaces.kml`. When that count can be
+read successfully, the controller also stops automatically once the number of completed
+advances reaches that total, and the button returns to `START`.
 
 ## Notes for agentic coding agents
 

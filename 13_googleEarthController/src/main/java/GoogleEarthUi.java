@@ -14,28 +14,35 @@ final class GoogleEarthUi {
     private enum UiEventType {
         SHOW_WINDOW,
         SET_RUNNING,
-        ADVANCE_COMPLETED
+        ADVANCE_COMPLETED,
+        SET_COMPLETED
     }
 
     private static final class UiEvent {
         private final UiEventType type;
         private final boolean running;
+        private final boolean completed;
 
-        private UiEvent(UiEventType type, boolean running) {
+        private UiEvent(UiEventType type, boolean running, boolean completed) {
             this.type = type;
             this.running = running;
+            this.completed = completed;
         }
 
         static UiEvent showWindow() {
-            return new UiEvent(UiEventType.SHOW_WINDOW, false);
+            return new UiEvent(UiEventType.SHOW_WINDOW, false, false);
         }
 
         static UiEvent setRunning(boolean running) {
-            return new UiEvent(UiEventType.SET_RUNNING, running);
+            return new UiEvent(UiEventType.SET_RUNNING, running, false);
         }
 
         static UiEvent advanceCompleted() {
-            return new UiEvent(UiEventType.ADVANCE_COMPLETED, false);
+            return new UiEvent(UiEventType.ADVANCE_COMPLETED, false, false);
+        }
+
+        static UiEvent setCompleted(boolean completed) {
+            return new UiEvent(UiEventType.SET_COMPLETED, false, completed);
         }
     }
 
@@ -46,10 +53,12 @@ final class GoogleEarthUi {
 
     private JButton startStopButton;
     private JLabel progressLabel;
+    private JLabel statusLabel;
     private Robot robot;
     private Thread uiEventConsumerThread;
     private volatile boolean uiConsumerRunning;
     private boolean runningState;
+    private boolean completedState;
     private int advanceCount;
 
     GoogleEarthUi(Runnable onStartStop, Runnable onQuit, int totalPlacemarkCount) {
@@ -58,6 +67,7 @@ final class GoogleEarthUi {
         this.totalPlacemarkCount = totalPlacemarkCount;
         this.advanceCount = 0;
         this.runningState = false;
+        this.completedState = false;
     }
 
     void initializeRobot() {
@@ -79,6 +89,10 @@ final class GoogleEarthUi {
 
     void markAdvanceCompleted() {
         enqueueEvent(UiEvent.advanceCompleted());
+    }
+
+    void setCompleted(boolean completed) {
+        enqueueEvent(UiEvent.setCompleted(completed));
     }
 
     void shutdown() {
@@ -132,7 +146,7 @@ final class GoogleEarthUi {
 
     private void handleUiEvent(UiEvent event) {
         if (event.type == UiEventType.SHOW_WINDOW) {
-            if (startStopButton == null || progressLabel == null) {
+            if (startStopButton == null || progressLabel == null || statusLabel == null) {
                 createAndShowWindow();
             }
             refreshViewState();
@@ -147,6 +161,12 @@ final class GoogleEarthUi {
 
         if (event.type == UiEventType.ADVANCE_COMPLETED) {
             advanceCount++;
+            refreshViewState();
+            return;
+        }
+
+        if (event.type == UiEventType.SET_COMPLETED) {
+            completedState = event.completed;
             refreshViewState();
         }
     }
@@ -165,10 +185,12 @@ final class GoogleEarthUi {
         quitButton.addActionListener(e -> onQuit.run());
 
         progressLabel = new JLabel(formatProgress());
+        statusLabel = new JLabel(formatStatus());
 
         frame.add(startStopButton);
         frame.add(quitButton);
         frame.add(progressLabel);
+        frame.add(statusLabel);
         frame.setSize(260, 100);
         frame.setResizable(false);
         frame.setLocationRelativeTo(null);
@@ -189,6 +211,10 @@ final class GoogleEarthUi {
         if (progressLabel != null) {
             progressLabel.setText(formatProgress());
         }
+
+        if (statusLabel != null) {
+            statusLabel.setText(formatStatus());
+        }
     }
 
     private void enqueueEvent(UiEvent event) {
@@ -197,6 +223,16 @@ final class GoogleEarthUi {
 
     private String formatProgress() {
         return advanceCount + "/" + totalPlacemarkCount;
+    }
+
+    private String formatStatus() {
+        if (runningState) {
+            return "Running";
+        }
+        if (completedState) {
+            return "Completed";
+        }
+        return "Idle";
     }
 
     private void sleepInterruptibly(long millis) {
