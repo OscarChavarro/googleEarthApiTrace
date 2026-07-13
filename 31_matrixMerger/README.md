@@ -111,6 +111,8 @@ From repo root:
 ```
 
 The local `./run.sh` runs `gradle run --args="--mode auto"` (automatic grouping, then GUI).
+If additional arguments are passed to `./run.sh`, it still prepends `--mode auto` before
+them.
 
 ### Command-line options
 
@@ -136,13 +138,15 @@ before the viewer opens. Merges done interactively afterwards are not re-exporte
 ## Notes for agentic coding agents
 
 - Batch/automated run without interaction:
+  Note: the current implementation checks JOGL/OpenGL availability before any mode
+  selection, so even `--offline` still depends on that verification succeeding.
 
   ```bash
   ./gradlew :31_matrixMerger:run --args="--mode auto /path/to/exportFolder"
   ```
 
   runs the automatic grouper and exports results; the GUI still opens at the end (close
-  with `ESC`). `--offline` is the only fully headless mode and currently performs just
+  with `ESC`). `--offline` is the only non-interactive mode and currently performs just
   the full-set merge without exporting.
 - Startup side effects regardless of mode: `westCutters.json` may be rewritten (column
   propagation), and missing top-level uncle tile paths are printed to stdout one per line

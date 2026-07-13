@@ -49,7 +49,7 @@ From this directory:
 gradle run
 ```
 
-or `./run.sh`.
+or `./run.sh` for the default interactive launch with no extra CLI arguments.
 
 ## Interactive usage guide
 
@@ -76,7 +76,8 @@ texture id of the selected tile, and — when a tile is selected — the
 - `--width=<px>` and `--height=<px>`: output image size in offline mode (default 1280x720).
 - `--output=<path>`: output image path in offline mode (default
   `/tmp/frameTextureNormalizer_offline.png`). When several frames are in range, one
-  image per frame is generated from this base path.
+  image per frame is generated from this base path. If the value looks like a directory,
+  the program writes `frame_0001.png`, `frame_0002.png`, etc. inside it.
 - `--debug-matrix`: enables verbose matrix-assembly debugging output.
 - `--debug-frame=<id>`: restricts matrix debugging output to one frame.
 
@@ -92,6 +93,8 @@ gradle run --args="--offline --start-frame 150 --end-frame 150 --output=/tmp/fra
   runs before the GUI opens, so `--offline` is the way to drive this program
   non-interactively: it processes the data and produces PNG snapshot(s) as a visual
   verification artifact.
+- `--width`, `--height`, `--output` and `--debug-frame` currently support only the
+  `--flag=value` form; `--start-frame` and `--end-frame` accept both spaced and `=` forms.
 - Use `--start-frame`/`--end-frame` to bound the working set for fast iteration, and
   `--offline --start-frame N --end-frame N --output=/tmp/frameN.png` to render a single
   frame for inspection.

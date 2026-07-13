@@ -136,6 +136,12 @@ and printed to the console (via its `toString()`) once the export finishes:
 - `rewritten`: the slot existed (from a previous run over the same input folder) and was
   written again.
 
+Before root-path resolution runs, the exporter also performs a content-hash anchoring
+pass: if a `matrix_<n>/matrixLayer.json` tile uses a texture that is byte-for-byte
+identical to an already catalogued top-level image, its `id` is rewritten in memory and
+persisted back to that `matrixLayer.json` as the resolved quadtree path. This is a real
+source-data side effect of exporting, not just an in-memory optimization.
+
 Combining this session pyramid with the pyramids of other capture sessions into one
 consolidated pyramidal image — including any cross-session verification, conflict
 handling or overwrite policy — is the responsibility of a separate, future program.

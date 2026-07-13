@@ -28,18 +28,22 @@ The extraction workflow is split into stages. Each stage has separate codebases,
     quadtree of PNG files inside its own input folder. Each capture session produces its
     own independent pyramid; merging the pyramidal images of different sessions into one
     consolidated pyramid is the responsibility of a separate program (pending).
+- Projects starting with `4` are the **Visualization / Inspection stage**.
+  - They consume already exported pyramidal images and provide interactive or offline
+    inspection tools. `41_planetViewer` is the current viewer.
 
 ## Projects
 
 - [01_tracer/README.md](01_tracer/README.md): Minimal `apitrace`-based tracer fork. Keeps writing `.trace` while exporting runtime artifacts per frame, including texture blobs and GL operation logs.
-- [21_traceLogSplitter/README.md](21_traceLogSplitter/README.md): Splits large GL trace logs into per-frame `gl.txt` files and includes line-statistics tooling.
+- [21_traceLogSplitter/README.md](21_traceLogSplitter/README.md): Splits large GL trace logs into per-frame `gl.txt` files.
 - [11_pathPlanner/README.md](11_pathPlanner/README.md): Generates planned geographic traversal routes (`spiral`/`zigzag`) and writes KML for Google Earth.
-- [12_fileSystemChangesDetector/README.md](12_fileSystemChangesDetector/README.md): Monitors tracer output folder activity with `fanotify` to support safe controller pacing.
+- [12_fileSystemChangesDetector/README.md](12_fileSystemChangesDetector/README.md): Monitors tracer output folder activity with `inotify` to support safe controller pacing.
 - [13_googleEarthController/README.md](13_googleEarthController/README.md): Automates Google Earth session progression based on detector inactivity.
 - [22_dumpAnalyzer/README.md](22_dumpAnalyzer/README.md): Parses per-frame GL logs (`gl.txt`) and counts/analyses OpenGL calls with ANTLR-based processing.
 - [23_frameTextureNormalizer/README.md](23_frameTextureNormalizer/README.md): Consumes frame-level artifacts and performs normalization-oriented preprocessing for later composition workflows.
 - [31_matrixMerger/README.md](31_matrixMerger/README.md): Loads per-frame tile matrices, visualizes one matrix at a time, supports interactive/automatic matrix merging and west-cutter splitting, and exports consolidated layer matrices.
 - [32_pyramidalImageExporter/README.md](32_pyramidalImageExporter/README.md): Imports consolidated layer matrices from `31_matrixMerger` plus global top-level tile data from `22_dumpAnalyzer`, visualizes the quadtree layers, and exports the session's pyramidal image into the input folder itself (`<inputFolder>/pyramidalImage`); it never reads or writes any other pyramidal image — cross-session merging belongs to a separate, future program.
+- [41_planetViewer/README.md](41_planetViewer/README.md): Loads one or more exported pyramidal images and visualizes them interactively or offline, including stacked overlays and multi-view inspection.
 
 ## Notes
 

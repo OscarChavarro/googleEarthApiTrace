@@ -21,7 +21,9 @@ session.
 ## Recomended sync with 12_fileSystemChangesDetector
 
 It is recommended to use this panel in sync with `12_fileSystemChangesDetector` for optimal
-speed operation in current system. If changes detector is not available, controller will advance to the next position after a fixed amount of time, that can give non-optimal behavior.
+speed operation in current system. The current implementation expects the detector binary
+at `../12_fileSystemChangesDetector/build/fileSystemChangesDetector`; if it cannot be
+executed, the automatic navigation session does not start.
 
 ## Purpose in the pipeline
 
@@ -45,5 +47,6 @@ counted in the `turtle` folder of `~/.googleearth/myplaces.kml`.
 - The controller requires a live desktop session: it uses `java.awt.Robot` to inject
   `DOWN` + `ENTER` key presses into the focused application (Google Earth), so it cannot
   run under a headless display and will interfere with any other focused window.
-- It spawns and consumes `12_fileSystemChangesDetector` output to decide when to advance;
-  if the detector is unavailable it falls back to fixed-delay advancing.
+- It spawns and consumes `12_fileSystemChangesDetector` output to decide when to advance.
+- Before each `DOWN` + `ENTER` sequence it also runs `sync`, then waits the built-in key
+  timing windows (`430 ms` hold, `1000 ms` between keys).

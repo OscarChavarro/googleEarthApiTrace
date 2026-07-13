@@ -1,6 +1,6 @@
-# 40_planetViewer
+# 41_planetViewer
 
-`40_planetViewer` is an interactive AWT/Swing + JOGL viewer for one or several folder-based
+`41_planetViewer` is an interactive AWT/Swing + JOGL viewer for one or several folder-based
 pyramidal images (quadtrees of PNG tiles), such as the ones `32_pyramidalImageExporter`
 writes to `/samples/datasets/googleEarth`. It supports arbitrary zoom-in ("infinite zoom")
 using Power Scaled Coordinates, stacking several pyramidal images on top of one another, and

@@ -38,11 +38,14 @@ Or use:
 ./run.sh
 ```
 
-`run.sh` builds and runs the detector without `sudo`.
+`run.sh` builds and runs the detector without `sudo`, watching the fixed directory
+`/media/ramdisk/output`.
 
 ## Notes for agentic coding agents
 
 - Fully scriptable, no GUI. One positional argument: the directory to watch.
+- `./run.sh` is a fixed-path convenience wrapper; pass a custom directory only when
+  invoking the compiled binary directly.
 - Output protocol on stdout: one `Updated at <timestamp>` line per detected file
   creation/move-in event. Consumers (like `13_googleEarthController`) parse these lines.
 - Control protocol on stdin: writing `exit` terminates the process gracefully.

@@ -45,6 +45,15 @@ Or:
 gradle run --args="globe <lat> <lon> <step_distance_m> <max_distance_m>"
 ```
 
+Helper script:
+
+```bash
+./run.sh
+```
+
+`./run.sh` is only a convenience launcher. If no arguments are given, it currently runs
+the default sample route `globe 0 0 1600000 1`.
+
 ## Notes for agentic coding agents
 
 - This is a pure command-line batch tool: no GUI, no interactive input. It runs, writes
