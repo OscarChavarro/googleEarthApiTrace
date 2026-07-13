@@ -56,6 +56,40 @@ final class MatrixMergerStateTest {
         assertEquals("l + 2", state.getSelectedHierarchyLabel());
     }
 
+    @Test
+    void usesCaptureLocalityToPlaceMatricesWithoutResolvableUncles() {
+        FrameMatrixSet lateDisconnected = frame(-1, "90_1", null);
+        FrameMatrixSet deepest = frame(-1, "30_1", "20_1");
+        FrameMatrixSet top = frame(-1, "10_1", null);
+        FrameMatrixSet middle = frame(-1, "20_1", "10_1");
+        MatrixMergerState state = new MatrixMergerState();
+
+        state.setFrameMatrices(List.of(lateDisconnected, deepest, top, middle));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(List.of("00010_1", "00020_1", "00030_1", "00090_1"), state.getFrameMatrices().stream()
+            .map(MatrixMergerStateTest::tileId)
+            .toList());
+        for (int i = 0; i < state.getFrameMatrices().size(); i++) {
+            state.selectFrameIndex(i);
+            assertEquals(i == 0 ? "l" : "l + " + i, state.getSelectedHierarchyLabel());
+        }
+    }
+
+    @Test
+    void prioritizesExplicitTopLevelEvidenceOverLocality() {
+        FrameMatrixSet relationless = frame(-1, "10_1", null);
+        FrameMatrixSet explicitTop = frame(-1, "20_1", "1_1");
+        MatrixMergerState state = new MatrixMergerState();
+
+        state.setFrameMatrices(List.of(relationless, explicitTop));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(List.of("00020_1", "00010_1"), state.getFrameMatrices().stream()
+            .map(MatrixMergerStateTest::tileId)
+            .toList());
+    }
+
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId) {
         return frame(frameId, tileId, uncleId, null);
     }

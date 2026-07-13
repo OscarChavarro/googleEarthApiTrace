@@ -124,6 +124,10 @@ them.
 - `--offline`: without `--level`, run only the global full-set merge and exit. With
   `--level <n>`, render the zero-based matrix level to `/tmp/frame<n>.png` without GUI.
 - `--output <path>`, `--width <px>`, `--height <px>`: configure an offline level capture.
+- `--all-levels`: with `--offline`, render every final level to
+  `/tmp/frame00.png`, `/tmp/frame01.png`, and so on in one grouping run.
+- `--diagnose-order`: print the resolved parent matrices, uncle counts and last capture
+  frame used by the final hierarchy ordering.
 
 ### Results export
 

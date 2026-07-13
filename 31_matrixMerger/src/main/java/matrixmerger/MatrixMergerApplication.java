@@ -31,7 +31,8 @@ public final class MatrixMergerApplication {
 
     public void run(String[] args) {
         boolean offline = hasArg(args, "--offline");
-        boolean renderLevel = argValue(args, "--level") != null;
+        boolean renderAllLevels = hasArg(args, "--all-levels");
+        boolean renderLevel = argValue(args, "--level") != null || renderAllLevels;
         Mode mode = parseMode(args);
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
             AppLogger.warn("Can not start OpenGL/JOGL.");
@@ -52,8 +53,16 @@ public final class MatrixMergerApplication {
         if (mode == Mode.AUTO) {
             new AutomaticMatrixGroupingPipeline().run(model);
         }
+        if (hasArg(args, "--diagnose-order")) {
+            printHierarchyOrderDiagnostics(model);
+        }
         if (offline) {
-            renderOfflineLevel(model, args);
+            if (renderAllLevels) {
+                renderAllOfflineLevels(model, args);
+            }
+            else {
+                renderOfflineLevel(model, args);
+            }
             return;
         }
         printMissingTopLevelUncles(model, outputPath);
@@ -83,6 +92,31 @@ public final class MatrixMergerApplication {
             intArgValue(args, "--width", DEFAULT_OFFLINE_WIDTH),
             intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT)
         );
+    }
+
+    private static void renderAllOfflineLevels(MatrixMergerState model, String[] args) {
+        int width = intArgValue(args, "--width", DEFAULT_OFFLINE_WIDTH);
+        int height = intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT);
+        for (int level = 0; level < model.getMatrixCount(); level++) {
+            model.selectFrameIndex(level);
+            String output = String.format("/tmp/frame%02d.png", level);
+            AppLogger.info("Rendering offline level " + level + " of " + model.getMatrixCount() + ".");
+            new Jogl4MatrixMergerRenderer(model).startOffscreen(output, width, height);
+        }
+    }
+
+    private static void printHierarchyOrderDiagnostics(MatrixMergerState model) {
+        for (MatrixMergerState.HierarchyOrderDiagnostic item : model.getHierarchyOrderDiagnostics()) {
+            AppLogger.info(
+                "ORDER index=" + item.index()
+                    + " level=" + item.level()
+                    + " lastCaptureFrame=" + item.lastCaptureFrameId()
+                    + " parents=" + item.resolvedParentIndexes()
+                    + " uncles=" + item.uncleCount()
+                    + " unresolvedUncles=" + item.unresolvedUncleCount()
+                    + " tiles=" + item.tileCount()
+            );
+        }
     }
 
     private static MatrixMergerState createModel() {
@@ -223,7 +257,8 @@ public final class MatrixMergerApplication {
             }
             if (arg.startsWith("--mode=") || arg.startsWith("--level=")
                 || arg.startsWith("--output=") || arg.startsWith("--width=")
-                || arg.startsWith("--height=") || "--offline".equals(arg)) {
+                || arg.startsWith("--height=") || "--offline".equals(arg)
+                || "--diagnose-order".equals(arg) || "--all-levels".equals(arg)) {
                 continue;
             }
             if ("--mode".equals(arg) || "--level".equals(arg) || "--output".equals(arg)
