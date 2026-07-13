@@ -15,6 +15,7 @@ public final class AutomaticMatrixGroupingPipeline {
             countChanged |= runRetryMergeSweep(model);
             countChanged |= runCutSweep(model);
             if (!countChanged && model.getFrameCount() == before) {
+                model.sortFramesByUncleHierarchy();
                 return;
             }
         }

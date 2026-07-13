@@ -35,6 +35,50 @@ public final class Jogl4TileMatrixRenderer {
         }
     }
 
+    /** Draws the complete matrix for an orthographic offline capture. */
+    public void drawAllTilesTextured(GL2 gl2, FrameTileMatrix matrix, MatrixMergerState model) {
+        if (gl2 == null || matrix == null || matrix.getTiles() == null || model == null) {
+            return;
+        }
+        float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
+        gl2.glEnable(GL2.GL_TEXTURE_2D);
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            float x0 = tile.getJ() + offsetX;
+            float yTop = -tile.getI() + offsetY;
+            float x1 = x0 + 1.0f;
+            float yBottom = yTop - 1.0f;
+            TextureResident resident = acquireTexture(gl2, tile.getTextureFile(), model);
+            Texture texture = resident == null ? null : resident.texture();
+            if (texture == null) {
+                gl2.glDisable(GL2.GL_TEXTURE_2D);
+                gl2.glColor3f(0.75f, 0.78f, 0.82f);
+                gl2.glBegin(GL2.GL_QUADS);
+                gl2.glVertex3f(x0, yBottom, 0f);
+                gl2.glVertex3f(x1, yBottom, 0f);
+                gl2.glVertex3f(x1, yTop, 0f);
+                gl2.glVertex3f(x0, yTop, 0f);
+                gl2.glEnd();
+                gl2.glEnable(GL2.GL_TEXTURE_2D);
+                continue;
+            }
+            texture.bind(gl2);
+            TextureCoords tc = texture.getImageTexCoords();
+            gl2.glColor3f(1f, 1f, 1f);
+            gl2.glBegin(GL2.GL_QUADS);
+            gl2.glTexCoord2f(tc.left(), tc.bottom()); gl2.glVertex3f(x0, yBottom, 0f);
+            gl2.glTexCoord2f(tc.right(), tc.bottom()); gl2.glVertex3f(x1, yBottom, 0f);
+            gl2.glTexCoord2f(tc.right(), tc.top()); gl2.glVertex3f(x1, yTop, 0f);
+            gl2.glTexCoord2f(tc.left(), tc.top()); gl2.glVertex3f(x0, yTop, 0f);
+            gl2.glEnd();
+        }
+        gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+    }
+
     private void drawSurfaces(GL2 gl2, FrameTileMatrix matrix, boolean textured, MatrixMergerState model) {
         float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
         float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);

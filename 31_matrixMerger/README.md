@@ -98,7 +98,9 @@ Iterates through the full list:
 ### `processing.AutomaticGrouper` (`--mode auto`)
 
 Repeats retry-merge sweeps and west-cutter split sweeps over all frames until the frame
-count stabilizes. This is the batch equivalent of pressing `n` and `c` over every frame.
+count stabilizes. It then follows the uncle relationships between the resulting matrices,
+orders them from the top quadtree level to the deepest one, and selects the top level for
+the viewer. This is the batch equivalent of pressing `n` and `c` over every frame.
 
 ## Execution
 
@@ -119,8 +121,9 @@ them.
 - `<exportFolder>` (positional): destination folder for exported results. If omitted,
   nothing is exported and the HUD shows a red warning.
 - `--mode auto`: run the automatic grouper before opening the viewer (default: `manual`).
-- `--ofline` / `--offline`: run only the global full-set merge, print the matrix count
-  before/after, and exit without GUI and without exporting.
+- `--offline`: without `--level`, run only the global full-set merge and exit. With
+  `--level <n>`, render the zero-based matrix level to `/tmp/frame<n>.png` without GUI.
+- `--output <path>`, `--width <px>`, `--height <px>`: configure an offline level capture.
 
 ### Results export
 

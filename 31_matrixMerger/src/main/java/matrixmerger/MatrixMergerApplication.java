@@ -21,6 +21,8 @@ import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public final class MatrixMergerApplication {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
+    private static final int DEFAULT_OFFLINE_WIDTH = 1024;
+    private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
 
     private enum Mode {
         MANUAL,
@@ -28,7 +30,8 @@ public final class MatrixMergerApplication {
     }
 
     public void run(String[] args) {
-        boolean offline = hasArg(args, "--ofline") || hasArg(args, "--offline");
+        boolean offline = hasArg(args, "--offline");
+        boolean renderLevel = argValue(args, "--level") != null;
         Mode mode = parseMode(args);
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
             AppLogger.warn("Can not start OpenGL/JOGL.");
@@ -39,7 +42,7 @@ public final class MatrixMergerApplication {
         model.setOutputFolder(parseOutputFolder(args));
         Path outputPath = Path.of(OUTPUT_DIRECTORY);
         printMissingOutputFolderWarning(model);
-        if (offline) {
+        if (offline && !renderLevel) {
             int before = model.getMatrixCount();
             model.mergeFullSet();
             int after = model.getMatrixCount();
@@ -49,6 +52,10 @@ public final class MatrixMergerApplication {
         if (mode == Mode.AUTO) {
             new AutomaticMatrixGroupingPipeline().run(model);
         }
+        if (offline) {
+            renderOfflineLevel(model, args);
+            return;
+        }
         printMissingTopLevelUncles(model, outputPath);
         if (model.getOutputFolder() != null) {
             new MatrixLayerExportWriter(model, outputPath).export(model.getOutputFolder());
@@ -56,6 +63,26 @@ public final class MatrixMergerApplication {
         Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
         InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
         interactiveDebugger.launchDesktop();
+    }
+
+    private static void renderOfflineLevel(MatrixMergerState model, String[] args) {
+        int level = intArgValue(args, "--level", 0);
+        if (!model.selectFrameIndex(level)) {
+            AppLogger.warn(
+                "Level " + level + " is out of range [0, " + Math.max(0, model.getMatrixCount() - 1) + "]."
+            );
+            return;
+        }
+        String output = argValue(args, "--output");
+        if (output == null || output.isBlank()) {
+            output = "/tmp/frame" + level + ".png";
+        }
+        AppLogger.info("Rendering offline level " + level + " of " + model.getMatrixCount() + ".");
+        new Jogl4MatrixMergerRenderer(model).startOffscreen(
+            output,
+            intArgValue(args, "--width", DEFAULT_OFFLINE_WIDTH),
+            intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT)
+        );
     }
 
     private static MatrixMergerState createModel() {
@@ -172,6 +199,19 @@ public final class MatrixMergerApplication {
         return null;
     }
 
+    private static int intArgValue(String[] args, String flag, int fallback) {
+        String value = argValue(args, flag);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        }
+        catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
     private static String parseOutputFolder(String[] args) {
         if (args == null) {
             return null;
@@ -181,10 +221,13 @@ public final class MatrixMergerApplication {
             if (arg == null || arg.isBlank()) {
                 continue;
             }
-            if (arg.startsWith("--mode=") || "--offline".equals(arg) || "--ofline".equals(arg)) {
+            if (arg.startsWith("--mode=") || arg.startsWith("--level=")
+                || arg.startsWith("--output=") || arg.startsWith("--width=")
+                || arg.startsWith("--height=") || "--offline".equals(arg)) {
                 continue;
             }
-            if ("--mode".equals(arg)) {
+            if ("--mode".equals(arg) || "--level".equals(arg) || "--output".equals(arg)
+                || "--width".equals(arg) || "--height".equals(arg)) {
                 i++;
                 continue;
             }

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,7 +29,7 @@ public final class MatrixMergerState {
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private final PairwiseMatrixMerger matrixMerger = new PairwiseMatrixMerger();
     private final WestCutterMatrixSplitter matrixByWestCutterSplitter = new WestCutterMatrixSplitter();
-    private final Map<Integer, Integer> hierarchyLevelByFrameId = new LinkedHashMap<>();
+    private final Map<FrameMatrixSet, Integer> hierarchyLevelByFrame = new IdentityHashMap<>();
     private String outputFolder;
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
@@ -240,7 +241,7 @@ public final class MatrixMergerState {
     }
 
     public String getSelectedHierarchyLabel() {
-        Integer level = hierarchyLevelByFrameId.get(getSelectedFrameId());
+        Integer level = hierarchyLevelByFrame.get(getSelectedFrameMatrices());
         if (level == null || level < 0) {
             return null;
         }
@@ -296,6 +297,7 @@ public final class MatrixMergerState {
             return false;
         }
 
+        mergeHierarchyUncles(current, frameMatrices.get(nextFrameIndex));
         frameMatrices.remove(nextFrameIndex.intValue());
         maximumRetryCount = frameMatrices.size();
         normalizeSelection();
@@ -319,6 +321,7 @@ public final class MatrixMergerState {
         FrameTileMatrix a = current.getMatrices().get(0);
         FrameTileMatrix b = frameMatrices.get(nextFrameIndex).getMatrices().get(0);
         if (matrixMerger.merge(a, b)) {
+            mergeHierarchyUncles(current, frameMatrices.get(nextFrameIndex));
             frameMatrices.remove(nextFrameIndex.intValue());
             maximumRetryCount = frameMatrices.size();
             normalizeSelection();
@@ -444,6 +447,14 @@ public final class MatrixMergerState {
         lastMergeFailedForCurrentSelection = false;
     }
 
+    /** Orders the final matrices from the top quadtree level to the deepest one. */
+    public void sortFramesByUncleHierarchy() {
+        refreshHierarchyOrdering();
+        selectedFrameIndex = 0;
+        lastMergeFailedForCurrentSelection = false;
+        normalizeSelection();
+    }
+
     public synchronized long getGpuTextureBytesAssigned() {
         return gpuTextureBytesAssigned;
     }
@@ -560,6 +571,7 @@ public final class MatrixMergerState {
         FrameMatrixSet normalized = new FrameMatrixSet();
         normalized.setFrameId(frame.getFrameId());
         normalized.setMatrices(List.of(matrix));
+        normalized.setHierarchyUnclesByTileId(buildHierarchyUnclesByTileId(frame, matrix));
         return normalized;
     }
 
@@ -580,13 +592,13 @@ public final class MatrixMergerState {
     }
 
     private void refreshHierarchyOrdering() {
-        hierarchyLevelByFrameId.clear();
+        hierarchyLevelByFrame.clear();
         if (frameMatrices.isEmpty()) {
             return;
         }
 
-        int selectedFrameId = getSelectedFrameId();
-        Map<String, Integer> frameIdByTileId = buildFrameIdByTileId();
+        FrameMatrixSet selectedFrame = getSelectedFrameMatrices();
+        Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
         List<FrameHierarchyNode> hierarchyNodes = new ArrayList<>(frameMatrices.size());
         for (int frameIndex = 0; frameIndex < frameMatrices.size(); frameIndex++) {
             FrameMatrixSet frame = frameMatrices.get(frameIndex);
@@ -599,44 +611,32 @@ public final class MatrixMergerState {
                 return;
             }
 
-            LinkedHashSet<Integer> resolvedUncleFrameIds = new LinkedHashSet<>();
-            for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
-                if (tile == null || tile.getUncles() == null) {
-                    continue;
-                }
-                for (var relationship : tile.getUncles()) {
-                    if (relationship == null || relationship.uncleContentId() == null) {
-                        continue;
-                    }
-                    String normalizedUncleId = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
-                    if (normalizedUncleId == null || normalizedUncleId.isBlank()) {
-                        continue;
-                    }
-                    Integer uncleFrameId = frameIdByTileId.get(normalizedUncleId);
-                    if (uncleFrameId != null && uncleFrameId != frame.getFrameId()) {
-                        resolvedUncleFrameIds.add(uncleFrameId);
-                    }
+            LinkedHashSet<Integer> resolvedUncleFrameIndexes = new LinkedHashSet<>();
+            for (String normalizedUncleId : collectHierarchyUncleIds(frame)) {
+                Integer uncleFrameIndex = frameIndexByTileId.get(normalizedUncleId);
+                if (uncleFrameIndex != null && uncleFrameIndex != frameIndex) {
+                    resolvedUncleFrameIndexes.add(uncleFrameIndex);
                 }
             }
 
             UncleHudState state;
-            Integer parentFrameId = null;
-            if (resolvedUncleFrameIds.isEmpty()) {
+            Integer parentFrameIndex = null;
+            if (resolvedUncleFrameIndexes.isEmpty()) {
                 state = UncleHudState.TOPLEVEL;
             }
-            else if (resolvedUncleFrameIds.size() == 1) {
+            else if (resolvedUncleFrameIndexes.size() == 1) {
                 state = UncleHudState.NORMAL;
-                parentFrameId = resolvedUncleFrameIds.iterator().next();
+                parentFrameIndex = resolvedUncleFrameIndexes.iterator().next();
             }
             else {
                 return;
             }
-            hierarchyNodes.add(new FrameHierarchyNode(frame, frameIndex, state, parentFrameId));
+            hierarchyNodes.add(new FrameHierarchyNode(frame, frameIndex, state, parentFrameIndex));
         }
 
         List<FrameHierarchyNode> ordered = orderHierarchyNodes(hierarchyNodes);
         if (ordered == null || ordered.size() != frameMatrices.size()) {
-            hierarchyLevelByFrameId.clear();
+            hierarchyLevelByFrame.clear();
             return;
         }
 
@@ -655,12 +655,12 @@ public final class MatrixMergerState {
         }
 
         for (FrameHierarchyNode node : ordered) {
-            hierarchyLevelByFrameId.put(node.frame().getFrameId(), node.level());
+            hierarchyLevelByFrame.put(node.frame(), node.level());
         }
 
-        if (selectedFrameId != -1) {
+        if (selectedFrame != null) {
             for (int i = 0; i < frameMatrices.size(); i++) {
-                if (frameMatrices.get(i).getFrameId() == selectedFrameId) {
+                if (frameMatrices.get(i) == selectedFrame) {
                     selectedFrameIndex = i;
                     break;
                 }
@@ -674,14 +674,6 @@ public final class MatrixMergerState {
             return List.of();
         }
 
-        Map<Integer, FrameHierarchyNode> byFrameId = new LinkedHashMap<>();
-        for (FrameHierarchyNode node : nodes) {
-            if (node == null || node.frame() == null) {
-                return null;
-            }
-            byFrameId.put(node.frame().getFrameId(), node);
-        }
-
         List<FrameHierarchyNode> roots = new ArrayList<>();
         for (FrameHierarchyNode node : nodes) {
             if (node.state() == UncleHudState.TOPLEVEL) {
@@ -692,38 +684,38 @@ public final class MatrixMergerState {
             return null;
         }
 
-        Map<Integer, Integer> levelByFrameId = new LinkedHashMap<>();
+        Map<Integer, Integer> levelByFrameIndex = new LinkedHashMap<>();
         for (FrameHierarchyNode root : roots) {
-            levelByFrameId.put(root.frame().getFrameId(), 0);
+            levelByFrameIndex.put(root.originalIndex(), 0);
         }
 
         boolean changed = true;
         while (changed) {
             changed = false;
             for (FrameHierarchyNode node : nodes) {
-                if (node == null || node.state() != UncleHudState.NORMAL || node.parentFrameId() == null) {
+                if (node == null || node.state() != UncleHudState.NORMAL || node.parentFrameIndex() == null) {
                     continue;
                 }
-                Integer parentLevel = levelByFrameId.get(node.parentFrameId());
+                Integer parentLevel = levelByFrameIndex.get(node.parentFrameIndex());
                 if (parentLevel == null) {
                     continue;
                 }
                 int candidateLevel = parentLevel + 1;
-                Integer currentLevel = levelByFrameId.get(node.frame().getFrameId());
+                Integer currentLevel = levelByFrameIndex.get(node.originalIndex());
                 if (currentLevel == null || candidateLevel < currentLevel) {
-                    levelByFrameId.put(node.frame().getFrameId(), candidateLevel);
+                    levelByFrameIndex.put(node.originalIndex(), candidateLevel);
                     changed = true;
                 }
             }
         }
 
-        if (levelByFrameId.size() != nodes.size()) {
+        if (levelByFrameIndex.size() != nodes.size()) {
             return null;
         }
 
         List<FrameHierarchyNode> ordered = new ArrayList<>(nodes.size());
         for (FrameHierarchyNode node : nodes) {
-            Integer level = levelByFrameId.get(node.frame().getFrameId());
+            Integer level = levelByFrameIndex.get(node.originalIndex());
             if (level == null) {
                 return null;
             }
@@ -757,27 +749,114 @@ public final class MatrixMergerState {
         return frameIndexByTileId;
     }
 
-    private Map<String, Integer> buildFrameIdByTileId() {
-        Map<String, Integer> frameIdByTileId = new LinkedHashMap<>();
-        for (FrameMatrixSet frame : frameMatrices) {
-            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
-                continue;
-            }
-            FrameTileMatrix matrix = frame.getMatrices().get(0);
-            if (matrix == null || matrix.getTiles() == null) {
-                continue;
-            }
+    private static Map<String, List<String>> buildHierarchyUnclesByTileId(FrameMatrixSet frame, FrameTileMatrix matrix) {
+        Map<String, List<String>> inherited = frame == null ? null : frame.getHierarchyUnclesByTileId();
+        if (inherited != null && !inherited.isEmpty()) {
+            Map<String, List<String>> filtered = new LinkedHashMap<>();
             for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
-                if (tile == null) {
+                if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
                     continue;
                 }
-                String tileId = tile.getId();
-                if (tileId != null && !tileId.isBlank()) {
-                    frameIdByTileId.put(tileId, frame.getFrameId());
+                List<String> uncleIds = inherited.get(tile.getId());
+                if (uncleIds != null) {
+                    filtered.put(tile.getId(), new ArrayList<>(uncleIds));
+                }
+            }
+            if (!filtered.isEmpty()) {
+                return filtered;
+            }
+        }
+
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                continue;
+            }
+            LinkedHashSet<String> uncleIds = new LinkedHashSet<>();
+            if (tile.getUncles() != null) {
+                for (var relationship : tile.getUncles()) {
+                    if (relationship == null || relationship.uncleContentId() == null) {
+                        continue;
+                    }
+                    String normalizedUncleId = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
+                    if (normalizedUncleId != null && !normalizedUncleId.isBlank()) {
+                        uncleIds.add(normalizedUncleId);
+                    }
+                }
+            }
+            out.put(tile.getId(), new ArrayList<>(uncleIds));
+        }
+        return out;
+    }
+
+    private static void mergeHierarchyUncles(FrameMatrixSet current, FrameMatrixSet mergedAway) {
+        if (current == null || mergedAway == null) {
+            return;
+        }
+        Map<String, List<String>> merged = new LinkedHashMap<>();
+        mergeHierarchyUncleMap(merged, current.getHierarchyUnclesByTileId());
+        mergeHierarchyUncleMap(merged, mergedAway.getHierarchyUnclesByTileId());
+        current.setHierarchyUnclesByTileId(merged);
+    }
+
+    private static void mergeHierarchyUncleMap(
+        Map<String, List<String>> target,
+        Map<String, List<String>> source
+    ) {
+        if (source == null || source.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, List<String>> entry : source.entrySet()) {
+            if (entry == null || entry.getKey() == null || entry.getKey().isBlank()) {
+                continue;
+            }
+            LinkedHashSet<String> uncleIds = new LinkedHashSet<>(target.getOrDefault(entry.getKey(), List.of()));
+            if (entry.getValue() != null) {
+                uncleIds.addAll(entry.getValue());
+            }
+            target.put(entry.getKey(), new ArrayList<>(uncleIds));
+        }
+    }
+
+    private static LinkedHashSet<String> collectHierarchyUncleIds(FrameMatrixSet frame) {
+        LinkedHashSet<String> uncleIds = new LinkedHashSet<>();
+        if (frame == null) {
+            return uncleIds;
+        }
+        Map<String, List<String>> hierarchyUnclesByTileId = frame.getHierarchyUnclesByTileId();
+        if (hierarchyUnclesByTileId != null && !hierarchyUnclesByTileId.isEmpty()) {
+            for (List<String> ids : hierarchyUnclesByTileId.values()) {
+                if (ids == null) {
+                    continue;
+                }
+                for (String id : ids) {
+                    String normalized = WestCuttersJsonReader.normalizeScopedTileId(id);
+                    if (normalized != null && !normalized.isBlank()) {
+                        uncleIds.add(normalized);
+                    }
+                }
+            }
+            if (!uncleIds.isEmpty()) {
+                return uncleIds;
+            }
+        }
+
+        FrameTileMatrix matrix = frame.getMatrices().get(0);
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || tile.getUncles() == null) {
+                continue;
+            }
+            for (var relationship : tile.getUncles()) {
+                if (relationship == null || relationship.uncleContentId() == null) {
+                    continue;
+                }
+                String normalized = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
+                if (normalized != null && !normalized.isBlank()) {
+                    uncleIds.add(normalized);
                 }
             }
         }
-        return frameIdByTileId;
+        return uncleIds;
     }
 
     private Map<String, UncleTileLocation> buildLocatedUncleTiles(Set<String> uncleTileIds) {
@@ -849,15 +928,15 @@ public final class MatrixMergerState {
         FrameMatrixSet frame,
         int originalIndex,
         UncleHudState state,
-        Integer parentFrameId,
+        Integer parentFrameIndex,
         int level
     ) {
-        private FrameHierarchyNode(FrameMatrixSet frame, int originalIndex, UncleHudState state, Integer parentFrameId) {
-            this(frame, originalIndex, state, parentFrameId, -1);
+        private FrameHierarchyNode(FrameMatrixSet frame, int originalIndex, UncleHudState state, Integer parentFrameIndex) {
+            this(frame, originalIndex, state, parentFrameIndex, -1);
         }
 
         private FrameHierarchyNode withLevel(int newLevel) {
-            return new FrameHierarchyNode(frame, originalIndex, state, parentFrameId, newLevel);
+            return new FrameHierarchyNode(frame, originalIndex, state, parentFrameIndex, newLevel);
         }
     }
 }

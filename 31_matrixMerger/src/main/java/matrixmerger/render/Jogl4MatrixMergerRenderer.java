@@ -5,17 +5,25 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.GLCapabilities;
+import com.jogamp.opengl.GLDrawableFactory;
 import com.jogamp.opengl.GLEventListener;
+import com.jogamp.opengl.GLOffscreenAutoDrawable;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
 import java.awt.geom.Rectangle2D;
+import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import matrixmerger.model.contract.FrameTileMatrix;
 import matrixmerger.model.state.MatrixMergerState;
 import com.jogamp.opengl.glu.GLU;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBImageUncompressed;
 
 public final class Jogl4MatrixMergerRenderer implements GLEventListener {
     private final MatrixMergerState model;
@@ -23,6 +31,9 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
     private final Jogl4TileMatrixRenderer tileMatrixRenderer;
     private TextRenderer hudTextRenderer;
     private String lastPrintedUncleSignature;
+    private boolean offlineMode;
+    private boolean offlineCaptureDone;
+    private String offlineOutputPath;
 
     public Jogl4MatrixMergerRenderer(MatrixMergerState model) {
         this.model = model;
@@ -42,6 +53,28 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
 
     public CameraControllerOrbiter getCameraController() {
         return cameraController;
+    }
+
+    public void startOffscreen(String outputPath, int width, int height) {
+        offlineMode = true;
+        offlineCaptureDone = false;
+        offlineOutputPath = outputPath;
+
+        GLProfile profile = GLProfile.get(GLProfile.GL4bc);
+        GLCapabilities caps = new GLCapabilities(profile);
+        caps.setDoubleBuffered(false);
+        GLDrawableFactory creator = GLDrawableFactory.getFactory(profile);
+        GLOffscreenAutoDrawable drawable = creator.createOffscreenAutoDrawable(
+            null, caps, null, Math.max(1, width), Math.max(1, height)
+        );
+        try {
+            drawable.addGLEventListener(this);
+            drawable.display();
+        }
+        finally {
+            drawable.removeGLEventListener(this);
+            drawable.destroy();
+        }
     }
 
     @Override
@@ -70,6 +103,17 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
 
         FrameTileMatrix selected = model.getSelectedMatrix();
+        if (offlineMode) {
+            if (selected != null) {
+                applyOrthographicMatrixFraming(gl2, drawable, selected);
+                tileMatrixRenderer.drawAllTilesTextured(gl2, selected, model);
+            }
+            if (!offlineCaptureDone) {
+                offlineCaptureDone = true;
+                captureOffscreen(drawable, gl2);
+            }
+            return;
+        }
         if (selected != null) {
             Matrix4x4d projection = model.getViewingCamera().calculateViewVolumeMatrix();
             float[] modelView = model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder();
@@ -91,6 +135,52 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         GL4 gl = drawable.getGL().getGL4();
         gl.glViewport(0, 0, xSize, ySize);
         model.getViewingCamera().updateViewportResize(xSize, ySize);
+    }
+
+    private static void applyOrthographicMatrixFraming(
+        GL2 gl2,
+        GLAutoDrawable drawable,
+        FrameTileMatrix matrix
+    ) {
+        double neededHalfWidth = Math.max(1, matrix.getCols()) * 0.5 + 0.5;
+        double neededHalfHeight = Math.max(1, matrix.getRows()) * 0.5 + 0.5;
+        double aspect = (double) Math.max(1, drawable.getSurfaceWidth()) / Math.max(1, drawable.getSurfaceHeight());
+        double halfHeight = Math.max(neededHalfHeight, neededHalfWidth / aspect);
+        double halfWidth = halfHeight * aspect;
+        gl2.glMatrixMode(GL2.GL_PROJECTION);
+        gl2.glLoadIdentity();
+        gl2.glOrtho(-halfWidth, halfWidth, -halfHeight, halfHeight, -10.0, 10.0);
+        gl2.glMatrixMode(GL2.GL_MODELVIEW);
+        gl2.glLoadIdentity();
+    }
+
+    private void captureOffscreen(GLAutoDrawable drawable, GL2 gl2) {
+        int width = Math.max(1, drawable.getSurfaceWidth());
+        int height = Math.max(1, drawable.getSurfaceHeight());
+        ByteBuffer pixels = ByteBuffer.allocateDirect(3 * width * height);
+        gl2.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1);
+        gl2.glReadPixels(0, 0, width, height, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, pixels);
+
+        RGBImageUncompressed image = new RGBImageUncompressed();
+        image.init(width, height);
+        int offset = 0;
+        for (int y = height - 1; y >= 0; y--) {
+            for (int x = 0; x < width; x++) {
+                image.putPixel(x, y, pixels.get(offset++), pixels.get(offset++), pixels.get(offset++));
+            }
+        }
+        File output = new File(offlineOutputPath);
+        try {
+            Path parent = output.toPath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            ImagePersistence.exportPNG(output, image);
+            System.out.println("Offline image written to: " + output.getAbsolutePath());
+        }
+        catch (Exception e) {
+            throw new IllegalStateException("Could not write offline image: " + e.getMessage(), e);
+        }
     }
 
     private void drawHud(GLAutoDrawable drawable) {

@@ -3,6 +3,7 @@ package matrixmerger.processing;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import matrixmerger.model.contract.FrameMatrixSet;
 import matrixmerger.model.contract.FrameTileMatrix;
@@ -114,6 +115,7 @@ public final class WestCutterMatrixSplitter {
         FrameMatrixSet mainFrame = new FrameMatrixSet();
         mainFrame.setFrameId(frame.getFrameId());
         mainFrame.setMatrices(List.of(rightMatrix));
+        mainFrame.setHierarchyUnclesByTileId(filterHierarchyUncles(frame, rightTiles));
 
         int leftMaxJ = Integer.MIN_VALUE;
         for (FrameTileMatrix.TileCoord tile : leftTiles) {
@@ -128,6 +130,7 @@ public final class WestCutterMatrixSplitter {
         FrameMatrixSet transientFrame = new FrameMatrixSet();
         transientFrame.setFrameId(-1);
         transientFrame.setMatrices(List.of(leftMatrix));
+        transientFrame.setHierarchyUnclesByTileId(filterHierarchyUncles(frame, leftTiles));
         return new SplitResult(mainFrame, transientFrame);
     }
 
@@ -186,7 +189,28 @@ public final class WestCutterMatrixSplitter {
         FrameMatrixSet out = new FrameMatrixSet();
         out.setFrameId(frame.getFrameId());
         out.setMatrices(List.of(matrixCopy));
+        out.setHierarchyUnclesByTileId(frame.getHierarchyUnclesByTileId());
         return out;
+    }
+
+    private static Map<String, List<String>> filterHierarchyUncles(
+        FrameMatrixSet frame,
+        List<FrameTileMatrix.TileCoord> tiles
+    ) {
+        Map<String, List<String>> filtered = new java.util.LinkedHashMap<>();
+        if (frame == null || frame.getHierarchyUnclesByTileId() == null || tiles == null) {
+            return filtered;
+        }
+        for (FrameTileMatrix.TileCoord tile : tiles) {
+            if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                continue;
+            }
+            List<String> uncleIds = frame.getHierarchyUnclesByTileId().get(tile.getId());
+            if (uncleIds != null) {
+                filtered.put(tile.getId(), uncleIds);
+            }
+        }
+        return filtered;
     }
 
     private static FrameTileMatrix firstMatrix(FrameMatrixSet frame) {
