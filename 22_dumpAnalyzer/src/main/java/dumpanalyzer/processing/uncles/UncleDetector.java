@@ -19,18 +19,35 @@ public final class UncleDetector {
     private static final int DEBUG_FRAME_ID = 50;
     private static final Set<String> DEBUG_TILE_IDS = Set.of("50_97", "50_53");
 
-    public List<ToUncleRelationship> detect(Frame frame, TileInstance tile) {
+    public Object prepareCandidates(Frame frame) {
+        if (frame == null || frame.getTiles().isEmpty()) {
+            return List.of();
+        }
+        List<PreparedCandidate> preparedCandidates = new ArrayList<>();
+        for (TileInstance candidate : frame.getTiles()) {
+            CandidateProfile profile = classifyCandidate(candidate);
+            if (profile != null) {
+                preparedCandidates.add(new PreparedCandidate(candidate, profile));
+            }
+        }
+        return List.copyOf(preparedCandidates);
+    }
+
+    public List<ToUncleRelationship> detect(Frame frame, TileInstance tile, Object preparedCandidatesRef) {
         if (frame == null || tile == null || tile.getTriangleStrip() == null) {
             return List.of();
         }
 
+        @SuppressWarnings("unchecked")
+        List<PreparedCandidate> preparedCandidates = preparedCandidatesRef instanceof List<?>
+            ? (List<PreparedCandidate>) preparedCandidatesRef
+            : List.of();
+
         List<ToUncleRelationship> relationships = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        for (TileInstance candidate : frame.getTiles()) {
-            CandidateProfile profile = classifyCandidate(candidate);
-            if (profile == null) {
-                continue;
-            }
+        for (PreparedCandidate preparedCandidate : preparedCandidates) {
+            TileInstance candidate = preparedCandidate.tile();
+            CandidateProfile profile = preparedCandidate.profile();
             debug(frame, tile, candidate, "candidate profile: " + profile.debugSummary());
 
             for (UncleDirections direction : detectRelationshipsAgainstCandidate(tile, candidate, profile)) {
@@ -49,15 +66,8 @@ public final class UncleDetector {
         CandidateProfile profile
     ) {
         if (profile.simpleBounds() != null) {
-            TriangleMeshVertexComparator.ComparisonResult comparison = COMPARATOR.compare(
-                tile,
-                candidate,
-                null,
-                0,
-                0,
-                null,
-                false
-            );
+            TriangleMeshVertexComparator.ComparisonResult comparison =
+                COMPARATOR.compare(tile.getTriangleStrip(), profile.geometry());
             if (!comparison.areNeighbors() || comparison.directionFromAtoB() == null) {
                 return List.of();
             }
@@ -77,13 +87,14 @@ public final class UncleDetector {
             return null;
         }
 
+        TileInstance.TriangleStripGeometry geometry = candidate.getTriangleStrip();
         UvBounds simpleBounds = computeUvBounds(candidate);
-        if (candidate.getTriangleStrip() != null
+        if (geometry != null
             && simpleBounds != null
             && simpleBounds.isDirectUncleRange()
             && simpleBounds.hasAdequateDirectUncleScale()
             && !candidate.isFullResolutionWithRespectToTexture()) {
-            return new CandidateProfile(simpleBounds, null, null);
+            return new CandidateProfile(geometry, simpleBounds, null, null);
         }
 
         List<StripQuadrantInfo> stripInfos = classifyStripQuadrants(candidate);
@@ -92,7 +103,7 @@ public final class UncleDetector {
         }
         Map<UncleDirections, StripQuadrantInfo> stripsByQuadrant = new EnumMap<>(UncleDirections.class);
         for (StripQuadrantInfo info : stripInfos) {
-            if (info == null || info.quadrant() == null || info.proxyTile() == null) {
+            if (info == null || info.quadrant() == null || info.geometry() == null) {
                 return null;
             }
             stripsByQuadrant.put(info.quadrant(), info);
@@ -112,7 +123,7 @@ public final class UncleDetector {
             return null;
         }
         UncleDirections missingQuadrant = missing.iterator().next();
-        return new CandidateProfile(null, missingQuadrant, stripsByQuadrant);
+        return new CandidateProfile(geometry, null, missingQuadrant, stripsByQuadrant);
     }
 
     private static UvBounds computeUvBounds(TileInstance tile) {
@@ -156,8 +167,8 @@ public final class UncleDetector {
             List<Vector3Dd> uv = texCoords.get(i);
             UvBounds bounds = computeUvBounds(uv);
             UncleDirections quadrant = classifyQuadrant(bounds);
-            TileInstance proxy = buildProxyTile(tile, strip, uv, i);
-            out.add(new StripQuadrantInfo(i, quadrant, bounds, proxy));
+            TileInstance.TriangleStripGeometry geometry = TileInstance.buildTriangleStripGeometry(strip, uv);
+            out.add(new StripQuadrantInfo(i, quadrant, bounds, geometry));
         }
         return out;
     }
@@ -216,18 +227,11 @@ public final class UncleDetector {
         TriangleMeshVertexComparator.Direction expectedDirection
     ) {
         StripQuadrantInfo info = stripsByQuadrant.get(occupiedQuadrant);
-        if (info == null || info.proxyTile() == null) {
+        if (info == null || info.geometry() == null) {
             return false;
         }
-        TriangleMeshVertexComparator.ComparisonResult comparison = COMPARATOR.compare(
-            tile,
-            info.proxyTile(),
-            null,
-            0,
-            0,
-            null,
-            false
-        );
+        TriangleMeshVertexComparator.ComparisonResult comparison =
+            COMPARATOR.compare(tile.getTriangleStrip(), info.geometry());
         return comparison.areNeighbors() && comparison.directionFromAtoB() == expectedDirection;
     }
 
@@ -250,39 +254,6 @@ public final class UncleDetector {
             return UncleDirections.EAST_NORTH;
         }
         return null;
-    }
-
-    private static TileInstance buildProxyTile(
-        TileInstance source,
-        List<Vector3Dd> strip,
-        List<Vector3Dd> uv,
-        int stripIndex
-    ) {
-        if (source == null || strip == null || uv == null || strip.isEmpty() || strip.size() != uv.size()) {
-            return null;
-        }
-        return new TileInstance(
-            source.getContentId() + "#strip" + stripIndex,
-            source.getTextureFile(),
-            null,
-            null,
-            null,
-            null,
-            strip.get(0),
-            strip.get(0),
-            strip,
-            List.of(strip),
-            List.of(uv),
-            "GL_TRIANGLE_STRIP",
-            0,
-            0L,
-            strip.size(),
-            strip.size(),
-            false,
-            "",
-            source.getProjectionMatrix(),
-            source.getModelViewMatrix()
-        );
     }
 
     private static UncleDirections mapUncleDirection(
@@ -360,6 +331,7 @@ public final class UncleDetector {
     }
 
     private record CandidateProfile(
+        TileInstance.TriangleStripGeometry geometry,
         UvBounds simpleBounds,
         UncleDirections missingQuadrant,
         Map<UncleDirections, StripQuadrantInfo> stripsByQuadrant
@@ -377,6 +349,11 @@ public final class UncleDetector {
         int stripIndex,
         UncleDirections quadrant,
         UvBounds bounds,
-        TileInstance proxyTile
+        TileInstance.TriangleStripGeometry geometry
+    ) {}
+
+    private record PreparedCandidate(
+        TileInstance tile,
+        CandidateProfile profile
     ) {}
 }

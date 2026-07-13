@@ -160,7 +160,7 @@ public final class CameraProcessor {
         return matcher.group(1);
     }
 
-    private static SceneMatrices extractLastSceneMatrices(String normalizedContent) {
+    public static SceneMatrices extractLastSceneMatrices(String normalizedContent) {
         if (normalizedContent == null || normalizedContent.isBlank()) {
             return new SceneMatrices(null, null);
         }
@@ -292,5 +292,5 @@ public final class CameraProcessor {
         return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 
-    private record SceneMatrices(double[] projection, double[] modelView) {}
+    public record SceneMatrices(double[] projection, double[] modelView) {}
 }

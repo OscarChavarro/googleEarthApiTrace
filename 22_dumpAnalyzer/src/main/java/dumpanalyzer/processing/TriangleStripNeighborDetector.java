@@ -68,19 +68,8 @@ public final class TriangleStripNeighborDetector {
                 if (!aToB.areNeighbors() || aToB.directionFromAtoB() == null) {
                     continue;
                 }
-                TriangleMeshVertexComparator.ComparisonResult bToA = COMPARATOR.compare(
-                    tileB,
-                    tileA,
-                    projection,
-                    viewportWidth,
-                    viewportHeight,
-                    frameModelView,
-                    useGoogleCameraView
-                );
                 assignDirectionalNeighbor(tiles, a, b, aToB.directionFromAtoB(), aToB.distanceSquared());
-                if (bToA.areNeighbors() && bToA.directionFromAtoB() != null) {
-                    assignDirectionalNeighbor(tiles, b, a, bToA.directionFromAtoB(), bToA.distanceSquared());
-                }
+                assignDirectionalNeighbor(tiles, b, a, opposite(aToB.directionFromAtoB()), aToB.distanceSquared());
             }
         }
 
@@ -213,6 +202,15 @@ public final class TriangleStripNeighborDetector {
         }
         TileInstance tile = tiles.get(index);
         return tile == null ? null : tile.getContentId();
+    }
+
+    private static TriangleMeshVertexComparator.Direction opposite(TriangleMeshVertexComparator.Direction direction) {
+        return switch (direction) {
+            case EAST -> TriangleMeshVertexComparator.Direction.WEST;
+            case WEST -> TriangleMeshVertexComparator.Direction.EAST;
+            case NORTH -> TriangleMeshVertexComparator.Direction.SOUTH;
+            case SOUTH -> TriangleMeshVertexComparator.Direction.NORTH;
+        };
     }
 
     private record Candidate(int tileIndex) {}

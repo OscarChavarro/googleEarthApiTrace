@@ -9,12 +9,14 @@ public final class TriangleStripTileTopology2DirectionMapper {
     private final TriangleStripTileClassifier classifier = new TriangleStripTileClassifier();
 
     public List<Vector3Dd> directionBorderPoints(TileInstance tile, Direction direction) {
-        if (tile == null || direction == null) {
+        if (tile == null) {
             return List.of();
         }
+        return directionBorderPoints(tile.getTriangleStrip(), direction);
+    }
 
-        TileInstance.TriangleStripGeometry geometry = tile.getTriangleStrip();
-        if (geometry == null) {
+    public List<Vector3Dd> directionBorderPoints(TileInstance.TriangleStripGeometry geometry, Direction direction) {
+        if (geometry == null || direction == null) {
             return List.of();
         }
 

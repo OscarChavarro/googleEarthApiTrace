@@ -9,7 +9,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import dumpanalyzer.io.parser.FunctionCounter;
 import dumpanalyzer.io.parser.TraceProcessor;
 import dumpanalyzer.logger.ConcurrentMessages;
 import dumpanalyzer.logger.FatalErrorHandler;
@@ -38,7 +37,6 @@ public final class TraceSessionFrameImporter {
         List<String> frameDirectories = scanDirectSubdirectories(outputRoot);
         System.out.println("OK");
 
-        FunctionCounter counter = new FunctionCounter();
         int workerCount = Runtime.getRuntime().availableProcessors();
         FrameTexturePathResolver.scanFrameDirectoriesParallel(frameDirectories, model, workerCount);
 
@@ -89,7 +87,7 @@ public final class TraceSessionFrameImporter {
         Thread[] workers = new Thread[workerCount];
         for (int i = 0; i < workerCount; i++) {
             int workerId = i;
-            TraceProcessor processor = new TraceProcessor(counter);
+            TraceProcessor processor = new TraceProcessor();
             workers[i] = createWorker(frameQueue, logQueue, processor, model, progressProducer, workerId);
             workers[i].start();
         }
@@ -100,7 +98,7 @@ public final class TraceSessionFrameImporter {
         progressProducer.finish();
         joinOrFail(progressThread, "progress");
 
-        model.selectFirstFrameWithTiles();
+        model.finishFrameImport();
 
         ConcurrentMessages.putLogMessage(outputRoot, logQueue, ConcurrentMessages.LOG_POISON);
         joinOrFail(loggerThread, "logger");
@@ -126,7 +124,7 @@ public final class TraceSessionFrameImporter {
                     continue;
                 }
                 Frame frame = processor.processFrame(frameId, glFilePath, logQueue);
-                model.addFrame(frame);
+                model.addFrameDuringImport(frame);
                 progressProducer.update(0, 1, 1);
             }
         }, "frame-worker-" + workerId);

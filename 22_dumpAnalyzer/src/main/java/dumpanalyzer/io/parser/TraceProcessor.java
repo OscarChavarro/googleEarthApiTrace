@@ -22,10 +22,7 @@ import dumpanalyzer.model.Frame;
 import vsdk.toolkit.environment.camera.Camera;
 
 public class TraceProcessor {
-    private final FunctionCounter functionCounter;
-
-    public TraceProcessor(FunctionCounter functionCounter) {
-        this.functionCounter = functionCounter;
+    public TraceProcessor() {
     }
 
     public Frame processFrame(int frame, String filename, BlockingQueue<String> logQueue) {
@@ -42,13 +39,13 @@ public class TraceProcessor {
 
         String normalized = LogicalLineProcessor.normalize(content);
         parseOrFail(filePath, normalized);
-        functionCounter.addFromContent(normalized);
 
         TilesProcessor.FrameGeometry frameGeometry = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
         List<dumpanalyzer.model.TileInstance> tiles = frameGeometry.tiles();
         dumpanalyzer.model.TileInstance lastTile = tiles.isEmpty() ? null : tiles.get(tiles.size() - 1);
-        double[] sceneProjectionMatrix = CameraProcessor.extractProjectionMatrix(normalized);
-        double[] sceneModelViewMatrix = CameraProcessor.extractModelViewMatrix(normalized);
+        CameraProcessor.SceneMatrices sceneMatrices = CameraProcessor.extractLastSceneMatrices(normalized);
+        double[] sceneProjectionMatrix = sceneMatrices.projection();
+        double[] sceneModelViewMatrix = sceneMatrices.modelView();
         double[] tileProjectionMatrix = lastTile == null ? null : lastTile.getProjectionMatrix();
         double[] tileModelViewMatrix = lastTile == null ? null : lastTile.getModelViewMatrix();
 

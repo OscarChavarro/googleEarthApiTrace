@@ -33,14 +33,33 @@ public final class TriangleMeshVertexComparator {
         if (a == null || b == null) {
             return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
         }
+        return compare(a.getTriangleStrip(), b.getTriangleStrip());
+    }
 
-        TileInstance.TriangleStripGeometry ga = a.getTriangleStrip();
-        TileInstance.TriangleStripGeometry gb = b.getTriangleStrip();
+    public ComparisonResult compare(
+        TileInstance a,
+        TileInstance.TriangleStripGeometry bGeometry,
+        Matrix4x4d projection,
+        int viewportWidth,
+        int viewportHeight,
+        double[] frameModelView,
+        boolean useGoogleCameraView
+    ) {
+        if (a == null) {
+            return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
+        }
+        return compare(a.getTriangleStrip(), bGeometry);
+    }
+
+    public ComparisonResult compare(
+        TileInstance.TriangleStripGeometry ga,
+        TileInstance.TriangleStripGeometry gb
+    ) {
         if (ga == null || gb == null || ga.vertices().isEmpty() || gb.vertices().isEmpty()) {
             return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
         }
 
-        Direction direction = detectDirectionFromOrderedBorders(a, b);
+        Direction direction = detectDirectionFromOrderedBorders(ga, gb);
         if (direction == null) {
             return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
         }
@@ -49,7 +68,10 @@ public final class TriangleMeshVertexComparator {
         return new ComparisonResult(true, direction, distanceSquared);
     }
 
-    private static Direction detectDirectionFromOrderedBorders(TileInstance a, TileInstance b) {
+    private static Direction detectDirectionFromOrderedBorders(
+        TileInstance.TriangleStripGeometry a,
+        TileInstance.TriangleStripGeometry b
+    ) {
         if (bordersMatch(a, Direction.EAST, b, Direction.WEST)) {
             return Direction.EAST;
         }
@@ -66,9 +88,9 @@ public final class TriangleMeshVertexComparator {
     }
 
     private static boolean bordersMatch(
-        TileInstance a,
+        TileInstance.TriangleStripGeometry a,
         Direction dirA,
-        TileInstance b,
+        TileInstance.TriangleStripGeometry b,
         Direction dirB
     ) {
         List<Vector3Dd> borderA = TOPOLOGY_MAPPER.directionBorderPoints(a, toProcessingDirection(dirA));

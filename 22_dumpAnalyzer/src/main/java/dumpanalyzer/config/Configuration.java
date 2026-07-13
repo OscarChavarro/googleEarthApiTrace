@@ -9,6 +9,7 @@ public final class Configuration {
     public static final Path OUTPUT_ROOT = loadOutputRoot();
     public static final long GPU_RAM_TEXTURE_LIMIT = 10L * 1024L * 1024L * 1024L;
     public static final double FRAME_WRITER_THREADS_CORES_RATIO = 0.50;
+    public static final double FRAME_NEIGHBOR_THREADS_CORES_RATIO = 0.50;
 
     private Configuration() {
     }

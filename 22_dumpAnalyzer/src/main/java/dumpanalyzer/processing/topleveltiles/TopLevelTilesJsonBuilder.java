@@ -7,7 +7,6 @@ import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
-import dumpanalyzer.processing.TriangleStripNeighborDetector;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,7 +20,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorConsumer;
 import vsdk.toolkit.gui.feedback.parallel.ParallelProgressMonitorEvent;
@@ -128,7 +126,6 @@ public final class TopLevelTilesJsonBuilder {
         }
         TopLevelTileNeighborDetector.populateNeighbors(frame);
         List<TileInstance> selectableTiles = buildSelectableTiles(frame);
-        populateSelectableNeighbors(frame, selectableTiles);
         frame.setSelectableTilesOverride(selectableTiles);
         return new FramePatchStats(
             toSortedTileGeometrySizeCountRecords(tileGeometrySizeToCountMap)
@@ -147,45 +144,6 @@ public final class TopLevelTilesJsonBuilder {
             selectableTiles.add(tile);
         }
         return selectableTiles.isEmpty() ? List.of() : List.copyOf(selectableTiles);
-    }
-
-    private static void populateSelectableNeighbors(Frame frame, List<TileInstance> selectableTiles) {
-        if (frame == null || selectableTiles == null || selectableTiles.isEmpty()) {
-            return;
-        }
-        Frame selectableFrame = new Frame(
-            frame.getId(),
-            selectableTiles,
-            List.of(),
-            frame.getProjectionMatrix(),
-            frame.getModelViewMatrix(),
-            frame.getGoogleCamera()
-        );
-        Matrix4x4d projection = matrixFromColumnMajor(frame.getProjectionMatrix());
-        if (projection == null) {
-            return;
-        }
-        TriangleStripNeighborDetector.populateNeighbors(
-            selectableFrame,
-            projection,
-            1,
-            1,
-            frame.getModelViewMatrix(),
-            true
-        );
-    }
-
-    private static Matrix4x4d matrixFromColumnMajor(double[] m) {
-        if (m == null || m.length != 16) {
-            return null;
-        }
-        Matrix4x4d out = new Matrix4x4d();
-        for (int row = 0; row < 4; row++) {
-            for (int col = 0; col < 4; col++) {
-                out = out.withVal(row, col, m[col * 4 + row]);
-            }
-        }
-        return out;
     }
 
     private static void consumeAndProcessFrames(

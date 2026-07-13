@@ -56,6 +56,20 @@ public final class DumpAnalyzerState {
         notifyListeners();
     }
 
+    public void addFrameDuringImport(Frame frame) {
+        if (frame == null) {
+            return;
+        }
+        framesById.put(frame.getId(), frame);
+    }
+
+    public void finishFrameImport() {
+        selectFirstFrameWithTilesInternal();
+        clampSelection();
+        updateGoogleCameraFromSelection();
+        notifyListeners();
+    }
+
     public void replaceFrame(Frame frame) {
         if (frame == null) {
             return;
@@ -262,20 +276,26 @@ public final class DumpAnalyzerState {
     }
 
     public void selectFirstFrameWithTiles() {
+        if (selectFirstFrameWithTilesInternal()) {
+            clampSelection();
+            updateGoogleCameraFromSelection();
+            notifyListeners();
+        }
+    }
+
+    private boolean selectFirstFrameWithTilesInternal() {
         List<Frame> frames = snapshotFrames();
         if (frames.isEmpty()) {
-            return;
+            return false;
         }
         for (int i = 0; i < frames.size(); i++) {
             if (!frames.get(i).getSelectableTiles().isEmpty()) {
                 selectedFrameIndex.set(i);
                 selectedTileIndex.set(SELECT_ALL_TILES);
-                clampSelection();
-                updateGoogleCameraFromSelection();
-                notifyListeners();
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     public TileInstance getSelectedTile() {

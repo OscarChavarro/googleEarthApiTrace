@@ -31,6 +31,8 @@ public final class TileInstance {
     private final String skipReason;
     private final double[] projectionMatrix;
     private final double[] modelViewMatrix;
+    private volatile List<TriangleStripGeometry> cachedTriangleStripGeometries;
+    private volatile TriangleStripGeometry cachedTriangleStrip;
     private volatile int detectedSouthNeighborIndex = NO_NEIGHBOR;
     private volatile int detectedNorthNeighborIndex = NO_NEIGHBOR;
     private volatile int detectedEastNeighborIndex = NO_NEIGHBOR;
@@ -278,15 +280,25 @@ public final class TileInstance {
         if (skipped || !"GL_TRIANGLE_STRIP".equals(primitive)) {
             return null;
         }
+        TriangleStripGeometry cached = cachedTriangleStrip;
+        if (cached != null) {
+            return cached;
+        }
         List<TriangleStripGeometry> geometries = getTriangleStripGeometries();
         if (geometries.size() != 1) {
             return null;
         }
-        return geometries.get(0);
+        TriangleStripGeometry geometry = geometries.get(0);
+        cachedTriangleStrip = geometry;
+        return geometry;
     }
 
     @JsonIgnore
     public List<TriangleStripGeometry> getTriangleStripGeometries() {
+        List<TriangleStripGeometry> cached = cachedTriangleStripGeometries;
+        if (cached != null) {
+            return cached;
+        }
         if (!"GL_TRIANGLE_STRIP".equals(primitive)) {
             return List.of();
         }
@@ -296,15 +308,20 @@ public final class TileInstance {
         }
         java.util.ArrayList<TriangleStripGeometry> geometries = new java.util.ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            TriangleStripGeometry geometry = toTriangleStripGeometry(strips.get(i), stripTexCoords.get(i));
+            TriangleStripGeometry geometry = buildTriangleStripGeometry(strips.get(i), stripTexCoords.get(i));
             if (geometry != null) {
                 geometries.add(geometry);
             }
         }
-        return List.copyOf(geometries);
+        List<TriangleStripGeometry> built = List.copyOf(geometries);
+        cachedTriangleStripGeometries = built;
+        if (built.size() == 1) {
+            cachedTriangleStrip = built.get(0);
+        }
+        return built;
     }
 
-    private static TriangleStripGeometry toTriangleStripGeometry(List<Vector3Dd> strip, List<Vector3Dd> uv) {
+    public static TriangleStripGeometry buildTriangleStripGeometry(List<Vector3Dd> strip, List<Vector3Dd> uv) {
         if (strip == null || uv == null || strip.size() < 3 || strip.size() != uv.size()) {
             return null;
         }
