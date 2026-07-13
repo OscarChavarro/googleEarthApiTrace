@@ -1,6 +1,7 @@
 package matrixmerger.model.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,6 +89,24 @@ final class MatrixMergerStateTest {
 
         assertEquals(List.of("00020_1", "00010_1"), state.getFrameMatrices().stream()
             .map(MatrixMergerStateTest::tileId)
+            .toList());
+    }
+
+    @Test
+    void deletesSelectedMatrixAndKeepsSelectionStable() {
+        MatrixMergerState state = new MatrixMergerState();
+        FrameMatrixSet first = frame(10, "10_1", null);
+        FrameMatrixSet second = frame(20, "20_1", null);
+        FrameMatrixSet third = frame(30, "30_1", null);
+
+        state.setFrameMatrices(List.of(first, second, third));
+        state.selectFrameIndex(1);
+
+        assertTrue(state.deleteSelectedMatrix());
+        assertEquals(2, state.getMatrixCount());
+        assertEquals("30", state.getSelectedFrameLabel());
+        assertEquals(List.of(10, 30), state.getFrameMatrices().stream()
+            .map(FrameMatrixSet::getFrameId)
             .toList());
     }
 

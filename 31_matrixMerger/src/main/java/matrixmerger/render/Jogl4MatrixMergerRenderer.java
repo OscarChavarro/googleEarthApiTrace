@@ -214,13 +214,14 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         );
         if (!selectedFrameInvalid && hasNext && nextMatrix != null) {
             hudTextRenderer.draw(
-                "Split by west cutters [c], merge next frame [m], retry cycle [n], next frame: " + nextFrameLabel,
+                "Delete current matrix [d], split by west cutters [c], merge next frame [m], retry cycle [n], next frame: "
+                    + nextFrameLabel,
                 16,
                 h - 50
             );
         }
         else if (!selectedFrameInvalid) {
-            hudTextRenderer.draw("Split by west cutters [c]", 16, h - 50);
+            hudTextRenderer.draw("Delete current matrix [d], split by west cutters [c]", 16, h - 50);
         }
         if (!selectedFrameInvalid) {
             if (uncleHudStatus.broken()) {

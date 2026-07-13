@@ -85,6 +85,12 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             }
             return;
         }
+        if (keyChar == 'd' || keyChar == 'D') {
+            if (model.deleteSelectedMatrix()) {
+                repaintAction.run();
+            }
+            return;
+        }
         if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
             repaintAction.run();
         }

@@ -66,7 +66,11 @@ public final class MatrixMergerApplication {
             return;
         }
         Jogl4MatrixMergerRenderer renderer = new Jogl4MatrixMergerRenderer(model);
-        InteractiveDebugger interactiveDebugger = new InteractiveDebugger(model, renderer);
+        InteractiveDebugger interactiveDebugger = new InteractiveDebugger(
+            model,
+            renderer,
+            () -> finishProcessing(model, outputPath, args)
+        );
         interactiveDebugger.launchDesktop();
     }
 

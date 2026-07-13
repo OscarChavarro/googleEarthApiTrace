@@ -309,6 +309,21 @@ public final class MatrixMergerState {
         return true;
     }
 
+    public boolean deleteSelectedMatrix() {
+        FrameMatrixSet selected = getSelectedFrameMatrices();
+        if (selected == null) {
+            return false;
+        }
+        invalidReasonByFrameId.remove(selected.getFrameId());
+        hierarchyLevelByFrame.remove(selected);
+        frameMatrices.remove(selectedFrameIndex);
+        maximumRetryCount = frameMatrices.size();
+        normalizeSelection();
+        refreshHierarchyOrdering(false);
+        lastMergeFailedForCurrentSelection = false;
+        return true;
+    }
+
     public boolean mergeSelectedMatrixWithNext() {
         if (isSelectedFrameInvalid()) {
             lastMergeFailedForCurrentSelection = false;

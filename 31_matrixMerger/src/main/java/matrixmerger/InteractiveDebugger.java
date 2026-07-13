@@ -15,6 +15,7 @@ import matrixmerger.render.Jogl4MatrixMergerRenderer;
 public class InteractiveDebugger extends Applet {
     private final MatrixMergerState model;
     private final Jogl4MatrixMergerRenderer renderer;
+    private final Runnable onCloseAction;
 
     private boolean closing;
     private KeyboardInteractionTechniques keyboardInteraction;
@@ -22,9 +23,10 @@ public class InteractiveDebugger extends Applet {
     private GLCanvas canvas;
     private JFrame frame;
 
-    public InteractiveDebugger(MatrixMergerState model, Jogl4MatrixMergerRenderer renderer) {
+    public InteractiveDebugger(MatrixMergerState model, Jogl4MatrixMergerRenderer renderer, Runnable onCloseAction) {
         this.model = model;
         this.renderer = renderer;
+        this.onCloseAction = onCloseAction;
     }
 
     public void launchDesktop() {
@@ -84,6 +86,9 @@ public class InteractiveDebugger extends Applet {
         }
         if (frame != null) {
             frame.dispose();
+        }
+        if (onCloseAction != null) {
+            onCloseAction.run();
         }
 
         System.exit(0);

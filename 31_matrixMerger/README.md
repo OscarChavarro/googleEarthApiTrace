@@ -57,6 +57,7 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 | Key | Action |
 |---|---|
 | `1` / `2` | Select previous / next frame matrix |
+| `d` | Delete the currently visible matrix |
 | `m` | Merge current matrix with the next one |
 | `n` | Retry cycle: keep trying to merge the current matrix with following frames |
 | `c` | Split the selected frame by its west-cutter tiles |
@@ -66,7 +67,8 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 HUD:
 
 - Always: `Frame [1, 2]: i/N | id <frameId> | Matrix: <rows>x<cols>`
-- If a next matrix exists: `Split by west cutters [c], merge next frame [m], retry cycle [n], next frame: <id>`
+- If a next matrix exists: `Delete current matrix [d], split by west cutters [c], merge next frame [m], retry cycle [n], next frame: <id>`
+- Otherwise: `Delete current matrix [d], split by west cutters [c]`
 - Uncle relations count, colored green when the matrix reaches top level (`TOPLEVEL`) or
   red when relationships are broken (`BROKEN`).
 - `LEVEL: l` / `LEVEL: l + n`: quadtree hierarchy level of the selected matrix.
@@ -152,8 +154,10 @@ is not treated as a hierarchy edge.
 
 These folders are the input of `32_pyramidalImageExporter`.
 
-Note: the export happens once at startup (after `--mode auto` processing when requested),
-before the viewer opens. Merges done interactively afterwards are not re-exported.
+Note: in interactive mode, export happens when the viewer closes, so deletions and merges
+performed during the session are reflected in the exported matrix set. In offline mode,
+export still happens immediately after processing. Before writing, the destination export
+folder is cleared so stale `matrix_<n>` folders from previous runs do not survive.
 
 For a completely non-interactive automatic grouping and export:
 

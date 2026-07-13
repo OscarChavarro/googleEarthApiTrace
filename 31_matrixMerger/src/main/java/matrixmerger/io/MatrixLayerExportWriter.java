@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
 import matrixmerger.model.contract.FrameMatrixSet;
@@ -31,6 +32,7 @@ public final class MatrixLayerExportWriter {
         if (sourceOutputDirectory == null || !Files.isDirectory(sourceOutputDirectory) || !Files.isReadable(sourceOutputDirectory)) {
             fatal("Can not export results: source output.directory is not accessible: " + sourceOutputDirectory);
         }
+        clearOutputDirectory(outputDirectory);
         List<FrameMatrixSet> frames = model.getFrameMatrices();
         List<MatrixMergerState.HierarchyOrderDiagnostic> hierarchy = model.getHierarchyOrderDiagnostics();
         for (int frameIndex = 0; frameIndex < frames.size(); frameIndex++) {
@@ -67,12 +69,36 @@ public final class MatrixLayerExportWriter {
         return directory;
     }
 
+    private void clearOutputDirectory(Path directory) {
+        if (directory == null || !Files.isDirectory(directory)) {
+            return;
+        }
+        try (var paths = Files.walk(directory)) {
+            paths
+                .filter(path -> !directory.equals(path))
+                .sorted(Comparator.reverseOrder())
+                .forEach(this::deletePath);
+        }
+        catch (IOException ex) {
+            fatal("Can not clean destination directory: " + directory + " (" + ex.getMessage() + ")");
+        }
+    }
+
     private void createDirectory(Path directory, String label) {
         try {
             Files.createDirectories(directory);
         }
         catch (IOException ex) {
             fatal("Can not create " + label + ": " + directory + " (" + ex.getMessage() + ")");
+        }
+    }
+
+    private void deletePath(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        }
+        catch (IOException ex) {
+            fatal("Can not delete stale export path: " + path + " (" + ex.getMessage() + ")");
         }
     }
 
