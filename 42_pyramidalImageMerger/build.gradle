@@ -1,0 +1,42 @@
+plugins {
+    id 'application'
+}
+
+group = 'org.example'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    mainClass = 'planetviewer.Main'
+}
+
+tasks.named('startScripts') {
+    optsEnvironmentVar = 'PYRAMIDAL_IMAGE_MERGER_42_OPTS'
+}
+
+tasks.withType(JavaExec).configureEach {
+    workingDir = projectDir
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven {
+        url = uri('https://jogamp.org/deployment/maven')
+    }
+}
+
+dependencies {
+    implementation 'co.cubestudio:base:1.3'
+    implementation 'co.cubestudio:awt:1.3'
+    implementation 'co.cubestudio:jogl4:1.3'
+    implementation 'org.jogamp.jogl:jogl-all:2.5.0'
+    implementation 'org.jogamp.gluegen:gluegen-rt:2.5.0'
+    runtimeOnly 'org.jogamp.jogl:jogl-all-main:2.5.0'
+    runtimeOnly 'org.jogamp.gluegen:gluegen-rt-main:2.5.0'
+}
