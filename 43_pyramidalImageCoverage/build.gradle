@@ -1,0 +1,38 @@
+plugins {
+    id 'application'
+}
+
+group = 'co.cubestudio'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    mainClass = 'pyramidalimagecoverage.Main'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+tasks.withType(JavaExec).configureEach {
+    workingDir = projectDir
+    jvmArgs '-Dsun.java2d.uiScale=1.0'
+}
+
+dependencies {
+    implementation 'co.cubestudio:base:1.3'
+    implementation 'co.cubestudio:awt:1.3'
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
