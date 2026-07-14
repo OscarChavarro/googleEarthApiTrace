@@ -34,7 +34,13 @@ import pyramidalimageexporter.model.MatrixLayerTile;
 public final class TileRootPathResolver {
     private static final Pattern QUADKEY_PATTERN = Pattern.compile("[0-3]+");
 
-    public record Resolution(Map<String, String> pathById, Set<String> discardedIds) {}
+    public enum PathSource {
+        DIRECT,
+        UNCLE,
+        GRID
+    }
+
+    public record Resolution(Map<String, String> pathById, Set<String> discardedIds, Map<String, PathSource> sourceById) {}
 
     public Resolution resolve(List<MatrixLayer> layers) {
         return resolve(layers, Map.of(), Map.of());
@@ -59,15 +65,18 @@ public final class TileRootPathResolver {
         Map<String, MatrixLayerTile> tilesById = collectTilesById(layers);
 
         Map<String, String> resolvedPath = new HashMap<>();
+        Map<String, PathSource> sourceById = new HashMap<>();
         for (Map.Entry<String, MatrixLayerTile> entry : tilesById.entrySet()) {
             String id = entry.getKey();
             if (isSeed(id)) {
                 resolvedPath.put(id, id);
+                sourceById.put(id, PathSource.DIRECT);
             }
             else {
                 String externalPath = externalFullPaths.get(id);
                 if (externalPath != null) {
                     resolvedPath.put(id, externalPath);
+                    sourceById.put(id, PathSource.DIRECT);
                 }
             }
         }
@@ -88,6 +97,7 @@ public final class TileRootPathResolver {
                 }
                 if (candidates.size() == 1) {
                     resolvedPath.put(id, candidates.iterator().next());
+                    sourceById.put(id, PathSource.UNCLE);
                 }
                 else {
                     discarded.add(id);
@@ -95,11 +105,11 @@ public final class TileRootPathResolver {
                 progress = true;
             }
             if (!progress) {
-                progress = propagateByGridPosition(layers, resolvedPath, discarded);
+                progress = propagateByGridPosition(layers, resolvedPath, sourceById, discarded);
             }
         }
 
-        return new Resolution(Map.copyOf(resolvedPath), Set.copyOf(discarded));
+        return new Resolution(Map.copyOf(resolvedPath), Set.copyOf(discarded), Map.copyOf(sourceById));
     }
 
     /**
@@ -113,6 +123,7 @@ public final class TileRootPathResolver {
     private static boolean propagateByGridPosition(
         List<MatrixLayer> layers,
         Map<String, String> resolvedPath,
+        Map<String, PathSource> sourceById,
         Set<String> discarded
     ) {
         boolean progress = false;
@@ -145,7 +156,11 @@ public final class TileRootPathResolver {
                 String canonicalPath = "0" + encodeQuadtreeLabel(level, row, col);
                 String previousPath = resolvedPath.put(id, canonicalPath);
                 if (!canonicalPath.equals(previousPath)) {
+                    sourceById.put(id, PathSource.GRID);
                     progress = true;
+                }
+                else if (!sourceById.containsKey(id)) {
+                    sourceById.put(id, PathSource.GRID);
                 }
                 discarded.remove(id);
             }

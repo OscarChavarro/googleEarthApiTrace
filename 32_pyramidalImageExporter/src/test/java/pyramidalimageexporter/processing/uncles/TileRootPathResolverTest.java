@@ -18,6 +18,8 @@ final class TileRootPathResolverTest {
 
         assertEquals("0", resolution.pathById().get("0"));
         assertEquals("00", resolution.pathById().get("00"));
+        assertEquals(TileRootPathResolver.PathSource.DIRECT, resolution.sourceById().get("0"));
+        assertEquals(TileRootPathResolver.PathSource.DIRECT, resolution.sourceById().get("00"));
         assertFalse(resolution.pathById().containsKey("1"));
     }
 
@@ -35,6 +37,8 @@ final class TileRootPathResolverTest {
 
         assertEquals("030", resolution.pathById().get("child-a"));
         assertEquals("031", resolution.pathById().get("child-b"));
+        assertEquals(TileRootPathResolver.PathSource.UNCLE, resolution.sourceById().get("child-a"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("child-b"));
     }
 
     @Test

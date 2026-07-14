@@ -12,6 +12,7 @@ import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.TopLevelTilesCatalog;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.processing.SessionPyramidalImageExportService;
+import pyramidalimageexporter.processing.toplevels.TopLevelLayerMerger;
 import pyramidalimageexporter.processing.toplevels.TopLevelMatrixRebuilder;
 import pyramidalimageexporter.render.Jogl4PyramidalImageExporterRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
@@ -101,16 +102,19 @@ public final class PyramidalImageExporterApplication {
         PyramidalImageExporterState model = new PyramidalImageExporterState();
         model.setInputFolder(inputPath.toString());
         List<MatrixLayer> importedLayers = new MatrixLayerJsonReader().readAllFromInput(inputPath);
-        List<MatrixLayer> layers = new ArrayList<>();
-
         Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
         TopLevelTilesJsonReader topLevelTilesReader = new TopLevelTilesJsonReader();
         TopLevelMatrixRebuilder topLevelMatrixRebuilder = new TopLevelMatrixRebuilder();
         TopLevelTilesCatalog topLevelTiles = topLevelTilesReader.read(outputDirectory).orElse(null);
-        layers.addAll(topLevelMatrixRebuilder.importLayers(topLevelTiles));
-        layers.addAll(importedLayers);
+        TopLevelLayerMerger.MergeResult mergeResult = new TopLevelLayerMerger().merge(
+            topLevelMatrixRebuilder.importLayers(topLevelTiles),
+            importedLayers,
+            topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles),
+            outputDirectory
+        );
 
-        model.setMatrixLayers(layers);
+        model.setMatrixLayers(mergeResult.layers());
+        model.setMergedFullPathByOriginalId(mergeResult.mergedFullPathByOriginalId());
         model.setCataloguedQuadPathsByImagePath(topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles));
         return model;
     }

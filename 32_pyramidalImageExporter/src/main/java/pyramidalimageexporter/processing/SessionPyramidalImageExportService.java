@@ -81,6 +81,7 @@ public final class SessionPyramidalImageExportService {
 
         Map<String, String> externalFullPaths =
             buildExternalUncleFullPaths(model.getCataloguedQuadPathsByImagePath());
+        externalFullPaths.putAll(model.getMergedFullPathByOriginalId());
         ExternalUncleBridgeBuilder.Bridge bridge = new ExternalUncleBridgeBuilder().build(
             model.getMatrixLayers(),
             model.getCataloguedQuadPathsByImagePath(),
@@ -314,6 +315,14 @@ public final class SessionPyramidalImageExportService {
                     selectedByPath.put(fullPath, candidate);
                     continue;
                 }
+                if (preferCandidateOverCurrent(candidate, current, resolution)) {
+                    selectedByPath.put(fullPath, candidate);
+                    replacements++;
+                    continue;
+                }
+                if (preferCandidateOverCurrent(current, candidate, resolution)) {
+                    continue;
+                }
                 boolean currentTop = isTopLayer(current.layer());
                 boolean candidateTop = isTopLayer(candidate.layer());
                 if (currentTop && !candidateTop) {
@@ -334,6 +343,24 @@ public final class SessionPyramidalImageExportService {
             }
         }
         return new ExportManifest(List.copyOf(selectedByPath.values()), replacements);
+    }
+
+    private static boolean preferCandidateOverCurrent(
+        ExportEntry candidate,
+        ExportEntry current,
+        TileRootPathResolver.Resolution resolution
+    ) {
+        TileRootPathResolver.PathSource candidateSource = resolution.sourceById().get(candidate.tile().getId());
+        TileRootPathResolver.PathSource currentSource = resolution.sourceById().get(current.tile().getId());
+        return isDirect(candidateSource) && isDerived(currentSource);
+    }
+
+    private static boolean isDirect(TileRootPathResolver.PathSource source) {
+        return source == TileRootPathResolver.PathSource.DIRECT;
+    }
+
+    private static boolean isDerived(TileRootPathResolver.PathSource source) {
+        return source == TileRootPathResolver.PathSource.UNCLE || source == TileRootPathResolver.PathSource.GRID;
     }
 
     private static boolean isTopLayer(MatrixLayer layer) {

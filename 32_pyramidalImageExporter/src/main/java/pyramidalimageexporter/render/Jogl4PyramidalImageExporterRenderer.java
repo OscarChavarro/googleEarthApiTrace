@@ -212,7 +212,8 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
         hudTextRenderer.draw(
             "Layer [1, 2]: " + model.getSelectedMatrixLayerOrdinal() + "/" + model.getMatrixLayerCount()
                 + " | frame " + model.getSelectedFrameLabel()
-                + " | Matrix: " + matrixSizeLabel(selected),
+                + " | Matrix: " + matrixSizeLabel(selected)
+                + " | Source: " + sourceLabel(selected),
             16,
             h - 28
         );
@@ -242,6 +243,13 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
             return "?x?";
         }
         return matrixLayer.getRows() + "x" + matrixLayer.getCols();
+    }
+
+    private static String sourceLabel(MatrixLayer matrixLayer) {
+        if (matrixLayer == null || matrixLayer.getSourceFolderName() == null || matrixLayer.getSourceFolderName().isBlank()) {
+            return "?";
+        }
+        return matrixLayer.getSourceFolderName();
     }
 
     private void drawTileIdsAtCenter(GLAutoDrawable drawable, GL2 gl2, MatrixLayer matrixLayer, boolean enabled) {

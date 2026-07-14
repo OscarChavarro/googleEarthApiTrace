@@ -23,6 +23,7 @@ public final class PyramidalImageExporterState {
     private long gpuTextureBytesAssigned = 0L;
     private int selectedLayerIndex = 0;
     private Map<String, String> cataloguedQuadPathsByImagePath = Map.of();
+    private Map<String, String> mergedFullPathByOriginalId = Map.of();
 
     public PyramidalImageExporterState() {
         viewingCamera.setName("OrbiterCamera");
@@ -53,6 +54,16 @@ public final class PyramidalImageExporterState {
         this.cataloguedQuadPathsByImagePath = cataloguedQuadPathsByImagePath == null
             ? Map.of()
             : Map.copyOf(cataloguedQuadPathsByImagePath);
+    }
+
+    public Map<String, String> getMergedFullPathByOriginalId() {
+        return mergedFullPathByOriginalId;
+    }
+
+    public void setMergedFullPathByOriginalId(Map<String, String> mergedFullPathByOriginalId) {
+        this.mergedFullPathByOriginalId = mergedFullPathByOriginalId == null
+            ? Map.of()
+            : Map.copyOf(mergedFullPathByOriginalId);
     }
 
     public String getSessionPyramidalImageExportPath() {
