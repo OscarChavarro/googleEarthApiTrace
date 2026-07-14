@@ -19,7 +19,7 @@ final class SessionPyramidalImageExportServiceTest {
     void keepsDirectlyReadTileWhenAnUncleDerivedTileClaimsTheSameFullPath() throws Exception {
         MatrixLayerTile direct = tile("0211212", 0, 0);
         MatrixLayerTile derived = tile("derived", 0, 1);
-        derived.setUncles(List.of(new ToUncleRelationship(UncleDirections.NORTH_EAST, "parent")));
+        derived.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_EAST, "uncle")));
 
         MatrixLayer layer = new MatrixLayer();
         layer.setSourceFolderName("matrix_1");
@@ -30,7 +30,7 @@ final class SessionPyramidalImageExportServiceTest {
 
         TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
             model.getMatrixLayers(),
-            Map.of("parent", "021121"),
+            Map.of("uncle", "021122"),
             Map.of()
         );
 

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -110,6 +111,10 @@ public final class SessionPyramidalImageExportService {
                 + " unique paths; local tiles replace " + manifest.localReplacementsOfDerivedTop()
                 + " derived TOP cells."
         );
+        if (!clearPreviousExport(rootDirectory)) {
+            reportStatus(model, "Export failed: could not clear previous pyramid at " + rootDirectory);
+            return;
+        }
 
         sourceImageCache.clear();
         int totalTiles = manifest.entries().size();
@@ -420,6 +425,24 @@ public final class SessionPyramidalImageExportService {
             return false;
         }
         return true;
+    }
+
+    private static boolean clearPreviousExport(Path rootDirectory) {
+        try (var paths = Files.walk(rootDirectory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                if (!path.equals(rootDirectory)) {
+                    Files.deleteIfExists(path);
+                }
+            }
+            return true;
+        }
+        catch (IOException ex) {
+            System.out.println(
+                "SessionPyramidalImageExportService: could not clear previous export at "
+                    + rootDirectory + ": " + ex.getMessage()
+            );
+            return false;
+        }
     }
 
     /**
