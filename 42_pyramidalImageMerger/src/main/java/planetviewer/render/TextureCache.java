@@ -104,6 +104,19 @@ public final class TextureCache {
         return textureByPath.size();
     }
 
+    public void invalidate(GL2 gl2, File tileFile) {
+        String path = tileFile.getAbsolutePath();
+        Texture texture = textureByPath.remove(path);
+        Long bytes = bytesByPath.remove(path);
+        residentFifo.remove(path);
+        if (texture != null) {
+            texture.destroy(gl2);
+        }
+        if (bytes != null) {
+            bytesAssigned = Math.max(0L, bytesAssigned - bytes);
+        }
+    }
+
     public void dispose(GL2 gl2) {
         for (Texture texture : textureByPath.values()) {
             texture.destroy(gl2);

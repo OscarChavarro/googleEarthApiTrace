@@ -74,10 +74,15 @@ public final class MouseInteractionTechnique implements MouseListener, MouseMoti
 
     @Override
     public void mouseExited(MouseEvent e) {
+        if (viewSelector != null) {
+            viewSelector.selectAt(-1, -1, 0, 0);
+            repaintAction.run();
+        }
     }
 
     @Override
     public void mouseDragged(MouseEvent e) {
+        routeToView(e);
         if (cameraController.processMouseDraggedEvent(AwtSystem.awt2vsdkEvent(e))) {
             repaintAction.run();
         }
@@ -85,9 +90,9 @@ public final class MouseInteractionTechnique implements MouseListener, MouseMoti
 
     @Override
     public void mouseMoved(MouseEvent e) {
-        if (cameraController.processMouseMovedEvent(AwtSystem.awt2vsdkEvent(e))) {
-            repaintAction.run();
-        }
+        routeToView(e);
+        cameraController.processMouseMovedEvent(AwtSystem.awt2vsdkEvent(e));
+        repaintAction.run();
     }
 
     @Override

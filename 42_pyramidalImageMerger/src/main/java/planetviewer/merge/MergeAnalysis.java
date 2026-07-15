@@ -11,6 +11,9 @@ public final class MergeAnalysis {
     private final Set<String> conflictingNodeIds;
     private final Set<Integer> conflictingLevels;
     private final List<String> copiedNodeIds;
+    private final Set<String> resolutionEquivalentNodeIds;
+    private final Set<String> higherResolutionDeltaNodeIds;
+    private final int replacedTiles;
 
     public MergeAnalysis(
         int comparedTiles,
@@ -18,7 +21,10 @@ public final class MergeAnalysis {
         int copiedTiles,
         Set<String> conflictingNodeIds,
         Set<Integer> conflictingLevels,
-        List<String> copiedNodeIds
+        List<String> copiedNodeIds,
+        Set<String> resolutionEquivalentNodeIds,
+        Set<String> higherResolutionDeltaNodeIds,
+        int replacedTiles
     ) {
         this.comparedTiles = comparedTiles;
         this.mergeableTiles = mergeableTiles;
@@ -26,6 +32,9 @@ public final class MergeAnalysis {
         this.conflictingNodeIds = Collections.unmodifiableSet(conflictingNodeIds);
         this.conflictingLevels = Collections.unmodifiableSet(conflictingLevels);
         this.copiedNodeIds = Collections.unmodifiableList(copiedNodeIds);
+        this.resolutionEquivalentNodeIds = Collections.unmodifiableSet(resolutionEquivalentNodeIds);
+        this.higherResolutionDeltaNodeIds = Collections.unmodifiableSet(higherResolutionDeltaNodeIds);
+        this.replacedTiles = replacedTiles;
     }
 
     public int getComparedTiles() {
@@ -56,6 +65,18 @@ public final class MergeAnalysis {
         return conflictingNodeIds.size();
     }
 
+    public Set<String> getResolutionEquivalentNodeIds() {
+        return resolutionEquivalentNodeIds;
+    }
+
+    public Set<String> getHigherResolutionDeltaNodeIds() {
+        return higherResolutionDeltaNodeIds;
+    }
+
+    public int getReplacedTiles() {
+        return replacedTiles;
+    }
+
     public boolean isMergePossible() {
         return conflictingNodeIds.isEmpty();
     }
@@ -63,13 +84,15 @@ public final class MergeAnalysis {
     public String summary() {
         if (isMergePossible()) {
             return "Merge ready: green. Compared " + comparedTiles + " overlapping tile(s), delta contributes "
-                + mergeableTiles + " mergeable tile(s), conflicts: 0.";
+                + mergeableTiles + " mergeable tile(s), resolution matches: "
+                + resolutionEquivalentNodeIds.size() + ", conflicts: 0.";
         }
         return "Merge blocked: red. Conflict levels " + conflictingLevels + ", conflict tile(s) "
             + conflictingNodeIds + ".";
     }
 
     public String mergeCompletedSummary() {
-        return "Merge completed. Copied " + copiedTiles + " new tile(s) from delta into destination.";
+        return "Merge completed. Copied " + copiedTiles + " new tile(s) and replaced " + replacedTiles
+            + " lower-resolution tile(s) in destination.";
     }
 }

@@ -65,10 +65,15 @@ When `m` is pressed, the program recursively traverses the delta tree. For every
 
 - if the corresponding destination tile does not exist, the tile is mergeable;
 - if both files exist and are byte-identical, the tile is mergeable;
-- if both files exist and differ, that tile id becomes a conflict.
+- if both files differ, ImageMagick rescales the higher-resolution candidate to the lower
+  resolution and accepts a normalized RMSE up to 3%; these matches are outlined in green;
+- if the visual comparison passes, the higher-resolution tile is kept in destination;
+- if the visual comparison exceeds the threshold, that tile id becomes a conflict.
 
 Conflicts are reported in the HUD and drawn as red borders in both views at the same tile
 location.
+
+Moving the mouse over either viewport prints the path of the projected tile image in the HUD.
 
 ## Command-line contract
 

@@ -4,9 +4,11 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +16,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.io.MatrixLayerIdRewriteWriter;
 import pyramidalimageexporter.model.PyramidalImageWriteStatistics;
@@ -24,9 +29,6 @@ import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
 import pyramidalimageexporter.processing.uncles.FrameJsonUncleMetadataRestorer;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
-import vsdk.toolkit.common.color.ColorRgb;
-import vsdk.toolkit.io.image.ImagePersistence;
-import vsdk.toolkit.media.RGBImageUncompressed;
 
 /**
  * Writes this session's reconstructed pyramid to disk as a quadtree of PNG
@@ -53,12 +55,16 @@ import vsdk.toolkit.media.RGBImageUncompressed;
 public final class SessionPyramidalImageExportService {
     private static final int TILE_PIXEL_SIZE = 256;
     private static final int PROGRESS_REPORT_INTERVAL = 100;
+    private static final double FULL_TEXTURE_RECT_TOLERANCE = 1.0e-9;
 
-    private final Map<String, RGBImageUncompressed> sourceImageCache = new HashMap<>();
     private final TileRootPathResolver rootPathResolver = new TileRootPathResolver();
 
     private record ExportEntry(MatrixLayer layer, MatrixLayerTile tile, String fullPath) {}
-    private record ExportManifest(List<ExportEntry> entries, int localReplacementsOfDerivedTop) {}
+    private record ExportManifest(
+        List<ExportEntry> entries,
+        int localReplacementsOfDerivedTop,
+        Map<Integer, Integer> rejectedNonNativeTilesByLevel
+    ) {}
 
     public void export(PyramidalImageExporterState model) {
         if (model == null) {
@@ -97,6 +103,7 @@ public final class SessionPyramidalImageExportService {
         TileRootPathResolver.Resolution resolution =
             rootPathResolver.resolve(model.getMatrixLayers(), externalFullPaths, bridge.aliasById());
         reportPlacement(model, resolution);
+        reportMissingAbsoluteSeed(model, resolution);
 
         ExportManifest manifest;
         try {
@@ -109,14 +116,22 @@ public final class SessionPyramidalImageExportService {
         System.out.println(
             "SessionPyramidalImageExportService: manifest contains " + manifest.entries().size()
                 + " unique paths; local tiles replace " + manifest.localReplacementsOfDerivedTop()
-                + " derived TOP cells."
+                + " derived TOP cells; rejected non-native tiles by level: "
+                + manifest.rejectedNonNativeTilesByLevel() + "."
         );
+        if (manifest.entries().isEmpty()) {
+            reportStatus(
+                model,
+                "Export failed: no native 256x256 tiles with absolute quadtree positions were available; "
+                    + "the previous pyramid was preserved."
+            );
+            return;
+        }
         if (!clearPreviousExport(rootDirectory)) {
             reportStatus(model, "Export failed: could not clear previous pyramid at " + rootDirectory);
             return;
         }
 
-        sourceImageCache.clear();
         int totalTiles = manifest.entries().size();
         System.out.println("SessionPyramidalImageExportService: export starting, " + totalTiles + " tiles to write to " + rootDirectory);
         PyramidalImageWriteStatistics statistics = new PyramidalImageWriteStatistics();
@@ -133,14 +148,39 @@ public final class SessionPyramidalImageExportService {
                 );
             }
         }
-        sourceImageCache.clear();
-
         System.out.println("SessionPyramidalImageExportService: " + statistics);
         reportStatus(
             model,
             "Export complete: " + processed + " tiles processed to " + rootDirectory
                 + (failed > 0 ? " (" + failed + " failed)" : "")
         );
+    }
+
+    private static void reportMissingAbsoluteSeed(
+        PyramidalImageExporterState model,
+        TileRootPathResolver.Resolution resolution
+    ) {
+        if (resolution == null || !resolution.pathById().isEmpty()) {
+            return;
+        }
+        int uncleRelations = 0;
+        for (MatrixLayer layer : model.getMatrixLayers()) {
+            if (layer == null || layer.getTiles() == null) {
+                continue;
+            }
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                if (tile != null && tile.getUncles() != null) {
+                    uncleRelations += tile.getUncles().size();
+                }
+            }
+        }
+        if (uncleRelations > 0) {
+            System.out.println(
+                "SessionPyramidalImageExportService: loaded " + uncleRelations
+                    + " uncle relationship(s), but they only express relative placement. "
+                    + "At least one absolute top-level quadkey seed is required before the uncle graph can propagate positions."
+            );
+        }
     }
 
     /**
@@ -304,7 +344,31 @@ public final class SessionPyramidalImageExportService {
         TileRootPathResolver.Resolution resolution
     ) {
         Map<String, ExportEntry> selectedByPath = new LinkedHashMap<>();
+        Map<String, Boolean> nativeImageByPath = new HashMap<>();
+        Map<Integer, Integer> rejectedByLevel = new TreeMap<>();
         int replacements = 0;
+
+        MatrixLayer nativeTopCatalogLayer = new MatrixLayer();
+        nativeTopCatalogLayer.setSourceFolderName("topLevel_native_catalog");
+        Map<String, String> nativeTopCatalog = new TreeMap<>(model.getCataloguedQuadPathsByImagePath());
+        for (Map.Entry<String, String> catalogEntry : nativeTopCatalog.entrySet()) {
+            String fullPath = catalogEntry.getValue();
+            if (!isQuadPath(fullPath)) {
+                continue;
+            }
+            MatrixLayerTile nativeTile = new MatrixLayerTile();
+            nativeTile.setId(fullPath);
+            nativeTile.setTextureFile(catalogEntry.getKey());
+            if (!isNativeExportTile(nativeTile, nativeImageByPath)) {
+                rejectedByLevel.merge(fullPath.length() - 1, 1, Integer::sum);
+                continue;
+            }
+            selectedByPath.putIfAbsent(
+                fullPath,
+                new ExportEntry(nativeTopCatalogLayer, nativeTile, fullPath)
+            );
+        }
+
         for (MatrixLayer layer : model.getMatrixLayers()) {
             if (layer == null || layer.getTiles() == null) {
                 continue;
@@ -312,6 +376,10 @@ public final class SessionPyramidalImageExportService {
             for (MatrixLayerTile tile : layer.getTiles()) {
                 String fullPath = tile == null ? null : resolution.pathById().get(tile.getId());
                 if (fullPath == null) {
+                    continue;
+                }
+                if (!isNativeExportTile(tile, nativeImageByPath)) {
+                    rejectedByLevel.merge(fullPath.length() - 1, 1, Integer::sum);
                     continue;
                 }
                 ExportEntry candidate = new ExportEntry(layer, tile, fullPath);
@@ -347,7 +415,66 @@ public final class SessionPyramidalImageExportService {
                 );
             }
         }
-        return new ExportManifest(List.copyOf(selectedByPath.values()), replacements);
+        return new ExportManifest(
+            List.copyOf(selectedByPath.values()),
+            replacements,
+            Map.copyOf(rejectedByLevel)
+        );
+    }
+
+    private static boolean isNativeExportTile(MatrixLayerTile tile, Map<String, Boolean> nativeImageByPath) {
+        if (!usesWholeTexture(tile)) {
+            return false;
+        }
+        String textureFile = tile.getTextureFile();
+        if (textureFile == null || textureFile.isBlank()) {
+            return false;
+        }
+        return nativeImageByPath.computeIfAbsent(textureFile, SessionPyramidalImageExportService::is256SquareImage);
+    }
+
+    private static boolean usesWholeTexture(MatrixLayerTile tile) {
+        return closeTo(tile.getTexU0(), 0.0)
+            && closeTo(tile.getTexV0(), 0.0)
+            && closeTo(tile.getTexU1(), 1.0)
+            && closeTo(tile.getTexV1(), 1.0);
+    }
+
+    private static boolean closeTo(double value, double expected) {
+        return Math.abs(value - expected) <= FULL_TEXTURE_RECT_TOLERANCE;
+    }
+
+    private static boolean is256SquareImage(String textureFile) {
+        Path path;
+        try {
+            path = Path.of(textureFile);
+        }
+        catch (RuntimeException ex) {
+            return false;
+        }
+        if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+            return false;
+        }
+        try (ImageInputStream input = ImageIO.createImageInputStream(path.toFile())) {
+            if (input == null) {
+                return false;
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                return false;
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                return reader.getWidth(0) == TILE_PIXEL_SIZE && reader.getHeight(0) == TILE_PIXEL_SIZE;
+            }
+            finally {
+                reader.dispose();
+            }
+        }
+        catch (IOException ex) {
+            return false;
+        }
     }
 
     private static boolean preferCandidateOverCurrent(
@@ -390,21 +517,27 @@ public final class SessionPyramidalImageExportService {
         MatrixLayerTile tile,
         PyramidalImageWriteStatistics statistics
     ) {
-        RGBImageUncompressed sourceImage = loadSourceImage(tile.getTextureFile());
-        if (sourceImage == null) {
-            return false;
-        }
         Path tileDirectory = directoryFor(rootDirectory, fullPath);
         if (!ensureDirectory(tileDirectory)) {
             return false;
         }
-        RGBImageUncompressed tileImage = cropTile(sourceImage, tile);
         File outputFile = tileDirectory.resolve(fullPath + ".png").toFile();
 
         // Session-local export: the slot is simply (re)written from this
         // session's data, without ever reading what a previous run left there.
         boolean existedBefore = outputFile.isFile();
-        if (!writeImage(outputFile, tileImage)) {
+        try {
+            Files.copy(
+                Path.of(tile.getTextureFile()),
+                outputFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            );
+        }
+        catch (IOException | RuntimeException ex) {
+            System.out.println(
+                "SessionPyramidalImageExportService: could not copy native tile to "
+                    + outputFile + ": " + ex.getMessage()
+            );
             return false;
         }
         if (existedBefore) {
@@ -412,17 +545,6 @@ public final class SessionPyramidalImageExportService {
         }
         else {
             statistics.incrementNewImages();
-        }
-        return true;
-    }
-
-    private static boolean writeImage(File outputFile, RGBImageUncompressed image) {
-        try {
-            ImagePersistence.exportPNG(outputFile, image);
-        }
-        catch (Exception ex) {
-            System.out.println("SessionPyramidalImageExportService: could not write " + outputFile + ": " + ex.getMessage());
-            return false;
         }
         return true;
     }
@@ -457,59 +579,6 @@ public final class SessionPyramidalImageExportService {
             directory = directory.resolve(fullId.substring(0, length));
         }
         return directory;
-    }
-
-    private RGBImageUncompressed loadSourceImage(String textureFile) {
-        if (textureFile == null || textureFile.isBlank()) {
-            return null;
-        }
-        RGBImageUncompressed cached = sourceImageCache.get(textureFile);
-        if (cached != null) {
-            return cached;
-        }
-        Path sourcePath = Path.of(textureFile);
-        if (!Files.isRegularFile(sourcePath) || !Files.isReadable(sourcePath)) {
-            return null;
-        }
-        try {
-            RGBImageUncompressed loaded = ImagePersistence.importRGB(sourcePath.toFile());
-            sourceImageCache.put(textureFile, loaded);
-            return loaded;
-        }
-        catch (Exception ex) {
-            System.out.println("SessionPyramidalImageExportService: could not read " + sourcePath + ": " + ex.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Samples the tile's texture sub-rectangle (OpenGL convention: v = 0 at
-     * the image bottom, so it is flipped to the source image's top-down
-     * raster rows) with nearest-neighbor sampling, matching the GL_NEAREST
-     * filtering the interactive renderer uses for the same tiles.
-     */
-    private static RGBImageUncompressed cropTile(RGBImageUncompressed sourceImage, MatrixLayerTile tile) {
-        RGBImageUncompressed cropped = new RGBImageUncompressed();
-        cropped.init(TILE_PIXEL_SIZE, TILE_PIXEL_SIZE);
-        double v1 = tile.getTexV1();
-        double v0 = tile.getTexV0();
-        double u0 = tile.getTexU0();
-        double u1 = tile.getTexU1();
-        for (int y = 0; y < TILE_PIXEL_SIZE; y++) {
-            double glV = v1 - (v1 - v0) * ((y + 0.5) / TILE_PIXEL_SIZE);
-            double rasterV = 1.0 - glV;
-            for (int x = 0; x < TILE_PIXEL_SIZE; x++) {
-                double u = u0 + (u1 - u0) * ((x + 0.5) / TILE_PIXEL_SIZE);
-                ColorRgb color = sourceImage.getColorRgbNearest(u, rasterV);
-                cropped.putPixel(x, y, toByte(color.getR()), toByte(color.getG()), toByte(color.getB()));
-            }
-        }
-        return cropped;
-    }
-
-    private static byte toByte(double channel) {
-        int value = (int) Math.round(Math.max(0.0, Math.min(1.0, channel)) * 255.0);
-        return (byte) value;
     }
 
     private static boolean ensureDirectory(Path directory) {

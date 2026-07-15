@@ -61,7 +61,7 @@ public class InteractiveViewer extends Applet {
         renderer.setRepaintOnTileReady(repaintScheduler::requestRepaint);
         mouseInteraction = new MouseInteractionTechnique(
             renderer.getCameraController(),
-            (x, y, width, height) -> { },
+            renderer::updateMousePosition,
             canvas::repaint,
             canvas::requestFocusInWindow
         );

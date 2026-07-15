@@ -10,10 +10,14 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import planetviewer.io.TileImageLoader;
 import planetviewer.merge.MergeAnalysis;
 import planetviewer.merge.PyramidalImageMergeAnalyzer;
@@ -28,6 +32,7 @@ import planetviewer.processing.PscUpdater;
 import planetviewer.processing.QuadtreeDrawPlanner;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
+import vsdk.toolkit.common.linealAlgebra.Vector4Dd;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.gui.CameraControllerAquynza;
 
@@ -45,6 +50,10 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
     private Map<String, QuadtreeNode> deltaNodeIndex;
     private TextRenderer hudTextRenderer;
     private MergeAnalysis mergeAnalysis;
+    private volatile int mouseX = -1;
+    private volatile int mouseYFromTop = -1;
+    private volatile String hoveredTileLabel;
+    private final Set<String> pendingTextureInvalidations = ConcurrentHashMap.newKeySet();
 
     public Jogl4PyramidalImageMergerRenderer(
         PlanetViewerModel model,
@@ -63,7 +72,9 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
         };
         this.destinationNodeIndex = indexNodes(destinationInstance.getImage().getRoot());
         this.deltaNodeIndex = indexNodes(deltaInstance.getImage().getRoot());
-        this.mergeAnalysis = new MergeAnalysis(0, 0, 0, java.util.Set.of(), java.util.Set.of(), java.util.List.of());
+        this.mergeAnalysis = new MergeAnalysis(
+            0, 0, 0, java.util.Set.of(), java.util.Set.of(), java.util.List.of(), java.util.Set.of(), java.util.Set.of(), 0
+        );
         model.setHudStatus("Press 'm' to validate the merge.");
     }
 
@@ -84,6 +95,11 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
         return cameraController;
     }
 
+    public void updateMousePosition(int xPixel, int yPixelFromTop, int canvasWidth, int canvasHeight) {
+        mouseX = xPixel;
+        mouseYFromTop = yPixelFromTop;
+    }
+
     public void analyzeMerge() {
         mergeAnalysis = mergeAnalyzer.analyze(destinationInstance.getImage(), deltaInstance.getImage());
         if (!mergeAnalysis.isMergePossible()) {
@@ -92,9 +108,19 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
             return;
         }
         try {
-            int copiedTiles = merger.copyMissingTiles(destinationInstance.getImage(), deltaInstance.getImage());
+            PyramidalImageMerger.MergeResult result = merger.mergeTiles(
+                destinationInstance.getImage(),
+                deltaInstance.getImage(),
+                mergeAnalysis.getHigherResolutionDeltaNodeIds()
+            );
+            for (String nodeId : mergeAnalysis.getHigherResolutionDeltaNodeIds()) {
+                QuadtreeNode destinationNode = destinationNodeIndex.get(nodeId);
+                if (destinationNode != null && destinationNode.getTileFile() != null) {
+                    pendingTextureInvalidations.add(destinationNode.getTileFile().getAbsolutePath());
+                }
+            }
             refreshDestinationImage();
-            mergeAnalysis = mergeAnalyzer.markCopied(mergeAnalysis, copiedTiles);
+            mergeAnalysis = mergeAnalyzer.markMerged(mergeAnalysis, result.copiedTiles(), result.replacedTiles());
             model.setHudStatus(mergeAnalysis.mergeCompletedSummary());
         }
         catch (IOException ex) {
@@ -132,14 +158,28 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
         gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
         gl.glDisable(GL.GL_DEPTH_TEST);
 
+        invalidateReplacedTextures(gl2);
+
         PscUpdater.update(model, views[0].getCamera());
         layoutViews();
+        hoveredTileLabel = null;
         drawView(gl, gl2, views[0], destinationInstance, destinationNodeIndex, canvasWidth, canvasHeight);
         drawView(gl, gl2, views[1], deltaInstance, deltaNodeIndex, canvasWidth, canvasHeight);
 
         gl.glViewport(0, 0, canvasWidth, canvasHeight);
         gl.glEnable(GL.GL_DEPTH_TEST);
         drawHud(canvasWidth, canvasHeight);
+    }
+
+    private void invalidateReplacedTextures(GL2 gl2) {
+        for (String path : Set.copyOf(pendingTextureInvalidations)) {
+            if (!pendingTextureInvalidations.remove(path)) {
+                continue;
+            }
+            File tileFile = new File(path);
+            tileImageLoader.invalidate(tileFile);
+            quadtreeRenderer.invalidate(gl2, tileFile);
+        }
     }
 
     private void layoutViews() {
@@ -185,7 +225,95 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
             tileImageLoader
         );
         drawConflictBorders(gl2, instance, nodeIndex, relativeScale);
+        drawResolutionMatchBorders(gl2, instance, nodeIndex, relativeScale);
+        updateHoveredTile(view, instance, relativeScale, viewport, canvasWidth, canvasHeight);
         drawViewBorder(gl2, view, instance, viewport, canvasWidth, canvasHeight);
+    }
+
+    private void drawResolutionMatchBorders(
+        GL2 gl2,
+        PyramidalImageInstance instance,
+        Map<String, QuadtreeNode> nodeIndex,
+        double relativeScale
+    ) {
+        if (mergeAnalysis == null || mergeAnalysis.getResolutionEquivalentNodeIds().isEmpty()) {
+            return;
+        }
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glColor3f(0.15f, 1.0f, 0.25f);
+        gl2.glLineWidth(2.0f);
+        for (String nodeId : mergeAnalysis.getResolutionEquivalentNodeIds()) {
+            QuadtreeNode node = nodeIndex.get(nodeId);
+            if (node == null) {
+                continue;
+            }
+            Vector3Dd[] corners = QuadtreeDrawPlanner.commandForNode(node, instance, relativeScale).corners();
+            gl2.glBegin(GL2.GL_LINE_LOOP);
+            for (Vector3Dd corner : corners) {
+                gl2.glVertex3d(corner.x(), corner.y(), corner.z() + 0.0009);
+            }
+            gl2.glEnd();
+        }
+    }
+
+    private void updateHoveredTile(
+        View view,
+        PyramidalImageInstance instance,
+        double relativeScale,
+        int[] viewport,
+        int canvasWidth,
+        int canvasHeight
+    ) {
+        int glMouseY = canvasHeight - 1 - mouseYFromTop;
+        if (mouseX < viewport[0] || mouseX >= viewport[0] + viewport[2]
+            || glMouseY < viewport[1] || glMouseY >= viewport[1] + viewport[3]) {
+            return;
+        }
+
+        List<DrawCommand> commands = QuadtreeDrawPlanner.select(instance, view.getCamera(), relativeScale);
+        for (int index = commands.size() - 1; index >= 0; index--) {
+            DrawCommand command = commands.get(index);
+            double[][] polygon = projectToViewport(command.corners(), view.getCamera(), viewport);
+            if (!pointInsideConvexQuad(mouseX, glMouseY, polygon)) {
+                continue;
+            }
+            QuadtreeNode texturedNode = command.node().nearestSelfOrAncestorWithTile();
+            if (texturedNode != null && texturedNode.getTileFile() != null) {
+                hoveredTileLabel = view.getTitle() + " tile: " + texturedNode.getTileFile().getAbsolutePath();
+            }
+            return;
+        }
+    }
+
+    private double[][] projectToViewport(Vector3Dd[] corners, Camera camera, int[] viewport) {
+        camera.updateVectors();
+        Matrix4x4d canonicalProjection = new Matrix4x4d().canonicalPerspectiveProjection();
+        Matrix4x4d normalizing = camera.getNormalizingTransformation();
+        double[][] projected = new double[corners.length][2];
+        for (int index = 0; index < corners.length; index++) {
+            Vector3Dd normalized = normalizing.multiply(corners[index]);
+            Vector4Dd ndc = canonicalProjection.multiply(new Vector4Dd(normalized)).dividedByW();
+            projected[index][0] = viewport[0] + (ndc.x() + 1.0) * 0.5 * viewport[2];
+            projected[index][1] = viewport[1] + (ndc.y() + 1.0) * 0.5 * viewport[3];
+        }
+        return projected;
+    }
+
+    private boolean pointInsideConvexQuad(double x, double y, double[][] polygon) {
+        double previousCross = 0.0;
+        for (int index = 0; index < polygon.length; index++) {
+            double[] a = polygon[index];
+            double[] b = polygon[(index + 1) % polygon.length];
+            double cross = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+            if (Math.abs(cross) < 1e-8) {
+                continue;
+            }
+            if (previousCross != 0.0 && Math.signum(cross) != Math.signum(previousCross)) {
+                return false;
+            }
+            previousCross = cross;
+        }
+        return true;
     }
 
     private void drawConflictBorders(
@@ -281,7 +409,9 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
                 + " | camera z: " + String.format("%.4f", views[0].getCamera().getPosition().z())
                 + " | compared: " + mergeAnalysis.getComparedTiles()
                 + " | conflicts: " + mergeAnalysis.getConflictCount()
-                + " | copied: " + mergeAnalysis.getCopiedTiles(),
+                + " | resolution matches: " + mergeAnalysis.getResolutionEquivalentNodeIds().size()
+                + " | copied: " + mergeAnalysis.getCopiedTiles()
+                + " | replaced: " + mergeAnalysis.getReplacedTiles(),
             16, canvasHeight - 46
         );
         hudTextRenderer.draw(
@@ -294,6 +424,10 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
                     + " | conflict tiles: " + mergeAnalysis.getConflictingNodeIds(),
                 16, canvasHeight - 90
             );
+        }
+        if (hoveredTileLabel != null) {
+            hudTextRenderer.setColor(0.4f, 1.0f, 0.85f, 1.0f);
+            hudTextRenderer.draw(hoveredTileLabel, 16, canvasHeight - 112);
         }
         hudTextRenderer.endRendering();
     }

@@ -3,6 +3,7 @@ package planetviewer.render;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.util.texture.Texture;
 import com.jogamp.opengl.util.texture.TextureCoords;
+import java.io.File;
 import java.util.List;
 import planetviewer.io.TileImageLoader;
 import planetviewer.model.PyramidalImageInstance;
@@ -117,6 +118,10 @@ public final class Jogl4QuadtreeRenderer {
 
     public int getResidentTextureCount() {
         return textureCache.getResidentCount();
+    }
+
+    public void invalidate(GL2 gl2, File tileFile) {
+        textureCache.invalidate(gl2, tileFile);
     }
 
     public void dispose(GL2 gl2) {

@@ -27,6 +27,7 @@ public final class TileImageLoader {
     });
     private final Set<String> pending = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, BufferedImage> ready = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> generations = new ConcurrentHashMap<>();
     private final ArrayDeque<String> readyFifo = new ArrayDeque<>();
     private long readyBytes;
     private volatile Runnable onTileReady;
@@ -40,10 +41,11 @@ public final class TileImageLoader {
         if (ready.containsKey(path) || !pending.add(path)) {
             return;
         }
+        long generation = generations.getOrDefault(path, 0L);
         pool.submit(() -> {
             try {
                 BufferedImage image = ImageIO.read(tileFile);
-                if (image != null) {
+                if (image != null && generations.getOrDefault(path, 0L) == generation) {
                     registerReady(path, image);
                     Runnable callback = onTileReady;
                     if (callback != null) {
@@ -58,6 +60,18 @@ public final class TileImageLoader {
                 pending.remove(path);
             }
         });
+    }
+
+    public void invalidate(File tileFile) {
+        String path = tileFile.getAbsolutePath();
+        generations.merge(path, 1L, Long::sum);
+        BufferedImage image = ready.remove(path);
+        if (image != null) {
+            synchronized (readyFifo) {
+                readyFifo.remove(path);
+                readyBytes -= estimateBytes(image);
+            }
+        }
     }
 
     /** Removes and returns the decoded image for this file, if ready (consumed once uploaded to GPU). */

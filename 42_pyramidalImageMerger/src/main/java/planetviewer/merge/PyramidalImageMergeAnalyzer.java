@@ -16,6 +16,9 @@ public final class PyramidalImageMergeAnalyzer {
     private final Set<String> conflictingNodeIds = new LinkedHashSet<>();
     private final Set<Integer> conflictingLevels = new LinkedHashSet<>();
     private final List<String> missingDestinationNodeIds = new ArrayList<>();
+    private final Set<String> resolutionEquivalentNodeIds = new LinkedHashSet<>();
+    private final Set<String> higherResolutionDeltaNodeIds = new LinkedHashSet<>();
+    private final ImageMagickImageComparator imageComparator = new ImageMagickImageComparator();
 
     public MergeAnalysis analyze(PyramidalImage destination, PyramidalImage delta) {
         comparedTiles = 0;
@@ -24,6 +27,8 @@ public final class PyramidalImageMergeAnalyzer {
         conflictingNodeIds.clear();
         conflictingLevels.clear();
         missingDestinationNodeIds.clear();
+        resolutionEquivalentNodeIds.clear();
+        higherResolutionDeltaNodeIds.clear();
         visit(destination == null ? null : destination.getRoot(), delta == null ? null : delta.getRoot());
         return new MergeAnalysis(
             comparedTiles,
@@ -31,7 +36,10 @@ public final class PyramidalImageMergeAnalyzer {
             copiedTiles,
             new LinkedHashSet<>(conflictingNodeIds),
             new LinkedHashSet<>(conflictingLevels),
-            List.copyOf(missingDestinationNodeIds)
+            List.copyOf(missingDestinationNodeIds),
+            new LinkedHashSet<>(resolutionEquivalentNodeIds),
+            new LinkedHashSet<>(higherResolutionDeltaNodeIds),
+            0
         );
     }
 
@@ -49,6 +57,10 @@ public final class PyramidalImageMergeAnalyzer {
                 comparedTiles++;
                 if (filesAreIdentical(destinationNode, deltaNode)) {
                     mergeableTiles++;
+                }
+                else if (imagesAreEquivalentAtDifferentResolution(destinationNode, deltaNode)) {
+                    mergeableTiles++;
+                    resolutionEquivalentNodeIds.add(deltaNode.getId());
                 }
                 else {
                     conflictingNodeIds.add(deltaNode.getId());
@@ -68,6 +80,26 @@ public final class PyramidalImageMergeAnalyzer {
         }
     }
 
+    private boolean imagesAreEquivalentAtDifferentResolution(QuadtreeNode destinationNode, QuadtreeNode deltaNode) {
+        try {
+            ImageMagickImageComparator.Comparison comparison = imageComparator.compare(
+                destinationNode.getTileFile().toPath(),
+                deltaNode.getTileFile().toPath()
+            );
+            if (comparison.visuallyEquivalent() && comparison.deltaIsHigherResolution()) {
+                higherResolutionDeltaNodeIds.add(deltaNode.getId());
+            }
+            return comparison.visuallyEquivalent();
+        }
+        catch (IOException ex) {
+            return false;
+        }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
     private boolean filesAreIdentical(QuadtreeNode destinationNode, QuadtreeNode deltaNode) {
         try {
             return Files.mismatch(
@@ -76,13 +108,11 @@ public final class PyramidalImageMergeAnalyzer {
             ) == -1L;
         }
         catch (IOException ex) {
-            conflictingNodeIds.add(deltaNode.getId());
-            conflictingLevels.add(deltaNode.getDepth());
             return false;
         }
     }
 
-    public MergeAnalysis markCopied(MergeAnalysis baseAnalysis, int copiedTiles) {
+    public MergeAnalysis markMerged(MergeAnalysis baseAnalysis, int copiedTiles, int replacedTiles) {
         this.copiedTiles = copiedTiles;
         return new MergeAnalysis(
             baseAnalysis.getComparedTiles(),
@@ -90,7 +120,10 @@ public final class PyramidalImageMergeAnalyzer {
             copiedTiles,
             baseAnalysis.getConflictingNodeIds(),
             baseAnalysis.getConflictingLevels(),
-            baseAnalysis.getCopiedNodeIds()
+            baseAnalysis.getCopiedNodeIds(),
+            baseAnalysis.getResolutionEquivalentNodeIds(),
+            baseAnalysis.getHigherResolutionDeltaNodeIds(),
+            replacedTiles
         );
     }
 }

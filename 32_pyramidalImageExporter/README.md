@@ -99,8 +99,15 @@ already drawn in the interactive viewer:
 - Its 4 children are folders `00`, `01`, `02`, `03`; each one holds its own tile image
   (e.g. `00/00.png`) and, recursively, its own 4 child folders (e.g. `00/000/`, `00/001/`,
   `00/002/`, `00/003/`), one level deeper per quadtree level.
-- Each tile image is a `256x256` PNG cropped (nearest-neighbor) from its source texture's
-  sub-rectangle, the same sub-rectangle used to texture that tile on screen.
+- A tile is written only when its source texture is natively `256x256` and the tile uses
+  that complete texture. Partial ancestor sub-rectangles remain available for visualization
+  but are not upscaled/exported; the on-disk quadtree is intentionally allowed to have holes.
+- Native top-level catalog images are added directly to the export manifest at their resolved
+  quadkeys and copied byte-for-byte. Export does not depend on the ancestor-filled matrices
+  used by the GUI.
+- `topLevelTiles.json` is still required to recover those absolute quadkeys. If it is missing
+  and imported matrix ids cannot otherwise be anchored, export fails without clearing the
+  previous pyramid instead of reporting a successful zero-tile export.
 
 This replaces the earlier `matrix_<n>/matrixLayer.json` copy-based layout used by
 `31_matrixMerger`'s `ResultsExporter`: the pyramidal image is written directly as a
