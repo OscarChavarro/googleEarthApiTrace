@@ -32,12 +32,28 @@ public final class ViewerModel {
         listeners.add(listener);
     }
 
+    public void toggleSelection(TileRecord tile) {
+        if (catalog.setSelectionRecursively(tile, tile != null && !tile.selected())) {
+            notifyListeners();
+        }
+    }
+
+    public void clearSelection() {
+        if (catalog.clearSelection()) {
+            notifyListeners();
+        }
+    }
+
     private void setSelectedDepth(int depth) {
         int clamped = Math.max(0, Math.min(catalog.maxDepth(), depth));
         if (clamped == selectedDepth) {
             return;
         }
         selectedDepth = clamped;
+        notifyListeners();
+    }
+
+    private void notifyListeners() {
         listeners.forEach(Runnable::run);
     }
 }

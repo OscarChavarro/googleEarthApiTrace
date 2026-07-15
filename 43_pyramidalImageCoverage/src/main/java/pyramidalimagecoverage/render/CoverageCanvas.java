@@ -22,6 +22,8 @@ import pyramidalimagecoverage.processing.TileSourceResolver;
 
 public final class CoverageCanvas extends Canvas {
     private static final Color BACKGROUND = new Color(18, 18, 20);
+    private static final Color UNSELECTED_BORDER = Color.BLACK;
+    private static final Color SELECTED_BORDER = new Color(0, 255, 0);
     private static final Color HUD_BACKGROUND = new Color(0, 0, 0, 190);
     private static final Font HUD_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 14);
 
@@ -46,6 +48,24 @@ public final class CoverageCanvas extends Canvas {
     public void setLayoutDescription(LevelLayout layout) {
         this.layout = layout;
         repaint();
+    }
+
+    public TileRecord tileAtCanvasPosition(int x, int y) {
+        int pixelsPerTile = layout.pixelsPerTile();
+        int originX = Math.max(0, (getWidth() - layout.contentSide()) / 2);
+        int originY = Math.max(0, (getHeight() - layout.contentSide()) / 2);
+        int relativeX = x - originX;
+        int relativeY = y - originY;
+        if (relativeX < 0 || relativeY < 0 || relativeX >= layout.contentSide() || relativeY >= layout.contentSide()) {
+            return null;
+        }
+        int column = relativeX / pixelsPerTile;
+        int northRow = relativeY / pixelsPerTile;
+        if (column < 0 || column >= layout.matrixSide() || northRow < 0 || northRow >= layout.matrixSide()) {
+            return null;
+        }
+        int southRow = layout.matrixSide() - 1 - northRow;
+        return model.catalog().tileAt(model.selectedDepth(), column, southRow);
     }
 
     @Override
@@ -104,6 +124,7 @@ public final class CoverageCanvas extends Canvas {
         int x,
         int y
     ) {
+        drawTileBorder(g, target, x, y);
         if (layout.mode() == RenderMode.NATIVE) {
             BufferedImage image = images.load(target.imagePath());
             if (image != null) {
@@ -121,6 +142,14 @@ public final class CoverageCanvas extends Canvas {
             return;
         }
         drawImage(g, image, x, y, outputPixels, source.x0(), source.y0(), source.x1(), source.y1());
+    }
+
+    private void drawTileBorder(Graphics2D g, TileRecord target, int x, int y) {
+        if (layout.imagePixelsPerTile() <= 1) {
+            return;
+        }
+        g.setColor(target.selected() ? SELECTED_BORDER : UNSELECTED_BORDER);
+        g.fillRect(x, y, layout.pixelsPerTile(), layout.pixelsPerTile());
     }
 
     private void drawImage(

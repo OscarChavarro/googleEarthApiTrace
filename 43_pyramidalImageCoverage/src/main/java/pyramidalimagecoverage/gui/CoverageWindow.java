@@ -44,6 +44,7 @@ public final class CoverageWindow {
         });
         scrollPane.getHorizontalScrollBar().addAdjustmentListener(event -> canvas.repaint());
         scrollPane.getVerticalScrollBar().addAdjustmentListener(event -> canvas.repaint());
+        new MouseInteractionTechniques(model, canvas).install();
 
         FullscreenController fullscreen = new FullscreenController(frame, maximumBounds);
         new KeyboardInteractionTechniques(new KeyboardCommandProcessor(new ViewerActions() {

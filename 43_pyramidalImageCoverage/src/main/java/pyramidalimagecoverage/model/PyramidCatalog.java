@@ -80,6 +80,32 @@ public final class PyramidCatalog {
         return rootFolder;
     }
 
+    public boolean setSelectionRecursively(TileRecord tile, boolean selected) {
+        if (tile == null) {
+            return false;
+        }
+        boolean changed = false;
+        String quadKeyPrefix = tile.address().quadKey();
+        for (int depth = tile.address().depth(); depth < tilesByDepth.size(); depth++) {
+            for (TileRecord candidate : tilesByDepth.get(depth).values()) {
+                if (candidate.address().quadKey().startsWith(quadKeyPrefix)) {
+                    changed |= candidate.setSelected(selected);
+                }
+            }
+        }
+        return changed;
+    }
+
+    public boolean clearSelection() {
+        boolean changed = false;
+        for (Map<Long, TileRecord> tiles : tilesByDepth) {
+            for (TileRecord tile : tiles.values()) {
+                changed |= tile.setSelected(false);
+            }
+        }
+        return changed;
+    }
+
     private static long key(int column, int southRow) {
         return ((long) column << 32) ^ (southRow & 0xffffffffL);
     }

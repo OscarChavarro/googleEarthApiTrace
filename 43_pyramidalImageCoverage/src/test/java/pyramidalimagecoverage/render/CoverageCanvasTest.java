@@ -22,7 +22,7 @@ class CoverageCanvasTest {
     Path temporaryFolder;
 
     @Test
-    void nativeImageKeepsItsPixelsAndLeavesOneBackgroundPixelPerSide() throws IOException {
+    void nativeImageKeepsItsPixelsAndLeavesOneBlackBorderPixelPerSide() throws IOException {
         Path tilePath = temporaryFolder.resolve("0.png");
         BufferedImage tile = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
         java.awt.Graphics2D tileGraphics = tile.createGraphics();
@@ -41,9 +41,35 @@ class CoverageCanvasTest {
         BufferedImage result = new BufferedImage(258, 258, BufferedImage.TYPE_INT_RGB);
         canvas.paint(result.createGraphics());
 
-        assertEquals(new Color(18, 18, 20).getRGB(), result.getRGB(0, 200));
+        assertEquals(Color.BLACK.getRGB(), result.getRGB(0, 200));
         assertEquals(Color.RED.getRGB(), result.getRGB(1, 200));
         assertEquals(Color.RED.getRGB(), result.getRGB(256, 200));
-        assertEquals(new Color(18, 18, 20).getRGB(), result.getRGB(257, 200));
+        assertEquals(Color.BLACK.getRGB(), result.getRGB(257, 200));
+    }
+
+    @Test
+    void selectedTilePaintsGreenBorder() throws IOException {
+        Path tilePath = temporaryFolder.resolve("0.png");
+        BufferedImage tile = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D tileGraphics = tile.createGraphics();
+        tileGraphics.setColor(Color.BLUE);
+        tileGraphics.fillRect(0, 0, 256, 256);
+        tileGraphics.dispose();
+        ImageIO.write(tile, "png", tilePath.toFile());
+
+        PyramidCatalog catalog = new PyramidCatalog(temporaryFolder);
+        TileRecord rootTile = new TileRecord(TileAddress.fromQuadKey("0"), tilePath);
+        catalog.add(rootTile);
+        ViewerModel model = new ViewerModel(catalog);
+        model.toggleSelection(rootTile);
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(258, 258);
+        canvas.setLayoutDescription(LevelLayout.choose(0, new PixelSize(258, 258)));
+
+        BufferedImage result = new BufferedImage(258, 258, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(0, 200));
+        assertEquals(Color.BLUE.getRGB(), result.getRGB(1, 200));
     }
 }
