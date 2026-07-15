@@ -7,8 +7,9 @@ drawn by Java2D with nearest-neighbor sampling and Java UI scaling fixed to `1.0
 ## Input and execution
 
 The only argument is a pyramidal image folder. It must contain `0.png`; child tiles use
-the recursive full-quadkey layout produced by `32_pyramidalImageExporter` (for example,
-`00/00.png` and `00/002/002.png`).
+the per-digit directory layout produced by `32_pyramidalImageExporter` (for example,
+`0/00.png` and `0/2/002.png`; tile `0303301` lives at `3/0/3/3/0/1/0303301.png`). The
+scanner also accepts the previous cumulative-folder layout during migration.
 
 ```bash
 cd 43_pyramidalImageCoverage

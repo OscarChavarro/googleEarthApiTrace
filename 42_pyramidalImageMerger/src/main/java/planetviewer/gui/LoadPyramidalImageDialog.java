@@ -32,7 +32,7 @@ public final class LoadPyramidalImageDialog {
             File selected = chooser.getSelectedFile();
             Optional<PyramidalImage> loaded = new PyramidalImageFolderReader().read(Path.of(selected.getAbsolutePath()));
             if (loaded.isEmpty()) {
-                Logger.error("Not a valid pyramidal image folder (missing 0.png): " + selected);
+                Logger.error("Not a valid pyramidal image folder (missing 0.png or unreadable tile tree): " + selected);
                 return;
             }
             model.addImage(loaded.get());

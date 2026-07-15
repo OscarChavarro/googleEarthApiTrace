@@ -117,7 +117,7 @@ final class SessionPyramidalImageExportServiceTest {
 
         new SessionPyramidalImageExportService().export(model);
 
-        Path written = exportRoot.resolve("03/03.png");
+        Path written = exportRoot.resolve("3/03.png");
         assertTrue(written.toFile().isFile());
         BufferedImage image = ImageIO.read(written.toFile());
         assertEquals(256, image.getWidth());

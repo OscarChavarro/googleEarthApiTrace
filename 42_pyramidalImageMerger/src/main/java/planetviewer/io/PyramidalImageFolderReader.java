@@ -9,11 +9,14 @@ import planetviewer.model.QuadtreeNode;
 
 /**
  * Scans a pyramidal image root folder (the format written by
- * 32_pyramidalImageExporter's PyramidalImageExporter: root "0.png", child
- * folders "00"/"01"/"02"/"03" recursively, quadrant digit convention
- * 0 = south-west, 1 = south-east, 2 = north-east, 3 = north-west) and builds
- * the QuadtreeNode graph. Only the directory structure is scanned here; no
- * pixel data is loaded (tile images are loaded lazily by the renderer).
+ * 32_pyramidalImageExporter's PyramidalImageExporter: root "0.png", then one
+ * folder per quadrant digit after the root marker (for example
+ * "0/2/1/0021.png"), quadrant digit convention 0 = south-west,
+ * 1 = south-east, 2 = north-east, 3 = north-west) and builds the
+ * QuadtreeNode graph. For transition safety it also accepts the previous
+ * cumulative-folder layout ("00/002/0021/0021.png"). Only the directory
+ * structure is scanned here; no pixel data is loaded (tile images are loaded
+ * lazily by the renderer).
  */
 public final class PyramidalImageFolderReader {
     private int tileCount;
@@ -47,7 +50,7 @@ public final class PyramidalImageFolderReader {
         boolean anyChild = false;
         for (int digit = 0; digit < 4; digit++) {
             String childId = id + digit;
-            Path childDirectory = containerDirectory.resolve(childId);
+            Path childDirectory = childDirectoryFor(containerDirectory, childId, digit);
             if (Files.isDirectory(childDirectory)) {
                 children[digit] = scanNode(childId, childDirectory, node);
                 anyChild = true;
@@ -57,5 +60,13 @@ public final class PyramidalImageFolderReader {
             node.setChildren(children);
         }
         return node;
+    }
+
+    private Path childDirectoryFor(Path containerDirectory, String childId, int digit) {
+        Path newLayout = containerDirectory.resolve(Integer.toString(digit));
+        if (Files.isDirectory(newLayout)) {
+            return newLayout;
+        }
+        return containerDirectory.resolve(childId);
     }
 }

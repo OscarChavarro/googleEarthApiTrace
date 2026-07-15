@@ -45,7 +45,7 @@ public class Main {
         Path path = Path.of(folder).toAbsolutePath().normalize();
         Optional<PyramidalImage> image = reader.read(path);
         if (image.isEmpty()) {
-            System.err.println("Invalid " + role + " pyramidal image folder: " + path);
+            System.err.println("Invalid " + role + " pyramidal image folder (missing 0.png or unreadable tile tree): " + path);
             ArgumentParser.printUsage();
             return null;
         }

@@ -4,7 +4,8 @@ import java.io.File;
 
 /**
  * One node of a pyramidal image quadtree, as scanned from the folder-based
- * on-disk format (root "0.png", children "00/01/02/03", recursively).
+ * on-disk format (root "0.png", then one directory per post-root quadrant
+ * digit, recursively).
  * Quadrant digit convention: 0 = south-west, 1 = south-east, 2 = north-east,
  * 3 = north-west child, matching 32_pyramidalImageExporter's PyramidalImageExporter.
  *

@@ -33,9 +33,9 @@ import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
 /**
  * Writes this session's reconstructed pyramid to disk as a quadtree of PNG
  * files inside the session's own input folder: the root tile is "0.png" in
- * the destination directory, and every deeper tile "0xy..." lives in a
- * folder named after its own full quadkey, nested one folder per ancestor,
- * e.g. 00/000/0000.png. Any tile from any matrix layer is eligible as long
+ * the destination directory, and every deeper tile "0xy..." lives under one
+ * folder per quadrant digit after the root marker, keeping the file name as
+ * the full quadkey, e.g. 0/0/0/0000.png. Any tile from any matrix layer is eligible as long
  * as {@link TileRootPathResolver} can anchor it to a full path from the root,
  * either directly (its own id already is a quadkey) or through a chain of
  * "uncle" relationships to an already-anchored tile.
@@ -569,14 +569,14 @@ public final class SessionPyramidalImageExportService {
 
     /**
      * The root tile "0" is written directly in rootDirectory; any deeper
-     * tile "0xy..." lives in a folder named after its own full quadkey,
-     * nested under a folder per each ancestor from the second digit on
-     * (e.g. quadkey "0021" resolves to rootDirectory/00/002/0021/0021.png).
+     * tile "0xy..." lives under one folder per quadrant digit after the root
+     * marker, while the file keeps the complete quadkey
+     * (e.g. quadkey "0021" resolves to rootDirectory/0/2/1/0021.png).
      */
     private static Path directoryFor(Path rootDirectory, String fullId) {
         Path directory = rootDirectory;
-        for (int length = 2; length <= fullId.length(); length++) {
-            directory = directory.resolve(fullId.substring(0, length));
+        for (int index = 1; index < fullId.length(); index++) {
+            directory = directory.resolve(String.valueOf(fullId.charAt(index)));
         }
         return directory;
     }

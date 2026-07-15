@@ -480,17 +480,20 @@ This is the final contract: the actual deliverable of the whole pipeline.
   (not implemented yet — explicitly out of scope for `32_pyramidalImageExporter`).
 - **Format** (the "folder-based pyramidal image" format, shared by both programs):
   - Root tile: `0.png`, directly inside the pyramidal-image folder.
-  - Its 4 children: subfolders `00`, `01`, `02`, `03` (quadrant digit convention above:
-    `0`=SW, `1`=SE, `2`=NE, `3`=NW), each holding its own tile image (`00/00.png`) and,
-    recursively, its own 4 child folders one level deeper (`00/000/`, `00/001/`, ...).
+  - Every deeper tile uses one folder per quadrant digit after the root marker
+    (quadrant convention above: `0`=SW, `1`=SE, `2`=NE, `3`=NW). Examples:
+    `00 -> 0/00.png`, `002 -> 0/2/002.png`, `0303301 -> 3/0/3/3/0/1/0303301.png`.
+    Consumers may still accept the previous cumulative-folder layout during migration, but
+    new exports must use the per-digit layout.
   - Every written tile image is a native `256x256` PNG copied from a source tile that uses
     its complete texture rectangle (`u0=0`, `v0=0`, `u1=1`, `v1=1`). A viewer layer may
     display a cell by borrowing a sub-rectangle from an ancestor, but the exporter does
     not crop/upscale that derived cell into a new pyramid tile; holes are valid.
 - **Invariants**:
   - The root file must be named exactly `0.png`; child folder names must be the single
-    quadrant digit appended to the parent's path (`TileRootPathResolver`'s path strings
-    and the on-disk folder names use the same digit alphabet `0-3`).
+    quadrant digit for that level. `TileRootPathResolver` path strings stay as full
+    absolute quadkeys using the same digit alphabet `0-3`; only the folder layout omits
+    the redundant leading `0` and the repeated cumulative prefixes.
   - Written tile images must stay native `256x256` PNG — `41_planetViewer` assumes this
     fixed size for texture budgeting and projected-area LOD thresholds. Missing child
     files are legal and use ancestor fallback in the viewer.

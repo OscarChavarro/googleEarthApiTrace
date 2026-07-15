@@ -35,7 +35,8 @@ public final class ArgumentParser {
         );
         System.err.println(
             "  <pyramidalImageFolder>: zero or more directories in the folder-based pyramidal "
-                + "image format (root 0.png, children 00/01/02/03, ...). With zero folders, the "
+                + "image format (root 0.png, then one directory per quadrant digit, e.g. "
+                + "3/0/3/0303.png). With zero folders, the "
                 + "viewer opens with an empty scene; use 'l' to load images from the GUI."
         );
     }

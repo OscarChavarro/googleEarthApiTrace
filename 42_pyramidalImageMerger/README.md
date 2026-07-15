@@ -16,7 +16,10 @@ ids are outlined in red in both views. A mergeable state is reported in green in
 - `<deltaPyramidalImageFolder>`: usually smaller pyramidal image tree to be merged into the
   destination.
 
-Both must be valid folder-based pyramidal images with `0.png` at the root.
+Both must be valid folder-based pyramidal images with `0.png` at the root. Deeper tiles
+use one directory per quadrant digit after that root marker; for example, tile `0303301`
+lives at `3/0/3/3/0/1/0303301.png`. The reader also accepts the previous cumulative-folder
+layout during migration.
 
 ## Execution
 

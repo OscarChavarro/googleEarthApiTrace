@@ -16,8 +16,11 @@ to 4 viewports with several layout styles.
 ## Inputs
 
 - `<pyramidalImageFolder>` (positional, zero or more): a directory in the folder-based
-  pyramidal image format (root `0.png`, children `00`/`01`/`02`/`03`, recursively; quadrant
-  digit convention 0 = south-west, 1 = south-east, 2 = north-east, 3 = north-west), e.g.
+  pyramidal image format (root `0.png`, then one directory per quadrant digit after the
+  root marker; quadrant digit convention 0 = south-west, 1 = south-east, 2 = north-east,
+  3 = north-west), e.g. a tile `0303301` lives at `3/0/3/3/0/1/0303301.png`. The reader
+  also accepts the previous cumulative-folder layout during migration, e.g.
+  `03/030/0303/03033/030330/0303301/0303301.png`. Example root:
   `/samples/datasets/googleEarth` (the default used by `./run.sh`). Each folder given adds
   one image to the stack. With zero folders the viewer opens with an empty scene; use the
   `l` key to load images from a directory chooser at runtime. This folder is read-only input

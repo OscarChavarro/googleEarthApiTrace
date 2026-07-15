@@ -29,6 +29,10 @@ public final class PyramidalImageScanner {
         if (!quadKey.matches("0[0-3]*")) {
             return;
         }
+        Path relativePath = catalog.rootFolder().relativize(path);
+        if (!matchesSupportedLayout(relativePath, quadKey)) {
+            return;
+        }
         try {
             catalog.add(new TileRecord(TileAddress.fromQuadKey(quadKey), path));
         }
@@ -39,5 +43,26 @@ public final class PyramidalImageScanner {
 
     private boolean isPng(Path path) {
         return path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png");
+    }
+
+    private boolean matchesSupportedLayout(Path relativePath, String quadKey) {
+        return relativePath.equals(relativePathForDigitFolders(quadKey))
+            || relativePath.equals(relativePathForLegacyCumulativeFolders(quadKey));
+    }
+
+    private Path relativePathForDigitFolders(String quadKey) {
+        Path path = Path.of(quadKey + ".png");
+        for (int index = quadKey.length() - 1; index >= 1; index--) {
+            path = Path.of(String.valueOf(quadKey.charAt(index)), path.toString());
+        }
+        return path;
+    }
+
+    private Path relativePathForLegacyCumulativeFolders(String quadKey) {
+        Path path = Path.of(quadKey + ".png");
+        for (int length = quadKey.length(); length >= 2; length--) {
+            path = Path.of(quadKey.substring(0, length), path.toString());
+        }
+        return path;
     }
 }

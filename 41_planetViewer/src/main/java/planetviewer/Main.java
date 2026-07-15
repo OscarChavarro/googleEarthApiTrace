@@ -44,7 +44,7 @@ public class Main {
             Path path = Path.of(folder).toAbsolutePath().normalize();
             Optional<PyramidalImage> image = reader.read(path);
             if (image.isEmpty()) {
-                Logger.error("Not a valid pyramidal image folder (missing 0.png): " + path);
+                Logger.error("Not a valid pyramidal image folder (missing 0.png or unreadable tile tree): " + path);
                 continue;
             }
             model.addImage(image.get());

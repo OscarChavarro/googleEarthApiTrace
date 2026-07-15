@@ -96,9 +96,11 @@ Pressing `e` writes every tile that can be anchored to an absolute quadtree path
 already drawn in the interactive viewer:
 
 - The root tile is `0.png`, directly in the destination directory.
-- Its 4 children are folders `00`, `01`, `02`, `03`; each one holds its own tile image
-  (e.g. `00/00.png`) and, recursively, its own 4 child folders (e.g. `00/000/`, `00/001/`,
-  `00/002/`, `00/003/`), one level deeper per quadtree level.
+- Every deeper tile uses one folder per quadrant digit after the root marker, while the
+  file name remains the complete absolute quadkey. For example, `00` is written as
+  `0/00.png`, `002` as `0/2/002.png`, and `0303301` as `3/0/3/3/0/1/0303301.png`.
+- This omits the redundant root marker from the directory names and avoids repeating the
+  cumulative prefixes in every folder segment.
 - A tile is written only when its source texture is natively `256x256` and the tile uses
   that complete texture. Partial ancestor sub-rectangles remain available for visualization
   but are not upscaled/exported; the on-disk quadtree is intentionally allowed to have holes.

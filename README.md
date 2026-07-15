@@ -30,7 +30,9 @@ The extraction workflow is split into stages. Each stage has separate codebases,
     consolidated pyramid is the responsibility of a separate program (pending).
 - Projects starting with `4` are the **Visualization / Inspection stage**.
   - They consume already exported pyramidal images and provide interactive or offline
-    inspection tools. `41_planetViewer` is the current viewer.
+    inspection tools. `41_planetViewer` is the current viewer. The on-disk pyramid layout
+    now uses one folder per quadrant digit after the root marker, so a tile such as
+    `0303301` is stored as `3/0/3/3/0/1/0303301.png`.
 
 ## Projects
 
