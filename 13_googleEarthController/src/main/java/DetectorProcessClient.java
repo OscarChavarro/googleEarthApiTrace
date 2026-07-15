@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.util.function.Consumer;
 
 final class DetectorProcessClient {
+    private static final long GRACEFUL_SHUTDOWN_TIMEOUT_MILLIS = 1000;
+
     private final Object lock = new Object();
 
     private Process process;
@@ -47,6 +49,8 @@ final class DetectorProcessClient {
                 return;
             }
             try {
+                stdin.write("exit");
+                stdin.newLine();
                 stdin.flush();
                 System.out.println("[OK] Exit command sent to detector process.");
             } catch (IOException ex) {
@@ -58,22 +62,44 @@ final class DetectorProcessClient {
     void stop() {
         Process processToStop;
         Thread readerThreadToJoin;
+        BufferedWriter stdinToClose;
+        boolean gracefulShutdownRequested;
 
         synchronized (lock) {
             processToStop = process;
             readerThreadToJoin = readerThread;
+            stdinToClose = stdin;
+            gracefulShutdownRequested = stdinToClose != null;
             process = null;
             readerThread = null;
+            stdin = null;
+        }
 
-            if (stdin != null) {
-                try {
-                    stdin.close();
-                } catch (IOException ignored) {
-                }
-                stdin = null;
+        if (gracefulShutdownRequested) {
+            try {
+                stdinToClose.write("exit");
+                stdinToClose.newLine();
+                stdinToClose.flush();
+                System.out.println("[OK] Exit command sent to detector process.");
+            } catch (IOException ex) {
+                System.err.println("[ERROR] Could not write exit to detector stdin: " + ex.getMessage());
             }
+        }
 
-            if (processToStop != null) {
+        if (stdinToClose != null) {
+            try {
+                stdinToClose.close();
+            } catch (IOException ignored) {
+            }
+        }
+
+        if (processToStop != null) {
+            try {
+                if (!processToStop.waitFor(GRACEFUL_SHUTDOWN_TIMEOUT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    processToStop.destroy();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 processToStop.destroy();
             }
         }

@@ -207,7 +207,6 @@ public class GoogleEarthController {
 
     private void onQuit() {
         System.out.println("[STEP] Quit requested.");
-        detectorClient.sendExit();
         stop();
         ui.shutdown();
         scheduler.shutdownNow();
