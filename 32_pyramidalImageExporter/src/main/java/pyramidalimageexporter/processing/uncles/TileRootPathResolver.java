@@ -83,6 +83,11 @@ public final class TileRootPathResolver {
         }
 
         Set<String> discarded = new HashSet<>();
+        // Canonicalize absolute seeds before walking uncle links. In particular, a
+        // full-world layer has no arbitrary longitude phase: matrix column zero is
+        // the antimeridian. Letting its noisy anchors reach a child first doubles
+        // the longitudinal error at every subsequent quadtree level.
+        propagateByGridPosition(layers, resolvedPath, sourceById, discarded, true);
         boolean progress = true;
         while (progress) {
             progress = false;
@@ -105,9 +110,7 @@ public final class TileRootPathResolver {
                 }
                 progress = true;
             }
-            if (!progress) {
-                progress = propagateByGridPosition(layers, resolvedPath, sourceById, discarded);
-            }
+            progress |= propagateByGridPosition(layers, resolvedPath, sourceById, discarded, false);
         }
 
         return new Resolution(Map.copyOf(resolvedPath), Set.copyOf(discarded), Map.copyOf(sourceById));
@@ -125,7 +128,8 @@ public final class TileRootPathResolver {
         List<MatrixLayer> layers,
         Map<String, String> resolvedPath,
         Map<String, PathSource> sourceById,
-        Set<String> discarded
+        Set<String> discarded,
+        boolean fullWorldOnly
     ) {
         boolean progress = false;
         if (layers == null) {
@@ -141,6 +145,9 @@ public final class TileRootPathResolver {
             }
             int level = anchor[0];
             int side = 1 << level;
+            if (fullWorldOnly && layer.getCols() != side) {
+                continue;
+            }
             for (MatrixLayerTile tile : layer.getTiles()) {
                 if (tile == null) {
                     continue;
@@ -195,10 +202,9 @@ public final class TileRootPathResolver {
             }
             int side = 1 << cell[0];
             int rowOffset = layer.getRows() == side ? 0 : cell[1] - tile.getI();
-            // Longitude is cyclic. Even a full-world matrix can start at any
-            // quadtree column, so preserve the phase supplied by its anchors
-            // instead of assuming that local column zero is the antimeridian.
-            int colOffset = Math.floorMod(cell[2] - tile.getJ(), side);
+            int colOffset = layer.getCols() == side
+                ? 0
+                : Math.floorMod(cell[2] - tile.getJ(), side);
             List<Integer> anchor = List.of(cell[0], rowOffset, colOffset);
             votes.merge(anchor, 1, Integer::sum);
         }

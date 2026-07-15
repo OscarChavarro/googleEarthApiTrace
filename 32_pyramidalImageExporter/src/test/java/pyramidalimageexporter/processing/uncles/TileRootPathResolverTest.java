@@ -68,7 +68,7 @@ final class TileRootPathResolverTest {
     }
 
     @Test
-    void fullWorldWidthPreservesCyclicLongitudeOffset() {
+    void fullWorldWidthForcesTheAntimeridianAtMatrixColumnZero() {
         MatrixLayer layer = layer(
             tile("anchor-a", 0, 0),
             tile("anchor-b", 0, 1),
@@ -83,20 +83,44 @@ final class TileRootPathResolverTest {
             Map.of()
         );
 
-        assertEquals("022", resolution.pathById().get("anchor-a"));
-        assertEquals("033", resolution.pathById().get("anchor-b"));
-        assertEquals("032", resolution.pathById().get("outlier"));
-        assertEquals("023", resolution.pathById().get("child"));
+        assertEquals("033", resolution.pathById().get("anchor-a"));
+        assertEquals("032", resolution.pathById().get("anchor-b"));
+        assertEquals("023", resolution.pathById().get("outlier"));
+        assertEquals("022", resolution.pathById().get("child"));
+    }
+
+    @Test
+    void canonicalizesAFullWorldLayerBeforeResolvingItsChildLayer() {
+        MatrixLayerTile worldAnchor = tile("world-anchor", 0, 0);
+        MatrixLayer world = layer(
+            worldAnchor,
+            tile("world-1", 0, 1),
+            tile("world-2", 0, 2),
+            tile("world-3", 0, 3)
+        );
+        world.setCols(4);
+
+        MatrixLayerTile child = tile("child", 0, 0);
+        child.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_WEST, "world-anchor")));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(world, layer(child)),
+            Map.of("world-anchor", "022"),
+            Map.of()
+        );
+
+        assertEquals("033", resolution.pathById().get("world-anchor"));
+        assertEquals("0303", resolution.pathById().get("child"));
     }
 
     @Test
     void combinesIndependentStrictMajoritiesForAFullWorldMatrix() {
         MatrixLayer layer = layer(
-            tile("a", 0, 0), // offset (row=0, col=2)
-            tile("b", 0, 1), // offset (row=0, col=2)
-            tile("c", 0, 2), // offset (row=1, col=3)
-            tile("d", 0, 3), // offset (row=1, col=3)
-            tile("e", 1, 0), // offset (row=0, col=3)
+            tile("a", 0, 0),
+            tile("b", 0, 1),
+            tile("c", 0, 2),
+            tile("d", 0, 3),
+            tile("e", 1, 0),
             tile("child", 2, 1)
         );
         layer.setCols(4);
@@ -107,12 +131,12 @@ final class TileRootPathResolverTest {
             Map.of()
         );
 
-        assertEquals("022", resolution.pathById().get("a"));
-        assertEquals("033", resolution.pathById().get("b"));
-        assertEquals("032", resolution.pathById().get("c"));
-        assertEquals("023", resolution.pathById().get("d"));
-        assertEquals("021", resolution.pathById().get("e"));
-        assertEquals("003", resolution.pathById().get("child"));
+        assertEquals("033", resolution.pathById().get("a"));
+        assertEquals("032", resolution.pathById().get("b"));
+        assertEquals("023", resolution.pathById().get("c"));
+        assertEquals("022", resolution.pathById().get("d"));
+        assertEquals("030", resolution.pathById().get("e"));
+        assertEquals("002", resolution.pathById().get("child"));
     }
 
     @Test

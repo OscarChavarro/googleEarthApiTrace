@@ -34,8 +34,10 @@ to `32x32`); deeper levels come from `matrix_<n>` layers anchored through `uncle
 
 Matrix row `0` is north and rows increase southward. Matrix column `0` is merely the
 first local column and columns increase eastward; it is not necessarily the absolute
-westernmost quadtree column. At level `L`, absolute longitude columns are cyclic modulo
-`2^L`, while latitude rows never wrap.
+westernmost quadtree column for a partial matrix. A matrix spanning the complete world
+(`cols == 2^L`) is the exception: after west-cutter normalization its column `0` is the
+antimeridian and therefore has absolute `colOffset = 0`. At level `L`, absolute longitude
+columns are cyclic modulo `2^L`, while latitude rows never wrap.
 
 An "uncle" relationship (`ToUncleRelationship(direction, uncleContentId)`) links a fine
 tile to an immediately coarser **adjacent** tile. The uncle does not contain the fine tile.
@@ -73,20 +75,53 @@ colOffset = floorMod(col - j, 2^level)
 The winning anchor places every matrix tile with `absoluteRow = i + rowOffset` and
 `absoluteCol = floorMod(j + colOffset, 2^level)`. A strict majority is required so that
 duplicate-looking textures or bad individual relationships cannot shift the whole layer.
-A full-world matrix (`cols == 2^level`) may still have a non-zero cyclic longitude phase:
-local `j=0` is not proof that the tile lies at absolute `col=0`. If no complete anchor
-tuple has a strict majority, the resolver can combine independent strict majorities for
-level, row offset and cyclic column offset; it does not manufacture phase zero. Offsets
-that differ by a multiple of `2^level` are equivalent (for example, `1` and `-63` at
-level 6).
+A full-world matrix (`cols == 2^level`) is canonicalized with `colOffset = 0` before any
+of its `uncles` relationships are used to anchor a child layer. This is not an inference
+from one noisy tile: it is the coordinate contract established by west-cutter splitting
+and full-world matrix reconstruction. Partial matrices still vote for a cyclic longitude
+offset. If no complete anchor tuple has a strict majority, the resolver can combine
+independent strict majorities for level, row offset and cyclic column offset. Offsets that
+differ by a multiple of `2^level` are equivalent (for example, `1` and `-63` at level 6).
+
+### Full-world phase regression and depth-dependent displacement
+
+A real failure reproduced with `/media/ramdisk/output` and `/tmp/matrix` showed why the
+full-world exception must be applied before resolving descendants. The level-5 matrix had
+`cols = 32` but retained a voted cyclic phase of `31`, equivalent to `-1`. Its tiles were
+therefore exported one cell west of their known top-level positions. Quadtree refinement
+doubles coordinates at every edge:
+
+```
+childCol = 2 * parentCol + childEastBit
+```
+
+Consequently, an erroneous parent offset `e` becomes `2e` in the child. The observed
+displacements were `-1` column at level 5, `-2` at level 6 and `-4` at level 7. This can
+look like a new error that depends on tree depth, but it is one bad phase being scaled by
+the quadtree transformation; after `d` descendant edges the error is `2^d * e`.
+
+The resolver must therefore perform these operations in this order:
+
+1. Load direct/catalogued absolute seeds.
+2. Canonicalize every full-world rigid matrix to `colOffset = 0`.
+3. Resolve adjacent-uncle relationships into the next level.
+4. Canonicalize each newly anchored rigid matrix before continuing the fixpoint walk.
+
+The repaired export was checked by SHA-256 identity against
+`/samples/datasets/googleEarth/toplevel`: all 142 shared level-5 tiles and all 625 shared
+level-6 tiles had coordinate delta `(row=0,col=0)`. Compared with the defective
+`level3part1` export, the corrected paths moved east by `+1`, `+2` and `+4` columns at
+levels 5, 6 and 7 respectively; all 1104 level-7 tile identities agreed on the `+4`
+correction. This hash-to-quadkey comparison is a stronger regression check than visual
+inspection of a coastline because it verifies every uniquely matching tile.
 
 ### Invalid assumptions — do not encode these in producers or consumers
 
 - **An uncle is the containing parent.** False: it is an adjacent coarser tile, so
   `childPath = unclePath + quadrantDigit` is not a valid resolution rule.
-- **A full-world matrix starts at the antimeridian.** False: full width determines the
-  extent, not the cyclic phase. Do not force `colOffset = 0` when evidence votes for a
-  non-zero phase.
+- **A full-world matrix may preserve an arbitrary cyclic phase.** False for normalized
+  pipeline matrices: west-cutter normalization makes local column zero the antimeridian.
+  Preserving a noisy phase of `-1` shifts the next levels by `-2`, `-4`, and so on.
 - **Longitude behaves like latitude.** False: columns wrap modulo `2^level`; rows are
   bounded and do not wrap. Negative and large longitude offsets may be valid equivalent
   representations.
@@ -454,10 +489,11 @@ make it into the final pyramidal image, so it is worth stating explicitly:
     that grid canonicalizes every path in the matrix. Minority/outlier anchors and an
     individually ambiguous tile are corrected by the winning grid instead of being
     allowed to create duplicate output paths. `colOffset` and every propagated absolute
-    column are reduced modulo `2^level`; this remains necessary when the matrix spans the
-    complete world width. If the cyclic phase itself has no strict majority, a
-    resolver may combine independent strict majorities for level, row offset and cyclic
-    column offset rather than treating zero as an unconditional fact.
+    column are reduced modulo `2^level`. Partial matrices vote for that cyclic phase and,
+    if a complete tuple has no majority, may combine independent strict majorities for
+    level, row offset and column offset. A complete-world matrix is different: its
+    `colOffset` is canonical zero and must be applied before its relationships seed a
+    descendant, or the erroneous phase doubles at every hierarchy edge.
   - Before writing, the exporter builds a unique `fullPath -> tile` manifest. A local
     native tile deliberately replaces a derived TOP cell at the same path; any duplicate
     between incompatible peers aborts the export before the first PNG is written.

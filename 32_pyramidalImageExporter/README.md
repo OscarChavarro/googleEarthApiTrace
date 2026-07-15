@@ -132,9 +132,10 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
 - If a tile has several `uncles` relationships that resolve to different candidate paths,
   the matrix grid votes for a common `(level,rowOffset,colOffset)`. A strict majority
   canonicalizes every tile in that rigid grid, correcting minority and individually
-  ambiguous anchors. Longitude offsets are cyclic modulo `2^level`; a full-world matrix
-  retains its voted longitudinal phase instead of assuming that local column zero is the
-  antimeridian. If no complete `(level,rowOffset,colOffset)` tuple has a majority, the
+  ambiguous anchors. Longitude offsets are cyclic modulo `2^level`; for a full-world matrix,
+  local column zero is canonicalized to the antimeridian before resolving child layers so
+  an erroneous phase cannot double at every deeper level. If no complete
+  `(level,rowOffset,colOffset)` tuple has a majority, the
   resolver may combine independent strict majorities for its three components; without
   those component majorities the matrix stays unresolved.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
