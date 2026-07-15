@@ -8,6 +8,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 final class GoogleEarthUi {
@@ -49,11 +51,13 @@ final class GoogleEarthUi {
     private final Runnable onStartStop;
     private final Runnable onQuit;
     private final int totalPlacemarkCount;
+    private final int maximumSelectablePlacemarkCount;
     private final BlockingQueue<UiEvent> eventQueue = new LinkedBlockingQueue<>();
 
     private JButton startStopButton;
     private JLabel progressLabel;
     private JLabel statusLabel;
+    private JTextField limitTextField;
     private Robot robot;
     private Thread uiEventConsumerThread;
     private volatile boolean uiConsumerRunning;
@@ -65,9 +69,23 @@ final class GoogleEarthUi {
         this.onStartStop = onStartStop;
         this.onQuit = onQuit;
         this.totalPlacemarkCount = totalPlacemarkCount;
+        this.maximumSelectablePlacemarkCount = Math.max(1, totalPlacemarkCount);
         this.advanceCount = 0;
         this.runningState = false;
         this.completedState = false;
+    }
+
+    int getSelectedPlacemarkLimit() {
+        if (limitTextField == null) {
+            return maximumSelectablePlacemarkCount;
+        }
+
+        int parsedValue = parseLimitValue(limitTextField.getText());
+        String normalizedValue = Integer.toString(parsedValue);
+        if (!normalizedValue.equals(limitTextField.getText().trim())) {
+            limitTextField.setText(normalizedValue);
+        }
+        return parsedValue;
     }
 
     void initializeRobot() {
@@ -186,12 +204,19 @@ final class GoogleEarthUi {
 
         progressLabel = new JLabel(formatProgress());
         statusLabel = new JLabel(formatStatus());
+        limitTextField = new JTextField(Integer.toString(maximumSelectablePlacemarkCount), 6);
+        limitTextField.addActionListener(e -> limitTextField.setText(Integer.toString(getSelectedPlacemarkLimit())));
+
+        JPanel limitPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
+        limitPanel.add(new JLabel("Limit to: "));
+        limitPanel.add(limitTextField);
 
         frame.add(startStopButton);
         frame.add(quitButton);
+        frame.add(limitPanel);
         frame.add(progressLabel);
         frame.add(statusLabel);
-        frame.setSize(260, 100);
+        frame.setSize(260, 135);
         frame.setResizable(false);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
@@ -215,6 +240,10 @@ final class GoogleEarthUi {
         if (statusLabel != null) {
             statusLabel.setText(formatStatus());
         }
+
+        if (limitTextField != null) {
+            limitTextField.setEnabled(!runningState);
+        }
     }
 
     private void enqueueEvent(UiEvent event) {
@@ -233,6 +262,18 @@ final class GoogleEarthUi {
             return "Completed";
         }
         return "Idle";
+    }
+
+    private int parseLimitValue(String rawValue) {
+        try {
+            int parsedValue = Integer.parseInt(rawValue.trim());
+            if (parsedValue < 1) {
+                return 1;
+            }
+            return Math.min(parsedValue, maximumSelectablePlacemarkCount);
+        } catch (NumberFormatException ex) {
+            return maximumSelectablePlacemarkCount;
+        }
     }
 
     private void sleepInterruptibly(long millis) {

@@ -31,6 +31,7 @@ public class GoogleEarthController {
     private ScheduledFuture<?> inactivityTimer;
     private int spinnerIndex;
     private int completedAdvanceCount;
+    private int selectedPlacemarkLimit;
 
     public static void main(String[] args) {
         new GoogleEarthController().run();
@@ -64,6 +65,7 @@ public class GoogleEarthController {
             return;
         }
 
+        selectedPlacemarkLimit = ui.getSelectedPlacemarkLimit();
         ui.setCompleted(false);
         Path executable = Path.of("..", "12_fileSystemChangesDetector", "build", "fileSystemChangesDetector");
         boolean started = detectorClient.start(executable, OUTPUT_DIRECTORY, this::onDetectorLine);
@@ -77,7 +79,7 @@ public class GoogleEarthController {
         running = true;
         System.out.println("[OK] fileSystemChangesDetector is running.");
         if (shouldAutoStopAfterCompletedAdvance()) {
-            System.out.println("[OK] Route already complete according to ~/.googleearth/myplaces.kml.");
+            System.out.println("[OK] Route already complete according to the current placemark limit.");
             ui.setCompleted(true);
             stop();
             return;
@@ -176,7 +178,7 @@ public class GoogleEarthController {
         ui.markAdvanceCompleted();
         completedAdvanceCount++;
         if (shouldAutoStopAfterCompletedAdvance()) {
-            System.out.println("[OK] Reached planned placemark count from ~/.googleearth/myplaces.kml.");
+            System.out.println("[OK] Reached the configured placemark limit.");
             ui.setCompleted(true);
             stop();
         }
@@ -224,8 +226,7 @@ public class GoogleEarthController {
     }
 
     private boolean shouldAutoStopAfterCompletedAdvance() {
-        return placemarkCountResult.isAvailable()
-            && completedAdvanceCount >= placemarkCountResult.getCount();
+        return completedAdvanceCount >= selectedPlacemarkLimit;
     }
 
     private void syncRunningStateToUi() {
