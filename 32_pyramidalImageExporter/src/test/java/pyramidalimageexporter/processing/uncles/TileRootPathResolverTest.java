@@ -68,20 +68,51 @@ final class TileRootPathResolverTest {
     }
 
     @Test
-    void fullWorldWidthForcesZeroLongitudeOffset() {
-        MatrixLayerTile anchored = tile("child-a", 0, 0);
-        anchored.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "uncle")));
-        MatrixLayer layer = layer(anchored, tile("child-b", 0, 3));
+    void fullWorldWidthPreservesCyclicLongitudeOffset() {
+        MatrixLayer layer = layer(
+            tile("anchor-a", 0, 0),
+            tile("anchor-b", 0, 1),
+            tile("outlier", 0, 2),
+            tile("child", 0, 3)
+        );
         layer.setCols(4);
 
         TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
             List.of(layer),
-            Map.of("uncle", "03"),
+            Map.of("anchor-a", "022", "anchor-b", "033", "outlier", "023"),
             Map.of()
         );
 
-        assertEquals("033", resolution.pathById().get("child-a"));
-        assertEquals("022", resolution.pathById().get("child-b"));
+        assertEquals("022", resolution.pathById().get("anchor-a"));
+        assertEquals("033", resolution.pathById().get("anchor-b"));
+        assertEquals("032", resolution.pathById().get("outlier"));
+        assertEquals("023", resolution.pathById().get("child"));
+    }
+
+    @Test
+    void combinesIndependentStrictMajoritiesForAFullWorldMatrix() {
+        MatrixLayer layer = layer(
+            tile("a", 0, 0), // offset (row=0, col=2)
+            tile("b", 0, 1), // offset (row=0, col=2)
+            tile("c", 0, 2), // offset (row=1, col=3)
+            tile("d", 0, 3), // offset (row=1, col=3)
+            tile("e", 1, 0), // offset (row=0, col=3)
+            tile("child", 2, 1)
+        );
+        layer.setCols(4);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer),
+            Map.of("a", "023", "b", "022", "c", "031", "d", "020", "e", "021"),
+            Map.of()
+        );
+
+        assertEquals("022", resolution.pathById().get("a"));
+        assertEquals("033", resolution.pathById().get("b"));
+        assertEquals("032", resolution.pathById().get("c"));
+        assertEquals("023", resolution.pathById().get("d"));
+        assertEquals("021", resolution.pathById().get("e"));
+        assertEquals("003", resolution.pathById().get("child"));
     }
 
     @Test

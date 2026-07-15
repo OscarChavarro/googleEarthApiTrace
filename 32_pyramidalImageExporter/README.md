@@ -122,14 +122,19 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   construction) are anchored directly.
 - Any other tile can still be anchored if one of its `uncles` relationships
   (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
-  already anchored: the uncle is the immediately coarser tile that contains this tile in
-  one of its 4 quadrants, `direction` names that quadrant, and the tile's path is the
-  uncle's path with that quadrant digit appended. This propagates as a fixpoint, so a
-  chain of several uncle hops resolves one hop per pass.
+  already anchored. The uncle is the immediately coarser adjacent tile; `direction`
+  identifies the half of its border touched by the finer tile. Resolution crosses that
+  border to the neighboring parent cell and selects the corresponding child quadrant.
+  This propagates as a fixpoint, so a chain of several uncle hops resolves one hop per
+  pass.
 - If a tile has several `uncles` relationships that resolve to different candidate paths,
   the matrix grid votes for a common `(level,rowOffset,colOffset)`. A strict majority
   canonicalizes every tile in that rigid grid, correcting minority and individually
-  ambiguous anchors. Without a majority the unresolved tiles remain unexported.
+  ambiguous anchors. Longitude offsets are cyclic modulo `2^level`; a full-world matrix
+  retains its voted longitudinal phase instead of assuming that local column zero is the
+  antimeridian. If no complete `(level,rowOffset,colOffset)` tuple has a majority, the
+  resolver may combine independent strict majorities for its three components; without
+  those component majorities the matrix stays unresolved.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
 
 Contract-v2 hierarchy roots repaired by `31_matrixMerger` carry explicit inferred uncle

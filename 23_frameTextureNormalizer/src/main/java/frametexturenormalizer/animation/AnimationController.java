@@ -4,7 +4,8 @@ import javax.swing.Timer;
 import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 
 public final class AnimationController {
-    private static final int ANIMATION_DELAY_MILLIS = 10;
+    private static final int ANIMATION_DELAY_MILLIS = 1;
+    private static final int FRAMES_PER_STEP = 2;
 
     private final FrameTextureNormalizerState model;
     private final Runnable repaintAction;
@@ -48,8 +49,8 @@ public final class AnimationController {
         }
 
         boolean changed = switch (direction) {
-            case FORWARD -> model.selectNextFrame();
-            case BACKWARD -> model.selectPreviousFrame();
+            case FORWARD -> advanceSeveralFrames(true);
+            case BACKWARD -> advanceSeveralFrames(false);
             case STOPPED -> false;
         };
         if (!changed) {
@@ -64,6 +65,18 @@ public final class AnimationController {
             stopAnimation();
         }
         return true;
+    }
+
+    private boolean advanceSeveralFrames(boolean forward) {
+        boolean changed = false;
+        for (int i = 0; i < FRAMES_PER_STEP; i++) {
+            boolean moved = forward ? model.selectNextFrame() : model.selectPreviousFrame();
+            if (!moved) {
+                break;
+            }
+            changed = true;
+        }
+        return changed;
     }
 
     boolean isRunning() {

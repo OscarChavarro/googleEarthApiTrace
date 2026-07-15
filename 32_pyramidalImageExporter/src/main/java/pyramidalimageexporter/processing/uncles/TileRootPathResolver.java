@@ -117,9 +117,9 @@ public final class TileRootPathResolver {
      * A merged matrix layer is a rigid grid: all its tiles share one level,
      * and their (i, j) cells map to quadtree row/col through one common
      * offset. So a single anchored tile positions the whole layer: every
-     * other tile's full path follows from its (i, j) alone. Anchored tiles
-     * must all agree on (level, rowOffset, colOffset); a disagreeing layer
-     * is left untouched rather than half-guessed.
+     * other tile's full path follows from its (i, j) alone. When noisy
+     * anchors disagree, placement requires either a strict majority for the
+     * complete anchor or strict majorities for each independent component.
      */
     private static boolean propagateByGridPosition(
         List<MatrixLayer> layers,
@@ -150,8 +150,8 @@ public final class TileRootPathResolver {
                     continue;
                 }
                 int row = tile.getI() + anchor[1];
-                int col = tile.getJ() + anchor[2];
-                if (row < 0 || col < 0 || row >= side || col >= side) {
+                int col = Math.floorMod(tile.getJ() + anchor[2], side);
+                if (row < 0 || row >= side) {
                     continue;
                 }
                 String canonicalPath = "0" + encodeQuadtreeLabel(level, row, col);
@@ -174,9 +174,10 @@ public final class TileRootPathResolver {
      * of the layer (offsets being quadtree row/col minus matrix i/j), or
      * null when the layer has no usable anchor. Anchored tiles vote: a lone
      * bad anchor (typically produced by texture deduplication equating two
-     * identical-looking cells, which shifts a chain by one cell) is outvoted
-     * as long as a strict majority agrees; a tie is unresolvable and skips
-     * the layer.
+     * identical-looking cells, which shifts a chain by one cell) is outvoted.
+     * A complete tuple majority wins first. Otherwise level, row offset and
+     * cyclic column offset vote independently; all three still need strict
+     * majorities, or the layer is left unresolved.
      */
     private static int[] consistentGridAnchor(MatrixLayer layer, Map<String, String> resolvedPath) {
         Map<List<Integer>, Integer> votes = new LinkedHashMap<>();
@@ -194,12 +195,57 @@ public final class TileRootPathResolver {
             }
             int side = 1 << cell[0];
             int rowOffset = layer.getRows() == side ? 0 : cell[1] - tile.getI();
-            int colOffset = layer.getCols() == side ? 0 : cell[2] - tile.getJ();
-            votes.merge(List.of(cell[0], rowOffset, colOffset), 1, Integer::sum);
+            // Longitude is cyclic. Even a full-world matrix can start at any
+            // quadtree column, so preserve the phase supplied by its anchors
+            // instead of assuming that local column zero is the antimeridian.
+            int colOffset = Math.floorMod(cell[2] - tile.getJ(), side);
+            List<Integer> anchor = List.of(cell[0], rowOffset, colOffset);
+            votes.merge(anchor, 1, Integer::sum);
         }
         if (votes.isEmpty()) {
             return null;
         }
+        AnchorVote winner = strictMajority(votes);
+        if (winner == null) {
+            ComponentVote level = strictComponentMajority(votes, 0);
+            Map<List<Integer>, Integer> votesAtWinningLevel =
+                level == null ? Map.of() : votesAtLevel(votes, level.value());
+            ComponentVote row = strictComponentMajority(votesAtWinningLevel, 1);
+            ComponentVote col = strictComponentMajority(votesAtWinningLevel, 2);
+            if (level != null && row != null && col != null) {
+                List<Integer> combined = List.of(level.value(), row.value(), col.value());
+                winner = new AnchorVote(combined, Math.min(row.count(), col.count()), level.total(), true);
+                System.out.println(
+                    "TileRootPathResolver: layer " + layer.getSourceFolderName()
+                        + " has no majority for one complete anchor " + votes
+                        + "; combining independent strict majorities as " + combined + "."
+                );
+            }
+        }
+        if (winner == null) {
+            System.out.println(
+                "TileRootPathResolver: layer " + layer.getSourceFolderName()
+                    + " has no majority among its inconsistent anchors ("
+                    + votes.size() + " candidates " + votes
+                    + "); skipping grid propagation for it."
+            );
+            return null;
+        }
+        if (votes.size() > 1 && !winner.componentWise()) {
+            System.out.println(
+                "TileRootPathResolver: layer " + layer.getSourceFolderName()
+                    + " has inconsistent anchors " + votes + "; keeping majority ("
+                    + winner.count() + "/" + winner.total() + ")."
+            );
+        }
+        List<Integer> best = winner.anchor();
+        return new int[]{best.get(0), best.get(1), best.get(2)};
+    }
+
+    private record AnchorVote(List<Integer> anchor, int count, int total, boolean componentWise) {}
+    private record ComponentVote(int value, int count, int total) {}
+
+    private static AnchorVote strictMajority(Map<List<Integer>, Integer> votes) {
         List<Integer> best = null;
         int bestCount = 0;
         int totalCount = 0;
@@ -210,23 +256,48 @@ public final class TileRootPathResolver {
                 best = vote.getKey();
             }
         }
-        if (votes.size() > 1) {
-            if (bestCount * 2 <= totalCount) {
-                System.out.println(
-                    "TileRootPathResolver: layer " + layer.getSourceFolderName()
-                        + " has no majority among its inconsistent anchors ("
-                        + votes.size() + " candidates " + votes
-                        + "); skipping grid propagation for it."
-                );
-                return null;
+        return best != null && bestCount * 2 > totalCount
+            ? new AnchorVote(best, bestCount, totalCount, false)
+            : null;
+    }
+
+    private static ComponentVote strictComponentMajority(
+        Map<List<Integer>, Integer> votes,
+        int componentIndex
+    ) {
+        Map<Integer, Integer> counts = new LinkedHashMap<>();
+        int totalCount = 0;
+        for (Map.Entry<List<Integer>, Integer> vote : votes.entrySet()) {
+            if (vote.getKey().size() <= componentIndex) {
+                continue;
             }
-            System.out.println(
-                "TileRootPathResolver: layer " + layer.getSourceFolderName()
-                    + " has inconsistent anchors " + votes + "; keeping majority ("
-                    + bestCount + "/" + totalCount + ")."
-            );
+            counts.merge(vote.getKey().get(componentIndex), vote.getValue(), Integer::sum);
+            totalCount += vote.getValue();
         }
-        return new int[]{best.get(0), best.get(1), best.get(2)};
+        int bestValue = 0;
+        int bestCount = 0;
+        for (Map.Entry<Integer, Integer> count : counts.entrySet()) {
+            if (count.getValue() > bestCount) {
+                bestValue = count.getKey();
+                bestCount = count.getValue();
+            }
+        }
+        return bestCount * 2 > totalCount
+            ? new ComponentVote(bestValue, bestCount, totalCount)
+            : null;
+    }
+
+    private static Map<List<Integer>, Integer> votesAtLevel(
+        Map<List<Integer>, Integer> votes,
+        int level
+    ) {
+        Map<List<Integer>, Integer> filtered = new LinkedHashMap<>();
+        for (Map.Entry<List<Integer>, Integer> vote : votes.entrySet()) {
+            if (!vote.getKey().isEmpty() && vote.getKey().get(0) == level) {
+                filtered.put(vote.getKey(), vote.getValue());
+            }
+        }
+        return filtered;
     }
 
     /** Full path "0" + quadrant digits back to {level, row, col}; null if malformed. */

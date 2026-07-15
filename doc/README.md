@@ -13,9 +13,11 @@ session at `/media/ramdisk/output` (paths below use that default; the actual roo
 
 ## Quadtree conventions used throughout
 
-All tile identities, `uncles` relationships and pyramidal-image paths share one quadrant
-convention (see [`11_pathPlanner`](../11_pathPlanner/README.md) route generation and
-[`32_pyramidalImageExporter`](../32_pyramidalImageExporter/README.md) export):
+All absolute quadtree paths, `uncles` direction semantics and pyramidal-image folders use
+one quadrant convention (see [`11_pathPlanner`](../11_pathPlanner/README.md) route
+generation and [`32_pyramidalImageExporter`](../32_pyramidalImageExporter/README.md)
+export). Capture `contentId` values such as `"328_163"` are opaque identities, not
+quadkeys:
 
 ```
 NW | NE          3 | 2
@@ -23,17 +25,94 @@ NW | NE          3 | 2
 SW | SE          0 | 1
 ```
 
-A quadtree path is a string of quadrant digits without the leading root `0`, e.g. `"0021"`
-under root `"0"` means: from the root, take quadrant `0` (SW), then `0` (SW), then `2`
-(NE), then `1` (SE). Levels `0..5` are the "top-level"/globe strip levels (sizes `1x1` up
+A full quadkey includes the root marker `0`: the root is exactly `"0"`, and a tile at
+level `L` has `L + 1` digits. For example, `"0021"` is a level-3 tile: after the root
+marker, take quadrant `0` (SW), then `2` (NE), then `1` (SE). Internal `Blist` values omit
+the root marker; do not interchange the two representations without adding/removing that
+marker explicitly. Levels `0..5` are the "top-level"/globe strip levels (sizes `1x1` up
 to `32x32`); deeper levels come from `matrix_<n>` layers anchored through `uncles`.
 
-An "uncle" relationship (`ToUncleRelationship(direction, uncleContentId)`) links a tile to
-the immediately coarser tile that contains it in one of its 4 quadrants; `direction` names
-that quadrant (`NORTH_EAST`, `WEST_NORTH`, etc.) and, once the uncle's own absolute path is
-known, the tile's path is the uncle's path with that quadrant digit appended. This is the
-mechanism that stitches deep tiles (captured at high zoom, with no direct global
-coordinate) back into the global quadtree.
+Matrix row `0` is north and rows increase southward. Matrix column `0` is merely the
+first local column and columns increase eastward; it is not necessarily the absolute
+westernmost quadtree column. At level `L`, absolute longitude columns are cyclic modulo
+`2^L`, while latitude rows never wrap.
+
+An "uncle" relationship (`ToUncleRelationship(direction, uncleContentId)`) links a fine
+tile to an immediately coarser **adjacent** tile. The uncle does not contain the fine tile.
+`direction` identifies the uncle border and the half of that border touched by the fine
+tile. Once the uncle has an absolute path, resolution crosses the border to the adjacent
+coarse parent cell and then selects the fine child quadrant:
+
+| Direction | Adjacent parent relative to uncle | Fine child quadrant |
+|---|---|---|
+| `WEST_NORTH` | west | NE (`2`) |
+| `WEST_SOUTH` | west | SE (`1`) |
+| `EAST_NORTH` | east | NW (`3`) |
+| `EAST_SOUTH` | east | SW (`0`) |
+| `NORTH_WEST` | north | SW (`0`) |
+| `NORTH_EAST` | north | SE (`1`) |
+| `SOUTH_WEST` | south | NW (`3`) |
+| `SOUTH_EAST` | south | NE (`2`) |
+
+East/west crossings in this operation wrap at the antimeridian; north/south crossings
+outside the valid row range are rejected. This relative relationship is the mechanism
+that stitches deep tiles (captured at high zoom, with no direct global coordinate) back
+into the global quadtree, but it cannot provide an absolute position without at least one
+absolute seed somewhere in the connected relationship graph.
+
+### Absolute anchoring of a rigid matrix
+
+For an anchored tile at local cell `(i,j)` and absolute quadtree cell `(row,col)`, a
+matrix votes for one common anchor:
+
+```
+rowOffset = row - i
+colOffset = floorMod(col - j, 2^level)
+```
+
+The winning anchor places every matrix tile with `absoluteRow = i + rowOffset` and
+`absoluteCol = floorMod(j + colOffset, 2^level)`. A strict majority is required so that
+duplicate-looking textures or bad individual relationships cannot shift the whole layer.
+A full-world matrix (`cols == 2^level`) may still have a non-zero cyclic longitude phase:
+local `j=0` is not proof that the tile lies at absolute `col=0`. If no complete anchor
+tuple has a strict majority, the resolver can combine independent strict majorities for
+level, row offset and cyclic column offset; it does not manufacture phase zero. Offsets
+that differ by a multiple of `2^level` are equivalent (for example, `1` and `-63` at
+level 6).
+
+### Invalid assumptions — do not encode these in producers or consumers
+
+- **An uncle is the containing parent.** False: it is an adjacent coarser tile, so
+  `childPath = unclePath + quadrantDigit` is not a valid resolution rule.
+- **A full-world matrix starts at the antimeridian.** False: full width determines the
+  extent, not the cyclic phase. Do not force `colOffset = 0` when evidence votes for a
+  non-zero phase.
+- **Longitude behaves like latitude.** False: columns wrap modulo `2^level`; rows are
+  bounded and do not wrap. Negative and large longitude offsets may be valid equivalent
+  representations.
+- **Local `(i,j)` is an absolute world coordinate.** False: it becomes absolute only
+  after applying a resolved rigid-grid offset.
+- **`matrix_<n>` directory order establishes parentage or quadtree depth.** False: only
+  explicit hierarchy relationships and absolute seeds establish placement. Folder order
+  is an export/iteration order.
+- **`hierarchyLevel` or `parentMatrixIndex` alone is an absolute quadkey.** False: those
+  fields describe relative matrix hierarchy; they do not locate it on Earth. Legacy or
+  disconnected data may also carry unknown values such as `-1`/`null`.
+- **Uncle relationships alone are sufficient.** False: a connected graph of exclusively
+  relative relationships still needs at least one absolute seed.
+- **Equal image bytes or visually equal textures prove equal geographic position.**
+  False: oceans and other repeated-looking cells exist. Content matching can propose an
+  anchor, but rigid-grid majority and conflict checks must canonicalize the result.
+- **A matrix is necessarily full/dense because it has `rows` and `cols`.** False: these
+  fields define its coordinate extent; filtering and merging may leave empty cells.
+- **Every reconstructed top-level cell owns a native exportable image.** False: viewer
+  matrices may borrow an ancestor sub-rectangle. Only native `256x256` whole-texture
+  tiles are written to the on-disk pyramid.
+- **Legacy `topLevelTiles.json.pathFromRoot`, `row`, or `col` are authoritative.** False:
+  current top-level placement is reconstructed from `appearances[].texCoord`.
+- **A previous `pyramidalImage` export or another session supplies missing anchors.**
+  False: export is session-local, rebuilds its own destination, and never reads another
+  pyramidal image. Cross-session merging is a separate stage.
 
 ## Pipeline graph
 
@@ -195,8 +274,8 @@ model with quadtree neighborhood information — everything downstream depends o
       free text for diagnostics).
     - `uncles[]`: cross-level neighbor relationships (`direction`,
       `uncleContentId`) — see "Quadtree conventions" above. Present here (not only in
-      `matrix.json`) because that is where the raw geometry needed to detect containment
-      lives.
+      `matrix.json`) because this is where the raw geometry needed to detect the
+      fine-to-adjacent-coarse border relationship lives.
     - `syntheticGlobeLevelTile`/`fullResolutionWithRespectToTexture`: flags consumed by
       the globe-level (top-level) tile-set processing described next.
   - `<output.directory>/topLevelTiles.json`: one JSON object, `byStripId` maps strip id
@@ -277,32 +356,35 @@ model with quadtree neighborhood information — everything downstream depends o
     (directly, or through the `frame`+`tileNumber` parse used by `DanglingUncleBridge`),
     since `32_pyramidalImageExporter` may need to resolve it later even after
     `31_matrixMerger` has copied/renamed the texture (Contract 6).
-  - `rows`/`cols`/`i`/`j` must stay 0-based and dense (no gaps) within one frame's matrix,
-    since `31_matrixMerger`'s merge algorithms assume a rectangular grid.
+  - `rows`/`cols` define a rectangular coordinate extent and `i`/`j` must stay 0-based and
+    inside it. The tile list may be sparse: filtered or merged matrices can contain empty
+    cells, so consumers must not equate `tiles.length` with `rows * cols`.
   - `westCutters.json`'s schema is shared verbatim between `23_frameTextureNormalizer` and
     `31_matrixMerger` — both read and write it, so a format change must land in both
     projects atomically.
 
 ## Contract 6: `31_matrixMerger` → `32_pyramidalImageExporter`
 
-- **Producer**: `31_matrixMerger`, via `ResultsExporter` (writes once at startup, after
-  `--mode auto` processing if requested — interactive merges done afterwards in the GUI
-  are **not** re-exported).
+- **Producer**: `31_matrixMerger`, via `ResultsExporter`. Offline mode exports after its
+  requested grouping/merge processing. Interactive mode exports when the viewer closes,
+  so accepted merges, splits and deletions from that session are included.
 - **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerReader`.
 - **Location**: `<exportFolder>/matrix_<n>/`, one folder per surviving merged matrix
   (`n` = 0-based export order), containing:
   - `matrixLayer.json`: versioned envelope (current `contractVersion: 2`) with:
     - `frameId`: representative frame of the merged matrix.
-    - `hierarchyLevel`: real depth in the matrix hierarchy (`0` for the first matrix,
-      increasing by one through each parent edge; it is not inferred from `<n>`).
-    - `parentMatrixIndex`: index `<n>` of the immediate parent, or `null` only for a
-      genuinely disconnected root.
+    - `hierarchyLevel`: relative depth in the matrix hierarchy (`0` for a known hierarchy
+      root, increasing by one through each parent edge; it is not inferred from `<n>`), or
+      `-1` when legacy/global grouping did not establish it. It is not the absolute
+      quadtree level.
+    - `parentMatrixIndex`: index `<n>` of the immediate parent, or `null` for a hierarchy
+      root, a disconnected matrix, or unknown legacy hierarchy.
     - `hierarchyUnclesByTileId`: compatibility map `tileId -> [uncleId]` used for graph
       ordering and diagnostics.
     - `hierarchyRelationshipsByTileId`: lossless map
       `tileId -> [{direction, uncleContentId}]`. It preserves the quadrant direction even
       when a merge keeps a duplicate tile record that originally had no `uncles`.
-    - `matrices`: one `{frameId, rows, cols, tiles[]}` matrix with
+    - `matrices`: one or more `{frameId, rows, cols, tiles[]}` matrix records with
       `tiles[].id/i/j/textureFile/uncles[]`. `textureFile` points at the exported copy
       `<exportFolder>/matrix_<n>/<tileId>.png`, not the Contract-1 path.
   - One `<tileId>.png` per tile, copied from the tile's original texture.
@@ -324,8 +406,10 @@ model with quadtree neighborhood information — everything downstream depends o
     strict majority must agree on one rigid `(parent,rowOffset,colOffset)`. Accepted
     relationships are persisted in both hierarchy maps. A non-confident root stays
     disconnected; ordering alone is never an anchor.
-  - `parentMatrixIndex` must refer to an earlier exported matrix and
-    `hierarchyLevel == parent.hierarchyLevel + 1`.
+  - When hierarchy metadata is known, `parentMatrixIndex` refers to an earlier exported
+    matrix and `hierarchyLevel == parent.hierarchyLevel + 1`. Legacy/global grouping can
+    emit unknown `hierarchyLevel: -1` and `parentMatrixIndex: null`; consumers must then
+    rely on explicit tile relationships and absolute seeds, never directory order.
   - Folder naming `matrix_<n>` (not zero-padded) and file naming `matrixLayer.json` (not
     `matrix.json`) are both significant — `32_pyramidalImageExporter` only recognizes this
     exact layout.
@@ -361,13 +445,19 @@ make it into the final pyramidal image, so it is worth stating explicitly:
     top-level tile synthesized from `topLevelTiles.json`).
   - Transitively, if one of its `uncles[]` resolves (directly, through Contract 6b's
     bridge, or through a chain of several uncle hops resolved one hop per fixpoint pass)
-    to an already-anchored tile: the child's path is the uncle's path with the matching
-    quadrant digit appended.
+    to an already-anchored tile. Resolution treats that tile as an adjacent coarser uncle,
+    crosses the indicated border to the neighboring parent cell, and selects the child
+    quadrant specified by the direction table above. It must not merely append a digit to
+    the uncle path.
   - `hierarchyRelationshipsByTileId` is merged into `tiles[].uncles` before resolution.
   - Once a strict majority chooses one `(level,rowOffset,colOffset)` for a rigid matrix,
     that grid canonicalizes every path in the matrix. Minority/outlier anchors and an
     individually ambiguous tile are corrected by the winning grid instead of being
-    allowed to create duplicate output paths.
+    allowed to create duplicate output paths. `colOffset` and every propagated absolute
+    column are reduced modulo `2^level`; this remains necessary when the matrix spans the
+    complete world width. If the cyclic phase itself has no strict majority, a
+    resolver may combine independent strict majorities for level, row offset and cyclic
+    column offset rather than treating zero as an unconditional fact.
   - Before writing, the exporter builds a unique `fullPath -> tile` manifest. A local
     native tile deliberately replaces a derived TOP cell at the same path; any duplicate
     between incompatible peers aborts the export before the first PNG is written.
@@ -376,6 +466,8 @@ make it into the final pyramidal image, so it is worth stating explicitly:
   the Contract-6b bridge; visual inference happens upstream in `31_matrixMerger` and its
   accepted result is explicit Contract-6 metadata. Any id-format change must remain
   consistent across `frame.json`, `matrix.json`, `matrixLayer.json` and the TOP catalogue.
+  A relationship graph with no direct/catalogued quadkey seed remains relative and must
+  not be exported at a guessed absolute location.
 
 ## Contract 8: `32_pyramidalImageExporter` → `41_planetViewer`
 
@@ -391,19 +483,22 @@ This is the final contract: the actual deliverable of the whole pipeline.
   - Its 4 children: subfolders `00`, `01`, `02`, `03` (quadrant digit convention above:
     `0`=SW, `1`=SE, `2`=NE, `3`=NW), each holding its own tile image (`00/00.png`) and,
     recursively, its own 4 child folders one level deeper (`00/000/`, `00/001/`, ...).
-  - Every tile image is a `256x256` PNG, nearest-neighbor-cropped from its source
-    texture's sub-rectangle (the same sub-rectangle used to texture that tile on screen).
+  - Every written tile image is a native `256x256` PNG copied from a source tile that uses
+    its complete texture rectangle (`u0=0`, `v0=0`, `u1=1`, `v1=1`). A viewer layer may
+    display a cell by borrowing a sub-rectangle from an ancestor, but the exporter does
+    not crop/upscale that derived cell into a new pyramid tile; holes are valid.
 - **Invariants**:
   - The root file must be named exactly `0.png`; child folder names must be the single
-    quadrant digit appended to the parent's path (`RootPathResolver`'s path strings and the
-    on-disk folder names use the same digit alphabet `0-3`).
-  - Tile images must stay `256x256` PNG — `41_planetViewer` (and `32_pyramidalImageExporter`
-    itself when re-reading during LOD/culling in its own viewer) assumes this fixed size
-    for texture budgeting and projected-area LOD thresholds.
+    quadrant digit appended to the parent's path (`TileRootPathResolver`'s path strings
+    and the on-disk folder names use the same digit alphabet `0-3`).
+  - Written tile images must stay native `256x256` PNG — `41_planetViewer` assumes this
+    fixed size for texture budgeting and projected-area LOD thresholds. Missing child
+    files are legal and use ancestor fallback in the viewer.
   - A pyramidal-image folder is read-only input for `41_planetViewer` (and for any
     consumer): nothing downstream ever writes back into it, so `32_pyramidalImageExporter`
-    remains the sole writer for a given session's `pyramidalImage` folder, safe to
-    re-export (`new`/`rewritten` slots) without external interference.
+    remains the sole writer for a given session's `pyramidalImage` folder. A re-export
+    clears and rebuilds the session destination after a non-empty valid manifest has been
+    prepared; it does not use previous slots as placement evidence.
   - Multiple pyramidal-image folders (e.g. from different capture sessions) can be passed
     to `41_planetViewer` independently, stacked with opacity/z control — this only works
     because each one independently satisfies the format above; the pipeline does not yet
@@ -425,6 +520,7 @@ This is the final contract: the actual deliverable of the whole pipeline.
 | 5 | `23_frameTextureNormalizer` | `31_matrixMerger` | `%05d/matrix.json`, root `westCutters.json` |
 | 6 | `31_matrixMerger` | `32_pyramidalImageExporter` | `<exportFolder>/matrix_<n>/matrixLayer.json` + `<tileId>.png` |
 | 6b | `22_dumpAnalyzer` | `32_pyramidalImageExporter` | `topLevelTiles.json`, `frame.json` (uncle-bridge fallback) |
+| 7 | `31_matrixMerger`+`22_dumpAnalyzer` | `32_pyramidalImageExporter` | absolute quadkey resolution and session export manifest |
 | 8 | `32_pyramidalImageExporter` | `41_planetViewer` | `<inputFolder>/pyramidalImage/` quadtree of PNGs |
 
 ## Appendix: Blist quadrant/level notation

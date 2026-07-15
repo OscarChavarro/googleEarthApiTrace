@@ -12,25 +12,45 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class AnimationControllerTest {
     @Test
     void forwardAnimationAdvancesUntilLastFrameAndStops() {
-        FrameTextureNormalizerState model = stateWithFrames(10, 11, 12);
+        FrameTextureNormalizerState model = stateWithFrames(10, 11, 12, 13, 14);
         int[] repaintCount = {0};
         AnimationController controller = new AnimationController(model, () -> repaintCount[0]++, 1_000);
 
         controller.toggleForwardAnimation();
 
-        assertEquals(1, model.getSelectedFrameIndex());
+        assertEquals(2, model.getSelectedFrameIndex());
         assertTrue(controller.isAnimatingForward());
 
         controller.advanceAnimationStep();
 
+        assertEquals(4, model.getSelectedFrameIndex());
+        assertFalse(controller.isRunning());
+        assertEquals(2, repaintCount[0]);
+    }
+
+    @Test
+    void forwardAnimationStopsAfterPartialJumpAtBoundary() {
+        FrameTextureNormalizerState model = stateWithFrames(10, 11, 12, 13);
+        int[] repaintCount = {0};
+        AnimationController controller = new AnimationController(model, () -> repaintCount[0]++, 1_000);
+
+        controller.toggleForwardAnimation();
+
         assertEquals(2, model.getSelectedFrameIndex());
+        assertTrue(controller.isAnimatingForward());
+
+        controller.advanceAnimationStep();
+
+        assertEquals(3, model.getSelectedFrameIndex());
         assertFalse(controller.isRunning());
         assertEquals(2, repaintCount[0]);
     }
 
     @Test
     void backwardAnimationAdvancesUntilFirstFrameAndStops() {
-        FrameTextureNormalizerState model = stateWithFrames(20, 21, 22);
+        FrameTextureNormalizerState model = stateWithFrames(20, 21, 22, 23, 24);
+        model.selectNextFrame();
+        model.selectNextFrame();
         model.selectNextFrame();
         model.selectNextFrame();
         int[] repaintCount = {0};
@@ -38,7 +58,7 @@ final class AnimationControllerTest {
 
         controller.toggleBackwardAnimation();
 
-        assertEquals(1, model.getSelectedFrameIndex());
+        assertEquals(2, model.getSelectedFrameIndex());
         assertTrue(controller.isAnimatingBackward());
 
         controller.advanceAnimationStep();
@@ -50,7 +70,7 @@ final class AnimationControllerTest {
 
     @Test
     void togglingSameDirectionStopsAnimation() {
-        FrameTextureNormalizerState model = stateWithFrames(30, 31, 32);
+        FrameTextureNormalizerState model = stateWithFrames(30, 31, 32, 33, 34);
         AnimationController controller = new AnimationController(model, () -> {}, 1_000);
 
         controller.toggleForwardAnimation();
@@ -58,7 +78,7 @@ final class AnimationControllerTest {
 
         controller.toggleForwardAnimation();
         assertFalse(controller.isRunning());
-        assertEquals(1, model.getSelectedFrameIndex());
+        assertEquals(2, model.getSelectedFrameIndex());
     }
 
     private static FrameTextureNormalizerState stateWithFrames(int... frameIds) {
