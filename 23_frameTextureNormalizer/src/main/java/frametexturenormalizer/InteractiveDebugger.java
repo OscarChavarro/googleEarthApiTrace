@@ -5,6 +5,7 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import javax.swing.JFrame;
 import javax.swing.WindowConstants;
+import frametexturenormalizer.animation.AnimationController;
 import frametexturenormalizer.gui.KeyboardInteractionTechniques;
 import frametexturenormalizer.gui.MouseOrbiterInteraction;
 import frametexturenormalizer.model.state.FrameTextureNormalizerState;
@@ -27,6 +28,7 @@ public final class InteractiveDebugger {
         frame.setSize(new Dimension(1280, 720));
 
         CameraControllerOrbiter cameraController = renderer.getCameraController();
+        AnimationController animationController = new AnimationController(model, canvas::display);
         MouseOrbiterInteraction mouse = new MouseOrbiterInteraction(
             cameraController,
             canvas::display,
@@ -44,7 +46,8 @@ public final class InteractiveDebugger {
             model,
             frame::dispose,
             cameraController,
-            canvas::display
+            canvas::display,
+            animationController
         );
         canvas.addMouseListener(mouse);
         canvas.addMouseMotionListener(mouse);

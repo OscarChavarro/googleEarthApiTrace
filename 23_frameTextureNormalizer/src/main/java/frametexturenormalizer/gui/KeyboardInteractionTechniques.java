@@ -11,6 +11,7 @@ import vsdk.toolkit.gui.CameraControllerOrbiter;
 import vsdk.toolkit.gui.RendererConfigurationController;
 
 // App classes
+import frametexturenormalizer.animation.AnimationController;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 import frametexturenormalizer.processing.neighborhood.TileCutter;
@@ -21,17 +22,20 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final Runnable repaintAction;
     private final CameraControllerOrbiter cameraController;
     private final RendererConfigurationController renderingConfigurationController;
+    private final AnimationController animationController;
 
     public KeyboardInteractionTechniques(
         FrameTextureNormalizerState model,
         Runnable closeAction,
         CameraControllerOrbiter cameraController,
-        Runnable repaintAction
+        Runnable repaintAction,
+        AnimationController animationController
     ) {
         this.model = model;
         this.closeAction = closeAction;
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
+        this.animationController = animationController;
         this.renderingConfigurationController = model == null
             ? null
             : new RendererConfigurationController(model.getRenderingConfiguration());
@@ -60,6 +64,20 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             redraw();
             return;
         }
+        if (e.getKeyCode() == java.awt.event.KeyEvent.VK_SPACE) {
+            if (animationController != null) {
+                animationController.toggleForwardAnimation();
+                redraw();
+            }
+            return;
+        }
+        if (e.getKeyCode() == java.awt.event.KeyEvent.VK_BACK_SPACE) {
+            if (animationController != null) {
+                animationController.toggleBackwardAnimation();
+                redraw();
+            }
+            return;
+        }
         if (keyChar == 't') {
             event.keycode = KeyEvent.KEY_F8;
             if (renderingConfigurationController != null
@@ -81,11 +99,17 @@ public final class KeyboardInteractionTechniques implements KeyListener {
 
         switch (event.keycode) {
             case KeyEvent.KEY_1 -> {
+                if (animationController != null) {
+                    animationController.stopAnimation();
+                }
                 if (model.selectPreviousFrame()) {
                     redraw();
                 }
             }
             case KeyEvent.KEY_2 -> {
+                if (animationController != null) {
+                    animationController.stopAnimation();
+                }
                 if (model.selectNextFrame()) {
                     redraw();
                 }
