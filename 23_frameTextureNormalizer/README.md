@@ -59,6 +59,9 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 |---|---|
 | `1` / `2` | Select previous / next frame |
 | `3` / `4` | Select previous / next tile |
+| Left click | Toggle the clicked tile selection across frames with the same texture |
+| `Shift` + left click | Select the connected tile component containing the clicked tile, across frames with the same textures |
+| `Delete` | Delete all selected tiles in memory; affected `frame.json` files are written once on exit |
 | `c` | Mark the selected tiles as west cutters (persisted to `westCutters.json`) |
 | `t` | Toggle textured rendering |
 | `ESC` | Exit |

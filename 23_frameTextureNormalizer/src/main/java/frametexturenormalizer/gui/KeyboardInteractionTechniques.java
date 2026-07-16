@@ -60,6 +60,12 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         if (model == null) {
             return;
         }
+        if (e.getKeyCode() == java.awt.event.KeyEvent.VK_DELETE) {
+            if (model.deleteSelectedTiles() > 0) {
+                redraw();
+            }
+            return;
+        }
         if (renderingConfigurationController != null
             && renderingConfigurationController.processKeyPressedEvent(event)) {
             redraw();

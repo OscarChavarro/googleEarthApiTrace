@@ -84,7 +84,7 @@ public final class Jogl4TileMatrixRenderer {
                 continue;
             }
             TileInstance tile = tiles.get(i);
-            if (tile == null || tile.isWestCuttingCell()) {
+            if (tile == null) {
                 continue;
             }
             gl2.glLoadName(tile.getTileId());
@@ -222,7 +222,6 @@ public final class Jogl4TileMatrixRenderer {
         gl2.glPolygonOffset(-1.0f, -1.0f);
         gl2.glPolygonMode(GL2.GL_FRONT_AND_BACK, GL2.GL_LINE);
         gl2.glLineWidth(3.0f);
-        gl2.glColor3d(1.0, 1.0, 0.0);
         for (int i = 0; i < tiles.size(); i++) {
             if (selectedTileIndex != FrameTextureNormalizerState.SELECT_ALL_TILES && selectedTileIndex != i) {
                 continue;
@@ -230,6 +229,12 @@ public final class Jogl4TileMatrixRenderer {
             TileInstance tile = tiles.get(i);
             if (tile == null || !tile.isSelected()) {
                 continue;
+            }
+            if (tile.isWestCuttingCell()) {
+                gl2.glColor3d(0.75, 0.0, 1.0);
+            }
+            else {
+                gl2.glColor3d(1.0, 1.0, 0.0);
             }
             drawFlatGeometry(gl2, tile, defaultModelViewMatrix);
         }

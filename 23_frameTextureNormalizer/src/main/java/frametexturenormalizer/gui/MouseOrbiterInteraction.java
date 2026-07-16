@@ -6,7 +6,6 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
-import java.util.function.BiFunction;
 
 // JOGL classes
 import com.jogamp.opengl.GL4;
@@ -20,18 +19,18 @@ public final class MouseOrbiterInteraction implements MouseListener, MouseMotion
     private final CameraControllerOrbiter cameraController;
     private final Runnable repaintAction;
     private final Runnable focusAction;
-    private final BiFunction<Integer, Integer, Boolean> tileSelectionToggle;
+    private final TileSelectionHandler tileSelectionHandler;
 
     public MouseOrbiterInteraction(
         CameraControllerOrbiter cameraController,
         Runnable repaintAction,
         Runnable focusAction,
-        BiFunction<Integer, Integer, Boolean> tileSelectionToggle
+        TileSelectionHandler tileSelectionHandler
     ) {
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
         this.focusAction = focusAction;
-        this.tileSelectionToggle = tileSelectionToggle;
+        this.tileSelectionHandler = tileSelectionHandler;
     }
 
     public static void processReshape(GL4 gl, Camera camera, int width, int height) {
@@ -41,8 +40,8 @@ public final class MouseOrbiterInteraction implements MouseListener, MouseMotion
 
     @Override
     public void mouseClicked(MouseEvent e) {
-        if (e.getButton() == MouseEvent.BUTTON1 && tileSelectionToggle != null) {
-            Boolean changed = tileSelectionToggle.apply(e.getX(), e.getY());
+        if (e.getButton() == MouseEvent.BUTTON1 && tileSelectionHandler != null) {
+            Boolean changed = tileSelectionHandler.select(e.getX(), e.getY(), e.isShiftDown());
             if (Boolean.TRUE.equals(changed)) {
                 repaintAction.run();
                 return;
@@ -83,5 +82,10 @@ public final class MouseOrbiterInteraction implements MouseListener, MouseMotion
     @Override
     public void mouseWheelMoved(MouseWheelEvent e) {
         if (cameraController.processMouseWheelEvent(AwtSystem.awt2vsdkEvent(e))) repaintAction.run();
+    }
+
+    @FunctionalInterface
+    public interface TileSelectionHandler {
+        boolean select(int x, int y, boolean expandConnected);
     }
 }

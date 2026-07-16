@@ -20,7 +20,13 @@ import java.nio.file.Files;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import frametexturenormalizer.gui.MouseOrbiterInteraction;
@@ -99,7 +105,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         }
     }
 
-    public boolean toggleTileSelectionAt(GLAutoDrawable drawable, int mouseX, int mouseY) {
+    public boolean selectTileAt(GLAutoDrawable drawable, int mouseX, int mouseY, boolean expandConnected) {
         if (drawable == null) {
             return false;
         }
@@ -112,17 +118,160 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
         if (pickedTextureId == null) {
             return false;
         }
+        if (expandConnected) {
+            return selectConnectedTilesAcrossFrames(model.getFrames(), selected.getTiles(), pickedTextureId);
+        }
         for (TileInstance tile : selected.getTiles()) {
             if (tile == null || tile.getTileId() != pickedTextureId) {
                 continue;
             }
-            if (tile.isWestCuttingCell()) {
-                return false;
-            }
-            tile.setSelected(!tile.isSelected());
-            return true;
+            return setMatchingTextureSelection(model.getFrames(), tile, !tile.isSelected());
         }
         return false;
+    }
+
+    static boolean selectConnectedTiles(List<TileInstance> tiles, int seedTileId) {
+        Set<TileInstance> component = connectedComponentTiles(tiles, seedTileId);
+        boolean changed = false;
+        for (TileInstance tile : component) {
+            if (tile != null && !tile.isSelected()) {
+                tile.setSelected(true);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    static boolean selectConnectedTilesAcrossFrames(
+        List<FrameData> frames,
+        List<TileInstance> selectedFrameTiles,
+        int seedTileId
+    ) {
+        Set<TileInstance> component = connectedComponentTiles(selectedFrameTiles, seedTileId);
+        if (component.isEmpty()) {
+            return false;
+        }
+
+        Set<String> textureFiles = new LinkedHashSet<>();
+        for (TileInstance tile : component) {
+            String textureFile = textureFile(tile);
+            if (textureFile != null) {
+                textureFiles.add(textureFile);
+            }
+        }
+        if (textureFiles.isEmpty()) {
+            return selectConnectedTiles(selectedFrameTiles, seedTileId);
+        }
+        return setMatchingTextureSelection(frames, textureFiles, true);
+    }
+
+    static boolean setMatchingTextureSelection(List<FrameData> frames, TileInstance sourceTile, boolean selected) {
+        String textureFile = textureFile(sourceTile);
+        if (textureFile == null) {
+            if (sourceTile == null || sourceTile.isSelected() == selected) {
+                return false;
+            }
+            sourceTile.setSelected(selected);
+            return true;
+        }
+        return setMatchingTextureSelection(frames, Set.of(textureFile), selected);
+    }
+
+    private static boolean setMatchingTextureSelection(List<FrameData> frames, Set<String> textureFiles, boolean selected) {
+        if (frames == null || frames.isEmpty() || textureFiles == null || textureFiles.isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        for (FrameData frame : frames) {
+            if (frame == null || frame.getTiles() == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile == null || tile.isSelected() == selected) {
+                    continue;
+                }
+                String textureFile = textureFile(tile);
+                if (textureFile != null && textureFiles.contains(textureFile)) {
+                    tile.setSelected(selected);
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static String textureFile(TileInstance tile) {
+        if (tile == null || tile.getTextureFile() == null || tile.getTextureFile().isBlank()) {
+            return null;
+        }
+        return tile.getTextureFile();
+    }
+
+    private static Set<TileInstance> connectedComponentTiles(List<TileInstance> tiles, int seedTileId) {
+        Map<Integer, TileInstance> byId = new HashMap<>();
+        for (TileInstance tile : tiles) {
+            if (tile != null) {
+                byId.put(tile.getTileId(), tile);
+            }
+        }
+        TileInstance seed = byId.get(seedTileId);
+        if (seed == null) {
+            return Set.of();
+        }
+
+        Map<Integer, Set<Integer>> adjacency = buildNeighborAdjacency(tiles, byId);
+        Set<Integer> component = new LinkedHashSet<>();
+        ArrayDeque<Integer> pending = new ArrayDeque<>();
+        component.add(seedTileId);
+        pending.add(seedTileId);
+        while (!pending.isEmpty()) {
+            Integer current = pending.removeFirst();
+            for (Integer next : adjacency.getOrDefault(current, Set.of())) {
+                TileInstance tile = byId.get(next);
+                if (tile == null || !component.add(next)) {
+                    continue;
+                }
+                pending.addLast(next);
+            }
+        }
+
+        Set<TileInstance> componentTiles = new LinkedHashSet<>();
+        for (Integer tileId : component) {
+            TileInstance tile = byId.get(tileId);
+            if (tile != null) {
+                componentTiles.add(tile);
+            }
+        }
+        return componentTiles;
+    }
+
+    private static Map<Integer, Set<Integer>> buildNeighborAdjacency(List<TileInstance> tiles, Map<Integer, TileInstance> byId) {
+        Map<Integer, Set<Integer>> adjacency = new HashMap<>();
+        for (TileInstance tile : tiles) {
+            if (tile == null) {
+                continue;
+            }
+            int sourceId = tile.getTileId();
+            adjacency.computeIfAbsent(sourceId, ignored -> new LinkedHashSet<>());
+            addNeighborEdge(adjacency, byId, sourceId, tile.getNorthNeighbor());
+            addNeighborEdge(adjacency, byId, sourceId, tile.getSouthNeighbor());
+            addNeighborEdge(adjacency, byId, sourceId, tile.getEastNeighbor());
+            addNeighborEdge(adjacency, byId, sourceId, tile.getWestNeighbor());
+        }
+        return adjacency;
+    }
+
+    private static void addNeighborEdge(
+        Map<Integer, Set<Integer>> adjacency,
+        Map<Integer, TileInstance> byId,
+        int sourceId,
+        Integer neighborId
+    ) {
+        if (neighborId == null || sourceId == neighborId || !byId.containsKey(neighborId)) {
+            return;
+        }
+        adjacency.computeIfAbsent(sourceId, ignored -> new LinkedHashSet<>()).add(neighborId);
+        adjacency.computeIfAbsent(neighborId, ignored -> new LinkedHashSet<>()).add(sourceId);
     }
 
     @Override

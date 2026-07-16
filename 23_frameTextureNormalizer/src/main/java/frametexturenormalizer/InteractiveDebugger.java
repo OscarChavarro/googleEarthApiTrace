@@ -3,6 +3,9 @@ package frametexturenormalizer;
 import com.jogamp.opengl.awt.GLCanvas;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.JFrame;
 import javax.swing.WindowConstants;
 import frametexturenormalizer.animation.AnimationController;
@@ -23,9 +26,31 @@ public final class InteractiveDebugger {
         JFrame frame = new JFrame("Frame texture normalizer - exports matrix.json");
         frame.setLayout(new BorderLayout());
         frame.add(canvas, BorderLayout.CENTER);
-        frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.setMinimumSize(new Dimension(960, 600));
         frame.setSize(new Dimension(1280, 720));
+        AtomicBoolean closing = new AtomicBoolean(false);
+        Runnable closeAction = () -> {
+            if (!closing.compareAndSet(false, true)) {
+                return;
+            }
+            frame.setTitle("Frame texture normalizer - saving edits...");
+            frame.setEnabled(false);
+            Thread shutdownThread = new Thread(() -> {
+                if (model != null) {
+                    model.flushPendingFrameJsonChanges();
+                }
+                frame.dispose();
+                System.exit(0);
+            }, "frame-json-save-on-exit");
+            shutdownThread.start();
+        };
+        frame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                closeAction.run();
+            }
+        });
 
         CameraControllerOrbiter cameraController = renderer.getCameraController();
         AnimationController animationController = new AnimationController(model, canvas::display);
@@ -33,10 +58,10 @@ public final class InteractiveDebugger {
             cameraController,
             canvas::display,
             canvas::requestFocusInWindow,
-            (x, y) -> {
+            (x, y, expandConnected) -> {
                 final boolean[] changed = new boolean[] {false};
                 canvas.invoke(false, drawable -> {
-                    changed[0] = renderer.toggleTileSelectionAt(drawable, x, y);
+                    changed[0] = renderer.selectTileAt(drawable, x, y, expandConnected);
                     return true;
                 });
                 return changed[0];
@@ -44,7 +69,7 @@ public final class InteractiveDebugger {
         );
         KeyboardInteractionTechniques keyboard = new KeyboardInteractionTechniques(
             model,
-            frame::dispose,
+            closeAction,
             cameraController,
             canvas::display,
             animationController

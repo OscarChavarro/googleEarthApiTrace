@@ -7,12 +7,16 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import frametexturenormalizer.config.Configuration;
+import frametexturenormalizer.io.FrameJsonWriter;
 import frametexturenormalizer.model.FrameData;
+import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.contract.ScopedTileIds;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.material.RendererConfiguration;
@@ -26,6 +30,7 @@ public final class FrameTextureNormalizerState {
     private final Set<String> residentTexturePaths = new HashSet<>();
     private final ArrayDeque<String> residentTexturesFifo = new ArrayDeque<>();
     private final Set<String> westCutterTileIds = new LinkedHashSet<>();
+    private final Map<Integer, Set<Integer>> pendingDeletedTileIdsByFrame = new HashMap<>();
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
     private int selectedTileIndex = SELECT_ALL_TILES;
@@ -50,6 +55,7 @@ public final class FrameTextureNormalizerState {
         }
         selectedFrameIndex = 0;
         selectedTileIndex = SELECT_ALL_TILES;
+        pendingDeletedTileIdsByFrame.clear();
         applyCameraForSelectedFrame();
     }
 
@@ -150,6 +156,106 @@ public final class FrameTextureNormalizerState {
             }
         }
         return false;
+    }
+
+    public synchronized int deleteSelectedTiles() {
+        if (frames.isEmpty()) {
+            return 0;
+        }
+
+        int deletedCount = 0;
+        boolean westCutterCacheChanged = false;
+        for (int frameIndex = 0; frameIndex < frames.size(); frameIndex++) {
+            FrameData frame = frames.get(frameIndex);
+            if (frame == null || frame.getTiles() == null || frame.getTiles().isEmpty()) {
+                continue;
+            }
+
+            Set<Integer> removedIds = new LinkedHashSet<>();
+            Set<String> removedScopedIds = new LinkedHashSet<>();
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile != null && tile.isSelected()) {
+                    removedIds.add(tile.getTileId());
+                    String scopedId = ScopedTileIds.normalize(tile.getScopedId());
+                    if (scopedId != null) {
+                        removedScopedIds.add(scopedId);
+                    }
+                }
+            }
+            if (removedIds.isEmpty()) {
+                continue;
+            }
+            pendingDeletedTileIdsByFrame
+                .computeIfAbsent(frame.getId(), ignored -> new LinkedHashSet<>())
+                .addAll(removedIds);
+
+            List<TileInstance> keptTiles = new ArrayList<>(Math.max(0, frame.getTiles().size() - removedIds.size()));
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile == null || removedIds.contains(tile.getTileId())) {
+                    continue;
+                }
+                clearRemovedNeighbors(tile, removedIds);
+                keptTiles.add(tile);
+            }
+            frames.set(frameIndex, new FrameData(
+                frame.getId(),
+                keptTiles,
+                frame.getLines(),
+                frame.getCameraState(),
+                frame.getProjectionMatrix(),
+                frame.getModelViewMatrix(),
+                frame.isWithMatrixErrors()
+            ));
+            deletedCount += removedIds.size();
+
+            for (String scopedId : removedScopedIds) {
+                westCutterCacheChanged |= westCutterTileIds.remove(scopedId);
+            }
+        }
+
+        if (deletedCount > 0) {
+            selectedFrameIndex = clamp(selectedFrameIndex, 0, frames.size() - 1);
+            FrameData selectedFrame = getSelectedFrame();
+            if (selectedFrame == null || selectedFrame.getTiles().isEmpty()) {
+                selectedTileIndex = SELECT_ALL_TILES;
+            }
+            else {
+                selectedTileIndex = clamp(selectedTileIndex, SELECT_ALL_TILES, selectedFrame.getTiles().size() - 1);
+            }
+            if (westCutterCacheChanged) {
+                persistWestCuttersCache();
+            }
+        }
+        return deletedCount;
+    }
+
+    public synchronized void flushPendingFrameJsonChanges() {
+        if (pendingDeletedTileIdsByFrame.isEmpty()) {
+            return;
+        }
+        Map<Integer, Set<Integer>> deletedByFrame = new HashMap<>();
+        for (Map.Entry<Integer, Set<Integer>> entry : pendingDeletedTileIdsByFrame.entrySet()) {
+            deletedByFrame.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+        }
+        Set<Integer> writtenFrameIds = FrameJsonWriter.writeDeletedTiles(deletedByFrame);
+        for (Integer frameId : writtenFrameIds) {
+            pendingDeletedTileIdsByFrame.remove(frameId);
+        }
+    }
+
+    private static void clearRemovedNeighbors(TileInstance tile, Set<Integer> removedIds) {
+        if (removedIds.contains(tile.getSouthNeighbor())) {
+            tile.setSouthNeighbor(null);
+        }
+        if (removedIds.contains(tile.getNorthNeighbor())) {
+            tile.setNorthNeighbor(null);
+        }
+        if (removedIds.contains(tile.getEastNeighbor())) {
+            tile.setEastNeighbor(null);
+        }
+        if (removedIds.contains(tile.getWestNeighbor())) {
+            tile.setWestNeighbor(null);
+        }
     }
 
     private void applyCameraForSelectedFrame() {
