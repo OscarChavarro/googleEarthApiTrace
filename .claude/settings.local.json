@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I{} echo {})",
+      "Bash(git log *)",
+      "Bash(find / -iname \"*cubestudio*base*\")"
+    ]
+  }
+}

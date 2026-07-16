@@ -33,7 +33,7 @@ public final class TriangleMeshVertexComparator {
         if (a == null || b == null) {
             return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
         }
-        return compare(a.getTriangleStrip(), b.getTriangleStrip());
+        return compareCached(a, b);
     }
 
     public ComparisonResult compare(
@@ -99,6 +99,61 @@ public final class TriangleMeshVertexComparator {
             return false;
         }
         double epsilon = vertexEpsilon(borderA, borderB);
+        for (int i = 0; i < borderA.size(); i++) {
+            Vector3Dd va = borderA.get(i);
+            Vector3Dd vb = borderB.get(i);
+            if (Math.abs(va.x() - vb.x()) > epsilon
+                || Math.abs(va.y() - vb.y()) > epsilon
+                || Math.abs(va.z() - vb.z()) > epsilon) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ComparisonResult compareCached(TileInstance a, TileInstance b) {
+        TileInstance.TriangleStripGeometry ga = a.getTriangleStrip();
+        TileInstance.TriangleStripGeometry gb = b.getTriangleStrip();
+        if (ga == null || gb == null || ga.vertices().isEmpty() || gb.vertices().isEmpty()) {
+            return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
+        }
+
+        Direction direction = detectDirectionFromOrderedBorders(a, b);
+        if (direction == null) {
+            return new ComparisonResult(false, null, Double.POSITIVE_INFINITY);
+        }
+
+        double[] ca = a.getTriangleStripCenter();
+        double[] cb = b.getTriangleStripCenter();
+        double dx = cb[0] - ca[0];
+        double dy = cb[1] - ca[1];
+        double dz = cb[2] - ca[2];
+        return new ComparisonResult(true, direction, dx * dx + dy * dy + dz * dz);
+    }
+
+    private static Direction detectDirectionFromOrderedBorders(TileInstance a, TileInstance b) {
+        if (bordersMatch(a, Direction.EAST, b, Direction.WEST)) {
+            return Direction.EAST;
+        }
+        if (bordersMatch(a, Direction.WEST, b, Direction.EAST)) {
+            return Direction.WEST;
+        }
+        if (bordersMatch(a, Direction.NORTH, b, Direction.SOUTH)) {
+            return Direction.NORTH;
+        }
+        if (bordersMatch(a, Direction.SOUTH, b, Direction.NORTH)) {
+            return Direction.SOUTH;
+        }
+        return null;
+    }
+
+    private static boolean bordersMatch(TileInstance a, Direction dirA, TileInstance b, Direction dirB) {
+        List<Vector3Dd> borderA = a.getTriangleStripBorderPoints(toProcessingDirection(dirA));
+        List<Vector3Dd> borderB = b.getTriangleStripBorderPoints(toProcessingDirection(dirB));
+        if (borderA.isEmpty() || borderB.isEmpty() || borderA.size() != borderB.size()) {
+            return false;
+        }
+        double epsilon = Math.max(a.getTriangleStripVertexEpsilon(), b.getTriangleStripVertexEpsilon());
         for (int i = 0; i < borderA.size(); i++) {
             Vector3Dd va = borderA.get(i);
             Vector3Dd vb = borderB.get(i);

@@ -22,8 +22,16 @@ public final class TriangleStripTileTopology2DirectionMapper {
 
         double epsilon = TriangleMeshVertexComparator.vertexEpsilon(geometry);
         List<TileInstance.TriangleStripVertex> deDuplicated = classifier.deduplicateVertices(geometry.vertices(), epsilon);
-        TriangleStripTileTopology topology = classifier.classify(geometry);
+        TriangleStripTileTopology topology = classifier.classifyDeduplicatedVertices(deDuplicated);
 
+        return directionBorderPoints(deDuplicated, topology, direction);
+    }
+
+    public List<Vector3Dd> directionBorderPoints(
+        List<TileInstance.TriangleStripVertex> deDuplicated,
+        TriangleStripTileTopology topology,
+        Direction direction
+    ) {
         return switch (topology) {
             case DEDUPLICATED_9_VERTICES_QUAD -> mapQuad(direction, deDuplicated);
             case DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE -> mapNorthPoleTriangle(direction, deDuplicated);

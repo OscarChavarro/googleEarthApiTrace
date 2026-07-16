@@ -19,6 +19,13 @@ public final class TriangleStripTileClassifier {
             geometry.vertices(),
             epsilon
         );
+        return classifyDeduplicatedVertices(unique);
+    }
+
+    public TriangleStripTileTopology classifyDeduplicatedVertices(List<TileInstance.TriangleStripVertex> unique) {
+        if (unique == null) {
+            return TriangleStripTileTopology.UNKNOWN;
+        }
         if (unique.size() == DEDUPLICATED_QUAD_VERTEX_COUNT) {
             return TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD;
         }

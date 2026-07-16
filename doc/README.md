@@ -134,6 +134,72 @@ levels 5, 6 and 7 respectively; all 1104 level-7 tile identities agreed on the `
 correction. This hash-to-quadkey comparison is a stronger regression check than visual
 inspection of a coastline because it verifies every uniquely matching tile.
 
+### Placement model to preserve in future changes
+
+The five commits from `584878e` through `116601c` exposed several concepts that had been
+represented by similar strings or coordinates even though they are not interchangeable.
+Future code should keep these as separate logical types, even if Java currently represents
+some of them as `String` or `int`:
+
+| Concept | Meaning | May establish absolute position? |
+|---|---|---|
+| `TileId`/`contentId` | Opaque identity of captured content, e.g. `328_163` | No |
+| `Quadkey` | Absolute root-to-node identity, matching `0[0-3]*` | Yes |
+| local cell `(i,j)` | Position inside one rigid matrix | No |
+| grid anchor `(level,rowOffset,colOffset)` | Transform from all local cells in one matrix to absolute cells | Yes, once accepted |
+| uncle relationship | Directed relative constraint between a fine tile and an adjacent coarser tile | Only transitively from an absolute seed |
+| pyramid file path | Serialization of a quadkey in the per-digit or legacy cumulative layout | No new information |
+
+In particular, changing the folder representation of a quadkey, as in `6a23ee4`, must be
+a pure serialization change. Readers may support both layouts during migration, but
+neither directory names nor traversal order may participate in coordinate inference.
+
+The placement algorithm is a precedence-controlled fixpoint over rigid matrices and must
+preserve this evidence order:
+
+1. Start with absolute quadkeys reconstructed from the top-level catalogue or otherwise
+   supplied explicitly for this session.
+2. Turn a visual match into an absolute seed only after several spatially distributed,
+   individually unambiguous probes vote by strict majority for the same complete grid
+   anchor. A single approximate image match is not an anchor (a byte-identical match to an
+   already catalogued native tile is a different, direct identity case). Once accepted,
+   retain the resulting `tileId -> Quadkey` map for the later export pass.
+3. If a matrix spans all `2^L` columns, force `colOffset = 0`; if it spans all `2^L` rows,
+   force `rowOffset = 0`. Apply this canonicalization before the matrix is allowed to seed
+   descendants.
+4. Resolve uncle constraints one level at a time, using the adjacent-parent transformation
+   in the direction table. Canonicalize every newly anchored matrix before the next pass.
+5. Within a matrix, vote using only its strongest available evidence class. Absolute seeds
+   outrank an accepted grid, and an accepted grid outranks uncle-derived candidates. Never
+   let a larger number of weaker relative candidates outvote one absolute seed.
+6. Stop without placing a matrix when the strongest evidence has no strict majority. It is
+   valid to export a sparse pyramid; guessing an offset is not valid. Before writing, also
+   require in-range rows and a unique `Quadkey -> native tile` manifest.
+
+This is the generalized reason for the observed `-1`, `-2`, `-4` failures: an anchor error
+is not local to one level. If a parent coordinate error is `(er,ec)`, after `d` descendant
+edges it contributes `(2^d * er, 2^d * ec)` before child quadrant bits are added. Therefore
+every regression test for placement must check at least one descendant level, not only the
+matrix where an anchor was first selected.
+
+The recent commit sequence should be read as a decision record:
+
+| Commit | What changed | Stable conclusion |
+|---|---|---|
+| `584878e` | Added cyclic longitude, majority voting and rigid-grid propagation | Longitude wraps; matrix placement is one transform, not independent per-tile guesses |
+| `3868e77` | Added tile selection to the coverage viewer | Diagnostic only; it did not change placement semantics |
+| `6a23ee4` | Replaced cumulative quadkey folders with one folder per quadrant digit | Logical quadkeys and their disk layout are separate contracts |
+| `37b95f3` | Restored zero phase for full-world matrices and canonicalized before descending | A normalized complete-world grid has a canonical origin; relative noise cannot redefine it |
+| `116601c` | Added evidence precedence and visual anchoring for partial and descendant layers | Weak relationships cannot override stronger evidence; visual inference needs distributed consensus and must become an explicit retained anchor |
+
+Minimum regression coverage for any change to placement, hierarchy import or pyramid
+layout is consequently: all eight uncle directions; east/west wrap and rejected
+north/south overflow; full-world row/column origin; partial-matrix cyclic phase; direct
+seed versus a majority of weaker candidates; tie/plurality rejection; propagation through
+two descendant levels; and equivalent scanning of the current and migration folder
+layouts. Dataset checks should compare stable tile identity/hash to quadkey and report
+coordinate deltas per level, so a visually plausible but uniformly shifted result fails.
+
 ### Invalid assumptions — do not encode these in producers or consumers
 
 - **An uncle is the containing parent.** False: it is an adjacent coarser tile, so
@@ -520,11 +586,15 @@ make it into the final pyramidal image, so it is worth stating explicitly:
     between incompatible peers aborts the export before the first PNG is written.
   - A tile with no resolvable path (directly or transitively) is skipped.
 - **Invariant**: `32_pyramidalImageExporter` resolves paths from ids, relationships and
-  the Contract-6b bridge; visual inference happens upstream in `31_matrixMerger` and its
-  accepted result is explicit Contract-6 metadata. Any id-format change must remain
-  consistent across `frame.json`, `matrix.json`, `matrixLayer.json` and the TOP catalogue.
-  A relationship graph with no direct/catalogued quadkey seed remains relative and must
-  not be exported at a guessed absolute location.
+  the Contract-6b bridge. It may also infer an anchor inside `TopLevelLayerMerger`, by
+  matching a partial matrix against reconstructed top-level texture regions or native
+  child tiles against quadrants of an already canonicalized imported layer. Such matches
+  become explicit retained `tileId -> Quadkey` seeds only after the distributed strict-
+  majority checks defined above; they are not persisted as Contract-6 metadata by
+  `31_matrixMerger`. Any id-format change must remain consistent across `frame.json`,
+  `matrix.json`, `matrixLayer.json` and the TOP catalogue. A relationship graph with no
+  absolute/catalogued seed and no accepted visual anchor remains relative and must not be
+  exported at a guessed absolute location.
 
 ## Contract 8: `32_pyramidalImageExporter` → `41_planetViewer`
 

@@ -160,8 +160,14 @@ public final class TopLevelTilesJsonBuilder {
             if (frameIndex < 0 || frameIndex >= frames.size()) {
                 continue;
             }
-            FramePatchStats stats = preprocessFrame(frames.get(frameIndex));
-            tileTriangleStripsToCountMapByFrame.set(frameIndex, stats.tileTriangleStripsToCountMap());
+            Frame frame = frames.get(frameIndex);
+            try {
+                FramePatchStats stats = preprocessFrame(frame);
+                tileTriangleStripsToCountMapByFrame.set(frameIndex, stats.tileTriangleStripsToCountMap());
+            }
+            finally {
+                clearTriangleStripProcessingCaches(frame);
+            }
             progressProducer.update(0, 1, 1);
         }
     }
@@ -304,28 +310,44 @@ public final class TopLevelTilesJsonBuilder {
             if (frame == null) {
                 continue;
             }
-            for (TileInstance tile : frame.getTiles()) {
-                if (tile == null) {
-                    continue;
-                }
-                List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
-                if (geometries.size() < 2) {
-                    continue;
-                }
-                String imageId = normalizeScopedTileId(tile.getContentId());
-                String imagePath = toAbsolutePathString(tile.getTextureFile());
-                for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
-                    TileInstance.TriangleStripGeometry geometry = geometries.get(stripIndex);
-                    Integer identityId = findGlobeLevelTileIdentityId(geometry);
-                    if (identityId == null) {
+            try {
+                for (TileInstance tile : frame.getTiles()) {
+                    if (tile == null) {
                         continue;
                     }
-                    TopLevelTileIdentity identity = byStripId.get(identityId);
-                    if (identity == null) {
+                    List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
+                    if (geometries.size() < 2) {
                         continue;
                     }
-                    identity.addAppearance(frame.getId(), imageId, imagePath, getTexCoordRange(geometry.vertices()));
+                    String imageId = normalizeScopedTileId(tile.getContentId());
+                    String imagePath = toAbsolutePathString(tile.getTextureFile());
+                    for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
+                        TileInstance.TriangleStripGeometry geometry = geometries.get(stripIndex);
+                        Integer identityId = findGlobeLevelTileIdentityId(geometry);
+                        if (identityId == null) {
+                            continue;
+                        }
+                        TopLevelTileIdentity identity = byStripId.get(identityId);
+                        if (identity == null) {
+                            continue;
+                        }
+                        identity.addAppearance(frame.getId(), imageId, imagePath, getTexCoordRange(geometry.vertices()));
+                    }
                 }
+            }
+            finally {
+                clearTriangleStripProcessingCaches(frame);
+            }
+        }
+    }
+
+    private static void clearTriangleStripProcessingCaches(Frame frame) {
+        if (frame == null) {
+            return;
+        }
+        for (TileInstance tile : frame.getTiles()) {
+            if (tile != null) {
+                tile.clearTriangleStripProcessingCaches();
             }
         }
     }

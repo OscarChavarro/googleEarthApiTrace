@@ -2,6 +2,11 @@ package dumpanalyzer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dumpanalyzer.processing.Direction;
+import dumpanalyzer.processing.TriangleMeshVertexComparator;
+import dumpanalyzer.processing.TriangleStripTileClassifier;
+import dumpanalyzer.processing.TriangleStripTileTopology;
+import dumpanalyzer.processing.TriangleStripTileTopology2DirectionMapper;
 import dumpanalyzer.processing.uncles.ToUncleRelationship;
 import java.util.List;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
@@ -10,6 +15,10 @@ public final class TileInstance {
     public static final int NO_NEIGHBOR = -1;
     public static final String SYNTHETIC_GLOBE_LEVEL_TILE_SKIP_REASON = "synthetic globe-level tile";
     private static final double FULL_RESOLUTION_TOLERANCE = 1e-3;
+    private static final TriangleStripTileClassifier TRIANGLE_STRIP_TILE_CLASSIFIER =
+        new TriangleStripTileClassifier();
+    private static final TriangleStripTileTopology2DirectionMapper TRIANGLE_STRIP_TOPOLOGY_MAPPER =
+        new TriangleStripTileTopology2DirectionMapper();
 
     private final String contentId;
     private volatile String textureFile;
@@ -33,6 +42,14 @@ public final class TileInstance {
     private final double[] modelViewMatrix;
     private volatile List<TriangleStripGeometry> cachedTriangleStripGeometries;
     private volatile TriangleStripGeometry cachedTriangleStrip;
+    private volatile List<TriangleStripVertex> cachedTriangleStripDeduplicatedVertices;
+    private volatile TriangleStripTileTopology cachedTriangleStripTopology;
+    private volatile List<Vector3Dd> cachedTriangleStripNorthBorderPoints;
+    private volatile List<Vector3Dd> cachedTriangleStripSouthBorderPoints;
+    private volatile List<Vector3Dd> cachedTriangleStripEastBorderPoints;
+    private volatile List<Vector3Dd> cachedTriangleStripWestBorderPoints;
+    private volatile double[] cachedTriangleStripCenter;
+    private volatile double cachedTriangleStripVertexEpsilon = Double.NaN;
     private volatile int detectedSouthNeighborIndex = NO_NEIGHBOR;
     private volatile int detectedNorthNeighborIndex = NO_NEIGHBOR;
     private volatile int detectedEastNeighborIndex = NO_NEIGHBOR;
@@ -294,6 +311,102 @@ public final class TileInstance {
     }
 
     @JsonIgnore
+    public double getTriangleStripVertexEpsilon() {
+        double cached = cachedTriangleStripVertexEpsilon;
+        if (Double.isFinite(cached)) {
+            return cached;
+        }
+        TriangleStripGeometry geometry = getTriangleStrip();
+        double computed = TriangleMeshVertexComparator.vertexEpsilon(geometry);
+        cachedTriangleStripVertexEpsilon = computed;
+        return computed;
+    }
+
+    @JsonIgnore
+    public List<TriangleStripVertex> getTriangleStripDeduplicatedVertices() {
+        List<TriangleStripVertex> cached = cachedTriangleStripDeduplicatedVertices;
+        if (cached != null) {
+            return cached;
+        }
+        TriangleStripGeometry geometry = getTriangleStrip();
+        if (geometry == null) {
+            return List.of();
+        }
+        List<TriangleStripVertex> built = List.copyOf(
+            TRIANGLE_STRIP_TILE_CLASSIFIER.deduplicateVertices(geometry.vertices(), getTriangleStripVertexEpsilon())
+        );
+        cachedTriangleStripDeduplicatedVertices = built;
+        return built;
+    }
+
+    @JsonIgnore
+    public TriangleStripTileTopology getTriangleStripTopology() {
+        TriangleStripTileTopology cached = cachedTriangleStripTopology;
+        if (cached != null) {
+            return cached;
+        }
+        TriangleStripTileTopology built = TRIANGLE_STRIP_TILE_CLASSIFIER.classifyDeduplicatedVertices(
+            getTriangleStripDeduplicatedVertices()
+        );
+        cachedTriangleStripTopology = built;
+        return built;
+    }
+
+    @JsonIgnore
+    public List<Vector3Dd> getTriangleStripBorderPoints(Direction direction) {
+        if (direction == null) {
+            return List.of();
+        }
+        return switch (direction) {
+            case NORTH -> getOrBuildTriangleStripNorthBorderPoints();
+            case SOUTH -> getOrBuildTriangleStripSouthBorderPoints();
+            case EAST -> getOrBuildTriangleStripEastBorderPoints();
+            case WEST -> getOrBuildTriangleStripWestBorderPoints();
+        };
+    }
+
+    @JsonIgnore
+    public double[] getTriangleStripCenter() {
+        double[] cached = cachedTriangleStripCenter;
+        if (cached != null) {
+            return cached;
+        }
+        TriangleStripGeometry geometry = getTriangleStrip();
+        if (geometry == null || geometry.vertices().isEmpty()) {
+            return new double[] {0.0, 0.0, 0.0};
+        }
+        double sx = 0.0;
+        double sy = 0.0;
+        double sz = 0.0;
+        for (TriangleStripVertex vertex : geometry.vertices()) {
+            sx += vertex.x();
+            sy += vertex.y();
+            sz += vertex.z();
+        }
+        double inv = 1.0 / geometry.vertices().size();
+        double[] built = new double[] {sx * inv, sy * inv, sz * inv};
+        cachedTriangleStripCenter = built;
+        return built;
+    }
+
+    /**
+     * Releases derived geometry used while processing a frame. The source strips remain
+     * available, so render and analysis code can rebuild these values on demand.
+     */
+    public void clearTriangleStripProcessingCaches() {
+        cachedTriangleStripNorthBorderPoints = null;
+        cachedTriangleStripSouthBorderPoints = null;
+        cachedTriangleStripEastBorderPoints = null;
+        cachedTriangleStripWestBorderPoints = null;
+        cachedTriangleStripDeduplicatedVertices = null;
+        cachedTriangleStripTopology = null;
+        cachedTriangleStripCenter = null;
+        cachedTriangleStripVertexEpsilon = Double.NaN;
+        cachedTriangleStrip = null;
+        cachedTriangleStripGeometries = null;
+    }
+
+    @JsonIgnore
     public List<TriangleStripGeometry> getTriangleStripGeometries() {
         List<TriangleStripGeometry> cached = cachedTriangleStripGeometries;
         if (cached != null) {
@@ -336,4 +449,52 @@ public final class TileInstance {
 
     public record TriangleStripGeometry(int vertexCount, List<TriangleStripVertex> vertices) {}
     public record TriangleStripVertex(double x, double y, double z, double u, double v) {}
+
+    private List<Vector3Dd> getOrBuildTriangleStripNorthBorderPoints() {
+        List<Vector3Dd> cached = cachedTriangleStripNorthBorderPoints;
+        if (cached != null) {
+            return cached;
+        }
+        List<Vector3Dd> built = buildTriangleStripBorderPoints(Direction.NORTH);
+        cachedTriangleStripNorthBorderPoints = built;
+        return built;
+    }
+
+    private List<Vector3Dd> getOrBuildTriangleStripSouthBorderPoints() {
+        List<Vector3Dd> cached = cachedTriangleStripSouthBorderPoints;
+        if (cached != null) {
+            return cached;
+        }
+        List<Vector3Dd> built = buildTriangleStripBorderPoints(Direction.SOUTH);
+        cachedTriangleStripSouthBorderPoints = built;
+        return built;
+    }
+
+    private List<Vector3Dd> getOrBuildTriangleStripEastBorderPoints() {
+        List<Vector3Dd> cached = cachedTriangleStripEastBorderPoints;
+        if (cached != null) {
+            return cached;
+        }
+        List<Vector3Dd> built = buildTriangleStripBorderPoints(Direction.EAST);
+        cachedTriangleStripEastBorderPoints = built;
+        return built;
+    }
+
+    private List<Vector3Dd> getOrBuildTriangleStripWestBorderPoints() {
+        List<Vector3Dd> cached = cachedTriangleStripWestBorderPoints;
+        if (cached != null) {
+            return cached;
+        }
+        List<Vector3Dd> built = buildTriangleStripBorderPoints(Direction.WEST);
+        cachedTriangleStripWestBorderPoints = built;
+        return built;
+    }
+
+    private List<Vector3Dd> buildTriangleStripBorderPoints(Direction direction) {
+        return TRIANGLE_STRIP_TOPOLOGY_MAPPER.directionBorderPoints(
+            getTriangleStripDeduplicatedVertices(),
+            getTriangleStripTopology(),
+            direction
+        );
+    }
 }

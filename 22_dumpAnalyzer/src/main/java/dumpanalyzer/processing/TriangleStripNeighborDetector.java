@@ -47,6 +47,9 @@ public final class TriangleStripNeighborDetector {
             if (isDegenerateGeometry(geometry)) {
                 continue;
             }
+            if (tile.getTriangleStripTopology() == TriangleStripTileTopology.UNKNOWN) {
+                continue;
+            }
             candidates.add(new Candidate(i));
         }
 
@@ -142,7 +145,7 @@ public final class TriangleStripNeighborDetector {
         if (sourceGeometry == null) {
             return Double.POSITIVE_INFINITY;
         }
-        double[] sourceCenter = center(sourceGeometry.vertices());
+        double[] sourceCenter = source.getTriangleStripCenter();
         if (neighborTileIndex < 0 || neighborTileIndex >= tiles.size()) {
             return Double.POSITIVE_INFINITY;
         }
@@ -151,24 +154,11 @@ public final class TriangleStripNeighborDetector {
         if (g == null) {
             return Double.POSITIVE_INFINITY;
         }
-        double[] c = center(g.vertices());
+        double[] c = tile.getTriangleStripCenter();
         double dx = c[0] - sourceCenter[0];
         double dy = c[1] - sourceCenter[1];
         double dz = c[2] - sourceCenter[2];
         return dx * dx + dy * dy + dz * dz;
-    }
-
-    private static double[] center(List<TileInstance.TriangleStripVertex> vertices) {
-        double sx = 0.0;
-        double sy = 0.0;
-        double sz = 0.0;
-        for (TileInstance.TriangleStripVertex v : vertices) {
-            sx += v.x();
-            sy += v.y();
-            sz += v.z();
-        }
-        double inv = 1.0 / vertices.size();
-        return new double[] {sx * inv, sy * inv, sz * inv};
     }
 
     /**

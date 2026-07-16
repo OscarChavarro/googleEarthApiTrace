@@ -164,10 +164,26 @@ public final class NeighborsProcessor {
                 projection = Matrix4x4d.identityMatrix();
             }
             double[] frameModelView = frame == null ? null : frame.getModelViewMatrix();
-            TriangleStripNeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
-            populateUncles(frame);
-            debugFrame(frame);
+            try {
+                TriangleStripNeighborDetector.populateNeighbors(frame, projection, width, height, frameModelView, true);
+                populateUncles(frame);
+                debugFrame(frame);
+            }
+            finally {
+                clearTriangleStripProcessingCaches(frame);
+            }
             progressProducer.update(0, 1, 1);
+        }
+    }
+
+    private static void clearTriangleStripProcessingCaches(Frame frame) {
+        if (frame == null) {
+            return;
+        }
+        for (TileInstance tile : frame.getTiles()) {
+            if (tile != null) {
+                tile.clearTriangleStripProcessingCaches();
+            }
         }
     }
 
