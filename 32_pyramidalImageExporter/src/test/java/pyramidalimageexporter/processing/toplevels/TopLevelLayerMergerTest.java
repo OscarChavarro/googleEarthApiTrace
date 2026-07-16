@@ -110,6 +110,32 @@ final class TopLevelLayerMergerTest {
     }
 
     @Test
+    void visuallyAnchorsAChildMatrixAgainstTopLevelQuadrants() throws IOException {
+        Path atlas = tempDir.resolve("quadrant-atlas.png");
+        writeQuadrantParent(atlas);
+        MatrixLayer top = layer("topLevel_matrix_00", tile("0", 0, 0, atlas.toString()));
+
+        Path northWest = tempDir.resolve("top-child-nw.png");
+        Path northEast = tempDir.resolve("top-child-ne.png");
+        Path southWest = tempDir.resolve("top-child-sw.png");
+        writeSolidTile(northWest, Color.RED.getRGB());
+        writeSolidTile(northEast, Color.GREEN.getRGB());
+        writeSolidTile(southWest, Color.BLUE.getRGB());
+        MatrixLayer imported = layer(
+            "matrix_0",
+            tile("child-nw", 0, 0, northWest.toString()),
+            tile("child-ne", 0, 1, northEast.toString()),
+            tile("child-sw", 1, 0, southWest.toString())
+        );
+
+        Map<String, String> anchors = new TopLevelVisualAnchorResolver().resolve(List.of(top), List.of(imported));
+
+        assertEquals(quadPath(1, 0, 0), anchors.get("child-nw"));
+        assertEquals(quadPath(1, 0, 1), anchors.get("child-ne"));
+        assertEquals(quadPath(1, 1, 0), anchors.get("child-sw"));
+    }
+
+    @Test
     void retainsVisualDescendantAnchorsForTheLaterExportPass() throws IOException {
         Path parentTexture = tempDir.resolve("descendant-parent.png");
         writeQuadrantParent(parentTexture);

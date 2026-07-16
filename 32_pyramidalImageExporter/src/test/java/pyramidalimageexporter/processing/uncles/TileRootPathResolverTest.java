@@ -8,8 +8,29 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.model.ParentGridTransform;
 
 final class TileRootPathResolverTest {
+    @Test
+    void propagatesAnExplicitContainingParentGridWithoutInventingAnUncle() {
+        MatrixLayer parent = layer(tile("parent-a", 0, 0), tile("parent-b", 0, 1));
+        parent.setSourceFolderName("matrix_0");
+        MatrixLayer child = layer(tile("child-a", 0, 0), tile("child-b", 0, 1));
+        child.setSourceFolderName("matrix_1");
+        child.setParentMatrixIndex(0);
+        child.setParentGridTransform(new ParentGridTransform(0, 0));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(parent, child),
+            Map.of("parent-a", "033"),
+            Map.of()
+        );
+
+        assertEquals("0333", resolution.pathById().get("child-a"));
+        assertEquals("0332", resolution.pathById().get("child-b"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("child-a"));
+    }
+
     @Test
     void keepsAbsoluteSeedsAndRejectsRelativeLabels() {
         MatrixLayer layer = layer(tile("0", 0, 0), tile("00", 1, 0), tile("1", 1, 1));

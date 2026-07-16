@@ -491,7 +491,7 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerReader`.
 - **Location**: `<exportFolder>/matrix_<n>/`, one folder per surviving merged matrix
   (`n` = 0-based export order), containing:
-  - `matrixLayer.json`: versioned envelope (current `contractVersion: 2`) with:
+  - `matrixLayer.json`: versioned envelope (current `contractVersion: 3`) with:
     - `frameId`: representative frame of the merged matrix.
     - `hierarchyLevel`: relative depth in the matrix hierarchy (`0` for a known hierarchy
       root, increasing by one through each parent edge; it is not inferred from `<n>`), or
@@ -499,6 +499,11 @@ model with quadtree neighborhood information — everything downstream depends o
       quadtree level.
     - `parentMatrixIndex`: index `<n>` of the immediate parent, or `null` for a hierarchy
       root, a disconnected matrix, or unknown legacy hierarchy.
+    - `parentGridTransform`: optional `{rowOffset,colOffset}` rigid transform for a
+      visually inferred **containing** parent. For child local cell `(i,j)`,
+      `(i+rowOffset,j+colOffset)` is its coordinate in the parent-local grid refined by
+      one level. It is relative evidence and cannot anchor the child until the parent has
+      an accepted absolute grid anchor.
     - `hierarchyUnclesByTileId`: compatibility map `tileId -> [uncleId]` used for graph
       ordering and diagnostics.
     - `hierarchyRelationshipsByTileId`: lossless map
@@ -523,9 +528,10 @@ model with quadtree neighborhood information — everything downstream depends o
   - A hierarchy root without recorded `uncles` may be joined to an earlier matrix only
     by `31_matrixMerger`'s visual parent inference: child textures are compared with
     parent quadrants, matches must pass RMSE and best/second confidence thresholds, and a
-    strict majority must agree on one rigid `(parent,rowOffset,colOffset)`. Accepted
-    relationships are persisted in both hierarchy maps. A non-confident root stays
-    disconnected; ordering alone is never an anchor.
+    strict majority must agree on one rigid `(parent,rowOffset,colOffset)`. The accepted
+    result is persisted as `parentMatrixIndex + parentGridTransform`, never as a fabricated
+    uncle relationship. A non-confident root stays disconnected; ordering alone is never
+    an anchor.
   - When hierarchy metadata is known, `parentMatrixIndex` refers to an earlier exported
     matrix and `hierarchyLevel == parent.hierarchyLevel + 1`. Legacy/global grouping can
     emit unknown `hierarchyLevel: -1` and `parentMatrixIndex: null`; consumers must then
@@ -570,6 +576,9 @@ make it into the final pyramidal image, so it is worth stating explicitly:
     quadrant specified by the direction table above. It must not merely append a digit to
     the uncle path.
   - `hierarchyRelationshipsByTileId` is merged into `tiles[].uncles` before resolution.
+  - A contract-v3 `parentGridTransform` is propagated only after its referenced parent
+    grid has an absolute anchor. Containing-parent transforms and adjacent uncles are
+    separate evidence types and must never be converted into one another.
   - Once a strict majority chooses one `(level,rowOffset,colOffset)` for a rigid matrix,
     that grid canonicalizes every path in the matrix. Minority/outlier anchors and an
     individually ambiguous tile are corrected by the winning grid instead of being

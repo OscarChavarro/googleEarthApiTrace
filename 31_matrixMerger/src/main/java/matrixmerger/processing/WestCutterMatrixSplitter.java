@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import matrixmerger.model.contract.FrameMatrixSet;
 import matrixmerger.model.contract.FrameTileMatrix;
+import matrixmerger.model.contract.ParentGridTransform;
 import matrixmerger.io.WestCuttersJsonReader;
 import matrixmerger.processing.uncles.ToUncleRelationship;
 
@@ -118,6 +119,16 @@ public final class WestCutterMatrixSplitter {
         mainFrame.setMatrices(List.of(rightMatrix));
         mainFrame.setHierarchyUnclesByTileId(filterHierarchyUncles(frame, rightTiles));
         mainFrame.setHierarchyRelationshipsByTileId(filterHierarchyRelationships(frame, rightTiles));
+        ParentGridTransform inheritedTransform = frame.getParentGridTransform();
+        mainFrame.setParentGridTransform(
+            inheritedTransform == null
+                ? null
+                : new ParentGridTransform(
+                    inheritedTransform.rowOffset(),
+                    inheritedTransform.colOffset() + splitColumn
+                )
+        );
+        mainFrame.setInferredParent(frame.getInferredParent());
 
         int leftMaxJ = Integer.MIN_VALUE;
         for (FrameTileMatrix.TileCoord tile : leftTiles) {
@@ -134,6 +145,8 @@ public final class WestCutterMatrixSplitter {
         transientFrame.setMatrices(List.of(leftMatrix));
         transientFrame.setHierarchyUnclesByTileId(filterHierarchyUncles(frame, leftTiles));
         transientFrame.setHierarchyRelationshipsByTileId(filterHierarchyRelationships(frame, leftTiles));
+        transientFrame.setParentGridTransform(inheritedTransform);
+        transientFrame.setInferredParent(frame.getInferredParent());
         return new SplitResult(mainFrame, transientFrame);
     }
 
@@ -194,6 +207,8 @@ public final class WestCutterMatrixSplitter {
         out.setMatrices(List.of(matrixCopy));
         out.setHierarchyUnclesByTileId(frame.getHierarchyUnclesByTileId());
         out.setHierarchyRelationshipsByTileId(frame.getHierarchyRelationshipsByTileId());
+        out.setParentGridTransform(frame.getParentGridTransform());
+        out.setInferredParent(frame.getInferredParent());
         return out;
     }
 

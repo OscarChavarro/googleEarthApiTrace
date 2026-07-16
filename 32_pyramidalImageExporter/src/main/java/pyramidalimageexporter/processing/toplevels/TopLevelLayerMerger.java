@@ -268,6 +268,7 @@ public final class TopLevelLayerMerger {
         copy.setContractVersion(source.getContractVersion());
         copy.setHierarchyLevel(source.getHierarchyLevel());
         copy.setParentMatrixIndex(source.getParentMatrixIndex());
+        copy.setParentGridTransform(source.getParentGridTransform());
         copy.setFrameId(source.getFrameId());
         copy.setRows(source.getRows());
         copy.setCols(source.getCols());

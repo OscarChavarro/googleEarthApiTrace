@@ -18,9 +18,10 @@ of PNG files with the `e` key.
 
 - `<inputFolder>` (positional, required, no default): directory containing the
   `matrix_<n>` folders exported by `31_matrixMerger`, each with a `matrixLayer.json` and
-  its tile textures. Contract-v2 files also contain `hierarchyLevel`,
-  `parentMatrixIndex`, and full `hierarchyRelationshipsByTileId`; these relationships are
-  merged back into the tiles before placement. The top-level pyramid (levels `0..5`, see below) does not depend on
+  its tile textures. Contract-v3 files also contain `hierarchyLevel`,
+  `parentMatrixIndex`, an optional `parentGridTransform`, and full
+  `hierarchyRelationshipsByTileId`; true uncle relationships are merged back into the
+  tiles before placement. The top-level pyramid (levels `0..5`, see below) does not depend on
   this folder having any `matrix_<n>` subfolders, only `topLevelTiles.json` does. Neither
   the program nor `./run.sh` assumes a default: if this argument is missing, both exit
   with code `1` and an English error message explaining that it must point to
@@ -127,6 +128,8 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   Up to 16 distributed tiles are compared with reconstructed cell sub-rectangles; each
   match must beat the second candidate by a conservative margin, and at least three
   matches plus a strict majority must vote for one rigid `(level,rowOffset,colOffset)`.
+  Matching also considers the four level-6 quadrants of reconstructed level-5 cells,
+  because the first native imported layer may already be one level below TOP.
 - Any other tile can still be anchored if one of its `uncles` relationships
   (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
   already anchored. The uncle is the immediately coarser adjacent tile; `direction`
@@ -134,6 +137,9 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   border to the neighboring parent cell and selects the corresponding child quadrant.
   This propagates as a fixpoint, so a chain of several uncle hops resolves one hop per
   pass.
+- A contract-v3 `parentGridTransform` propagates a containing-parent placement after,
+  and only after, the referenced parent matrix has an accepted absolute grid anchor. It
+  never crosses a border and is not interpreted as an uncle relationship.
 - If a tile has several `uncles` relationships that resolve to different candidate paths,
   the matrix grid votes for a common `(level,rowOffset,colOffset)`. A strict majority
   canonicalizes every tile in that rigid grid, correcting minority and individually
@@ -151,8 +157,9 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   offset are required before the descendant layer is placed.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
 
-Contract-v2 hierarchy roots repaired by `31_matrixMerger` carry explicit inferred uncle
-relationships. The exporter never assumes that `matrix_<n+1>` is the child of
+Contract-v3 hierarchy roots repaired by `31_matrixMerger` carry an explicit rigid parent
+grid transform. Contract-v2 true uncle relationships remain supported. The exporter never
+assumes that `matrix_<n+1>` is the child of
 `matrix_<n>` merely because of folder order.
 
 Before writing any PNG, the exporter builds a manifest with one selected tile per full

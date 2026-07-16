@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.model.ParentGridTransform;
 import pyramidalimageexporter.processing.uncles.ToUncleRelationship;
 
 public final class MatrixLayerJsonReader {
@@ -84,6 +85,10 @@ public final class MatrixLayerJsonReader {
         layer.setContractVersion(nullableInt(root.get("contractVersion")));
         layer.setHierarchyLevel(nullableInt(root.get("hierarchyLevel")));
         layer.setParentMatrixIndex(nullableInt(root.get("parentMatrixIndex")));
+        JsonNode parentGridTransform = root.get("parentGridTransform");
+        if (parentGridTransform != null && parentGridTransform.isObject()) {
+            layer.setParentGridTransform(JSON.convertValue(parentGridTransform, ParentGridTransform.class));
+        }
 
         JsonNode legacy = root.get("hierarchyUnclesByTileId");
         if (legacy != null && legacy.isObject()) {

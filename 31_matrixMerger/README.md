@@ -105,8 +105,14 @@ orders them from the top quadtree level to the deepest one, and selects the top 
 the viewer. If a later hierarchy root has lost its parent relationship, a final visual
 inference compares its textures with quadrants of earlier matrices. It accepts a parent
 only when confident matches form a strict majority for one rigid grid offset, persists
-those inferred relationships, and reorders the hierarchy. This is the batch equivalent
-of pressing `n` and `c` over every frame plus hierarchy repair.
+that containing-parent placement as a `parentGridTransform`, and reorders the hierarchy.
+It deliberately does not fabricate an `uncle`: uncles are adjacent coarse tiles, not
+containing parents. This is the batch equivalent of pressing `n` and `c` over every frame
+plus hierarchy repair.
+
+Before automatic grouping returns, it verifies that the set of unique native tile IDs is
+identical to the set loaded at its start. A missing or invented ID aborts the run instead
+of allowing a silently lossy export.
 
 ## Execution
 
@@ -146,11 +152,16 @@ remaining frame is written as:
 - `<exportFolder>/matrix_<n>/matrixLayer.json`
 - `<exportFolder>/matrix_<n>/<tileId>.png` (tile textures copied from the source data)
 
-`matrixLayer.json` uses contract version 2. Besides the matrix and its tiles, it exports
-`hierarchyLevel`, `parentMatrixIndex`, `hierarchyUnclesByTileId`, and the lossless
+`matrixLayer.json` uses contract version 3. Besides the matrix and its tiles, it exports
+`hierarchyLevel`, `parentMatrixIndex`, an optional rigid `parentGridTransform`,
+`hierarchyUnclesByTileId`, and the lossless
 `hierarchyRelationshipsByTileId` map containing full `{direction, uncleContentId}`
 records. This metadata is required by `32_pyramidalImageExporter`; directory order alone
 is not treated as a hierarchy edge.
+
+For a child cell `(i,j)`, `parentGridTransform` means that
+`(i + rowOffset, j + colOffset)` is its coordinate in the parent grid refined by one
+quadtree level. It remains relative until the parent receives an absolute quadkey anchor.
 
 These folders are the input of `32_pyramidalImageExporter`.
 

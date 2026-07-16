@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.model.ParentGridTransform;
 
 /**
  * Resolves, for every tile across every matrix layer, its full quadtree path
@@ -88,6 +89,7 @@ public final class TileRootPathResolver {
         // the antimeridian. Letting its noisy anchors reach a child first doubles
         // the longitudinal error at every subsequent quadtree level.
         propagateByGridPosition(layers, resolvedPath, sourceById, discarded, true);
+        propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
         boolean progress = true;
         while (progress) {
             progress = false;
@@ -110,10 +112,78 @@ public final class TileRootPathResolver {
                 }
                 progress = true;
             }
+            progress |= propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
             progress |= propagateByGridPosition(layers, resolvedPath, sourceById, discarded, false);
         }
 
         return new Resolution(Map.copyOf(resolvedPath), Set.copyOf(discarded), Map.copyOf(sourceById));
+    }
+
+    /**
+     * Applies a contract-v3 parent transform only after the referenced parent
+     * grid has an accepted absolute anchor.  This preserves the distinction
+     * between containment and an adjacent-uncle relationship.
+     */
+    private static boolean propagateByParentGridTransforms(
+        List<MatrixLayer> layers,
+        Map<String, String> resolvedPath,
+        Map<String, PathSource> sourceById,
+        Set<String> discarded
+    ) {
+        if (layers == null || layers.isEmpty()) {
+            return false;
+        }
+        boolean progress = false;
+        for (MatrixLayer child : layers) {
+            ParentGridTransform transform = child == null ? null : child.getParentGridTransform();
+            Integer parentIndex = child == null ? null : child.getParentMatrixIndex();
+            if (transform == null || parentIndex == null || parentIndex < 0) {
+                continue;
+            }
+            MatrixLayer parent = findImportedLayer(layers, parentIndex);
+            if (parent == null) {
+                continue;
+            }
+            int[] parentAnchor = consistentGridAnchor(parent, resolvedPath, sourceById);
+            if (parentAnchor == null || parentAnchor[0] < 0) {
+                continue;
+            }
+            int childLevel = parentAnchor[0] + 1;
+            int side = 1 << childLevel;
+            int rowOffset = 2 * parentAnchor[1] + transform.rowOffset();
+            int colOffset = Math.floorMod(2 * parentAnchor[2] + transform.colOffset(), side);
+            for (MatrixLayerTile tile : child.getTiles()) {
+                if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                    continue;
+                }
+                PathSource previousSource = sourceById.get(tile.getId());
+                if (previousSource == PathSource.DIRECT) {
+                    continue;
+                }
+                int row = tile.getI() + rowOffset;
+                int col = Math.floorMod(tile.getJ() + colOffset, side);
+                if (row < 0 || row >= side) {
+                    continue;
+                }
+                String path = "0" + encodeQuadtreeLabel(childLevel, row, col);
+                if (!path.equals(resolvedPath.put(tile.getId(), path)) || previousSource != PathSource.GRID) {
+                    progress = true;
+                }
+                sourceById.put(tile.getId(), PathSource.GRID);
+                discarded.remove(tile.getId());
+            }
+        }
+        return progress;
+    }
+
+    private static MatrixLayer findImportedLayer(List<MatrixLayer> layers, int matrixIndex) {
+        String sourceFolder = "matrix_" + matrixIndex;
+        for (MatrixLayer layer : layers) {
+            if (layer != null && sourceFolder.equals(layer.getSourceFolderName())) {
+                return layer;
+            }
+        }
+        return null;
     }
 
     /**

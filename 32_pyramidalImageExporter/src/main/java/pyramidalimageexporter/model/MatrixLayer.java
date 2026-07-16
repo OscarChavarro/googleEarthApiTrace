@@ -10,6 +10,7 @@ public final class MatrixLayer {
     private Integer contractVersion;
     private Integer hierarchyLevel;
     private Integer parentMatrixIndex;
+    private ParentGridTransform parentGridTransform;
     private int frameId;
     private int rows;
     private int cols;
@@ -40,6 +41,14 @@ public final class MatrixLayer {
 
     public void setParentMatrixIndex(Integer parentMatrixIndex) {
         this.parentMatrixIndex = parentMatrixIndex;
+    }
+
+    public ParentGridTransform getParentGridTransform() {
+        return parentGridTransform;
+    }
+
+    public void setParentGridTransform(ParentGridTransform parentGridTransform) {
+        this.parentGridTransform = parentGridTransform;
     }
 
     public int getFrameId() {

@@ -1,7 +1,7 @@
 package matrixmerger.processing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.image.BufferedImage;
 import java.nio.file.Path;
@@ -43,9 +43,12 @@ final class VisualHierarchyRelationshipInferrerTest {
 
         assertEquals(1, inferred);
         assertEquals(List.of(0), state.getHierarchyOrderDiagnostics().get(1).resolvedParentIndexes());
+        assertEquals(
+            new matrixmerger.model.contract.ParentGridTransform(0, 0),
+            state.getFrameMatrices().get(1).getParentGridTransform()
+        );
         for (FrameTileMatrix.TileCoord tile : state.getFrameMatrices().get(1).getMatrices().get(0).getTiles()) {
-            assertFalse(tile.getUncles().isEmpty());
-            assertEquals("00010_1", tile.getUncles().get(0).uncleContentId());
+            assertTrue(tile.getUncles().isEmpty(), "a containing parent must not be serialized as an adjacent uncle");
         }
     }
 

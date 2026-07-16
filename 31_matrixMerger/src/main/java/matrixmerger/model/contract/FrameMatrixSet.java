@@ -1,5 +1,6 @@
 package matrixmerger.model.contract;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,6 +11,8 @@ public final class FrameMatrixSet {
     private Integer contractVersion;
     private Integer hierarchyLevel;
     private Integer parentMatrixIndex;
+    private ParentGridTransform parentGridTransform;
+    private FrameMatrixSet inferredParent;
     private int frameId;
     private List<FrameTileMatrix> matrices = new ArrayList<>();
     private Map<String, List<String>> hierarchyUnclesByTileId = new LinkedHashMap<>();
@@ -37,6 +40,24 @@ public final class FrameMatrixSet {
 
     public void setParentMatrixIndex(Integer parentMatrixIndex) {
         this.parentMatrixIndex = parentMatrixIndex;
+    }
+
+    public ParentGridTransform getParentGridTransform() {
+        return parentGridTransform;
+    }
+
+    public void setParentGridTransform(ParentGridTransform parentGridTransform) {
+        this.parentGridTransform = parentGridTransform;
+    }
+
+    @JsonIgnore
+    public FrameMatrixSet getInferredParent() {
+        return inferredParent;
+    }
+
+    @JsonIgnore
+    public void setInferredParent(FrameMatrixSet inferredParent) {
+        this.inferredParent = inferredParent;
     }
 
     public int getFrameId() {

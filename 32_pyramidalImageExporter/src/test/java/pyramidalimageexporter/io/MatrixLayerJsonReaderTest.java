@@ -47,4 +47,31 @@ final class MatrixLayerJsonReaderTest {
         assertEquals(UncleDirections.NORTH_EAST, layer.getTiles().get(0).getUncles().get(0).direction());
         assertEquals("00010_1", layer.getTiles().get(0).getUncles().get(0).uncleContentId());
     }
+
+    @Test
+    void importsVersionThreeContainingParentGridTransform() throws Exception {
+        Path layerDirectory = Files.createDirectory(tempDir.resolve("matrix_2"));
+        Files.writeString(layerDirectory.resolve("matrixLayer.json"), """
+            {
+              "contractVersion": 3,
+              "hierarchyLevel": 2,
+              "parentMatrixIndex": 1,
+              "parentGridTransform": {"rowOffset": 6, "colOffset": -2},
+              "frameId": 30,
+              "matrices": [{
+                "frameId": 30,
+                "rows": 1,
+                "cols": 1,
+                "tiles": [{"id": "00030_1", "i": 0, "j": 0, "textureFile": "/tmp/child.png", "uncles": []}]
+              }]
+            }
+            """);
+
+        MatrixLayer layer = new MatrixLayerJsonReader().readAllFromInput(tempDir).get(0);
+
+        assertEquals(3, layer.getContractVersion());
+        assertEquals(1, layer.getParentMatrixIndex());
+        assertEquals(6, layer.getParentGridTransform().rowOffset());
+        assertEquals(-2, layer.getParentGridTransform().colOffset());
+    }
 }

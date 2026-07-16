@@ -265,6 +265,11 @@ public final class MatrixMergerState {
                     parentIndexes.add(parentIndex);
                 }
             }
+            Integer explicitParentIndex = indexOfFrameIdentity(frame.getInferredParent());
+            if (explicitParentIndex != null && explicitParentIndex != frameIndex) {
+                parentIndexes.clear();
+                parentIndexes.add(explicitParentIndex);
+            }
             out.add(new HierarchyOrderDiagnostic(
                 frameIndex,
                 hierarchyLevelByFrame.getOrDefault(frame, -1),
@@ -618,6 +623,8 @@ public final class MatrixMergerState {
             normalizedFrame.setContractVersion(frame.getContractVersion());
             normalizedFrame.setHierarchyLevel(frame.getHierarchyLevel());
             normalizedFrame.setParentMatrixIndex(frame.getParentMatrixIndex());
+            normalizedFrame.setParentGridTransform(frame.getParentGridTransform());
+            normalizedFrame.setInferredParent(frame.getInferredParent());
             normalizedFrame.setFrameId(frame.getFrameId());
             normalizedFrame.setMatrices(List.of(matrix));
             normalizedFrame.setHierarchyUnclesByTileId(buildHierarchyUnclesByTileId(frame, matrix));
@@ -751,9 +758,15 @@ public final class MatrixMergerState {
                 }
             }
 
+            Integer explicitParentFrameIndex = indexOfFrameIdentity(frame.getInferredParent());
+
             UncleHudState state;
             Integer parentFrameIndex = null;
-            if (resolvedUncleFrameIndexes.isEmpty()) {
+            if (explicitParentFrameIndex != null && explicitParentFrameIndex != frameIndex) {
+                state = UncleHudState.NORMAL;
+                parentFrameIndex = explicitParentFrameIndex;
+            }
+            else if (resolvedUncleFrameIndexes.isEmpty()) {
                 state = UncleHudState.TOPLEVEL;
             }
             else if (resolvedUncleFrameIndexes.size() == 1) {
@@ -806,6 +819,18 @@ public final class MatrixMergerState {
             }
         }
         normalizeSelection();
+    }
+
+    private Integer indexOfFrameIdentity(FrameMatrixSet sought) {
+        if (sought == null) {
+            return null;
+        }
+        for (int index = 0; index < frameMatrices.size(); index++) {
+            if (frameMatrices.get(index) == sought) {
+                return index;
+            }
+        }
+        return null;
     }
 
     private List<FrameHierarchyNode> orderHierarchyNodes(List<FrameHierarchyNode> nodes) {
