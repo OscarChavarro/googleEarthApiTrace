@@ -120,11 +120,22 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
                 }
             }
             refreshDestinationImage();
+            java.util.List<String> missingTileIds = merger.findMissingDeltaTileIds(
+                destinationInstance.getImage(),
+                deltaInstance.getImage()
+            );
+            if (!missingTileIds.isEmpty()) {
+                String sample = missingTileIds.stream().limit(8).collect(java.util.stream.Collectors.joining(", "));
+                throw new IOException(
+                    "post-merge verification found " + missingTileIds.size()
+                        + " missing delta tile(s); first ids: " + sample
+                );
+            }
             mergeAnalysis = mergeAnalyzer.markMerged(mergeAnalysis, result.copiedTiles(), result.replacedTiles());
             model.setHudStatus(mergeAnalysis.mergeCompletedSummary());
         }
         catch (IOException ex) {
-            model.setHudStatus("Merge stopped: could not copy tiles into destination: " + ex.getMessage());
+            model.setHudStatus("Merge stopped: " + ex.getMessage());
         }
     }
 

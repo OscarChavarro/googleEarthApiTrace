@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import frametexturenormalizer.model.FrameData;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.TileMatrix;
@@ -19,6 +20,9 @@ import frametexturenormalizer.processing.neighborhood.GeometricNeighborhoodSanit
 import frametexturenormalizer.processing.texture.TileTextureNormalizer;
 
 public final class TileMatrixProcessor {
+    private static final int MAX_WORKER_COUNT = Integer.getInteger("frametexturenormalizer.maxWorkers", 8);
+    private static final int PROGRESS_INTERVAL = Integer.getInteger("frametexturenormalizer.progressInterval", 250);
+
     public TileMatrixProcessingResult normalizeAndConvertTileMatrices(
         List<FrameData> frames,
         List<List<String>> duplicatedTextureGroups
@@ -31,6 +35,8 @@ public final class TileMatrixProcessor {
         ConcurrentLinkedQueue<FrameRequest> pendingFrames = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<IndexedFrameResult> completed = new ConcurrentLinkedQueue<>();
         AtomicBoolean producerDone = new AtomicBoolean(false);
+        AtomicInteger processedFrames = new AtomicInteger();
+        int totalFrames = frames.size();
 
         Thread producer = new Thread(
             () -> produceFrameQueue(frames, pendingFrames, producerDone),
@@ -38,11 +44,18 @@ public final class TileMatrixProcessor {
         );
         producer.start();
 
-        int threadCount = Math.max(1, Runtime.getRuntime().availableProcessors());
+        int threadCount = workerCountFor(totalFrames);
         Thread[] workers = new Thread[threadCount];
         for (int i = 0; i < threadCount; i++) {
             workers[i] = new Thread(
-                () -> consumeFrameQueue(pendingFrames, completed, producerDone, canonicalTextureByTexture),
+                () -> consumeFrameQueue(
+                    pendingFrames,
+                    completed,
+                    producerDone,
+                    canonicalTextureByTexture,
+                    processedFrames,
+                    totalFrames
+                ),
                 "tile-normalize-convert-worker-" + i
             );
             workers[i].start();
@@ -68,6 +81,13 @@ public final class TileMatrixProcessor {
             }
         }
         return new TileMatrixProcessingResult(out, matrices);
+    }
+
+    private static int workerCountFor(int workItems) {
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int configuredMaximum = Math.max(1, MAX_WORKER_COUNT);
+        int boundedByCpu = Math.min(availableProcessors, configuredMaximum);
+        return Math.max(1, Math.min(workItems, boundedByCpu));
     }
 
     public List<TileInstance> applyMatrixCoordinates(List<TileInstance> tiles, TileMatrix matrix) {
@@ -192,7 +212,9 @@ public final class TileMatrixProcessor {
         ConcurrentLinkedQueue<FrameRequest> pendingFrames,
         ConcurrentLinkedQueue<IndexedFrameResult> completed,
         AtomicBoolean producerDone,
-        Map<String, String> canonicalTextureByTexture
+        Map<String, String> canonicalTextureByTexture,
+        AtomicInteger processedFrames,
+        int totalFrames
     ) {
         TileSetToMatrixConverter localConvertor = new TileSetToMatrixConverter();
         TileFiltererByTextureCoverage textureCoverageFilterer = new TileFiltererByTextureCoverage();
@@ -220,6 +242,17 @@ public final class TileMatrixProcessor {
             if (result != null) {
                 completed.add(result);
             }
+            reportProgress(processedFrames, totalFrames);
+        }
+    }
+
+    private static void reportProgress(AtomicInteger processedFrames, int totalFrames) {
+        if (processedFrames == null || totalFrames <= 0) {
+            return;
+        }
+        int processed = processedFrames.incrementAndGet();
+        if (processed == totalFrames || (PROGRESS_INTERVAL > 0 && processed % PROGRESS_INTERVAL == 0)) {
+            System.out.print("[" + processed + "/" + totalFrames + "] ");
         }
     }
 

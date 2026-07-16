@@ -139,7 +139,7 @@ public final class TileRootPathResolver {
             if (layer == null || layer.getTiles() == null) {
                 continue;
             }
-            int[] anchor = consistentGridAnchor(layer, resolvedPath);
+            int[] anchor = consistentGridAnchor(layer, resolvedPath, sourceById);
             if (anchor == null || anchor[0] <= 0) {
                 continue;
             }
@@ -184,9 +184,14 @@ public final class TileRootPathResolver {
      * identical-looking cells, which shifts a chain by one cell) is outvoted.
      * A complete tuple majority wins first. Otherwise level, row offset and
      * cyclic column offset vote independently; all three still need strict
-     * majorities, or the layer is left unresolved.
+     * majorities, or the layer is left unresolved for stronger evidence.
      */
-    private static int[] consistentGridAnchor(MatrixLayer layer, Map<String, String> resolvedPath) {
+    private static int[] consistentGridAnchor(
+        MatrixLayer layer,
+        Map<String, String> resolvedPath,
+        Map<String, PathSource> sourceById
+    ) {
+        PathSource strongestSource = strongestSourceInLayer(layer, resolvedPath, sourceById);
         Map<List<Integer>, Integer> votes = new LinkedHashMap<>();
         for (MatrixLayerTile tile : layer.getTiles()) {
             if (tile == null) {
@@ -194,6 +199,9 @@ public final class TileRootPathResolver {
             }
             String fullPath = resolvedPath.get(tile.getId());
             if (fullPath == null) {
+                continue;
+            }
+            if (sourceById.get(tile.getId()) != strongestSource) {
                 continue;
             }
             int[] cell = decodeFullPath(fullPath);
@@ -246,6 +254,31 @@ public final class TileRootPathResolver {
         }
         List<Integer> best = winner.anchor();
         return new int[]{best.get(0), best.get(1), best.get(2)};
+    }
+
+    /** Absolute/catalogued evidence outranks a grid consensus, which outranks relative uncle links. */
+    private static PathSource strongestSourceInLayer(
+        MatrixLayer layer,
+        Map<String, String> resolvedPath,
+        Map<String, PathSource> sourceById
+    ) {
+        PathSource strongest = null;
+        for (MatrixLayerTile tile : layer.getTiles()) {
+            if (tile == null || !resolvedPath.containsKey(tile.getId())) {
+                continue;
+            }
+            PathSource source = sourceById.get(tile.getId());
+            if (source == PathSource.DIRECT) {
+                return source;
+            }
+            if (source == PathSource.GRID) {
+                strongest = source;
+            }
+            else if (source == PathSource.UNCLE && strongest == null) {
+                strongest = source;
+            }
+        }
+        return strongest;
     }
 
     private record AnchorVote(List<Integer> anchor, int count, int total, boolean componentWise) {}

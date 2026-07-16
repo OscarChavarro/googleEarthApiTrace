@@ -13,6 +13,7 @@ import vsdk.toolkit.gui.RendererConfigurationController;
 // App classes
 import frametexturenormalizer.animation.AnimationController;
 import frametexturenormalizer.model.FrameData;
+import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 import frametexturenormalizer.processing.neighborhood.TileCutter;
 
@@ -88,6 +89,13 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (keyChar == 'c' || keyChar == 'C') {
             FrameData frame = model.getSelectedFrame();
+            TileInstance selectedTile = selectedTile(frame, model.getSelectedTileIndex());
+            if (selectedTile != null && selectedTile.isWestCuttingCell()) {
+                selectedTile.setWestCuttingCell(false);
+                model.removeWestCutterTileId(selectedTile.getScopedId());
+                redraw();
+                return;
+            }
             Set<String> selectedIds = TileCutter.selectedTileIdsAcrossFrames(model.getFrames());
             Set<String> expandedIds = TileCutter.expandWestCutScopedIdsAcrossFrames(model.getFrames(), selectedIds);
             if (frame != null && !expandedIds.isEmpty()) {
@@ -126,6 +134,13 @@ public final class KeyboardInteractionTechniques implements KeyListener {
                 }
             }
         }
+    }
+
+    private static TileInstance selectedTile(FrameData frame, int selectedTileIndex) {
+        if (frame == null || frame.getTiles() == null || selectedTileIndex < 0 || selectedTileIndex >= frame.getTiles().size()) {
+            return null;
+        }
+        return frame.getTiles().get(selectedTileIndex);
     }
 
     @Override

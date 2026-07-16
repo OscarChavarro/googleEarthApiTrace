@@ -122,6 +122,11 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
 
 - Tiles whose own `id` already is such a path (every `topLevel_matrix_*` tile, by
   construction) are anchored directly.
+- A partial imported matrix that meets the reconstructed levels `0..5` can be anchored
+  visually even when none of its native images is byte-identical to a catalogue image.
+  Up to 16 distributed tiles are compared with reconstructed cell sub-rectangles; each
+  match must beat the second candidate by a conservative margin, and at least three
+  matches plus a strict majority must vote for one rigid `(level,rowOffset,colOffset)`.
 - Any other tile can still be anchored if one of its `uncles` relationships
   (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
   already anchored. The uncle is the immediately coarser adjacent tile; `direction`
@@ -132,12 +137,18 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
 - If a tile has several `uncles` relationships that resolve to different candidate paths,
   the matrix grid votes for a common `(level,rowOffset,colOffset)`. A strict majority
   canonicalizes every tile in that rigid grid, correcting minority and individually
-  ambiguous anchors. Longitude offsets are cyclic modulo `2^level`; for a full-world matrix,
+  ambiguous anchors. Direct quadkey/catalogue anchors take precedence over paths derived
+  from relative `uncles`; otherwise several noisy relationships can outvote the only
+  absolute observation and their error doubles at each deeper level. Longitude offsets
+  are cyclic modulo `2^level`; for a full-world matrix,
   local column zero is canonicalized to the antimeridian before resolving child layers so
   an erroneous phase cannot double at every deeper level. If no complete
   `(level,rowOffset,colOffset)` tuple has a majority, the
-  resolver may combine independent strict majorities for its three components; without
-  those component majorities the matrix stays unresolved.
+  resolver may combine independent strict majorities for its three components. Sparse or
+  closely contested relative anchors cannot place the grid. Instead, the exporter compares
+  distributed native tiles against quadrants of already canonicalized layers from the same
+  session; at least three individually unambiguous probes and a strict majority for one rigid
+  offset are required before the descendant layer is placed.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
 
 Contract-v2 hierarchy roots repaired by `31_matrixMerger` carry explicit inferred uncle

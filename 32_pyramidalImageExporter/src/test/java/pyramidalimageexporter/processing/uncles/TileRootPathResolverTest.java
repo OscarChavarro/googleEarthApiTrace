@@ -157,6 +157,98 @@ final class TileRootPathResolverTest {
         assertEquals("002", resolution.pathById().get("outlier"));
     }
 
+    @Test
+    void directAnchorOutranksAMajorityOfRelativeUncleAnchors() {
+        MatrixLayerTile direct = tile("direct", 0, 0);
+        MatrixLayerTile relativeA = tile("relative-a", 0, 2);
+        relativeA.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "uncle")));
+        MatrixLayerTile relativeB = tile("relative-b", 0, 1);
+        relativeB.setUncles(List.of(new ToUncleRelationship(UncleDirections.EAST_NORTH, "uncle")));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer(direct, relativeA, relativeB)),
+            Map.of("direct", "033", "uncle", "03"),
+            Map.of()
+        );
+
+        assertEquals("033", resolution.pathById().get("direct"));
+        assertEquals("023", resolution.pathById().get("relative-a"));
+        assertEquals("032", resolution.pathById().get("relative-b"));
+        assertEquals(TileRootPathResolver.PathSource.DIRECT, resolution.sourceById().get("direct"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("relative-a"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("relative-b"));
+    }
+
+    @Test
+    void rejectsAWellSeparatedPluralityWithoutAStrictMajority() {
+        MatrixLayer layer = layer(
+            tile("a", 0, 0),
+            tile("b", 0, 1),
+            tile("c", 0, 2),
+            tile("noise-1", 1, 0),
+            tile("noise-2", 1, 1),
+            tile("noise-3", 1, 2),
+            tile("unanchored", 2, 0)
+        );
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer),
+            Map.of(
+                "a", "0300", "b", "0301", "c", "0310",
+                "noise-1", "0330", "noise-2", "0322", "noise-3", "0031"
+            ),
+            Map.of()
+        );
+
+        assertFalse(resolution.pathById().containsKey("unanchored"));
+        assertEquals("0300", resolution.pathById().get("a"));
+        assertEquals(TileRootPathResolver.PathSource.DIRECT, resolution.sourceById().get("noise-1"));
+    }
+
+    @Test
+    void rejectsTheObservedLevelSevenPluralityThatShiftsTheWholeLayer() {
+        java.util.ArrayList<MatrixLayerTile> tiles = new java.util.ArrayList<>();
+        java.util.LinkedHashMap<String, String> anchors = new java.util.LinkedHashMap<>();
+        addAnchorVotes(tiles, anchors, 35, 48, 3);
+        addAnchorVotes(tiles, anchors, 8, 49, 2);
+        addAnchorVotes(tiles, anchors, 12, 48, 1);
+        addAnchorVotes(tiles, anchors, 15, 48, 2);
+        addAnchorVotes(tiles, anchors, 1, 47, 2);
+        MatrixLayerTile unanchored = tile("unanchored-level-seven", 10, 10);
+        tiles.add(unanchored);
+        MatrixLayer layer = new MatrixLayer();
+        layer.setSourceFolderName("matrix_level_seven_regression");
+        layer.setTiles(tiles);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer),
+            anchors,
+            Map.of()
+        );
+
+        assertFalse(resolution.pathById().containsKey(unanchored.getId()));
+    }
+
+    @Test
+    void rejectsAWeakPluralityOfGridAnchors() {
+        MatrixLayer layer = layer(
+            tile("a", 0, 0),
+            tile("b", 0, 1),
+            tile("noise-1", 1, 0),
+            tile("noise-2", 1, 1),
+            tile("unanchored", 2, 0)
+        );
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer),
+            Map.of("a", "0300", "b", "0301", "noise-1", "0330", "noise-2", "0322"),
+            Map.of()
+        );
+
+        assertFalse(resolution.pathById().containsKey("unanchored"));
+        assertEquals("0330", resolution.pathById().get("noise-1"));
+    }
+
     private static MatrixLayer layer(MatrixLayerTile... tiles) {
         MatrixLayer layer = new MatrixLayer();
         layer.setSourceFolderName("matrix_test");
@@ -170,6 +262,32 @@ final class TileRootPathResolverTest {
         tile.setI(i);
         tile.setJ(j);
         return tile;
+    }
+
+    private static void addAnchorVotes(
+        java.util.List<MatrixLayerTile> tiles,
+        java.util.Map<String, String> anchors,
+        int count,
+        int rowOffset,
+        int colOffset
+    ) {
+        for (int index = 0; index < count; index++) {
+            int localRow = index / 16;
+            int localCol = index % 16;
+            String id = "anchor-" + rowOffset + "-" + colOffset + "-" + index;
+            tiles.add(tile(id, localRow, localCol));
+            anchors.put(id, quadPath(7, localRow + rowOffset, localCol + colOffset));
+        }
+    }
+
+    private static String quadPath(int level, int row, int col) {
+        StringBuilder path = new StringBuilder("0");
+        for (int depth = level - 1; depth >= 0; depth--) {
+            boolean south = ((row >> depth) & 1) == 1;
+            boolean east = ((col >> depth) & 1) == 1;
+            path.append(south ? (east ? '1' : '0') : (east ? '2' : '3'));
+        }
+        return path.toString();
     }
 
     private static void assertUncleResolution(UncleDirections direction, String expectedPath) {

@@ -26,7 +26,7 @@ final class SessionPyramidalImageExportServiceTest {
     @Test
     void keepsDirectlyReadTileWhenAnUncleDerivedTileClaimsTheSameFullPath() throws Exception {
         MatrixLayerTile direct = tile("0211212", 0, 0, nativeImage("direct.png", 256, 256));
-        MatrixLayerTile derived = tile("derived", 0, 1, nativeImage("derived.png", 256, 256));
+        MatrixLayerTile derived = tile("derived", 0, 0, nativeImage("derived.png", 256, 256));
         derived.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_EAST, "uncle")));
 
         MatrixLayer layer = new MatrixLayer();

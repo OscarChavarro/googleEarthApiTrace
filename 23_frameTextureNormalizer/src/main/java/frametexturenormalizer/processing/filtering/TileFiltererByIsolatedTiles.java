@@ -30,11 +30,6 @@ public final class TileFiltererByIsolatedTiles {
                 }
             }
 
-            if (keptIds.size() == current.size()) {
-                break;
-            }
-            changed = true;
-
             List<TileInstance> next = new ArrayList<>(keptIds.size());
             for (TileInstance tile : current) {
                 if (tile == null || !keptIds.contains(tile.getTileId())) {
@@ -58,6 +53,10 @@ public final class TileFiltererByIsolatedTiles {
                     tile.isSelected()
                 ));
             }
+            if (next.size() == current.size()) {
+                break;
+            }
+            changed = true;
             current = next;
             if (current.isEmpty()) {
                 break;

@@ -40,6 +40,7 @@ public final class TopLevelLayerMerger {
             importedCopies,
             cataloguedQuadPathsByImagePath
         );
+        externalFullPaths.putAll(new TopLevelVisualAnchorResolver().resolve(inferredCopies, importedCopies));
         Map<String, String> cataloguedUnclePaths = buildExternalUncleFullPaths(cataloguedQuadPathsByImagePath);
         externalFullPaths.putAll(cataloguedUnclePaths);
 
@@ -50,12 +51,24 @@ public final class TopLevelLayerMerger {
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
 
-        TileRootPathResolver.Resolution resolution = new TileRootPathResolver()
-            .resolve(importedCopies, externalFullPaths, bridge.aliasById());
+        TileRootPathResolver pathResolver = new TileRootPathResolver();
+        TileRootPathResolver.Resolution resolution;
+        Map<String, String> visualDescendantFullPaths = new LinkedHashMap<>();
+        while (true) {
+            resolution = pathResolver.resolve(importedCopies, externalFullPaths, bridge.aliasById());
+            Map<String, String> visualDescendantAnchors = new ImportedLayerVisualAnchorResolver()
+                .resolve(importedCopies, resolution);
+            visualDescendantAnchors.keySet().removeAll(externalFullPaths.keySet());
+            if (visualDescendantAnchors.isEmpty()) {
+                break;
+            }
+            externalFullPaths.putAll(visualDescendantAnchors);
+            visualDescendantFullPaths.putAll(visualDescendantAnchors);
+        }
         Map<String, MatrixLayerTile> importedTileByTopPath = collectImportedTopTiles(importedCopies, resolution);
         if (importedTileByTopPath.isEmpty()) {
             inferredCopies.addAll(importedCopies);
-            return new MergeResult(inferredCopies, Map.of());
+            return new MergeResult(inferredCopies, Map.copyOf(visualDescendantFullPaths));
         }
 
         Set<String> mergedTopPaths = replaceInferredTiles(inferredCopies, importedTileByTopPath);
@@ -73,6 +86,7 @@ public final class TopLevelLayerMerger {
             resolution,
             mergedTopPaths
         );
+        mergedFullPathByOriginalId.putAll(visualDescendantFullPaths);
         System.out.println(
             "TopLevelLayerMerger: merged " + mergedTopPaths.size()
                 + " imported tile(s) into reconstructed top-level matrices; retained "

@@ -75,6 +75,9 @@ colOffset = floorMod(col - j, 2^level)
 The winning anchor places every matrix tile with `absoluteRow = i + rowOffset` and
 `absoluteCol = floorMod(j + colOffset, 2^level)`. A strict majority is required so that
 duplicate-looking textures or bad individual relationships cannot shift the whole layer.
+Votes are evaluated at the strongest available evidence tier: direct quadkey/catalogue
+anchors first, an already canonicalized grid second, and relative `uncles` last. Lower
+tiers may fill a matrix that has no stronger anchor, but cannot outvote an absolute seed.
 A full-world matrix (`cols == 2^level`) is canonicalized with `colOffset = 0` before any
 of its `uncles` relationships are used to anchor a child layer. This is not an inference
 from one noisy tile: it is the coordinate contract established by west-cutter splitting
@@ -82,6 +85,11 @@ and full-world matrix reconstruction. Partial matrices still vote for a cyclic l
 offset. If no complete anchor tuple has a strict majority, the resolver can combine
 independent strict majorities for level, row offset and cyclic column offset. Offsets that
 differ by a multiple of `2^level` are equivalent (for example, `1` and `-63` at level 6).
+If relative relationships do not provide those strict majorities, they cannot place the
+matrix. The exporter may instead compare distributed native child tiles with quadrants of
+an already canonicalized imported layer from the same session. That visual evidence also
+requires at least three individually unambiguous matches and a strict majority for one
+rigid anchor; accepted descendant anchors are retained and reused by the export pass.
 
 ### Full-world phase regression and depth-dependent displacement
 
@@ -106,6 +114,17 @@ The resolver must therefore perform these operations in this order:
 2. Canonicalize every full-world rigid matrix to `colOffset = 0`.
 3. Resolve adjacent-uncle relationships into the next level.
 4. Canonicalize each newly anchored rigid matrix before continuing the fixpoint walk.
+
+This precedence is required for partial matrices too. A later session contained a
+13-column level-5 matrix whose noisy relative anchors voted `colOffset = 30`; treating
+that vote as absolute shifted the partial matrix by `-1`, then its level-6 and level-7
+descendants by `-2` and `-4`. `TopLevelVisualAnchorResolver` supplied the missing absolute
+evidence by comparing distributed native tiles with the texture sub-rectangles of
+reconstructed levels `0..5`. It accepts only individually unambiguous matches and requires
+at least three votes plus a strict majority for one rigid offset. All eight sampled tiles
+voted for `31`, positioning the three layers at offsets `31`, `0` and `0` modulo their
+respective widths without relying on the full-world special case. It does not read the
+destination/previous-session pyramid.
 
 The repaired export was checked by SHA-256 identity against
 `/samples/datasets/googleEarth/toplevel`: all 142 shared level-5 tiles and all 625 shared
@@ -488,8 +507,10 @@ make it into the final pyramidal image, so it is worth stating explicitly:
   - Once a strict majority chooses one `(level,rowOffset,colOffset)` for a rigid matrix,
     that grid canonicalizes every path in the matrix. Minority/outlier anchors and an
     individually ambiguous tile are corrected by the winning grid instead of being
-    allowed to create duplicate output paths. `colOffset` and every propagated absolute
-    column are reduced modulo `2^level`. Partial matrices vote for that cyclic phase and,
+    allowed to create duplicate output paths. A direct quadkey/catalogue anchor is a
+    stronger evidence tier than a grid-derived path, and a grid-derived path is stronger
+    than a relative uncle path; voting never mixes tiers. `colOffset` and every propagated
+    absolute column are reduced modulo `2^level`. Partial matrices vote for that cyclic phase and,
     if a complete tuple has no majority, may combine independent strict majorities for
     level, row offset and column offset. A complete-world matrix is different: its
     `colOffset` is canonical zero and must be applied before its relationships seed a

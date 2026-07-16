@@ -211,6 +211,14 @@ public final class FrameTextureNormalizerState {
         }
     }
 
+    public synchronized void removeWestCutterTileId(String id) {
+        String normalized = ScopedTileIds.normalize(id);
+        if (normalized == null || !westCutterTileIds.remove(normalized)) {
+            return;
+        }
+        persistWestCuttersCache();
+    }
+
     private synchronized void persistWestCuttersCache() {
         Path outputPath = Path.of(Configuration.INPUT_PATH);
         Path cachePath = outputPath.resolve("westCutters.json");

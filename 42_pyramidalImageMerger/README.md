@@ -73,6 +73,11 @@ When `m` is pressed, the program recursively traverses the delta tree. For every
 - if the visual comparison passes, the higher-resolution tile is kept in destination;
 - if the visual comparison exceeds the threshold, that tile id becomes a conflict.
 
+New tiles are written using the destination's folder layout. The current per-quadrant-digit
+layout is preferred when a destination already contains a mixture of current and legacy
+branches. After rescanning the destination, the merge is reported as completed only if every
+delta tile is visible at its expected quadtree id.
+
 Conflicts are reported in the HUD and drawn as red borders in both views at the same tile
 location.
 
