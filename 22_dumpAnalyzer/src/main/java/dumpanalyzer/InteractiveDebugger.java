@@ -56,6 +56,6 @@ public final class InteractiveDebugger {
     }
 
     private static void shutdownNow() {
-        System.exit(0);
+        // Closing the Swing frame and GLCanvas is enough for the desktop JVM to exit.
     }
 }

@@ -7,6 +7,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import frametexturenormalizer.animation.AnimationController;
 import frametexturenormalizer.gui.KeyboardInteractionTechniques;
@@ -34,14 +35,26 @@ public final class InteractiveDebugger {
             if (!closing.compareAndSet(false, true)) {
                 return;
             }
-            frame.setTitle("Frame texture normalizer - saving edits...");
-            frame.setEnabled(false);
+            runOnEventDispatchThread(() -> {
+                frame.setTitle("Frame texture normalizer - saving edits...");
+                frame.setEnabled(false);
+            });
             Thread shutdownThread = new Thread(() -> {
                 if (model != null) {
                     model.flushPendingFrameJsonChanges();
                 }
-                frame.dispose();
-                System.exit(0);
+                runOnEventDispatchThread(() -> {
+                    try {
+                        canvas.setVisible(false);
+                        canvas.destroy();
+                    }
+                    catch (Throwable t) {
+                        System.out.println("InteractiveDebugger: error while destroying canvas: " + t.getMessage());
+                    }
+                    finally {
+                        frame.dispose();
+                    }
+                });
             }, "frame-json-save-on-exit");
             shutdownThread.start();
         };
@@ -83,5 +96,14 @@ public final class InteractiveDebugger {
         frame.setVisible(true);
         canvas.requestFocusInWindow();
         canvas.display();
+    }
+
+    private static void runOnEventDispatchThread(Runnable task) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+        }
+        else {
+            SwingUtilities.invokeLater(task);
+        }
     }
 }

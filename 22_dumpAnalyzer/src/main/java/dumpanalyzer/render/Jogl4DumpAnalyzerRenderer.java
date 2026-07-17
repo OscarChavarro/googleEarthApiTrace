@@ -848,13 +848,37 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private void requestClose() {
-        if (closing) return;
-        closing = true;
+        synchronized (this) {
+            if (closing) {
+                return;
+            }
+            closing = true;
+        }
 
-        if (canvas != null) canvas.destroy();
-        if (frame != null) frame.dispose();
-
-        shutdownHook.run();
+        Runnable closeTask = () -> {
+            try {
+                if (canvas != null) {
+                    canvas.setVisible(false);
+                    canvas.destroy();
+                }
+            }
+            catch (Throwable t) {
+                System.out.println("Jogl4DumpAnalyzerRenderer: error while destroying canvas: " + t.getMessage());
+            }
+            finally {
+                if (frame != null) {
+                    frame.dispose();
+                }
+                Thread shutdownThread = new Thread(shutdownHook, "dump-analyzer-close");
+                shutdownThread.start();
+            }
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            closeTask.run();
+        }
+        else {
+            SwingUtilities.invokeLater(closeTask);
+        }
     }
 
     private void captureOffscreen(GLAutoDrawable drawable, GL4 gl) {

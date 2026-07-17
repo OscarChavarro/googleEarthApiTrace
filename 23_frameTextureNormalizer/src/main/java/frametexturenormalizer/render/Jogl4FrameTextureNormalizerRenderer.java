@@ -289,6 +289,7 @@ public final class Jogl4FrameTextureNormalizerRenderer implements GLEventListene
             hudTextRenderer.dispose();
             hudTextRenderer = null;
         }
+        tileRenderer.dispose(drawable.getGL().getGL2(), model);
     }
 
     @Override

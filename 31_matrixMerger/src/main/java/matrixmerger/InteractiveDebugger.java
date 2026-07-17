@@ -5,6 +5,7 @@ import java.applet.Applet;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import matrixmerger.gui.KeyboardInteractionTechniques;
 import matrixmerger.gui.MouseInteractionTechnique;
@@ -76,21 +77,46 @@ public class InteractiveDebugger extends Applet {
     }
 
     private void requestClose() {
-        if (closing) {
-            return;
+        synchronized (this) {
+            if (closing) {
+                return;
+            }
+            closing = true;
         }
-        closing = true;
 
-        if (canvas != null) {
-            canvas.destroy();
-        }
-        if (frame != null) {
-            frame.dispose();
-        }
+        runOnEventDispatchThread(() -> {
+            try {
+                if (canvas != null) {
+                    canvas.setVisible(false);
+                    canvas.removeMouseListener(mouseInteraction);
+                    canvas.removeMouseMotionListener(mouseInteraction);
+                    canvas.removeMouseWheelListener(mouseInteraction);
+                    canvas.removeKeyListener(keyboardInteraction);
+                    canvas.destroy();
+                }
+            }
+            catch (Throwable t) {
+                System.out.println("InteractiveDebugger: error while destroying canvas: " + t.getMessage());
+            }
+            finally {
+                if (frame != null) {
+                    frame.dispose();
+                }
+            }
+        });
+
         if (onCloseAction != null) {
-            onCloseAction.run();
+            Thread closeThread = new Thread(onCloseAction, "matrix-merger-close");
+            closeThread.start();
         }
+    }
 
-        System.exit(0);
+    private static void runOnEventDispatchThread(Runnable task) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+        }
+        else {
+            SwingUtilities.invokeLater(task);
+        }
     }
 }

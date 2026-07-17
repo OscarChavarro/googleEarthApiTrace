@@ -6,6 +6,7 @@ import com.jogamp.opengl.util.texture.TextureCoords;
 import com.jogamp.opengl.util.texture.TextureIO;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -455,6 +456,22 @@ public final class Jogl4TileMatrixRenderer {
             }
             model.unMarkTextureResident(oldest, resident.bytesAssigned());
         }
+    }
+
+    public void dispose(GL2 gl2, FrameTextureNormalizerState model) {
+        for (Map.Entry<String, TextureResident> entry : new ArrayList<>(residentsByTexturePath.entrySet())) {
+            TextureResident resident = entry.getValue();
+            if (resident == null) {
+                continue;
+            }
+            if (resident.texture() != null) {
+                resident.texture().destroy(gl2);
+            }
+            if (model != null) {
+                model.unMarkTextureResident(entry.getKey(), resident.bytesAssigned());
+            }
+        }
+        residentsByTexturePath.clear();
     }
 
     private record TextureResident(Texture texture, long bytesAssigned) {
