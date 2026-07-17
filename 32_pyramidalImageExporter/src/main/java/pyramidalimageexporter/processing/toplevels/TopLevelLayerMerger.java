@@ -75,7 +75,8 @@ public final class TopLevelLayerMerger {
         List<MatrixLayer> remainingImportedLayers = removeMergedImportedTiles(
             importedCopies,
             resolution,
-            mergedTopPaths
+            mergedTopPaths,
+            referencedParentFolders(importedCopies)
         );
 
         List<MatrixLayer> mergedLayers = new ArrayList<>(inferredCopies.size() + remainingImportedLayers.size());
@@ -160,10 +161,15 @@ public final class TopLevelLayerMerger {
     private static List<MatrixLayer> removeMergedImportedTiles(
         List<MatrixLayer> importedLayers,
         TileRootPathResolver.Resolution resolution,
-        Set<String> mergedTopPaths
+        Set<String> mergedTopPaths,
+        Set<String> referencedParentFolders
     ) {
         List<MatrixLayer> remainingLayers = new ArrayList<>();
         for (MatrixLayer layer : importedLayers) {
+            if (referencedParentFolders.contains(layer.getSourceFolderName())) {
+                remainingLayers.add(copyLayer(layer));
+                continue;
+            }
             MatrixLayer remainingLayer = copyLayerWithoutTiles(layer);
             List<MatrixLayerTile> remainingTiles = new ArrayList<>();
             for (MatrixLayerTile tile : layer.getTiles()) {
@@ -179,6 +185,17 @@ public final class TopLevelLayerMerger {
             }
         }
         return remainingLayers;
+    }
+
+    private static Set<String> referencedParentFolders(List<MatrixLayer> importedLayers) {
+        Set<String> folders = new LinkedHashSet<>();
+        for (MatrixLayer layer : importedLayers) {
+            Integer parentIndex = layer == null ? null : layer.getParentMatrixIndex();
+            if (parentIndex != null && parentIndex >= 0) {
+                folders.add("matrix_" + parentIndex);
+            }
+        }
+        return folders;
     }
 
     private static boolean isTopPath(String fullPath) {

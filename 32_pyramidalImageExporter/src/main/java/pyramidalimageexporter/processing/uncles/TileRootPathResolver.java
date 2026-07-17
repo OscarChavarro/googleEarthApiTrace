@@ -24,13 +24,12 @@ import pyramidalimageexporter.model.ParentGridTransform;
  *
  * A non-seed tile can still be anchored if one of its {@code uncles}
  * relationships points (by {@code uncleContentId}) to a tile whose path is
- * already known. An uncle is the immediately coarser tile adjacent to the
- * fine tile, not the parent that contains it: {@code direction} identifies
- * the half of the uncle border touched by the fine tile. Resolution crosses
- * that border to the adjacent parent cell and selects the corresponding
- * child quadrant. Resolution proceeds as a fixpoint so that a chain of several
- * uncle hops can be walked one hop per pass. If a tile has several uncle
- * relationships that resolve to different candidate paths, the tile is
+ * already known. The referenced texture is the immediately coarser tile that
+ * contains the fine tile, and {@code direction} identifies the quadrant of
+ * that texture used by the fine tile. Its path is therefore the uncle path
+ * followed by that quadrant digit. Resolution proceeds as a fixpoint so that
+ * a chain of several uncle hops can be walked one hop per pass. If a tile has
+ * several uncle relationships that resolve to different candidate paths, the tile is
  * ambiguous and is permanently discarded (never exported).
  */
 public final class TileRootPathResolver {
@@ -121,8 +120,9 @@ public final class TileRootPathResolver {
 
     /**
      * Applies a contract-v3 parent transform only after the referenced parent
-     * grid has an accepted absolute anchor.  This preserves the distinction
-     * between containment and an adjacent-uncle relationship.
+     * grid has an accepted absolute anchor. This preserves the distinction
+     * between a rigid matrix transform and an observed per-tile coarse-texture
+     * quadrant relationship.
      */
     private static boolean propagateByParentGridTransforms(
         List<MatrixLayer> layers,
@@ -237,7 +237,7 @@ public final class TileRootPathResolver {
                     sourceById.put(id, PathSource.GRID);
                     progress = true;
                 }
-                else if (!sourceById.containsKey(id)) {
+                else if (sourceById.get(id) != PathSource.DIRECT) {
                     sourceById.put(id, PathSource.GRID);
                 }
                 discarded.remove(id);
@@ -505,10 +505,7 @@ public final class TileRootPathResolver {
             if (unclePath == null) {
                 continue;
             }
-            String candidate = childPathAcrossUncleBorder(unclePath, relation.direction());
-            if (candidate != null) {
-                candidates.add(candidate);
-            }
+            candidates.add(unclePath + quadrantDigit(relation.direction()));
         }
         return candidates;
     }
@@ -517,72 +514,13 @@ public final class TileRootPathResolver {
         return QUADKEY_PATTERN.matcher(id).matches() && id.charAt(0) == '0';
     }
 
-    /**
-     * The direction names the uncle border and its half. For example,
-     * WEST_NORTH means that the fine tile touches the north half of the
-     * uncle's west border: its parent is west of the uncle and the tile is
-     * the north-east child of that parent.
-     */
-    private static String childPathAcrossUncleBorder(String unclePath, UncleDirections direction) {
-        int[] uncle = decodeFullPath(unclePath);
-        if (uncle == null || direction == null) {
-            return null;
-        }
-        int level = uncle[0];
-        int side = 1 << level;
-        int parentRow = uncle[1];
-        int parentCol = uncle[2];
-        boolean childSouth;
-        boolean childEast;
-        switch (direction) {
-            case WEST_NORTH -> {
-                parentCol--;
-                childSouth = false;
-                childEast = true;
-            }
-            case WEST_SOUTH -> {
-                parentCol--;
-                childSouth = true;
-                childEast = true;
-            }
-            case EAST_NORTH -> {
-                parentCol++;
-                childSouth = false;
-                childEast = false;
-            }
-            case EAST_SOUTH -> {
-                parentCol++;
-                childSouth = true;
-                childEast = false;
-            }
-            case NORTH_WEST -> {
-                parentRow--;
-                childSouth = true;
-                childEast = false;
-            }
-            case NORTH_EAST -> {
-                parentRow--;
-                childSouth = true;
-                childEast = true;
-            }
-            case SOUTH_WEST -> {
-                parentRow++;
-                childSouth = false;
-                childEast = false;
-            }
-            case SOUTH_EAST -> {
-                parentRow++;
-                childSouth = false;
-                childEast = true;
-            }
-            default -> throw new IllegalStateException("Unexpected uncle direction: " + direction);
-        }
-        if (parentRow < 0 || parentRow >= side) {
-            return null;
-        }
-        parentCol = Math.floorMod(parentCol, side);
-        int childRow = 2 * parentRow + (childSouth ? 1 : 0);
-        int childCol = 2 * parentCol + (childEast ? 1 : 0);
-        return "0" + encodeQuadtreeLabel(level + 1, childRow, childCol);
+    /** Direction spellings collapse to the four quadrants of the coarser texture. */
+    private static int quadrantDigit(UncleDirections direction) {
+        return switch (direction) {
+            case WEST_SOUTH, SOUTH_WEST -> 0;
+            case EAST_SOUTH, SOUTH_EAST -> 1;
+            case EAST_NORTH, NORTH_EAST -> 2;
+            case WEST_NORTH, NORTH_WEST -> 3;
+        };
     }
 }

@@ -56,36 +56,39 @@ final class TileRootPathResolverTest {
             Map.of()
         );
 
-        assertEquals("003", resolution.pathById().get("child-a"));
-        assertEquals("002", resolution.pathById().get("child-b"));
-        assertEquals(TileRootPathResolver.PathSource.UNCLE, resolution.sourceById().get("child-a"));
+        assertEquals("030", resolution.pathById().get("child-a"));
+        assertEquals("031", resolution.pathById().get("child-b"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("child-a"));
         assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("child-b"));
     }
 
     @Test
-    void resolvesAllUncleBordersAcrossTheAdjacentParentCell() {
-        assertUncleResolution(UncleDirections.WEST_NORTH, "0302");
-        assertUncleResolution(UncleDirections.WEST_SOUTH, "0301");
-        assertUncleResolution(UncleDirections.EAST_NORTH, "0203");
-        assertUncleResolution(UncleDirections.EAST_SOUTH, "0200");
-        assertUncleResolution(UncleDirections.NORTH_WEST, "0320");
-        assertUncleResolution(UncleDirections.NORTH_EAST, "0321");
-        assertUncleResolution(UncleDirections.SOUTH_WEST, "0023");
-        assertUncleResolution(UncleDirections.SOUTH_EAST, "0022");
+    void mapsAllUncleDirectionsToTheReferencedTextureQuadrant() {
+        assertUncleResolution(UncleDirections.WEST_NORTH, "0313");
+        assertUncleResolution(UncleDirections.WEST_SOUTH, "0310");
+        assertUncleResolution(UncleDirections.EAST_NORTH, "0312");
+        assertUncleResolution(UncleDirections.EAST_SOUTH, "0311");
+        assertUncleResolution(UncleDirections.NORTH_WEST, "0313");
+        assertUncleResolution(UncleDirections.NORTH_EAST, "0312");
+        assertUncleResolution(UncleDirections.SOUTH_WEST, "0310");
+        assertUncleResolution(UncleDirections.SOUTH_EAST, "0311");
     }
 
     @Test
-    void wrapsAcrossTheWestLongitudeBoundary() {
-        MatrixLayerTile child = tile("child", 0, 0);
-        child.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "uncle")));
+    void reproducesTheObservedLevelFiveAndLevelSevenPlacements() {
+        MatrixLayerTile levelFive = tile("00067_92", 0, 0);
+        levelFive.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_SOUTH, "00068_44")));
+        MatrixLayerTile levelSeven = tile("09136_1325", 0, 0);
+        levelSeven.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "07486_1152")));
 
         TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
-            List.of(layer(child)),
-            Map.of("uncle", "030"),
+            List.of(layer(levelFive), layer(levelSeven)),
+            Map.of("00068_44", "03100", "07486_1152", "0133302"),
             Map.of()
         );
 
-        assertEquals("0212", resolution.pathById().get("child"));
+        assertEquals("031000", resolution.pathById().get("00067_92"));
+        assertEquals("01333023", resolution.pathById().get("09136_1325"));
     }
 
     @Test
@@ -131,7 +134,7 @@ final class TileRootPathResolverTest {
         );
 
         assertEquals("033", resolution.pathById().get("world-anchor"));
-        assertEquals("0303", resolution.pathById().get("child"));
+        assertEquals("0330", resolution.pathById().get("child"));
     }
 
     @Test

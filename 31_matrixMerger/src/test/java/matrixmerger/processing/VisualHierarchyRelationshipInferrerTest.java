@@ -48,7 +48,7 @@ final class VisualHierarchyRelationshipInferrerTest {
             state.getFrameMatrices().get(1).getParentGridTransform()
         );
         for (FrameTileMatrix.TileCoord tile : state.getFrameMatrices().get(1).getMatrices().get(0).getTiles()) {
-            assertTrue(tile.getUncles().isEmpty(), "a containing parent must not be serialized as an adjacent uncle");
+            assertTrue(tile.getUncles().isEmpty(), "an inferred matrix parent must not fabricate a per-tile uncle");
         }
     }
 

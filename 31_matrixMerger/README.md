@@ -123,7 +123,8 @@ when the best match clearly beats the second best; at least three accepted probe
 strict majority must agree on the same `(parentMatrixIndex,rowOffset,colOffset)`. The
 accepted containing-parent placement is persisted as `parentGridTransform`, and the
 hierarchy is sorted again. The pipeline deliberately does not fabricate an `uncle`:
-uncles are adjacent coarse tiles, not containing parents. This is the batch equivalent of
+uncles are observed per-tile coarse-texture quadrant relationships, not inferred rigid
+matrix-to-matrix transforms. This is the batch equivalent of
 pressing `n` and `c` over every frame plus hierarchy repair.
 
 Before automatic grouping returns, it verifies that the set of unique native tile IDs is
@@ -175,7 +176,7 @@ remaining frame is written as:
 - `parentGridTransform`: optional rigid containing-parent placement inferred visually.
 - `hierarchyUnclesByTileId`: compatibility `tileId -> [uncleId]` map.
 - `hierarchyRelationshipsByTileId`: lossless `tileId -> [{direction, uncleContentId}]`
-  map, preserving true adjacent-uncle direction records.
+  map, preserving observed coarse-texture quadrant records.
 
 This metadata is required by `32_pyramidalImageExporter`; directory order alone is not
 treated as a hierarchy edge.

@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.model.ParentGridTransform;
+import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
 
 final class TopLevelLayerMergerTest {
     @TempDir
@@ -71,6 +73,36 @@ final class TopLevelLayerMergerTest {
         assertEquals(2, result.layers().size());
         assertEquals("topLevel_matrix_05", result.layers().get(0).getSourceFolderName());
         assertEquals("matrix_1", result.layers().get(1).getSourceFolderName());
+    }
+
+    @Test
+    void retainsAMergedTopLayerWhenAChildNeedsItsParentGridTransform() {
+        MatrixLayer inferredLevelOne = layer(
+            "topLevel_matrix_01",
+            tile("03", 0, 0, "/tmp/inferred.png")
+        );
+        MatrixLayer importedParent = layer("matrix_0", tile("03", 0, 0, "/tmp/parent.png"));
+        MatrixLayer importedChild = layer("matrix_1", tile("child", 0, 0, "/tmp/child.png"));
+        importedChild.setParentMatrixIndex(0);
+        importedChild.setParentGridTransform(new ParentGridTransform(0, 0));
+
+        TopLevelLayerMerger.MergeResult result = new TopLevelLayerMerger().merge(
+            List.of(inferredLevelOne),
+            List.of(importedParent, importedChild),
+            Map.of(),
+            Path.of("/tmp")
+        );
+
+        assertEquals(
+            List.of("topLevel_matrix_01", "matrix_0", "matrix_1"),
+            result.layers().stream().map(MatrixLayer::getSourceFolderName).toList()
+        );
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            result.layers(),
+            result.mergedFullPathByOriginalId(),
+            Map.of()
+        );
+        assertEquals("033", resolution.pathById().get("child"));
     }
 
     @Test

@@ -139,14 +139,17 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   `tileId -> quadkey` seeds for the export pass.
 - Any other tile can still be anchored if one of its `uncles` relationships
   (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
-  already anchored. The uncle is the immediately coarser adjacent tile; `direction`
-  identifies the half of its border touched by the finer tile. Resolution crosses that
-  border to the neighboring parent cell and selects the corresponding child quadrant.
+  already anchored. The uncle id names the immediately coarser texture and `direction`
+  identifies which quadrant of that texture is used by the finer tile. Resolution appends
+  the corresponding quadrant digit to the uncle quadkey. The two direction spellings for
+  each quadrant are equivalent (`WEST_NORTH`/`NORTH_WEST`, etc.).
   This propagates as a fixpoint, so a chain of several uncle hops resolves one hop per
   pass.
 - A contract-v3 `parentGridTransform` propagates a containing-parent placement after,
   and only after, the referenced parent matrix has an accepted absolute grid anchor. It
-  never crosses a border and is not interpreted as an uncle relationship.
+  is a matrix-to-matrix transform, not a substitute for an observed per-tile uncle
+  relationship. A top-level matrix merged into the reconstructed TOP layers is retained
+  as placement support while any child still references it through this transform.
 - If a tile has several `uncles` relationships that resolve to different candidate paths,
   the matrix grid votes for a common `(level,rowOffset,colOffset)`. A strict majority
   canonicalizes every tile in that rigid grid, correcting minority and individually

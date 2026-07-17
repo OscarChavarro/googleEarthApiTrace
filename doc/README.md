@@ -40,24 +40,19 @@ antimeridian and therefore has absolute `colOffset = 0`. At level `L`, absolute 
 columns are cyclic modulo `2^L`, while latitude rows never wrap.
 
 An "uncle" relationship (`ToUncleRelationship(direction, uncleContentId)`) links a fine
-tile to an immediately coarser **adjacent** tile. The uncle does not contain the fine tile.
-`direction` identifies the uncle border and the half of that border touched by the fine
-tile. Once the uncle has an absolute path, resolution crosses the border to the adjacent
-coarse parent cell and then selects the fine child quadrant:
+tile to the immediately coarser texture from which it descends. `direction` identifies
+the quadrant of that texture used by the fine tile, so the child quadkey is the uncle
+quadkey followed by one digit:
 
-| Direction | Adjacent parent relative to uncle | Fine child quadrant |
-|---|---|---|
-| `WEST_NORTH` | west | NE (`2`) |
-| `WEST_SOUTH` | west | SE (`1`) |
-| `EAST_NORTH` | east | NW (`3`) |
-| `EAST_SOUTH` | east | SW (`0`) |
-| `NORTH_WEST` | north | SW (`0`) |
-| `NORTH_EAST` | north | SE (`1`) |
-| `SOUTH_WEST` | south | NW (`3`) |
-| `SOUTH_EAST` | south | NE (`2`) |
+| Directions | Fine child quadrant |
+|---|---|
+| `WEST_SOUTH`, `SOUTH_WEST` | SW (`0`) |
+| `EAST_SOUTH`, `SOUTH_EAST` | SE (`1`) |
+| `EAST_NORTH`, `NORTH_EAST` | NE (`2`) |
+| `WEST_NORTH`, `NORTH_WEST` | NW (`3`) |
 
-East/west crossings in this operation wrap at the antimeridian; north/south crossings
-outside the valid row range are rejected. This relative relationship is the mechanism
+The two spellings reflect the geometry axis that detected the relationship; they encode
+the same quadrant. This relative relationship is the mechanism
 that stitches deep tiles (captured at high zoom, with no direct global coordinate) back
 into the global quadtree, but it cannot provide an absolute position without at least one
 absolute seed somewhere in the connected relationship graph.
@@ -112,7 +107,7 @@ The resolver must therefore perform these operations in this order:
 
 1. Load direct/catalogued absolute seeds.
 2. Canonicalize every full-world rigid matrix to `colOffset = 0`.
-3. Resolve adjacent-uncle relationships into the next level.
+3. Resolve coarse-texture quadrant relationships into the next level.
 4. Canonicalize each newly anchored rigid matrix before continuing the fixpoint walk.
 
 This precedence is required for partial matrices too. A later session contained a
@@ -134,6 +129,16 @@ levels 5, 6 and 7 respectively; all 1104 level-7 tile identities agreed on the `
 correction. This hash-to-quadkey comparison is a stronger regression check than visual
 inspection of a coastline because it verifies every uniquely matching tile.
 
+The later `42_pyramidalImageMerger` regression using `/tmp/matrix/pyramidalImage` exposed
+a different source for the same `-1`, `-4` signature: the exporter had started treating
+an uncle as an adjacent parent and crossing its border. The real records prove the
+containing-texture semantics directly. For example, `00067_92` resolves from coarse
+quadkey `03100` plus `WEST_SOUTH` to `031000`, and `09136_1325` resolves from `0133302`
+plus `WEST_NORTH` to `01333023`. Crossing a border placed those tiles one column west at
+level 5 and four columns west at level 7 after propagation. With quadrant appending
+restored, the regenerated delta shared 623 quadkeys with the destination and all 623 PNGs
+were byte-identical; the previous export had 313 mismatches.
+
 ### Placement model to preserve in future changes
 
 The five commits from `584878e` through `116601c` exposed several concepts that had been
@@ -147,7 +152,7 @@ some of them as `String` or `int`:
 | `Quadkey` | Absolute root-to-node identity, matching `0[0-3]*` | Yes |
 | local cell `(i,j)` | Position inside one rigid matrix | No |
 | grid anchor `(level,rowOffset,colOffset)` | Transform from all local cells in one matrix to absolute cells | Yes, once accepted |
-| uncle relationship | Directed relative constraint between a fine tile and an adjacent coarser tile | Only transitively from an absolute seed |
+| uncle relationship | Fine tile to coarse-texture quadrant constraint | Only transitively from an absolute seed |
 | pyramid file path | Serialization of a quadkey in the per-digit or legacy cumulative layout | No new information |
 
 In particular, changing the folder representation of a quadkey, as in `6a23ee4`, must be
@@ -167,8 +172,8 @@ preserve this evidence order:
 3. If a matrix spans all `2^L` columns, force `colOffset = 0`; if it spans all `2^L` rows,
    force `rowOffset = 0`. Apply this canonicalization before the matrix is allowed to seed
    descendants.
-4. Resolve uncle constraints one level at a time, using the adjacent-parent transformation
-   in the direction table. Canonicalize every newly anchored matrix before the next pass.
+4. Resolve uncle constraints one level at a time by appending the quadrant from the
+   direction table. Canonicalize every newly anchored matrix before the next pass.
 5. Within a matrix, vote using only its strongest available evidence class. Absolute seeds
    outrank an accepted grid, and an accepted grid outranks uncle-derived candidates. Never
    let a larger number of weaker relative candidates outvote one absolute seed.
@@ -193,8 +198,8 @@ The recent commit sequence should be read as a decision record:
 | `116601c` | Added evidence precedence and visual anchoring for partial and descendant layers | Weak relationships cannot override stronger evidence; visual inference needs distributed consensus and must become an explicit retained anchor |
 
 Minimum regression coverage for any change to placement, hierarchy import or pyramid
-layout is consequently: all eight uncle directions; east/west wrap and rejected
-north/south overflow; full-world row/column origin; partial-matrix cyclic phase; direct
+layout is consequently: all eight uncle directions; full-world row/column origin;
+partial-matrix cyclic phase; direct
 seed versus a majority of weaker candidates; tie/plurality rejection; propagation through
 two descendant levels; and equivalent scanning of the current and migration folder
 layouts. Dataset checks should compare stable tile identity/hash to quadkey and report
@@ -202,8 +207,10 @@ coordinate deltas per level, so a visually plausible but uniformly shifted resul
 
 ### Invalid assumptions — do not encode these in producers or consumers
 
-- **An uncle is the containing parent.** False: it is an adjacent coarser tile, so
-  `childPath = unclePath + quadrantDigit` is not a valid resolution rule.
+- **An uncle path must be crossed into an adjacent parent cell.** False: the id names the
+  coarser texture and the direction names its child quadrant. Crossing the border creates
+  the observed depth-scaled displacement; `childPath = unclePath + quadrantDigit` is the
+  contract.
 - **A full-world matrix may preserve an arbitrary cyclic phase.** False for normalized
   pipeline matrices: west-cutter normalization makes local column zero the antimeridian.
   Preserving a noisy phase of `-1` shifts the next levels by `-2`, `-4`, and so on.
@@ -395,7 +402,7 @@ model with quadtree neighborhood information — everything downstream depends o
     - `uncles[]`: cross-level neighbor relationships (`direction`,
       `uncleContentId`) — see "Quadtree conventions" above. Present here (not only in
       `matrix.json`) because this is where the raw geometry needed to detect the
-      fine-to-adjacent-coarse border relationship lives.
+      fine-to-coarse-texture quadrant relationship lives.
     - `syntheticGlobeLevelTile`/`fullResolutionWithRespectToTexture`: flags consumed by
       the globe-level (top-level) tile-set processing described next.
   - `<output.directory>/topLevelTiles.json`: one JSON object, `byStripId` maps strip id
@@ -571,14 +578,12 @@ make it into the final pyramidal image, so it is worth stating explicitly:
     top-level tile synthesized from `topLevelTiles.json`).
   - Transitively, if one of its `uncles[]` resolves (directly, through Contract 6b's
     bridge, or through a chain of several uncle hops resolved one hop per fixpoint pass)
-    to an already-anchored tile. Resolution treats that tile as an adjacent coarser uncle,
-    crosses the indicated border to the neighboring parent cell, and selects the child
-    quadrant specified by the direction table above. It must not merely append a digit to
-    the uncle path.
+    to an already-anchored coarse texture. Resolution appends the child quadrant specified
+    by the direction table above to the uncle path.
   - `hierarchyRelationshipsByTileId` is merged into `tiles[].uncles` before resolution.
   - A contract-v3 `parentGridTransform` is propagated only after its referenced parent
-    grid has an absolute anchor. Containing-parent transforms and adjacent uncles are
-    separate evidence types and must never be converted into one another.
+    grid has an absolute anchor. Rigid matrix transforms and observed per-tile uncle
+    relationships are separate evidence types and must never be converted into one another.
   - Once a strict majority chooses one `(level,rowOffset,colOffset)` for a rigid matrix,
     that grid canonicalizes every path in the matrix. Minority/outlier anchors and an
     individually ambiguous tile are corrected by the winning grid instead of being
