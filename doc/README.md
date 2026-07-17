@@ -485,10 +485,10 @@ model with quadtree neighborhood information — everything downstream depends o
 
 ## Contract 6: `31_matrixMerger` → `32_pyramidalImageExporter`
 
-- **Producer**: `31_matrixMerger`, via `ResultsExporter`. Offline mode exports after its
+- **Producer**: `31_matrixMerger`, via `MatrixLayerExportWriter`. Offline mode exports after its
   requested grouping/merge processing. Interactive mode exports when the viewer closes,
   so accepted merges, splits and deletions from that session are included.
-- **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerReader`.
+- **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerJsonReader`.
 - **Location**: `<exportFolder>/matrix_<n>/`, one folder per surviving merged matrix
   (`n` = 0-based export order), containing:
   - `matrixLayer.json`: versioned envelope (current `contractVersion: 3`) with:
@@ -547,7 +547,7 @@ In addition to feeding `23_frameTextureNormalizer`/`31_matrixMerger` (Contracts 
 
 - `topLevelTiles.json` (root of `output.directory`, configured independently of
   `<inputFolder>`): the *only* source for reconstructing quadtree levels `0..5`
-  (`TopLevelsMatricesImporter`), see Contract 3. This works even if `<inputFolder>` has no
+  (`TopLevelMatrixRebuilder`), see Contract 3. This works even if `<inputFolder>` has no
   `matrix_<n>` subfolders at all.
 - Individual `<output.directory>/<frameFolder>/frame.json` files: read on demand by
   `DanglingUncleBridge` as a fallback when a `matrix_<n>` tile's `uncles[]` points at an

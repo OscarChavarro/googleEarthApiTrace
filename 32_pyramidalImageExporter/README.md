@@ -10,22 +10,24 @@ Image".
 The top quadtree levels (`0..5`) are now fully reconstructed: every cell of every
 top-level layer is textured and the layer visualization corresponds to the map of planet
 Earth. Deeper `matrix_<n>` tiles are exported too whenever they can be anchored to an
-absolute quadtree path, either directly or through their `uncles` relationships (see
-"Exporting the pyramidal image" below). The pyramid can be exported to disk as a quadtree
-of PNG files with the `e` key.
+absolute quadtree path: directly, through true `uncles`, through a contract-v3
+`parentGridTransform`, or through accepted visual anchors (see "Exporting the pyramidal
+image" below). The pyramid can be exported to disk as a quadtree of PNG files with the
+`e` key.
 
 ## Inputs
 
 - `<inputFolder>` (positional, required, no default): directory containing the
   `matrix_<n>` folders exported by `31_matrixMerger`, each with a `matrixLayer.json` and
-  its tile textures. Contract-v3 files also contain `hierarchyLevel`,
-  `parentMatrixIndex`, an optional `parentGridTransform`, and full
-  `hierarchyRelationshipsByTileId`; true uncle relationships are merged back into the
-  tiles before placement. The top-level pyramid (levels `0..5`, see below) does not depend on
-  this folder having any `matrix_<n>` subfolders, only `topLevelTiles.json` does. Neither
-  the program nor `./run.sh` assumes a default: if this argument is missing, both exit
-  with code `1` and an English error message explaining that it must point to
-  `31_matrixMerger`'s export folder.
+  its tile textures. `MatrixLayerJsonReader` reads these folders in numeric `matrix_<n>`
+  order. Contract-v3 files also contain `hierarchyLevel`, `parentMatrixIndex`, an
+  optional `parentGridTransform`, and full `hierarchyRelationshipsByTileId`; the reader
+  merges those relationship records back into each tile's `uncles` list before placement.
+  The top-level pyramid (levels `0..5`, see below) does not depend on this folder having
+  any `matrix_<n>` subfolders, only `topLevelTiles.json` does. Neither the program nor
+  `./run.sh` assumes a default: if this argument is missing, both exit with code `1` and
+  an English error message explaining that it must point to `31_matrixMerger`'s export
+  folder.
 - `topLevelTiles.json` read from the root of `output.directory` (configured in
   [src/main/resources/application.properties](src/main/resources/application.properties),
   default `/media/ramdisk/output`). This is where the actual source data (strips,
@@ -42,7 +44,7 @@ prints an English message explaining this contract and exits with code `1`.
 
 ### Top-level reconstruction from texCoords
 
-`TopLevelsMatricesImporter` rebuilds levels `0..5` (sizes `1x1` to `32x32`) from the
+`TopLevelMatrixRebuilder` rebuilds levels `0..5` (sizes `1x1` to `32x32`) from the
 per-appearance `texCoord` data in `topLevelTiles.json`, using two facts of the traced
 data:
 
@@ -113,12 +115,12 @@ already drawn in the interactive viewer:
   previous pyramid instead of reporting a successful zero-tile export.
 
 This replaces the earlier `matrix_<n>/matrixLayer.json` copy-based layout used by
-`31_matrixMerger`'s `ResultsExporter`: the pyramidal image is written directly as a
+`31_matrixMerger`'s `MatrixLayerExportWriter`: the pyramidal image is written directly as a
 quadtree of images, with no JSON manifest.
 
 ### Which tiles are exported
 
-A tile is exportable only if `pyramidalimageexporter.processing.uncles.RootPathResolver`
+A tile is exportable only if `pyramidalimageexporter.processing.uncles.TileRootPathResolver`
 can anchor it to a full path from the root (a string of quadrant digits, e.g. `"0021"`):
 
 - Tiles whose own `id` already is such a path (every `topLevel_matrix_*` tile, by
@@ -130,6 +132,11 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   matches plus a strict majority must vote for one rigid `(level,rowOffset,colOffset)`.
   Matching also considers the four level-6 quadrants of reconstructed level-5 cells,
   because the first native imported layer may already be one level below TOP.
+- Imported descendant layers can also be anchored visually against already canonicalized
+  imported parent layers from the same session. If `parentMatrixIndex` names a designated
+  parent, visual matching is restricted to that parent; otherwise all strongly anchored
+  imported layers are candidates. Accepted matches become explicit retained
+  `tileId -> quadkey` seeds for the export pass.
 - Any other tile can still be anchored if one of its `uncles` relationships
   (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
   already anchored. The uncle is the immediately coarser adjacent tile; `direction`
@@ -174,7 +181,7 @@ missing, and every placed tile is simply written there from this session's data.
 existing pyramidal image is ever read — not the tiles of a shared/consolidated pyramid
 (the tool has no access to one), and not even the PNGs left by a previous export of the
 same session (a re-export regenerates them without reading them back). Two counters are
-accumulated in `pyramidalimageexporter.common.statistics.PyramidalImageAdditionStatistics`
+accumulated in `pyramidalimageexporter.model.PyramidalImageWriteStatistics`
 and printed to the console (via its `toString()`) once the export finishes:
 
 - `new`: the slot did not exist yet and was written.
@@ -234,11 +241,12 @@ gradle run --args="--offline <inputFolder> --layer 4 --output /tmp/level4.png"
   reconstruction) and writes a PNG snapshot of one layer, so results can be verified
   without user interaction. On a machine without a display, run it under `xvfb-run -a`.
 - Startup diagnostics on stdout are parseable: `TopLevelTilesReader: loaded strips=...`,
-  `TopLevelsMatricesImporter: level L matrix=SxS, nativeResolutionCells=..., derivedCells=...,
+  `TopLevelMatrixRebuilder: level L matrix=SxS, nativeResolutionCells=..., derivedCells=...,
   emptyCells=...`, `Offline image written to: <path>`, and, after pressing `e` (or with
   `--export`), a per-layer placement report followed by
-  `PyramidalImageExporter: PyramidalImageAdditionStatistics{new=..., rewritten=...}` and
-  `PyramidalImageExporter: Export complete: N tiles processed to <inputFolder>/pyramidalImage`.
+  `SessionPyramidalImageExportService: PyramidalImageWriteStatistics{new=..., rewritten=...}`
+  and `SessionPyramidalImageExportService: Export complete: N tiles processed to
+  <inputFolder>/pyramidalImage`.
 - A missing `<inputFolder>`, an extra positional argument, or an unreadable
   `<inputFolder>` prints an English `ERROR: ...` message to stderr and exits with
   code `1`.
@@ -254,13 +262,14 @@ In `pyramidalimageexporter.config.Configuration`:
 
 ## Package structure
 
-- `io`: `matrixLayer.json` and `topLevelTiles.json` reading, and the pyramidal image
-  quadtree writer (`PyramidalImageExporter`).
-- `model`: matrix layers, tile coordinates, selection state, GPU texture budget.
+- `io`: `matrixLayer.json`/`topLevelTiles.json` reading and in-place matrix-layer id
+  rewrites after content-hash anchoring.
+- `model`: matrix layers, tile coordinates, selection state, GPU texture budget, and
+  `PyramidalImageWriteStatistics`.
 - `processing/toplevels`: synthesis of top-level (0..5) matrix layers.
-- `processing/uncles`: uncle relationship metadata and `RootPathResolver`, which anchors
+- `processing/uncles`: uncle relationship metadata and `TileRootPathResolver`, which anchors
   tiles to a full quadtree path from the root.
-- `common/statistics`: `PyramidalImageAdditionStatistics`, the new/rewritten tile
-  counters accumulated during a session-local export.
+- `processing/content`: content-hash anchoring against catalogued top-level images.
+- `processing`: session-local pyramidal image export (`SessionPyramidalImageExportService`).
 - `render`: JOGL renderer, culling, LOD and HUD.
 - `gui`: keyboard/mouse handling.

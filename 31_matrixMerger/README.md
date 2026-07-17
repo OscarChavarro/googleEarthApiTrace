@@ -15,9 +15,12 @@ consolidated layer matrices and exporting them for `32_pyramidalImageExporter`.
 - Displays one active matrix at a time as quads on plane `Z=0`.
 - Supports matrix navigation, interactive merges, west-cutter splitting and an automatic
   grouping mode.
-- Tracks "uncle" relationships between quadtree levels and reports the hierarchy level of
-  each matrix; tiles whose top-level uncles are missing are printed at startup as absolute
-  texture paths.
+- Tracks "uncle" relationships between quadtree levels, reports the relative hierarchy
+  level of each matrix, and preserves the full directional relationship metadata needed by
+  `32_pyramidalImageExporter`.
+- Repairs disconnected hierarchy roots by visual parent inference when enough sampled
+  child textures match quadrants of an earlier matrix. Accepted repairs are persisted as a
+  `parentGridTransform`, not as fabricated uncle links.
 - Exports consolidated results (matrices plus copied tile textures) to a destination
   folder.
 - Implements frustum culling to avoid drawing off-camera quads.
@@ -78,17 +81,19 @@ HUD:
 
 ## Merge algorithms
 
-### `processing.MatrixMerger`
+### `processing.PairwiseMatrixMerger`
 
 Operates on two matrices `A` and `B`:
 
 1. Finds matching cells by `id` to compute one offset (`MatrixOffset`) for `B` over `A`.
 2. If the offset is not consistent for all shared `id` values, it fails.
 3. If overlapping cells contain conflicting content, it fails.
-4. If valid, adds to `A` the cells from `B` that were not already in `A`.
+4. Starting from the shared cells, walks the translated `B` matrix through 4-neighbor
+   connectivity and appends only reachable cells. This keeps isolated/unrelated fragments
+   from being pulled into `A` by a coincidental shared id.
 5. Normalizes `A` coordinates to start at `0` and recalculates `rows/cols`.
 
-### `processing.FullSetMerger`
+### `processing.MatrixSetConsolidator`
 
 Iterates through the full list:
 
@@ -97,18 +102,29 @@ Iterates through the full list:
 3. If merge fails, increments `i`.
 4. Stops when only one matrix remains or no more pairs exist.
 
-### `processing.AutomaticGrouper` (`--mode auto`)
+### `processing.WestCutterMatrixSplitter`
+
+Splits a frame at the first west-cutter tile column when that column is not already `0`.
+The right side becomes the main frame, shifted to column `0`; the left side becomes a
+transient frame (`frameId = -1`) appended after the regular frames. Per-tile hierarchy
+maps are filtered to the tiles that remain in each half. If the original frame already
+had a `parentGridTransform`, the right side's column offset is increased by the split
+column while the transient left side keeps the original transform.
+
+### `processing.AutomaticMatrixGroupingPipeline` (`--mode auto`)
 
 Repeats retry-merge sweeps and west-cutter split sweeps over all frames until the frame
 count stabilizes. It then follows the uncle relationships between the resulting matrices,
 orders them from the top quadtree level to the deepest one, and selects the top level for
-the viewer. If a later hierarchy root has lost its parent relationship, a final visual
-inference compares its textures with quadrants of earlier matrices. It accepts a parent
-only when confident matches form a strict majority for one rigid grid offset, persists
-that containing-parent placement as a `parentGridTransform`, and reorders the hierarchy.
-It deliberately does not fabricate an `uncle`: uncles are adjacent coarse tiles, not
-containing parents. This is the batch equivalent of pressing `n` and `c` over every frame
-plus hierarchy repair.
+the viewer. If a later hierarchy root has lost its parent relationship,
+`VisualHierarchyRelationshipInferrer` compares up to 16 sampled child textures with the
+four quadrants of earlier matrices. A match is usable only below the RMSE threshold and
+when the best match clearly beats the second best; at least three accepted probes and a
+strict majority must agree on the same `(parentMatrixIndex,rowOffset,colOffset)`. The
+accepted containing-parent placement is persisted as `parentGridTransform`, and the
+hierarchy is sorted again. The pipeline deliberately does not fabricate an `uncle`:
+uncles are adjacent coarse tiles, not containing parents. This is the batch equivalent of
+pressing `n` and `c` over every frame plus hierarchy repair.
 
 Before automatic grouping returns, it verifies that the set of unique native tile IDs is
 identical to the set loaded at its start. A missing or invented ID aborts the run instead
@@ -152,12 +168,17 @@ remaining frame is written as:
 - `<exportFolder>/matrix_<n>/matrixLayer.json`
 - `<exportFolder>/matrix_<n>/<tileId>.png` (tile textures copied from the source data)
 
-`matrixLayer.json` uses contract version 3. Besides the matrix and its tiles, it exports
-`hierarchyLevel`, `parentMatrixIndex`, an optional rigid `parentGridTransform`,
-`hierarchyUnclesByTileId`, and the lossless
-`hierarchyRelationshipsByTileId` map containing full `{direction, uncleContentId}`
-records. This metadata is required by `32_pyramidalImageExporter`; directory order alone
-is not treated as a hierarchy edge.
+`matrixLayer.json` uses contract version 3. Besides the matrix and its tiles, it exports:
+
+- `hierarchyLevel`: relative matrix hierarchy depth, not an absolute quadtree level.
+- `parentMatrixIndex`: the exported `matrix_<n>` index of the immediate parent when known.
+- `parentGridTransform`: optional rigid containing-parent placement inferred visually.
+- `hierarchyUnclesByTileId`: compatibility `tileId -> [uncleId]` map.
+- `hierarchyRelationshipsByTileId`: lossless `tileId -> [{direction, uncleContentId}]`
+  map, preserving true adjacent-uncle direction records.
+
+This metadata is required by `32_pyramidalImageExporter`; directory order alone is not
+treated as a hierarchy edge.
 
 For a child cell `(i,j)`, `parentGridTransform` means that
 `(i + rowOffset, j + colOffset)` is its coordinate in the parent grid refined by one
