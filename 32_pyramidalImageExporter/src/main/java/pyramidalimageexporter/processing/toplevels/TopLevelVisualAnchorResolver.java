@@ -58,10 +58,10 @@ final class TopLevelVisualAnchorResolver {
             }
             System.out.println(
                 "TopLevelVisualAnchorResolver: layer " + imported.getSourceFolderName()
-                    + " anchored at [" + choice.anchor().level() + ", "
-                    + choice.anchor().rowOffset() + ", " + choice.anchor().colOffset() + "]"
-                    + " from " + choice.votes() + "/" + choice.acceptedProbes()
-                    + " confident visual probes; assigned " + anchored + " tile(s)."
+                + " anchored at [" + choice.anchor().level() + ", "
+                + choice.anchor().rowOffset() + ", " + choice.anchor().colOffset() + "]"
+                + " from " + choice.votes() + "/" + choice.acceptedProbes()
+                + " " + choice.evidence() + " probes; assigned " + anchored + " tile(s)."
             );
         }
         imageCache.clear();
@@ -73,28 +73,28 @@ final class TopLevelVisualAnchorResolver {
             return null;
         }
         Map<Anchor, Integer> votes = new LinkedHashMap<>();
+        Map<Anchor, Integer> plausibleVotes = new LinkedHashMap<>();
         int accepted = 0;
+        int readable = 0;
         double lowestRmse = Double.POSITIVE_INFINITY;
         double lowestRatio = Double.POSITIVE_INFINITY;
         for (MatrixLayerTile probe : spatiallyDistributed(imported.getTiles(), MAX_PROBES)) {
             MatchPair pair = bestTwoMatches(probe, topCells, topLevel);
             if (pair != null) {
+                readable++;
                 lowestRmse = Math.min(lowestRmse, pair.best().rmse());
                 lowestRatio = Math.min(
                     lowestRatio,
                     pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse())
                 );
+                if (pair.best().rmse() <= MAX_RMSE) {
+                    plausibleVotes.merge(anchorFor(probe, pair.best()), 1, Integer::sum);
+                }
             }
             if (!confident(pair)) {
                 continue;
             }
-            int level = pair.best().level();
-            int side = 1 << level;
-            Anchor anchor = new Anchor(
-                level,
-                pair.best().row() - probe.getI(),
-                Math.floorMod(pair.best().col() - probe.getJ(), side)
-            );
+            Anchor anchor = anchorFor(probe, pair.best());
             votes.merge(anchor, 1, Integer::sum);
             accepted++;
         }
@@ -107,12 +107,30 @@ final class TopLevelVisualAnchorResolver {
             }
         }
         if (best != null && bestVotes >= MIN_ANCHOR_VOTES && bestVotes * 2 > accepted) {
-            return new AnchorChoice(best, bestVotes, accepted);
+            return new AnchorChoice(best, bestVotes, accepted, "confident visual");
+        }
+        if (imported.getTiles().size() >= 2
+            && imported.getTiles().size() < MIN_ANCHOR_VOTES
+            && readable == imported.getTiles().size()
+            && plausibleVotes.size() == 1) {
+            Map.Entry<Anchor, Integer> unanimous = plausibleVotes.entrySet().iterator().next();
+            if (unanimous.getValue() == readable) {
+                return new AnchorChoice(
+                    unanimous.getKey(),
+                    unanimous.getValue(),
+                    readable,
+                    "unanimous small-layer visual"
+                );
+            }
         }
         System.out.println(
             "TopLevelVisualAnchorResolver: layer " + imported.getSourceFolderName()
-                + " not anchored; confident probes=" + accepted
+                + " not visually anchored in this pass; confident probes=" + accepted
                 + ", best rigid vote=" + bestVotes
+                + ", readable probes=" + readable
+                + (imported.getTiles().size() < MIN_ANCHOR_VOTES
+                    ? ", plausible rigid votes=" + plausibleVotes
+                    : "")
                 + (Double.isFinite(lowestRmse)
                     ? ", lowest RMSE=" + String.format(java.util.Locale.ROOT, "%.2f", lowestRmse)
                         + ", lowest best/second ratio="
@@ -120,6 +138,15 @@ final class TopLevelVisualAnchorResolver {
                     : ", no readable visual candidates")
         );
         return null;
+    }
+
+    private static Anchor anchorFor(MatrixLayerTile probe, Match match) {
+        int side = 1 << match.level();
+        return new Anchor(
+            match.level(),
+            match.row() - probe.getI(),
+            Math.floorMod(match.col() - probe.getJ(), side)
+        );
     }
 
     private MatchPair bestTwoMatches(MatrixLayerTile probe, List<MatrixLayerTile> topCells, int topLevel) {
@@ -266,7 +293,7 @@ final class TopLevelVisualAnchorResolver {
     }
 
     private record Anchor(int level, int rowOffset, int colOffset) {}
-    private record AnchorChoice(Anchor anchor, int votes, int acceptedProbes) {}
+    private record AnchorChoice(Anchor anchor, int votes, int acceptedProbes, String evidence) {}
     private record Match(MatrixLayerTile cell, int level, int row, int col, double rmse) {}
     private record MatchPair(Match best, Match second) {}
 }

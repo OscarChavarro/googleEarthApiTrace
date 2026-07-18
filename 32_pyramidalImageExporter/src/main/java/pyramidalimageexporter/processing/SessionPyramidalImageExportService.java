@@ -63,6 +63,7 @@ public final class SessionPyramidalImageExportService {
     private record ExportManifest(
         List<ExportEntry> entries,
         int localReplacementsOfDerivedTop,
+        int identicalDuplicateClaims,
         Map<Integer, Integer> rejectedNonNativeTilesByLevel
     ) {}
 
@@ -116,7 +117,9 @@ public final class SessionPyramidalImageExportService {
         System.out.println(
             "SessionPyramidalImageExportService: manifest contains " + manifest.entries().size()
                 + " unique paths; local tiles replace " + manifest.localReplacementsOfDerivedTop()
-                + " derived TOP cells; rejected non-native tiles by level: "
+                + " derived TOP cells; byte-identical duplicate claims collapsed: "
+                + manifest.identicalDuplicateClaims()
+                + "; rejected non-native tiles by level: "
                 + manifest.rejectedNonNativeTilesByLevel() + "."
         );
         if (manifest.entries().isEmpty()) {
@@ -347,6 +350,7 @@ public final class SessionPyramidalImageExportService {
         Map<String, Boolean> nativeImageByPath = new HashMap<>();
         Map<Integer, Integer> rejectedByLevel = new TreeMap<>();
         int replacements = 0;
+        int identicalDuplicates = 0;
 
         MatrixLayer nativeTopCatalogLayer = new MatrixLayer();
         nativeTopCatalogLayer.setSourceFolderName("topLevel_native_catalog");
@@ -409,6 +413,10 @@ public final class SessionPyramidalImageExportService {
                 if (current.tile().getId().equals(candidate.tile().getId())) {
                     continue;
                 }
+                if (sameTextureContent(current.tile(), candidate.tile())) {
+                    identicalDuplicates++;
+                    continue;
+                }
                 throw new IllegalStateException(
                     "incompatible duplicate full path " + fullPath
                         + " claimed by " + describe(current) + " and " + describe(candidate)
@@ -418,8 +426,26 @@ public final class SessionPyramidalImageExportService {
         return new ExportManifest(
             List.copyOf(selectedByPath.values()),
             replacements,
+            identicalDuplicates,
             Map.copyOf(rejectedByLevel)
         );
+    }
+
+    private static boolean sameTextureContent(MatrixLayerTile first, MatrixLayerTile second) {
+        if (first == null || second == null
+            || first.getTextureFile() == null || second.getTextureFile() == null) {
+            return false;
+        }
+        try {
+            Path firstPath = Path.of(first.getTextureFile());
+            Path secondPath = Path.of(second.getTextureFile());
+            return Files.isRegularFile(firstPath)
+                && Files.isRegularFile(secondPath)
+                && Files.mismatch(firstPath, secondPath) == -1L;
+        }
+        catch (IOException | RuntimeException ex) {
+            return false;
+        }
     }
 
     private static boolean isNativeExportTile(MatrixLayerTile tile, Map<String, Boolean> nativeImageByPath) {

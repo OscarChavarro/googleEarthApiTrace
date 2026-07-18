@@ -142,6 +142,70 @@ final class TopLevelLayerMergerTest {
     }
 
     @Test
+    void visuallyAnchorsATwoTileLayerWhenBothReadableTilesAgreeOnOneRigidTransform() throws IOException {
+        Path atlas = tempDir.resolve("small-layer-atlas.png");
+        writeLevelTwoAtlas(atlas);
+        List<MatrixLayerTile> topCells = new ArrayList<>();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                MatrixLayerTile cell = tile(quadPath(2, row, col), row, col, atlas.toString());
+                cell.setTextureSubRect(col / 4.0, (3 - row) / 4.0, (col + 1) / 4.0, (4 - row) / 4.0);
+                topCells.add(cell);
+            }
+        }
+        MatrixLayer top = new MatrixLayer();
+        top.setSourceFolderName("topLevel_matrix_02");
+        top.setRows(4);
+        top.setCols(4);
+        top.setTiles(topCells);
+
+        Path firstTexture = tempDir.resolve("small-first.png");
+        Path secondTexture = tempDir.resolve("small-second.png");
+        writeSolidTile(firstTexture, colorOf(1, 1));
+        writeSolidTile(secondTexture, colorOf(1, 2));
+        MatrixLayer imported = layer(
+            "matrix_small",
+            tile("small-first", 0, 0, firstTexture.toString()),
+            tile("small-second", 0, 1, secondTexture.toString())
+        );
+
+        Map<String, String> anchors = new TopLevelVisualAnchorResolver().resolve(List.of(top), List.of(imported));
+
+        assertEquals(quadPath(2, 1, 1), anchors.get("small-first"));
+        assertEquals(quadPath(2, 1, 2), anchors.get("small-second"));
+    }
+
+    @Test
+    void retainsTopLevelVisualAnchorsForATwoTileLayerDuringMerge() throws IOException {
+        Path parentTexture = tempDir.resolve("top-parent.png");
+        writeQuadrantParent(parentTexture);
+        MatrixLayer top = layer(
+            "topLevel_matrix_05",
+            tile(quadPath(5, 10, 12), 10, 12, parentTexture.toString())
+        );
+
+        Path northWestTexture = tempDir.resolve("level-six-nw.png");
+        Path northEastTexture = tempDir.resolve("level-six-ne.png");
+        writeSolidTile(northWestTexture, Color.RED.getRGB());
+        writeSolidTile(northEastTexture, Color.GREEN.getRGB());
+        MatrixLayer imported = layer(
+            "matrix_small",
+            tile("level-six-nw", 0, 0, northWestTexture.toString()),
+            tile("level-six-ne", 0, 1, northEastTexture.toString())
+        );
+
+        TopLevelLayerMerger.MergeResult result = new TopLevelLayerMerger().merge(
+            List.of(top),
+            List.of(imported),
+            Map.of(),
+            tempDir
+        );
+
+        assertEquals(quadPath(6, 20, 24), result.mergedFullPathByOriginalId().get("level-six-nw"));
+        assertEquals(quadPath(6, 20, 25), result.mergedFullPathByOriginalId().get("level-six-ne"));
+    }
+
+    @Test
     void visuallyAnchorsAChildMatrixAgainstTopLevelQuadrants() throws IOException {
         Path atlas = tempDir.resolve("quadrant-atlas.png");
         writeQuadrantParent(atlas);

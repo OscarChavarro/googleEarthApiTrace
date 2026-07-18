@@ -64,6 +64,30 @@ final class SessionPyramidalImageExportServiceTest {
     }
 
     @Test
+    void collapsesDifferentCaptureIdsWhenTheyClaimTheSamePathWithIdenticalContent() throws Exception {
+        String sharedContent = nativeImage("shared-content.png", 256, 256);
+        MatrixLayerTile first = tile("capture-a", 0, 0, sharedContent);
+        MatrixLayerTile second = tile("capture-b", 0, 0, sharedContent);
+
+        MatrixLayer firstLayer = new MatrixLayer();
+        firstLayer.setSourceFolderName("matrix_1");
+        firstLayer.setTiles(List.of(first));
+        MatrixLayer secondLayer = new MatrixLayer();
+        secondLayer.setSourceFolderName("matrix_2");
+        secondLayer.setTiles(List.of(second));
+
+        PyramidalImageExporterState model = new PyramidalImageExporterState();
+        model.setMatrixLayers(List.of(firstLayer, secondLayer));
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            model.getMatrixLayers(),
+            Map.of("capture-a", "021", "capture-b", "021"),
+            Map.of()
+        );
+
+        assertEquals(1, manifestEntries(model, resolution).size());
+    }
+
+    @Test
     void rejectsImagesThatAreNotNatively256Square() throws Exception {
         MatrixLayerTile incomplete = tile("0", 0, 0, nativeImage("incomplete.png", 128, 256));
         MatrixLayer layer = new MatrixLayer();

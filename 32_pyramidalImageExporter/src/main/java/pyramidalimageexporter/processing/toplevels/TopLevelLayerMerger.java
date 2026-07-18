@@ -40,7 +40,9 @@ public final class TopLevelLayerMerger {
             importedCopies,
             cataloguedQuadPathsByImagePath
         );
-        externalFullPaths.putAll(new TopLevelVisualAnchorResolver().resolve(inferredCopies, importedCopies));
+        Map<String, String> topVisualFullPaths = new TopLevelVisualAnchorResolver()
+            .resolve(inferredCopies, importedCopies);
+        externalFullPaths.putAll(topVisualFullPaths);
         Map<String, String> cataloguedUnclePaths = buildExternalUncleFullPaths(cataloguedQuadPathsByImagePath);
         externalFullPaths.putAll(cataloguedUnclePaths);
 
@@ -68,7 +70,9 @@ public final class TopLevelLayerMerger {
         Map<String, MatrixLayerTile> importedTileByTopPath = collectImportedTopTiles(importedCopies, resolution);
         if (importedTileByTopPath.isEmpty()) {
             inferredCopies.addAll(importedCopies);
-            return new MergeResult(inferredCopies, Map.copyOf(visualDescendantFullPaths));
+            Map<String, String> retainedFullPaths = new LinkedHashMap<>(topVisualFullPaths);
+            retainedFullPaths.putAll(visualDescendantFullPaths);
+            return new MergeResult(inferredCopies, Map.copyOf(retainedFullPaths));
         }
 
         Set<String> mergedTopPaths = replaceInferredTiles(inferredCopies, importedTileByTopPath);
@@ -87,6 +91,7 @@ public final class TopLevelLayerMerger {
             resolution,
             mergedTopPaths
         );
+        mergedFullPathByOriginalId.putAll(topVisualFullPaths);
         mergedFullPathByOriginalId.putAll(visualDescendantFullPaths);
         System.out.println(
             "TopLevelLayerMerger: merged " + mergedTopPaths.size()
