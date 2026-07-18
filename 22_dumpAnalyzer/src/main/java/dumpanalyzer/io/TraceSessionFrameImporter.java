@@ -9,6 +9,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import dumpanalyzer.config.Configuration;
 import dumpanalyzer.io.parser.TraceProcessor;
 import dumpanalyzer.logger.ConcurrentMessages;
 import dumpanalyzer.logger.FatalErrorHandler;
@@ -37,7 +38,8 @@ public final class TraceSessionFrameImporter {
         List<String> frameDirectories = scanDirectSubdirectories(outputRoot);
         System.out.println("OK");
 
-        int workerCount = Runtime.getRuntime().availableProcessors();
+        int workerCount = Configuration.FRAME_IMPORT_THREADS;
+        System.out.println("Using " + workerCount + " frame import worker(s).");
         FrameTexturePathResolver.scanFrameDirectoriesParallel(frameDirectories, model, workerCount);
 
         List<String> glFilesToProcess = scanGlFilesFromFrameDirectories(frameDirectories);

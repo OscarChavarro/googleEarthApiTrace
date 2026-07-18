@@ -38,7 +38,9 @@ public class TraceProcessor {
         }
 
         String normalized = LogicalLineProcessor.normalize(content);
-        parseOrFail(filePath, normalized);
+        if (Configuration.VALIDATE_TRACE_SYNTAX) {
+            parseOrFail(filePath, normalized);
+        }
 
         TilesProcessor.FrameGeometry frameGeometry = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
         List<dumpanalyzer.model.TileInstance> tiles = frameGeometry.tiles();
@@ -80,6 +82,7 @@ public class TraceProcessor {
     private static void parseOrFail(Path filePath, String normalized) {
         GlTraceLexer lexer = new GlTraceLexer(CharStreams.fromString(normalized));
         GlTraceParser parser = new GlTraceParser(new CommonTokenStream(lexer));
+        parser.setBuildParseTree(false);
 
         BaseErrorListener fatalListener = new BaseErrorListener() {
             @Override

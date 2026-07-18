@@ -42,10 +42,11 @@ public final class TopLevelTilesJsonBuilder {
         if (frames == null || frames.isEmpty()) {
             return;
         }
-        System.out.println("\n[5/5] Processing GlobeLevelTileSets and synthetic tiles:");
+        System.out.println("\n[4/5] Processing GlobeLevelTileSets and synthetic tiles:");
         initializeGlobeLevelTileIdentityMap(frames);
 
-        int workerCount = Math.max(1, Runtime.getRuntime().availableProcessors());
+        int workerCount = Configuration.TOP_LEVEL_TILE_THREADS;
+        System.out.println("Using " + workerCount + " globe-level tile worker(s).");
         BlockingQueue<Integer> frameQueue = new LinkedBlockingQueue<>();
         ConcurrentLinkedQueue<ParallelProgressMonitorEvent> progressEvents = new ConcurrentLinkedQueue<>();
         ParallelProgressMonitorProducer progressProducer = new ParallelProgressMonitorProducer(progressEvents);
@@ -90,6 +91,20 @@ public final class TopLevelTilesJsonBuilder {
             frames,
             tileTriangleStripsToCountMapByFrame
         );
+        releaseSkippedSourceGeometry(frames);
+    }
+
+    private static void releaseSkippedSourceGeometry(List<Frame> frames) {
+        for (Frame frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile != null) {
+                    tile.releaseSkippedSourceGeometry();
+                }
+            }
+        }
     }
 
     public static Map<TopLevelTileIdentity, Integer> snapshotGlobeLevelTileIdentityMap() {

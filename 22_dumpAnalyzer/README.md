@@ -23,6 +23,48 @@ The input/output directory is read from `output.directory` in
   `topLevelTiles.json` file at the root of the output directory (consumed later by
   `32_pyramidalImageExporter`).
 
+## Technical Note: Globe-Level Multipatch Geometry Lifetime
+
+The `skipped` flag on a `TileInstance` means that the tile is not eligible for the
+ordinary single-strip frame-tile pipeline. It does **not** mean that its source geometry
+is immediately disposable. In particular, globe-level tiles are multipatches: the
+current trace contract uses a special tile containing 320 triangle strips to establish
+the globe strip identities, and other multipatch appearances are matched against those
+identities while building `topLevelTiles.json`.
+
+Code that constructs a skipped tile must therefore preserve `points`, `strips`, and
+`stripTexCoords` until `TopLevelTilesJsonBuilder` has finished cataloguing identities and
+appearances. Replacing those collections with empty lists merely because the tile is
+skipped makes the TOP pass observe zero 320-strip candidates. The resulting file is
+syntactically valid but contains an empty `byStripId` object; downstream,
+`32_pyramidalImageExporter` then has no absolute quadkey seed and cannot place matrices
+even when their relative uncle relationships are intact.
+
+Keeping every multipatch for the entire run has the opposite failure mode: full captures
+can retain enough geometry that serializing thousands of `frame.json` files causes severe
+GC pressure or an operating-system `SIGKILL` (commonly reported by Gradle as exit code
+137). The required lifecycle and phase order are:
+
+1. Parse frames while retaining multipatch source geometry, including skipped tiles.
+2. Assign texture paths and compute ordinary neighbor/uncle relationships.
+3. Build `topLevelTiles.json` and `globalPatches.json` while the multipatches are still
+   available.
+4. Release skipped source geometry with `TileInstance.releaseSkippedSourceGeometry()`.
+5. Serialize the compact per-frame models to `frame.json`.
+
+Do not move frame serialization ahead of TOP construction, and do not move skipped
+geometry release ahead of it. If this lifecycle changes, validate a full capture rather
+than relying only on small or single-strip samples. Useful post-run checks are:
+
+```bash
+jq '.byStripId | length' /media/ramdisk/output/topLevelTiles.json
+jq '[.byStripId[].appearances[]?] | length' /media/ramdisk/output/topLevelTiles.json
+```
+
+For the current trace contract, the first command should report 320 rather than zero;
+the appearance count must also be non-zero. Treat an empty `byStripId` as a failed TOP
+reconstruction even if `22_dumpAnalyzer` itself exited successfully.
+
 In the following image:
 - Triangle fans making up the geometry of the 3D scene are shown with white line borders.
 - Image pairs frame_id are show in yellow

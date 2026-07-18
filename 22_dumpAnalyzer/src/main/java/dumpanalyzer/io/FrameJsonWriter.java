@@ -43,7 +43,7 @@ public final class FrameJsonWriter {
     }
 
     public static void writeFramesParallelWithProgress(Path outputRoot, List<Frame> frames) {
-        System.out.println("\n[4/5] Writing processed frames to disk:");
+        System.out.println("\n[5/5] Writing processed frames to disk:");
         if (frames == null || frames.isEmpty()) {
             ProgressMonitor progressMonitor = new ProgressMonitorConsoleLongFormat();
             progressMonitor.begin();
@@ -51,8 +51,8 @@ public final class FrameJsonWriter {
             return;
         }
 
-        int availableCores = Math.max(1, Runtime.getRuntime().availableProcessors());
-        int workerCount = Math.max(1, (int)Math.ceil(availableCores * Configuration.FRAME_WRITER_THREADS_CORES_RATIO));
+        int workerCount = Configuration.FRAME_WRITER_THREADS;
+        System.out.println("Using " + workerCount + " frame writer worker(s).");
         BlockingQueue<Integer> frameQueue = new LinkedBlockingQueue<>();
         ConcurrentLinkedQueue<ParallelProgressMonitorEvent> progressEvents = new ConcurrentLinkedQueue<>();
         ParallelProgressMonitorProducer progressProducer = new ParallelProgressMonitorProducer(progressEvents);

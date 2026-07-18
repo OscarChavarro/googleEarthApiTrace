@@ -28,9 +28,9 @@ public final class TileInstance {
     private final String westNeighbor;
     private final Vector3Dd min;
     private final Vector3Dd max;
-    private final List<Vector3Dd> points;
-    private final List<List<Vector3Dd>> strips;
-    private final List<List<Vector3Dd>> stripTexCoords;
+    private volatile List<Vector3Dd> points;
+    private volatile List<List<Vector3Dd>> strips;
+    private volatile List<List<Vector3Dd>> stripTexCoords;
     private final String primitive;
     private final int parserCall;
     private final long glCall;
@@ -404,6 +404,21 @@ public final class TileInstance {
         cachedTriangleStripVertexEpsilon = Double.NaN;
         cachedTriangleStrip = null;
         cachedTriangleStripGeometries = null;
+    }
+
+    /**
+     * Releases source geometry that was retained only so globe-level multipatches could
+     * be catalogued. Skipped tiles are not exported as regular frame tiles, and keeping
+     * their often very large strip arrays through JSON serialization can exhaust memory.
+     */
+    public void releaseSkippedSourceGeometry() {
+        if (!skipped) {
+            return;
+        }
+        points = List.of();
+        strips = List.of();
+        stripTexCoords = List.of();
+        clearTriangleStripProcessingCaches();
     }
 
     @JsonIgnore

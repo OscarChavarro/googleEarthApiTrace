@@ -27,6 +27,7 @@ application {
 tasks.withType(JavaExec).configureEach {
     // Shader loader resolves from working directory; keep it at project root so ../etc works.
     workingDir = projectDir
+    maxHeapSize = '64g'
 }
 
 repositories {

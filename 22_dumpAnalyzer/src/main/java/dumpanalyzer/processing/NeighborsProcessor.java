@@ -1,7 +1,6 @@
 package dumpanalyzer.processing;
 
 import dumpanalyzer.config.Configuration;
-import dumpanalyzer.io.FrameJsonWriter;
 import dumpanalyzer.logger.FatalErrorHandler;
 import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.model.Frame;
@@ -55,7 +54,6 @@ public final class NeighborsProcessor {
             }
         );
         runStage3WithProgress(model, frames, width, height);
-        FrameJsonWriter.writeFramesParallelWithProgress(Configuration.OUTPUT_ROOT, frames);
     }
 
     private static void runStageWithProgress(String stageTitle, int totalWorkUnits, IndexedTask task) {
@@ -89,8 +87,8 @@ public final class NeighborsProcessor {
             return;
         }
 
-        int availableCores = Math.max(1, Runtime.getRuntime().availableProcessors());
-        int workerCount = Math.max(1, (int)Math.ceil(availableCores * Configuration.FRAME_NEIGHBOR_THREADS_CORES_RATIO));
+        int workerCount = Configuration.FRAME_NEIGHBOR_THREADS;
+        System.out.println("Using " + workerCount + " neighbor worker(s).");
         BlockingQueue<Integer> frameQueue = new LinkedBlockingQueue<>();
         ConcurrentLinkedQueue<ParallelProgressMonitorEvent> progressEvents = new ConcurrentLinkedQueue<>();
         ParallelProgressMonitorProducer progressProducer = new ParallelProgressMonitorProducer(progressEvents);

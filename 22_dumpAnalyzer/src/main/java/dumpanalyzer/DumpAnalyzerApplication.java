@@ -1,6 +1,7 @@
 package dumpanalyzer;
 
 import dumpanalyzer.config.Configuration;
+import dumpanalyzer.io.FrameJsonWriter;
 import dumpanalyzer.io.TraceSessionFrameImporter;
 import dumpanalyzer.model.state.DumpAnalyzerState;
 import dumpanalyzer.options.CommandLineOptions;
@@ -23,6 +24,7 @@ public final class DumpAnalyzerApplication {
         System.out.flush();
         NeighborsProcessor.preprocessNeighbors(model, model.snapshotFrames(), config.width(), config.height());
         TopLevelTilesJsonBuilder.preprocessGlobeLevelTileSets(model.snapshotFrames());
+        FrameJsonWriter.writeFramesParallelWithProgress(Configuration.OUTPUT_ROOT, model.snapshotFrames());
 
         if (!config.offline()) {
             InteractiveDebugger.start(model);
