@@ -1,9 +1,7 @@
 package dumpanalyzer.io.parser;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -347,16 +345,11 @@ final class TilesProcessor {
 
     private static String classifyBlobFailure(boolean isNullPointerInTrace, Path path, String blobKind) {
         if (isNullPointerInTrace) return "null blob";
-        if (path == null || !Files.exists(path)) return "null blob";
-        try {
-            long size = Files.size(path);
-            if (size <= 0) return "zero array length blob";
-            if ("index".equals(blobKind) && (size % 2L) != 0L) return "invalid index blob";
-            return "blob decode failure";
-        }
-        catch (IOException ex) {
-            return "null blob";
-        }
+        if (path == null || !BlobFileReader.exists(path)) return "null blob";
+        long size = BlobFileReader.logicalSize(path);
+        if (size <= 0) return "zero array length blob";
+        if ("index".equals(blobKind) && (size % 2L) != 0L) return "invalid index blob";
+        return "blob decode failure";
     }
 
     private static Integer extractInt(Pattern pattern, String source) {
@@ -372,7 +365,7 @@ final class TilesProcessor {
     }
 
     private static byte[] loadBlob(Path path) {
-        try { return Files.readAllBytes(path); } catch (IOException e) { return null; }
+        return BlobFileReader.readAllBytes(path);
     }
 
     private static TileGeometry computeGeometry(byte[] vertexBlob, int vertexSize, int vertexStride, int[] indices) {
@@ -499,11 +492,8 @@ final class TilesProcessor {
     }
 
     private static int[] loadUnsignedShortBlob(Path path, int maxCount) {
-        byte[] data;
-        try {
-            data = Files.readAllBytes(path);
-        }
-        catch (IOException e) {
+        byte[] data = BlobFileReader.readAllBytes(path);
+        if (data == null) {
             return null;
         }
         if (data.length < 2) return null;

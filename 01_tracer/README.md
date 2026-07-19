@@ -67,7 +67,7 @@ A per-frame `manifest.txt` is generated with `key=value` lines describing each e
 
 - `/media/ramdisk/output/%05d/gl.txt`
 - `/media/ramdisk/output/%05d/manifest.txt`
-- `/media/ramdisk/output/%05d/*.dds|*.png|*.bin|*.meta.txt`
+- `/media/ramdisk/output/%05d/*.dds|*.png|*.bin.bz2|*.meta.txt`
 
 ## Variables and runtime flags
 
@@ -77,6 +77,8 @@ A per-frame `manifest.txt` is generated with `key=value` lines describing each e
 - `TRACE_WRITE_GLTXT=0`: disables writing `gl.txt`.
 - `TRACE_PNG_THREADS`: number of async PNG workers (default: autodetect with conservative cap; valid range `1..256`).
 - `TRACE_PNG_QUEUE`: max queue size for async PNG export (default `128`, max `4096`).
+- `TRACE_BZ2_THREADS`: number of async bzip2 blob-compression workers (default `8`).
+- `TRACE_BZ2_QUEUE`: max queue size for async bzip2 blob compression (default `1024`, max `65536`).
 
 ## Async PNG export (producer-consumer)
 
@@ -88,6 +90,14 @@ A per-frame `manifest.txt` is generated with `key=value` lines describing each e
 Notes:
 - `.dds` (DXT1) export remains synchronous.
 - If `TRACE_PNG_THREADS` is not defined, the pool is sized automatically with a conservative limit (up to 12 workers) to avoid excessive contention.
+
+## Async binary blob compression
+
+- Geometry/buffer blobs are still first written as `.bin` by the tracing thread.
+- Once each `.bin` is closed, its path is enqueued for background bzip2 compression to `.bin.bz2`.
+- Compression uses a bounded producer-consumer queue; successful compression removes the original `.bin`.
+- `manifest.txt` points to the final `.bin.bz2` path and includes `compression=bzip2`.
+- The compressor writes to a temporary path and renames to `.bin.bz2` only after success.
 
 ## RAMDISK recommendation (`tmpfs`)
 

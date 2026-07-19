@@ -34,6 +34,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <string>
 #include <thread>
 #include <mutex>
 #include <deque>
@@ -42,6 +43,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <png.h>
+#include <bzlib.h>
 
 #include "os.hpp"
 #include "trace_ostream.hpp"
@@ -112,6 +114,10 @@ static std::unordered_map<int, unsigned long long> g_vertexAttribPointerCountByF
 static std::unordered_map<int, unsigned long long> g_bufferDataUpdateCountByFrame;
 static std::unordered_map<int, std::vector<uint8_t>> g_arrayBufferSnapshots;
 static std::unordered_map<int, std::vector<uint8_t>> g_elementArrayBufferSnapshots;
+
+static void compressedBlobPath(const char *binPath, char *out, size_t outSize) {
+    snprintf(out, outSize, "%s.bz2", binPath);
+}
 
 static void appendManifestLine(int frameNumber, const char *line) {
     if (!line) {
@@ -461,6 +467,185 @@ static AsyncPngExporter &getAsyncPngExporter() {
     return exporter;
 }
 
+class AsyncBzip2BlobCompressor {
+public:
+    AsyncBzip2BlobCompressor() : m_stopping(false) {
+        const int workerCount = chooseWorkerCount();
+        m_maxQueueSize = chooseMaxQueueSize();
+        for (int i = 0; i < workerCount; ++i) {
+            m_workers.emplace_back(&AsyncBzip2BlobCompressor::workerLoop, this);
+        }
+    }
+
+    ~AsyncBzip2BlobCompressor() {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_stopping = true;
+        }
+        m_cv.notify_all();
+        for (std::thread &t : m_workers) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+    }
+
+    bool enqueue(const char *binPath) {
+        if (!binPath || !*binPath) {
+            return false;
+        }
+        std::unique_lock<std::mutex> lock(m_mutex);
+        if (m_stopping) {
+            return false;
+        }
+        while (m_jobs.size() >= m_maxQueueSize && !m_stopping) {
+            m_cvNotFull.wait(lock);
+        }
+        if (m_stopping) {
+            return false;
+        }
+        m_jobs.emplace_back(binPath);
+        lock.unlock();
+        m_cv.notify_one();
+        return true;
+    }
+
+private:
+    static int chooseWorkerCount() {
+        const char *env = getenv("TRACE_BZ2_THREADS");
+        if (env && *env) {
+            char *end = nullptr;
+            unsigned long parsed = strtoul(env, &end, 10);
+            if (end != env && parsed > 0ul) {
+                if (parsed > 256ul) {
+                    parsed = 256ul;
+                }
+                return (int)parsed;
+            }
+        }
+        return 8;
+    }
+
+    static size_t chooseMaxQueueSize() {
+        const char *env = getenv("TRACE_BZ2_QUEUE");
+        if (!env || !*env) {
+            return 1024u;
+        }
+        char *end = nullptr;
+        unsigned long parsed = strtoul(env, &end, 10);
+        if (end == env || parsed == 0ul) {
+            return 1024u;
+        }
+        if (parsed > 65536ul) {
+            parsed = 65536ul;
+        }
+        return (size_t)parsed;
+    }
+
+    static bool compressOne(const std::string &binPath) {
+        char bzPath[1024];
+        compressedBlobPath(binPath.c_str(), bzPath, sizeof(bzPath));
+
+        char tmpPath[1060];
+        snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", bzPath);
+
+        FILE *in = fopen(binPath.c_str(), "rb");
+        if (!in) {
+            return false;
+        }
+        FILE *out = fopen(tmpPath, "wb");
+        if (!out) {
+            fclose(in);
+            return false;
+        }
+
+        int bzError = BZ_OK;
+        BZFILE *bz = BZ2_bzWriteOpen(&bzError, out, 9, 0, 30);
+        if (bzError != BZ_OK || !bz) {
+            fclose(in);
+            fclose(out);
+            remove(tmpPath);
+            return false;
+        }
+
+        uint8_t buffer[1024 * 1024];
+        bool ok = true;
+        for (;;) {
+            size_t n = fread(buffer, 1, sizeof(buffer), in);
+            if (n > 0) {
+                BZ2_bzWrite(&bzError, bz, buffer, (int)n);
+                if (bzError != BZ_OK) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (n < sizeof(buffer)) {
+                if (ferror(in)) {
+                    ok = false;
+                }
+                break;
+            }
+        }
+
+        int abandon = ok ? 0 : 1;
+        BZ2_bzWriteClose(&bzError, bz, abandon, nullptr, nullptr);
+        if (ok && bzError != BZ_OK) {
+            ok = false;
+        }
+        if (fclose(in) != 0) {
+            ok = false;
+        }
+        if (fclose(out) != 0) {
+            ok = false;
+        }
+
+        if (!ok) {
+            remove(tmpPath);
+            return false;
+        }
+        if (rename(tmpPath, bzPath) != 0) {
+            remove(tmpPath);
+            return false;
+        }
+        remove(binPath.c_str());
+        return true;
+    }
+
+    void workerLoop() {
+        for (;;) {
+            std::string path;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_cv.wait(lock, [&]() { return m_stopping || !m_jobs.empty(); });
+                if (m_stopping && m_jobs.empty()) {
+                    return;
+                }
+                path = std::move(m_jobs.front());
+                m_jobs.pop_front();
+                m_cvNotFull.notify_one();
+            }
+            compressOne(path);
+        }
+    }
+
+    bool m_stopping;
+    size_t m_maxQueueSize;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::condition_variable m_cvNotFull;
+    std::deque<std::string> m_jobs;
+    std::vector<std::thread> m_workers;
+};
+
+static AsyncBzip2BlobCompressor &getAsyncBzip2BlobCompressor() {
+    static AsyncBzip2BlobCompressor compressor;
+    return compressor;
+}
+
+static void enqueueBlobCompression(const char *binPath) {
+    getAsyncBzip2BlobCompressor().enqueue(binPath);
+}
+
 static void exportPlain(const void *ptr, size_t size, int id) {
     if (THE_TextureWidth <= 0 || THE_TextureHeight <= 0 || id <= 0) {
         return;
@@ -564,9 +749,12 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
         fwrite(ptr, 1, size, f);
         fclose(f);
 
-        char manifestLine[768];
-        snprintf(manifestLine, sizeof(manifestLine), "kind=draw_elements frame=%d call=%llu parserCall=%llu file=%s mode=%d type=%d blobPtr=%llu bytes=%zu", THE_FrameNumber, THE_CurrentGlCallNumber, drawCount, filePath, THE_DrawElementMode, THE_DrawElementType, THE_DrawElementIndicesBlobId, size);
+        char compressedPath[1024];
+        compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+        char manifestLine[2048];
+        snprintf(manifestLine, sizeof(manifestLine), "kind=draw_elements frame=%d call=%llu parserCall=%llu file=%s mode=%d type=%d blobPtr=%llu bytes=%zu compression=bzip2", THE_FrameNumber, THE_CurrentGlCallNumber, drawCount, compressedPath, THE_DrawElementMode, THE_DrawElementType, THE_DrawElementIndicesBlobId, size);
         appendManifestLine(THE_FrameNumber, manifestLine);
+        enqueueBlobCompression(filePath);
     }
 }
 
@@ -577,6 +765,7 @@ static bool writeBlobToPath(const char *path, const void *ptr, size_t size) {
     }
     fwrite(ptr, 1, size, f);
     fclose(f);
+    enqueueBlobCompression(path);
     return true;
 }
 
@@ -635,14 +824,16 @@ static void exportVertexPositionsFromVbo(int frameNumber, unsigned long long dra
         return;
     }
 
-    char manifestLine[768];
+    char compressedPath[1024];
+    compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+    char manifestLine[2048];
     snprintf(
         manifestLine,
         sizeof(manifestLine),
-        "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=0 bufferId=%d offset=%llu stride=%d size=%d type=%d bytes=%zu source=vbo_snapshot",
+        "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=0 bufferId=%d offset=%llu stride=%d size=%d type=%d bytes=%zu source=vbo_snapshot compression=bzip2",
         frameNumber,
         drawCall,
-        filePath,
+        compressedPath,
         THE_PositionAttribBufferId,
         THE_PositionAttribOffset,
         THE_PositionAttribStride,
@@ -691,14 +882,16 @@ void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, u
         return;
     }
 
-    char manifestLine[768];
+    char compressedPath[1024];
+    compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+    char manifestLine[2048];
     snprintf(
         manifestLine,
         sizeof(manifestLine),
-        "kind=draw_elements frame=%d call=%llu parserCall=0 file=%s mode=%d type=%d indicesOffset=%llu bytes=%zu source=ebo_snapshot",
+        "kind=draw_elements frame=%d call=%llu parserCall=0 file=%s mode=%d type=%d indicesOffset=%llu bytes=%zu source=ebo_snapshot compression=bzip2",
         THE_FrameNumber,
         THE_CurrentGlCallNumber,
-        filePath,
+        compressedPath,
         THE_DrawElementMode,
         THE_DrawElementType,
         indicesOffsetBytes,
@@ -748,20 +941,23 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
         fwrite(ptr, 1, size, f);
         fclose(f);
 
-        char manifestLine[768];
+        char compressedPath[1024];
+        compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+        char manifestLine[2048];
         snprintf(
             manifestLine,
             sizeof(manifestLine),
-            "kind=vertex_attrib frame=%d call=%llu parserCall=%llu file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=wrapped_call",
+            "kind=vertex_attrib frame=%d call=%llu parserCall=%llu file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=wrapped_call compression=bzip2",
             THE_FrameNumber,
             THE_CurrentGlCallNumber,
             vertexAttribCount,
-            filePath,
+            compressedPath,
             THE_VertexAttribPointerAttribIndex,
             THE_VertexAttribPointerBlobId,
             size
         );
         appendManifestLine(THE_FrameNumber, manifestLine);
+        enqueueBlobCompression(filePath);
     }
 }
 
@@ -790,14 +986,16 @@ void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribI
         return;
     }
 
-    char manifestLine[768];
+    char compressedPath[1024];
+    compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+    char manifestLine[2048];
     snprintf(
         manifestLine,
         sizeof(manifestLine),
-        "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=fake_call",
+        "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=fake_call compression=bzip2",
         THE_FrameNumber,
         callNo,
-        filePath,
+        compressedPath,
         attribIndex,
         blobPtr,
         size
@@ -847,6 +1045,7 @@ static void exportBufferDataBlob(const void *ptr, size_t size) {
     }
     fwrite(ptr, 1, size, f);
     fclose(f);
+    enqueueBlobCompression(filePath);
 
     char metaPath[512];
     snprintf(

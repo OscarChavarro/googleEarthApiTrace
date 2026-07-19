@@ -68,6 +68,7 @@ include (InstallPDB)
 
 find_package (Python3 REQUIRED)
 find_package (Threads REQUIRED)
+find_package (BZip2 REQUIRED)
 
 if (ENABLE_X11)
     find_package (X11)

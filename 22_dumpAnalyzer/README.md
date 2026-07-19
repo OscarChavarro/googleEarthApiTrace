@@ -178,11 +178,12 @@ gradle run --args="--end-frame 500"
 For faithful geometry replay (including line primitives), each frame should provide:
 
 - `manifest.txt` entries:
-  - `kind=draw_elements ... call=<glDrawElementsCall> ... file=.../drawElements_indices_call_<call>.bin mode=<...> type=5123`
-  - `kind=vertex_attrib ... call=<glVertexAttribPointerCall> ... attribIndex=0 file=.../glVertexAttribPointer_vertexAttrib_call_<call>.bin`
+  - `kind=draw_elements ... call=<glDrawElementsCall> ... file=.../drawElements_indices_call_<call>.bin.bz2 mode=<...> type=5123 compression=bzip2`
+  - `kind=vertex_attrib ... call=<glVertexAttribPointerCall> ... attribIndex=0 file=.../glVertexAttribPointer_vertexAttrib_call_<call>.bin.bz2 compression=bzip2`
 - Binary blobs:
   - index buffer for each exported `glDrawElements` call (`GL_UNSIGNED_SHORT`)
   - position vertex data blob (`attribIndex=0`) compatible with the active index range
+  - blobs may be compressed as `.bin.bz2`; `dumpAnalyzer` decompresses them directly in memory and does not expand them to disk
 
 Line support currently expects draw modes:
 

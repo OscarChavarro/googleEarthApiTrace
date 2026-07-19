@@ -18,11 +18,14 @@ final class ManifestProcessor {
     static Path resolveIndicesBlobPath(Path frameDirectory, ManifestIndex manifest, long glCallNumber, int drawCount) {
         if (glCallNumber >= 0) {
             Path fromManifest = manifest.drawByCall.get(glCallNumber);
-            if (fromManifest != null) return fromManifest;
+            if (fromManifest != null) return BlobFileReader.resolveReadablePath(fromManifest);
+            Path compressedStableName = frameDirectory.resolve("drawElements_indices_call_" + glCallNumber + ".bin.bz2");
+            if (Files.exists(compressedStableName)) return compressedStableName;
             Path stableName = frameDirectory.resolve("drawElements_indices_call_" + glCallNumber + ".bin");
             if (Files.exists(stableName)) return stableName;
         }
-        return frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin");
+        Path legacyName = frameDirectory.resolve("drawElements_indices_" + drawCount + ".bin");
+        return BlobFileReader.resolveReadablePath(legacyName);
     }
 
     static Path resolveVertexBlobPath(Path frameDirectory, ManifestIndex manifest, Long vertexAttribCall, int vertexAttribExportCallCount, int expectedAttribIndex) {
@@ -30,17 +33,20 @@ final class ManifestProcessor {
             long[] candidates = {vertexAttribCall, vertexAttribCall + 1L, vertexAttribCall - 1L};
             for (long candidateCall : candidates) {
                 VertexManifestEntry fromManifest = manifest.vertexByCallAndIndex.get(vertexKey(candidateCall, expectedAttribIndex));
-                if (fromManifest != null) return fromManifest.filePath();
+                if (fromManifest != null) return BlobFileReader.resolveReadablePath(fromManifest.filePath());
                 if (expectedAttribIndex >= 0) {
                     VertexManifestEntry fromAnyIndex = manifest.vertexByCallAndIndex.get(vertexKey(candidateCall, -1));
-                    if (fromAnyIndex != null) return fromAnyIndex.filePath();
+                    if (fromAnyIndex != null) return BlobFileReader.resolveReadablePath(fromAnyIndex.filePath());
                 }
+                Path compressedStableName = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_call_" + candidateCall + ".bin.bz2");
+                if (Files.exists(compressedStableName)) return compressedStableName;
                 Path stableName = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_call_" + candidateCall + ".bin");
                 if (Files.exists(stableName)) return stableName;
             }
         }
         if (vertexAttribExportCallCount < 0) return frameDirectory.resolve("__missing__.bin");
-        return frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + vertexAttribExportCallCount + ".bin");
+        Path legacyName = frameDirectory.resolve("glVertexAttribPointer_vertexAttrib_" + vertexAttribExportCallCount + ".bin");
+        return BlobFileReader.resolveReadablePath(legacyName);
     }
 
     static ManifestIndex loadManifestIndex(Path frameDirectory) {
@@ -71,6 +77,7 @@ final class ManifestProcessor {
                 }
                 Path filePath = Paths.get(fileText);
                 if (!filePath.isAbsolute()) filePath = dir.resolve(fileText);
+                filePath = BlobFileReader.resolveReadablePath(filePath);
                 if ("draw_elements".equals(kind)) {
                     out.drawByCall.putIfAbsent(call, filePath);
                 }

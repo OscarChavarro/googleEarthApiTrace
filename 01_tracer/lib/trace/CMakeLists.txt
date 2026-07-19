@@ -37,6 +37,7 @@ target_link_libraries(common
     Snappy::snappy
     PNG::PNG
     ZLIB::ZLIB
+    BZip2::BZip2
     PkgConfig::BROTLIDEC
     PkgConfig::ZSTD
     zstd_seekable

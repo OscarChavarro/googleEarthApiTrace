@@ -326,15 +326,16 @@ This is the tracer's runtime export, written live while Google Earth runs under
     Written directly by the tracer unless `TRACE_WRITE_GLTXT=0`. Frame boundary is
     `glXSwapBuffers`.
   - `manifest.txt`: one `key=value ...` line per exported blob, `kind=` one of
-    `draw_elements`, `vertex_attrib` (others may exist), each pointing to a `.bin` file by
+    `draw_elements`, `vertex_attrib` (others may exist), each pointing to a `.bin.bz2` file by
     absolute path, e.g.:
     ```
-    kind=draw_elements frame=9 call=2552 parserCall=1 file=/media/ramdisk/output/00009/drawElements_indices_call_2552.bin mode=5 type=5123 blobPtr=... bytes=804
-    kind=vertex_attrib frame=9 call=2551 parserCall=0 file=/media/ramdisk/output/00009/glVertexAttribPointer_vertexAttrib_call_2551.bin attribIndex=0 blobPtr=... bytes=118188
+    kind=draw_elements frame=9 call=2552 parserCall=1 file=/media/ramdisk/output/00009/drawElements_indices_call_2552.bin.bz2 mode=5 type=5123 blobPtr=... bytes=804 compression=bzip2
+    kind=vertex_attrib frame=9 call=2551 parserCall=0 file=/media/ramdisk/output/00009/glVertexAttribPointer_vertexAttrib_call_2551.bin.bz2 attribIndex=0 blobPtr=... bytes=118188 compression=bzip2
     ```
-  - Binary blobs referenced by `manifest.txt`: `drawElements_indices_call_<call>.bin`
-    (`GL_UNSIGNED_SHORT` index buffer) and `glVertexAttribPointer_vertexAttrib_call_<call>.bin`
-    (vertex data for `attribIndex`, position data is `attribIndex=0`).
+  - Binary blobs referenced by `manifest.txt`: `drawElements_indices_call_<call>.bin.bz2`
+    (`GL_UNSIGNED_SHORT` index buffer) and `glVertexAttribPointer_vertexAttrib_call_<call>.bin.bz2`
+    (vertex data for `attribIndex`, position data is `attribIndex=0`). `22_dumpAnalyzer`
+    decompresses these blobs directly in memory; no temporary decompressed `.bin` is written.
   - Texture images, named `<width>x<height>_<textureId>.png` (uncompressed, decodable
     formats) or `.dds` (`GL_COMPRESSED_RGB_S3TC_DXT1_EXT`), e.g. `256x256_159.png`,
     `1024x256_1.png`. `textureId` is `THE_TextureId` at export time.
@@ -343,7 +344,8 @@ This is the tracer's runtime export, written live while Google Earth runs under
     (`%05d`, e.g. `00009`).
   - `manifest.txt` line format (`key=value`, space-separated) and its `file=` absolute
     paths must keep matching the files actually on disk — `22_dumpAnalyzer` resolves blobs
-    by that path.
+    by that path. The current preferred binary blob storage is bzip2-compressed `.bin.bz2`;
+    legacy `.bin` paths remain readable for old captures and compression-failure fallback.
   - Texture filename pattern `<W>x<H>_<textureId>.<ext>` must stay parseable, since both
     `22_dumpAnalyzer` and, indirectly, `23_frameTextureNormalizer`/`31_matrixMerger`
     (through `frame.json`/`matrix.json` `textureFile` fields) key off exact paths produced
