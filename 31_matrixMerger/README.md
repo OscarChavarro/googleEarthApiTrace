@@ -88,9 +88,9 @@ Operates on two matrices `A` and `B`:
 1. Finds matching cells by `id` to compute one offset (`MatrixOffset`) for `B` over `A`.
 2. If the offset is not consistent for all shared `id` values, it fails.
 3. If overlapping cells contain conflicting content, it fails.
-4. Starting from the shared cells, walks the translated `B` matrix through 4-neighbor
-   connectivity and appends only reachable cells. This keeps isolated/unrelated fragments
-   from being pulled into `A` by a coincidental shared id.
+4. Applies the validated offset to every tile in `B`, appending all non-overlapping tiles
+   to `A`. A successful merge must consume the whole native tile-id set from `B`; otherwise
+   removing `B` would make the automatic pipeline lossy.
 5. Normalizes `A` coordinates to start at `0` and recalculates `rows/cols`.
 
 ### `processing.MatrixSetConsolidator`

@@ -1,6 +1,5 @@
 package matrixmerger.processing;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -55,7 +54,7 @@ public final class PairwiseMatrixMerger {
             return false;
         }
 
-        List<FrameTileMatrix.TileCoord> tilesToAppend = collectReachableTilesFromB(b, aByPos, bById, sharedIds, offset);
+        List<FrameTileMatrix.TileCoord> tilesToAppend = collectAlignedTilesFromB(b, aByPos, offset);
         if (tilesToAppend == null) {
             return false;
         }
@@ -137,41 +136,19 @@ public final class PairwiseMatrixMerger {
         return byPosition;
     }
 
-    private List<FrameTileMatrix.TileCoord> collectReachableTilesFromB(
+    private List<FrameTileMatrix.TileCoord> collectAlignedTilesFromB(
         FrameTileMatrix b,
         Map<String, FrameTileMatrix.TileCoord> aByPos,
-        Map<String, FrameTileMatrix.TileCoord> bById,
-        Set<String> sharedIds,
         MatrixOffset offset
     ) {
         List<FrameTileMatrix.TileCoord> toAdd = new ArrayList<>();
-        Map<String, FrameTileMatrix.TileCoord> bByTranslatedPos = new HashMap<>();
         for (FrameTileMatrix.TileCoord bt : b.getTiles()) {
-            bByTranslatedPos.put(key(bt.getI() + offset.deltaI(), bt.getJ() + offset.deltaJ()), bt);
-        }
-
-        ArrayDeque<Position> queue = new ArrayDeque<>();
-        Set<String> visited = new HashSet<>();
-        for (String sharedId : sharedIds) {
-            FrameTileMatrix.TileCoord bt = bById.get(sharedId);
             if (bt == null) {
                 continue;
             }
-            Position start = new Position(bt.getI() + offset.deltaI(), bt.getJ() + offset.deltaJ());
-            String startKey = key(start.i(), start.j());
-            if (visited.add(startKey)) {
-                queue.addLast(start);
-            }
-        }
-
-        while (!queue.isEmpty()) {
-            Position current = queue.removeFirst();
-            String posKey = key(current.i(), current.j());
-            FrameTileMatrix.TileCoord bt = bByTranslatedPos.get(posKey);
-            if (bt == null) {
-                continue;
-            }
-
+            int translatedI = bt.getI() + offset.deltaI();
+            int translatedJ = bt.getJ() + offset.deltaJ();
+            String posKey = key(translatedI, translatedJ);
             FrameTileMatrix.TileCoord at = aByPos.get(posKey);
             if (at != null) {
                 if (!at.getId().equals(bt.getId())) {
@@ -179,29 +156,10 @@ public final class PairwiseMatrixMerger {
                 }
             }
             else {
-                toAdd.add(cloneWithCoordinates(bt, current.i(), current.j()));
+                toAdd.add(cloneWithCoordinates(bt, translatedI, translatedJ));
             }
-
-            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i() - 1, current.j());
-            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i() + 1, current.j());
-            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i(), current.j() + 1);
-            enqueueIfPresent(queue, visited, bByTranslatedPos, current.i(), current.j() - 1);
         }
         return toAdd;
-    }
-
-    private static void enqueueIfPresent(
-        ArrayDeque<Position> queue,
-        Set<String> visited,
-        Map<String, FrameTileMatrix.TileCoord> bByTranslatedPos,
-        int i,
-        int j
-    ) {
-        String posKey = key(i, j);
-        if (!bByTranslatedPos.containsKey(posKey) || !visited.add(posKey)) {
-            return;
-        }
-        queue.addLast(new Position(i, j));
     }
 
     private static FrameTileMatrix.TileCoord cloneWithCoordinates(FrameTileMatrix.TileCoord src, int i, int j) {
@@ -266,6 +224,4 @@ public final class PairwiseMatrixMerger {
         return i + ":" + j;
     }
 
-    private record Position(int i, int j) {
-    }
 }
