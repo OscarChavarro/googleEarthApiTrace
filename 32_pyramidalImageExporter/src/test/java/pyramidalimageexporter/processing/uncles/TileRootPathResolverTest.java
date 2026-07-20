@@ -2,7 +2,9 @@ package pyramidalimageexporter.processing.uncles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -201,6 +203,45 @@ final class TileRootPathResolverTest {
         assertEquals(TileRootPathResolver.PathSource.DIRECT, resolution.sourceById().get("direct"));
         assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("relative-a"));
         assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("relative-b"));
+    }
+
+    @Test
+    void stopsWhenParentTransformAndDirectGridAnchorOscillate() {
+        MatrixLayer parent = layer(tile("parent-a", 0, 0));
+        parent.setSourceFolderName("matrix_0");
+
+        MatrixLayer child = layer(tile("direct", 0, 0), tile("sibling", 0, 1));
+        child.setSourceFolderName("matrix_1");
+        child.setParentMatrixIndex(0);
+        child.setParentGridTransform(new ParentGridTransform(0, 0));
+
+        TileRootPathResolver.Resolution resolution = assertTimeoutPreemptively(
+            Duration.ofSeconds(1),
+            () -> new TileRootPathResolver().resolve(
+                List.of(parent, child),
+                Map.of("parent-a", "033", "direct", "0000"),
+                Map.of()
+            )
+        );
+
+        assertEquals("0001", resolution.pathById().get("sibling"));
+    }
+
+    @Test
+    void keepsRepeatedCaptureIdsIndependentAcrossLayers() {
+        MatrixLayer first = layer(tile("anchor-a", 0, 0), tile("shared", 0, 1));
+        first.setSourceFolderName("matrix_a");
+        MatrixLayer second = layer(tile("anchor-b", 0, 0), tile("shared", 0, 1));
+        second.setSourceFolderName("matrix_b");
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(first, second),
+            Map.of("anchor-a", "030", "anchor-b", "033"),
+            Map.of()
+        );
+
+        assertEquals("031", resolution.pathFor(first, first.getTiles().get(1)));
+        assertEquals("032", resolution.pathFor(second, second.getTiles().get(1)));
     }
 
     @Test

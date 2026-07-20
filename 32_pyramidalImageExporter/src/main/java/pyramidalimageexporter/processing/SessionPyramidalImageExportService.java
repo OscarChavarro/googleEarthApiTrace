@@ -1,5 +1,6 @@
 package pyramidalimageexporter.processing;
 
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -211,7 +212,7 @@ public final class SessionPyramidalImageExportService {
                     continue;
                 }
                 total++;
-                String fullPath = resolution.pathById().get(tile.getId());
+                String fullPath = resolution.pathFor(layer, tile);
                 if (fullPath != null) {
                     placed++;
                     int level = fullPath.length() - 1;
@@ -219,7 +220,7 @@ public final class SessionPyramidalImageExportService {
                     placedTilesByLevel.merge(level, 1, Integer::sum);
                 }
                 else {
-                    if (resolution.discardedIds().contains(tile.getId())) {
+                    if (resolution.isDiscarded(layer, tile)) {
                         ambiguous++;
                     }
                     if (unplacedSample.size() < 3) {
@@ -378,7 +379,7 @@ public final class SessionPyramidalImageExportService {
                 continue;
             }
             for (MatrixLayerTile tile : layer.getTiles()) {
-                String fullPath = tile == null ? null : resolution.pathById().get(tile.getId());
+                String fullPath = tile == null ? null : resolution.pathFor(layer, tile);
                 if (fullPath == null) {
                     continue;
                 }
@@ -439,9 +440,36 @@ public final class SessionPyramidalImageExportService {
         try {
             Path firstPath = Path.of(first.getTextureFile());
             Path secondPath = Path.of(second.getTextureFile());
-            return Files.isRegularFile(firstPath)
-                && Files.isRegularFile(secondPath)
-                && Files.mismatch(firstPath, secondPath) == -1L;
+            if (!Files.isRegularFile(firstPath) || !Files.isRegularFile(secondPath)) {
+                return false;
+            }
+            if (Files.mismatch(firstPath, secondPath) == -1L) {
+                return true;
+            }
+            return sameDecodedPixels(firstPath, secondPath);
+        }
+        catch (IOException | RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private static boolean sameDecodedPixels(Path firstPath, Path secondPath) {
+        try {
+            BufferedImage first = ImageIO.read(firstPath.toFile());
+            BufferedImage second = ImageIO.read(secondPath.toFile());
+            if (first == null || second == null
+                || first.getWidth() != second.getWidth()
+                || first.getHeight() != second.getHeight()) {
+                return false;
+            }
+            for (int y = 0; y < first.getHeight(); y++) {
+                for (int x = 0; x < first.getWidth(); x++) {
+                    if (first.getRGB(x, y) != second.getRGB(x, y)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
         catch (IOException | RuntimeException ex) {
             return false;
@@ -508,8 +536,8 @@ public final class SessionPyramidalImageExportService {
         ExportEntry current,
         TileRootPathResolver.Resolution resolution
     ) {
-        TileRootPathResolver.PathSource candidateSource = resolution.sourceById().get(candidate.tile().getId());
-        TileRootPathResolver.PathSource currentSource = resolution.sourceById().get(current.tile().getId());
+        TileRootPathResolver.PathSource candidateSource = resolution.sourceFor(candidate.layer(), candidate.tile());
+        TileRootPathResolver.PathSource currentSource = resolution.sourceFor(current.layer(), current.tile());
         return isDirect(candidateSource) && isDerived(currentSource);
     }
 

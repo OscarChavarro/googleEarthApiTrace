@@ -109,7 +109,7 @@ public final class TopLevelLayerMerger {
         Map<String, String> aliases = new LinkedHashMap<>();
         for (MatrixLayer layer : importedLayers) {
             for (MatrixLayerTile tile : layer.getTiles()) {
-                String fullPath = resolution.pathById().get(tile.getId());
+                String fullPath = resolution.pathFor(layer, tile);
                 if (mergedTopPaths.contains(fullPath)) {
                     aliases.put(tile.getId(), fullPath);
                 }
@@ -125,7 +125,7 @@ public final class TopLevelLayerMerger {
         Map<String, MatrixLayerTile> importedByPath = new LinkedHashMap<>();
         for (MatrixLayer layer : importedLayers) {
             for (MatrixLayerTile tile : layer.getTiles()) {
-                String fullPath = resolution.pathById().get(tile.getId());
+                String fullPath = resolution.pathFor(layer, tile);
                 if (isTopPath(fullPath)) {
                     importedByPath.putIfAbsent(fullPath, tile);
                 }
@@ -178,7 +178,7 @@ public final class TopLevelLayerMerger {
             MatrixLayer remainingLayer = copyLayerWithoutTiles(layer);
             List<MatrixLayerTile> remainingTiles = new ArrayList<>();
             for (MatrixLayerTile tile : layer.getTiles()) {
-                String fullPath = resolution.pathById().get(tile.getId());
+                String fullPath = resolution.pathFor(layer, tile);
                 if (mergedTopPaths.contains(fullPath)) {
                     continue;
                 }

@@ -169,12 +169,12 @@ final class ImportedLayerVisualAnchorResolver {
                 continue;
             }
             for (MatrixLayerTile tile : layer.getTiles()) {
-                TileRootPathResolver.PathSource source = resolution.sourceById().get(tile.getId());
+                TileRootPathResolver.PathSource source = resolution.sourceFor(layer, tile);
                 if (source != TileRootPathResolver.PathSource.DIRECT
                     && source != TileRootPathResolver.PathSource.GRID) {
                     continue;
                 }
-                int[] cell = decodeFullPath(resolution.pathById().get(tile.getId()));
+                int[] cell = decodeFullPath(resolution.pathFor(layer, tile));
                 if (cell != null) {
                     parents.add(new ParentTile(layer, tile, cell[0], cell[1], cell[2]));
                 }
@@ -185,7 +185,7 @@ final class ImportedLayerVisualAnchorResolver {
 
     private boolean isStronglyResolved(MatrixLayer layer, TileRootPathResolver.Resolution resolution) {
         for (MatrixLayerTile tile : layer.getTiles()) {
-            TileRootPathResolver.PathSource source = resolution.sourceById().get(tile.getId());
+            TileRootPathResolver.PathSource source = resolution.sourceFor(layer, tile);
             if (source != TileRootPathResolver.PathSource.DIRECT
                 && source != TileRootPathResolver.PathSource.GRID) {
                 return false;

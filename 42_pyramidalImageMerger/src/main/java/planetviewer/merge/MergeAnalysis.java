@@ -2,6 +2,7 @@ package planetviewer.merge;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class MergeAnalysis {
@@ -14,6 +15,7 @@ public final class MergeAnalysis {
     private final Set<String> resolutionEquivalentNodeIds;
     private final Set<String> higherResolutionDeltaNodeIds;
     private final int replacedTiles;
+    private final Map<String, String> conflictDetails;
 
     public MergeAnalysis(
         int comparedTiles,
@@ -24,7 +26,8 @@ public final class MergeAnalysis {
         List<String> copiedNodeIds,
         Set<String> resolutionEquivalentNodeIds,
         Set<String> higherResolutionDeltaNodeIds,
-        int replacedTiles
+        int replacedTiles,
+        Map<String, String> conflictDetails
     ) {
         this.comparedTiles = comparedTiles;
         this.mergeableTiles = mergeableTiles;
@@ -35,6 +38,7 @@ public final class MergeAnalysis {
         this.resolutionEquivalentNodeIds = Collections.unmodifiableSet(resolutionEquivalentNodeIds);
         this.higherResolutionDeltaNodeIds = Collections.unmodifiableSet(higherResolutionDeltaNodeIds);
         this.replacedTiles = replacedTiles;
+        this.conflictDetails = Collections.unmodifiableMap(conflictDetails);
     }
 
     public int getComparedTiles() {
@@ -75,6 +79,10 @@ public final class MergeAnalysis {
 
     public int getReplacedTiles() {
         return replacedTiles;
+    }
+
+    public Map<String, String> getConflictDetails() {
+        return conflictDetails;
     }
 
     public boolean isMergePossible() {

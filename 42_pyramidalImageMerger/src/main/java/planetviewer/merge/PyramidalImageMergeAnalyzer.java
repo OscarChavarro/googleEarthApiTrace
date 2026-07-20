@@ -3,8 +3,10 @@ package planetviewer.merge;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import planetviewer.model.PyramidalImage;
 import planetviewer.model.QuadtreeNode;
@@ -18,6 +20,7 @@ public final class PyramidalImageMergeAnalyzer {
     private final List<String> missingDestinationNodeIds = new ArrayList<>();
     private final Set<String> resolutionEquivalentNodeIds = new LinkedHashSet<>();
     private final Set<String> higherResolutionDeltaNodeIds = new LinkedHashSet<>();
+    private final Map<String, String> conflictDetails = new LinkedHashMap<>();
     private final ImageMagickImageComparator imageComparator = new ImageMagickImageComparator();
 
     public MergeAnalysis analyze(PyramidalImage destination, PyramidalImage delta) {
@@ -29,6 +32,7 @@ public final class PyramidalImageMergeAnalyzer {
         missingDestinationNodeIds.clear();
         resolutionEquivalentNodeIds.clear();
         higherResolutionDeltaNodeIds.clear();
+        conflictDetails.clear();
         visit(destination == null ? null : destination.getRoot(), delta == null ? null : delta.getRoot());
         return new MergeAnalysis(
             comparedTiles,
@@ -39,7 +43,8 @@ public final class PyramidalImageMergeAnalyzer {
             List.copyOf(missingDestinationNodeIds),
             new LinkedHashSet<>(resolutionEquivalentNodeIds),
             new LinkedHashSet<>(higherResolutionDeltaNodeIds),
-            0
+            0,
+            new LinkedHashMap<>(conflictDetails)
         );
     }
 
@@ -89,13 +94,22 @@ public final class PyramidalImageMergeAnalyzer {
             if (comparison.visuallyEquivalent() && comparison.deltaIsHigherResolution()) {
                 higherResolutionDeltaNodeIds.add(deltaNode.getId());
             }
+            if (!comparison.visuallyEquivalent()) {
+                conflictDetails.put(
+                    deltaNode.getId(),
+                    "normalized RMSE " + comparison.normalizedRmse()
+                        + " exceeds 0.03; delta higher resolution: " + comparison.deltaIsHigherResolution()
+                );
+            }
             return comparison.visuallyEquivalent();
         }
         catch (IOException ex) {
+            conflictDetails.put(deltaNode.getId(), "ImageMagick comparison failed: " + ex.getMessage());
             return false;
         }
         catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            conflictDetails.put(deltaNode.getId(), "ImageMagick comparison interrupted");
             return false;
         }
     }
@@ -123,7 +137,8 @@ public final class PyramidalImageMergeAnalyzer {
             baseAnalysis.getCopiedNodeIds(),
             baseAnalysis.getResolutionEquivalentNodeIds(),
             baseAnalysis.getHigherResolutionDeltaNodeIds(),
-            replacedTiles
+            replacedTiles,
+            baseAnalysis.getConflictDetails()
         );
     }
 }

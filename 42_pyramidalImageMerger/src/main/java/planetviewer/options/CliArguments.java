@@ -5,18 +5,12 @@ import java.util.List;
 public final class CliArguments {
     private final List<String> pyramidalImageFolders;
     private final boolean offline;
-    private final boolean wires;
-    private final int width;
-    private final int height;
-    private final String output;
+    private final boolean dryRun;
 
-    public CliArguments(List<String> pyramidalImageFolders, boolean offline, boolean wires, int width, int height, String output) {
-        this.pyramidalImageFolders = pyramidalImageFolders;
+    public CliArguments(List<String> pyramidalImageFolders, boolean offline, boolean dryRun) {
+        this.pyramidalImageFolders = List.copyOf(pyramidalImageFolders);
         this.offline = offline;
-        this.wires = wires;
-        this.width = width;
-        this.height = height;
-        this.output = output;
+        this.dryRun = dryRun;
     }
 
     public List<String> getPyramidalImageFolders() {
@@ -27,19 +21,7 @@ public final class CliArguments {
         return offline;
     }
 
-    public boolean isWires() {
-        return wires;
-    }
-
-    public int getWidth() {
-        return width;
-    }
-
-    public int getHeight() {
-        return height;
-    }
-
-    public String getOutput() {
-        return output;
+    public boolean isDryRun() {
+        return dryRun;
     }
 }

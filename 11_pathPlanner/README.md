@@ -30,13 +30,20 @@ This project provides scan paths used before active tracing, so the controller c
 Example:
 
 ```bash
-gradle run --args="spiral <lat> <lon> <step_distance_m> <max_distance_m>"
+gradle run --args="spiral <lat> <lon> <step_distance_m> <max_distance_m> [altitude_m]"
 ```
 
 Or:
 
 ```bash
-gradle run --args="zigzag <lat> <lon> <step_distance_m> <max_distance_m>"
+gradle run --args="zigzag <lat> <lon> <step_distance_m> <max_distance_m> [altitude_m]"
+```
+
+To scan a rectangular area with `zigzag`, pass the lower-left corner plus latitude and
+longitude spans in degrees:
+
+```bash
+gradle run --args="zigzag <lower_left_lat> <lower_left_lon> <step_distance_m> <max_distance_m> <altitude_m> <lat_span_deg> <lon_span_deg>"
 ```
 
 Or:
@@ -58,8 +65,10 @@ the default sample route `globe 0 0 1600000 1`.
 
 - This is a pure command-line batch tool: no GUI, no interactive input. It runs, writes
   KML, prints a one-line summary and exits.
-- All behavior is controlled by the five positional arguments:
+- The base behavior is controlled by five positional arguments:
   `<generator> <lat> <lon> <step_distance_m> <max_distance_m>` where `<generator>` is
-  `spiral`, `zigzag` or `globe`. Invalid arguments cause a non-zero exit.
+  `spiral`, `zigzag` or `globe`. `spiral` and `zigzag` also accept `[altitude_m]`.
+  `zigzag` accepts `<lat_span_deg> <lon_span_deg>` after altitude to scan a rectangle.
+  Invalid arguments cause a non-zero exit.
 - Side effect to be aware of: it **modifies** `~/.googleearth/myplaces.kml` in place
   (replacing the `turtle` folder contents), so back it up when experimenting.

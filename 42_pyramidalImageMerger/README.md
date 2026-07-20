@@ -31,6 +31,18 @@ gradle run --args="/samples/datasets/googleEarth/topLevel /samples/datasets/goog
 
 or `./run.sh`, which defaults to those same sample folders when called without arguments.
 
+Headless merge validation/copy is available with `--offline`:
+
+```bash
+./run.sh --offline /samples/datasets/googleEarth/topLevel /tmp/matrix/pyramidalImage
+```
+
+To inspect conflicts without modifying the destination tree, use `--dry-run`:
+
+```bash
+./run.sh --dry-run /samples/datasets/googleEarth/topLevel /tmp/matrix/pyramidalImage
+```
+
 ## Interactive usage guide
 
 Program-specific keys (generic camera handling comes from Vitral's
@@ -85,16 +97,21 @@ Moving the mouse over either viewport prints the path of the projected tile imag
 
 ## Command-line contract
 
-The program requires exactly two positional arguments. Any other invocation exits immediately
-with an English usage message.
+The program requires exactly two positional arguments, with optional `--offline` or
+`--dry-run`. Any other invocation exits immediately with an English usage message.
+
+- Without flags, it opens the interactive JOGL viewer.
+- `--offline` executes the same validation/merge operation as the interactive `m` key.
+- `--dry-run` executes the validation and prints conflict details without copying or
+  replacing destination tiles.
 
 ## Notes for agentic coding agents
 
-- `--offline` is a full headless renderer: it runs the whole folder scan and writes a PNG
-  snapshot of the stack, so results can be verified without user interaction. On a machine
-  without a display, run it under `xvfb-run -a`.
-- Startup diagnostics on stdout are parseable: `PlanetViewer: loaded pyramidal image
-  <folder>: <n> tiles, height <h>` per loaded image, and `Offline image written to: <path>`.
+- `--offline` is a headless merge operation: it runs the folder scan, validates conflicts,
+  and copies/replaces tiles when the merge is possible.
+- Startup diagnostics on stdout are parseable: `Loaded destination pyramidal image
+  <folder>: <n> tiles, height <h>` and `Loaded delta pyramidal image <folder>:
+  <n> tiles, height <h>`.
 - An invalid pyramidal image folder (missing `0.png`) prints an `ERROR:` message on stderr
   and is skipped, it does not stop the program; zero valid folders is a valid empty scene.
 - `/samples/datasets/googleEarth` is input/read-only for this application.

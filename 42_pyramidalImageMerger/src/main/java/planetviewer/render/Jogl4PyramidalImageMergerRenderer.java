@@ -73,7 +73,8 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
         this.destinationNodeIndex = indexNodes(destinationInstance.getImage().getRoot());
         this.deltaNodeIndex = indexNodes(deltaInstance.getImage().getRoot());
         this.mergeAnalysis = new MergeAnalysis(
-            0, 0, 0, java.util.Set.of(), java.util.Set.of(), java.util.List.of(), java.util.Set.of(), java.util.Set.of(), 0
+            0, 0, 0, java.util.Set.of(), java.util.Set.of(), java.util.List.of(), java.util.Set.of(), java.util.Set.of(), 0,
+            java.util.Map.of()
         );
         model.setHudStatus("Press 'm' to validate the merge.");
     }

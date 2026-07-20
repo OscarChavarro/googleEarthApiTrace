@@ -6,10 +6,20 @@ import pathplanner.model.Point;
 import pathplanner.processing.Geodesy;
 
 public final class SpiralGenerator implements CurveGenerator {
+    private final double altitudeMeters;
+
+    public SpiralGenerator() {
+        this(0.0);
+    }
+
+    public SpiralGenerator(double altitudeMeters) {
+        this.altitudeMeters = altitudeMeters;
+    }
+
     @Override
     public List<Point> buildTurtleCurve(double startLat, double startLon, double stepMeters, double maxDistanceFromStartMeters) {
         List<Point> points = new ArrayList<>();
-        Point start = new Point(startLat, startLon);
+        Point start = new Point(startLat, startLon, altitudeMeters);
         Point current = start;
         points.add(current);
 
@@ -19,7 +29,7 @@ public final class SpiralGenerator implements CurveGenerator {
         while (true) {
             for (int repeat = 0; repeat < 2; repeat++) {
                 double legMeters = lengthUnits * stepMeters;
-                Point legEnd = Geodesy.moveByMeters(current, dir, legMeters);
+                Point legEnd = withAltitude(Geodesy.moveByMeters(current, dir, legMeters));
                 double endDistance = Geodesy.distanceWgs84Meters(start, legEnd);
                 if (endDistance <= maxDistanceFromStartMeters) {
                     current = legEnd;
@@ -27,7 +37,7 @@ public final class SpiralGenerator implements CurveGenerator {
                 } else {
                     double allowed = maxDistanceAlongDirection(current, start, dir, legMeters, maxDistanceFromStartMeters);
                     if (allowed > 1e-6) {
-                        current = Geodesy.moveByMeters(current, dir, allowed);
+                        current = withAltitude(Geodesy.moveByMeters(current, dir, allowed));
                         points.add(current);
                     }
                     return points;
@@ -58,5 +68,9 @@ public final class SpiralGenerator implements CurveGenerator {
             }
         }
         return low;
+    }
+
+    private Point withAltitude(Point point) {
+        return new Point(point.latDeg(), point.lonDeg(), altitudeMeters);
     }
 }

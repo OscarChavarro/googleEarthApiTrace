@@ -88,6 +88,29 @@ final class SessionPyramidalImageExportServiceTest {
     }
 
     @Test
+    void collapsesDuplicatePathClaimsWhenDifferentFilesDecodeToTheSamePixels() throws Exception {
+        String rgbContent = nativeImageWithType("rgb-content.png", BufferedImage.TYPE_INT_RGB, 0xff203040);
+        String argbContent = nativeImageWithType("argb-content.png", BufferedImage.TYPE_INT_ARGB, 0xff203040);
+        MatrixLayerTile first = tile("capture-a", 0, 0, rgbContent);
+        MatrixLayerTile second = tile("capture-b", 0, 0, argbContent);
+
+        MatrixLayer layer = new MatrixLayer();
+        layer.setSourceFolderName("matrix_1");
+        layer.setTiles(List.of(first, second));
+
+        PyramidalImageExporterState model = new PyramidalImageExporterState();
+        model.setMatrixLayers(List.of(layer));
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            model.getMatrixLayers(),
+            Map.of("capture-a", "021", "capture-b", "021"),
+            Map.of()
+        );
+
+        assertTrue(java.nio.file.Files.mismatch(Path.of(rgbContent), Path.of(argbContent)) != -1L);
+        assertEquals(1, manifestEntries(model, resolution).size());
+    }
+
+    @Test
     void rejectsImagesThatAreNotNatively256Square() throws Exception {
         MatrixLayerTile incomplete = tile("0", 0, 0, nativeImage("incomplete.png", 128, 256));
         MatrixLayer layer = new MatrixLayer();
@@ -187,6 +210,18 @@ final class SessionPyramidalImageExportServiceTest {
     private String nativeImage(String name, int width, int height) throws Exception {
         Path path = tempDir.resolve(name);
         ImageIO.write(new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB), "png", path.toFile());
+        return path.toString();
+    }
+
+    private String nativeImageWithType(String name, int type, int argb) throws Exception {
+        Path path = tempDir.resolve(name);
+        BufferedImage image = new BufferedImage(256, 256, type);
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                image.setRGB(x, y, argb);
+            }
+        }
+        ImageIO.write(image, "png", path.toFile());
         return path.toString();
     }
 

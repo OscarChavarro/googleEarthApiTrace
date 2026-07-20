@@ -41,7 +41,41 @@ public final class TileRootPathResolver {
         GRID
     }
 
-    public record Resolution(Map<String, String> pathById, Set<String> discardedIds, Map<String, PathSource> sourceById) {}
+    public record Resolution(
+        Map<String, String> pathById,
+        Set<String> discardedIds,
+        Map<String, PathSource> sourceById,
+        Map<String, String> pathByOccurrence,
+        Set<String> discardedOccurrences,
+        Map<String, PathSource> sourceByOccurrence
+    ) {
+        public Resolution(Map<String, String> pathById, Set<String> discardedIds, Map<String, PathSource> sourceById) {
+            this(pathById, discardedIds, sourceById, Map.of(), Set.of(), Map.of());
+        }
+
+        public String pathFor(MatrixLayer layer, MatrixLayerTile tile) {
+            if (tile == null) {
+                return null;
+            }
+            String occurrencePath = pathByOccurrence.get(occurrenceKey(layer, tile));
+            return occurrencePath == null ? pathById.get(tile.getId()) : occurrencePath;
+        }
+
+        public PathSource sourceFor(MatrixLayer layer, MatrixLayerTile tile) {
+            if (tile == null) {
+                return null;
+            }
+            PathSource occurrenceSource = sourceByOccurrence.get(occurrenceKey(layer, tile));
+            return occurrenceSource == null ? sourceById.get(tile.getId()) : occurrenceSource;
+        }
+
+        public boolean isDiscarded(MatrixLayer layer, MatrixLayerTile tile) {
+            return tile != null
+                && (discardedOccurrences.contains(occurrenceKey(layer, tile)) || discardedIds.contains(tile.getId()));
+        }
+    }
+
+    private record TileOccurrence(MatrixLayer layer, MatrixLayerTile tile, String key, String id) {}
 
     public Resolution resolve(List<MatrixLayer> layers) {
         return resolve(layers, Map.of(), Map.of());
@@ -63,21 +97,21 @@ public final class TileRootPathResolver {
         Map<String, String> externalFullPaths,
         Map<String, String> uncleAliases
     ) {
-        Map<String, MatrixLayerTile> tilesById = collectTilesById(layers);
+        List<TileOccurrence> occurrences = collectTileOccurrences(layers);
+        Map<String, List<String>> occurrenceKeysById = occurrenceKeysById(occurrences);
 
         Map<String, String> resolvedPath = new HashMap<>();
         Map<String, PathSource> sourceById = new HashMap<>();
-        for (Map.Entry<String, MatrixLayerTile> entry : tilesById.entrySet()) {
-            String id = entry.getKey();
-            if (isSeed(id)) {
-                resolvedPath.put(id, id);
-                sourceById.put(id, PathSource.DIRECT);
+        for (TileOccurrence occurrence : occurrences) {
+            if (isSeed(occurrence.id())) {
+                resolvedPath.put(occurrence.key(), occurrence.id());
+                sourceById.put(occurrence.key(), PathSource.DIRECT);
             }
             else {
-                String externalPath = externalFullPaths.get(id);
+                String externalPath = externalFullPaths.get(occurrence.id());
                 if (externalPath != null) {
-                    resolvedPath.put(id, externalPath);
-                    sourceById.put(id, PathSource.DIRECT);
+                    resolvedPath.put(occurrence.key(), externalPath);
+                    sourceById.put(occurrence.key(), PathSource.DIRECT);
                 }
             }
         }
@@ -89,33 +123,56 @@ public final class TileRootPathResolver {
         // the longitudinal error at every subsequent quadtree level.
         propagateByGridPosition(layers, resolvedPath, sourceById, discarded, true);
         propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
+        Set<String> seenStates = new HashSet<>();
+        seenStates.add(resolutionStateSignature(resolvedPath, sourceById, discarded));
         boolean progress = true;
         while (progress) {
             progress = false;
-            for (Map.Entry<String, MatrixLayerTile> entry : tilesById.entrySet()) {
-                String id = entry.getKey();
-                if (resolvedPath.containsKey(id) || discarded.contains(id)) {
+            for (TileOccurrence occurrence : occurrences) {
+                if (resolvedPath.containsKey(occurrence.key()) || discarded.contains(occurrence.key())) {
                     continue;
                 }
                 Set<String> candidates =
-                    candidatePathsFor(entry.getValue(), resolvedPath, externalFullPaths, uncleAliases);
+                    candidatePathsFor(
+                        occurrence.tile(),
+                        resolvedPath,
+                        externalFullPaths,
+                        uncleAliases,
+                        occurrenceKeysById
+                    );
                 if (candidates.isEmpty()) {
                     continue;
                 }
                 if (candidates.size() == 1) {
-                    resolvedPath.put(id, candidates.iterator().next());
-                    sourceById.put(id, PathSource.UNCLE);
+                    resolvedPath.put(occurrence.key(), candidates.iterator().next());
+                    sourceById.put(occurrence.key(), PathSource.UNCLE);
                 }
                 else {
-                    discarded.add(id);
+                    discarded.add(occurrence.key());
                 }
                 progress = true;
             }
             progress |= propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
             progress |= propagateByGridPosition(layers, resolvedPath, sourceById, discarded, false);
+            String stateSignature = resolutionStateSignature(resolvedPath, sourceById, discarded);
+            if (!seenStates.add(stateSignature)) {
+                System.out.println(
+                    "TileRootPathResolver: repeated resolution state detected after "
+                        + seenStates.size()
+                        + " unique state(s); stopping propagation to avoid an infinite cycle."
+                );
+                break;
+            }
         }
 
-        return new Resolution(Map.copyOf(resolvedPath), Set.copyOf(discarded), Map.copyOf(sourceById));
+        return new Resolution(
+            Map.copyOf(collapseById(occurrences, resolvedPath)),
+            Set.copyOf(collapseDiscardedById(occurrences, discarded)),
+            Map.copyOf(collapseSourceById(occurrences, sourceById)),
+            Map.copyOf(resolvedPath),
+            Set.copyOf(discarded),
+            Map.copyOf(sourceById)
+        );
     }
 
     /**
@@ -156,7 +213,8 @@ public final class TileRootPathResolver {
                 if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
                     continue;
                 }
-                PathSource previousSource = sourceById.get(tile.getId());
+                String key = occurrenceKey(child, tile);
+                PathSource previousSource = sourceById.get(key);
                 if (previousSource == PathSource.DIRECT) {
                     continue;
                 }
@@ -166,11 +224,11 @@ public final class TileRootPathResolver {
                     continue;
                 }
                 String path = "0" + encodeQuadtreeLabel(childLevel, row, col);
-                if (!path.equals(resolvedPath.put(tile.getId(), path)) || previousSource != PathSource.GRID) {
+                if (!path.equals(resolvedPath.put(key, path)) || previousSource != PathSource.GRID) {
                     progress = true;
                 }
-                sourceById.put(tile.getId(), PathSource.GRID);
-                discarded.remove(tile.getId());
+                sourceById.put(key, PathSource.GRID);
+                discarded.remove(key);
             }
         }
         return progress;
@@ -232,15 +290,16 @@ public final class TileRootPathResolver {
                     continue;
                 }
                 String canonicalPath = "0" + encodeQuadtreeLabel(level, row, col);
-                String previousPath = resolvedPath.put(id, canonicalPath);
+                String key = occurrenceKey(layer, tile);
+                String previousPath = resolvedPath.put(key, canonicalPath);
                 if (!canonicalPath.equals(previousPath)) {
-                    sourceById.put(id, PathSource.GRID);
+                    sourceById.put(key, PathSource.GRID);
                     progress = true;
                 }
-                else if (sourceById.get(id) != PathSource.DIRECT) {
-                    sourceById.put(id, PathSource.GRID);
+                else if (sourceById.get(key) != PathSource.DIRECT) {
+                    sourceById.put(key, PathSource.GRID);
                 }
-                discarded.remove(id);
+                discarded.remove(key);
             }
         }
         return progress;
@@ -267,11 +326,11 @@ public final class TileRootPathResolver {
             if (tile == null) {
                 continue;
             }
-            String fullPath = resolvedPath.get(tile.getId());
+            String fullPath = resolvedPath.get(occurrenceKey(layer, tile));
             if (fullPath == null) {
                 continue;
             }
-            if (sourceById.get(tile.getId()) != strongestSource) {
+            if (sourceById.get(occurrenceKey(layer, tile)) != strongestSource) {
                 continue;
             }
             int[] cell = decodeFullPath(fullPath);
@@ -334,10 +393,10 @@ public final class TileRootPathResolver {
     ) {
         PathSource strongest = null;
         for (MatrixLayerTile tile : layer.getTiles()) {
-            if (tile == null || !resolvedPath.containsKey(tile.getId())) {
+            if (tile == null || !resolvedPath.containsKey(occurrenceKey(layer, tile))) {
                 continue;
             }
-            PathSource source = sourceById.get(tile.getId());
+            PathSource source = sourceById.get(occurrenceKey(layer, tile));
             if (source == PathSource.DIRECT) {
                 return source;
             }
@@ -459,10 +518,10 @@ public final class TileRootPathResolver {
         return sb.toString();
     }
 
-    private static Map<String, MatrixLayerTile> collectTilesById(List<MatrixLayer> layers) {
-        Map<String, MatrixLayerTile> tilesById = new LinkedHashMap<>();
+    private static List<TileOccurrence> collectTileOccurrences(List<MatrixLayer> layers) {
+        List<TileOccurrence> occurrences = new java.util.ArrayList<>();
         if (layers == null) {
-            return tilesById;
+            return occurrences;
         }
         for (MatrixLayer layer : layers) {
             if (layer == null || layer.getTiles() == null) {
@@ -476,17 +535,66 @@ public final class TileRootPathResolver {
                 if (id == null || id.isBlank()) {
                     continue;
                 }
-                tilesById.putIfAbsent(id, tile);
+                occurrences.add(new TileOccurrence(layer, tile, occurrenceKey(layer, tile), id));
             }
         }
-        return tilesById;
+        return occurrences;
+    }
+
+    private static Map<String, List<String>> occurrenceKeysById(List<TileOccurrence> occurrences) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (TileOccurrence occurrence : occurrences) {
+            out.computeIfAbsent(occurrence.id(), ignored -> new java.util.ArrayList<>()).add(occurrence.key());
+        }
+        return out;
+    }
+
+    private static Map<String, String> collapseById(List<TileOccurrence> occurrences, Map<String, String> pathByOccurrence) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (TileOccurrence occurrence : occurrences) {
+            String path = pathByOccurrence.get(occurrence.key());
+            if (path != null) {
+                out.putIfAbsent(occurrence.id(), path);
+            }
+        }
+        return out;
+    }
+
+    private static Set<String> collapseDiscardedById(List<TileOccurrence> occurrences, Set<String> discardedOccurrences) {
+        Set<String> out = new LinkedHashSet<>();
+        for (TileOccurrence occurrence : occurrences) {
+            if (discardedOccurrences.contains(occurrence.key())) {
+                out.add(occurrence.id());
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, PathSource> collapseSourceById(List<TileOccurrence> occurrences, Map<String, PathSource> sourceByOccurrence) {
+        Map<String, PathSource> out = new LinkedHashMap<>();
+        for (TileOccurrence occurrence : occurrences) {
+            PathSource source = sourceByOccurrence.get(occurrence.key());
+            if (source != null) {
+                out.putIfAbsent(occurrence.id(), source);
+            }
+        }
+        return out;
+    }
+
+    private static String occurrenceKey(MatrixLayer layer, MatrixLayerTile tile) {
+        String layerName = layer == null || layer.getSourceFolderName() == null
+            ? "<unknown>"
+            : layer.getSourceFolderName();
+        String tileId = tile == null ? "" : tile.getId();
+        return layerName + "\u0000" + tileId;
     }
 
     private static Set<String> candidatePathsFor(
         MatrixLayerTile tile,
         Map<String, String> resolvedPath,
         Map<String, String> externalFullPaths,
-        Map<String, String> uncleAliases
+        Map<String, String> uncleAliases,
+        Map<String, List<String>> occurrenceKeysById
     ) {
         Set<String> candidates = new LinkedHashSet<>();
         List<ToUncleRelationship> uncles = tile.getUncles();
@@ -498,16 +606,46 @@ public final class TileRootPathResolver {
                 continue;
             }
             String uncleId = uncleAliases.getOrDefault(relation.uncleContentId(), relation.uncleContentId());
-            String unclePath = resolvedPath.get(uncleId);
-            if (unclePath == null) {
-                unclePath = externalFullPaths.get(uncleId);
+            boolean foundLoadedUnclePath = false;
+            for (String uncleOccurrenceKey : occurrenceKeysById.getOrDefault(uncleId, List.of())) {
+                String unclePath = resolvedPath.get(uncleOccurrenceKey);
+                if (unclePath != null) {
+                    foundLoadedUnclePath = true;
+                    candidates.add(unclePath + quadrantDigit(relation.direction()));
+                }
             }
+            if (foundLoadedUnclePath) {
+                continue;
+            }
+            String unclePath = externalFullPaths.get(uncleId);
             if (unclePath == null) {
                 continue;
             }
             candidates.add(unclePath + quadrantDigit(relation.direction()));
         }
         return candidates;
+    }
+
+    private static String resolutionStateSignature(
+        Map<String, String> resolvedPath,
+        Map<String, PathSource> sourceById,
+        Set<String> discarded
+    ) {
+        StringBuilder sb = new StringBuilder();
+        resolvedPath.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> sb
+                .append(entry.getKey())
+                .append('=')
+                .append(entry.getValue())
+                .append('@')
+                .append(sourceById.get(entry.getKey()))
+                .append(';'));
+        sb.append('|');
+        discarded.stream()
+            .sorted()
+            .forEach(id -> sb.append(id).append(';'));
+        return sb.toString();
     }
 
     private static boolean isSeed(String id) {
