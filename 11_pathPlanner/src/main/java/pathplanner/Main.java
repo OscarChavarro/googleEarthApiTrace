@@ -61,7 +61,9 @@ public class Main {
         List<Point> markerPoints = pointFollower.samplePointsOnCurve(curve, stepMeters);
         int altitudeLandmarkCount = 0;
         if (usesAltitudeLandmarks(generatorName) && !curve.isEmpty()) {
-            List<Point> altitudeLandmarks = new AltitudeGenerator().buildAltitudeLandmarks(curve.get(0));
+            Point curveStart = curve.get(0);
+            List<Point> altitudeLandmarks = new AltitudeGenerator()
+                    .buildAltitudeLandmarks(curveStart, curveStart.altitudeMeters());
             markerPoints.addAll(0, altitudeLandmarks);
             altitudeLandmarkCount = altitudeLandmarks.size();
         }

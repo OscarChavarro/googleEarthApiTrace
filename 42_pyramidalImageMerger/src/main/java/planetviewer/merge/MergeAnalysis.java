@@ -16,6 +16,7 @@ public final class MergeAnalysis {
     private final Set<String> higherResolutionDeltaNodeIds;
     private final int replacedTiles;
     private final Map<String, String> conflictDetails;
+    private final Map<String, Double> imageDistances;
 
     public MergeAnalysis(
         int comparedTiles,
@@ -27,7 +28,8 @@ public final class MergeAnalysis {
         Set<String> resolutionEquivalentNodeIds,
         Set<String> higherResolutionDeltaNodeIds,
         int replacedTiles,
-        Map<String, String> conflictDetails
+        Map<String, String> conflictDetails,
+        Map<String, Double> imageDistances
     ) {
         this.comparedTiles = comparedTiles;
         this.mergeableTiles = mergeableTiles;
@@ -39,6 +41,7 @@ public final class MergeAnalysis {
         this.higherResolutionDeltaNodeIds = Collections.unmodifiableSet(higherResolutionDeltaNodeIds);
         this.replacedTiles = replacedTiles;
         this.conflictDetails = Collections.unmodifiableMap(conflictDetails);
+        this.imageDistances = Collections.unmodifiableMap(imageDistances);
     }
 
     public int getComparedTiles() {
@@ -83,6 +86,10 @@ public final class MergeAnalysis {
 
     public Map<String, String> getConflictDetails() {
         return conflictDetails;
+    }
+
+    public Map<String, Double> getImageDistances() {
+        return imageDistances;
     }
 
     public boolean isMergePossible() {

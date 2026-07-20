@@ -21,6 +21,7 @@ public final class PyramidalImageMergeAnalyzer {
     private final Set<String> resolutionEquivalentNodeIds = new LinkedHashSet<>();
     private final Set<String> higherResolutionDeltaNodeIds = new LinkedHashSet<>();
     private final Map<String, String> conflictDetails = new LinkedHashMap<>();
+    private final Map<String, Double> imageDistances = new LinkedHashMap<>();
     private final ImageMagickImageComparator imageComparator = new ImageMagickImageComparator();
 
     public MergeAnalysis analyze(PyramidalImage destination, PyramidalImage delta) {
@@ -33,6 +34,7 @@ public final class PyramidalImageMergeAnalyzer {
         resolutionEquivalentNodeIds.clear();
         higherResolutionDeltaNodeIds.clear();
         conflictDetails.clear();
+        imageDistances.clear();
         visit(destination == null ? null : destination.getRoot(), delta == null ? null : delta.getRoot());
         return new MergeAnalysis(
             comparedTiles,
@@ -44,7 +46,8 @@ public final class PyramidalImageMergeAnalyzer {
             new LinkedHashSet<>(resolutionEquivalentNodeIds),
             new LinkedHashSet<>(higherResolutionDeltaNodeIds),
             0,
-            new LinkedHashMap<>(conflictDetails)
+            new LinkedHashMap<>(conflictDetails),
+            new LinkedHashMap<>(imageDistances)
         );
     }
 
@@ -61,6 +64,7 @@ public final class PyramidalImageMergeAnalyzer {
             else {
                 comparedTiles++;
                 if (filesAreIdentical(destinationNode, deltaNode)) {
+                    imageDistances.put(deltaNode.getId(), 0.0);
                     mergeableTiles++;
                 }
                 else if (imagesAreEquivalentAtDifferentResolution(destinationNode, deltaNode)) {
@@ -91,6 +95,7 @@ public final class PyramidalImageMergeAnalyzer {
                 destinationNode.getTileFile().toPath(),
                 deltaNode.getTileFile().toPath()
             );
+            imageDistances.put(deltaNode.getId(), comparison.normalizedRmse());
             if (comparison.visuallyEquivalent() && comparison.deltaIsHigherResolution()) {
                 higherResolutionDeltaNodeIds.add(deltaNode.getId());
             }
@@ -138,7 +143,8 @@ public final class PyramidalImageMergeAnalyzer {
             baseAnalysis.getResolutionEquivalentNodeIds(),
             baseAnalysis.getHigherResolutionDeltaNodeIds(),
             replacedTiles,
-            baseAnalysis.getConflictDetails()
+            baseAnalysis.getConflictDetails(),
+            baseAnalysis.getImageDistances()
         );
     }
 }

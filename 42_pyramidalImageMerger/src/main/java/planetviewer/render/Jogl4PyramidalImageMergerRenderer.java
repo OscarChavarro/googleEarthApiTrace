@@ -74,6 +74,7 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
         this.deltaNodeIndex = indexNodes(deltaInstance.getImage().getRoot());
         this.mergeAnalysis = new MergeAnalysis(
             0, 0, 0, java.util.Set.of(), java.util.Set.of(), java.util.List.of(), java.util.Set.of(), java.util.Set.of(), 0,
+            java.util.Map.of(),
             java.util.Map.of()
         );
         model.setHudStatus("Press 'm' to validate the merge.");
@@ -236,10 +237,64 @@ public final class Jogl4PyramidalImageMergerRenderer implements GLEventListener 
             model.getRenderingConfiguration().isWiresSet(),
             tileImageLoader
         );
+        drawDeltaDistanceHeatmap(gl2, instance, nodeIndex, relativeScale);
         drawConflictBorders(gl2, instance, nodeIndex, relativeScale);
         drawResolutionMatchBorders(gl2, instance, nodeIndex, relativeScale);
         updateHoveredTile(view, instance, relativeScale, viewport, canvasWidth, canvasHeight);
         drawViewBorder(gl2, view, instance, viewport, canvasWidth, canvasHeight);
+    }
+
+    private void drawDeltaDistanceHeatmap(
+        GL2 gl2,
+        PyramidalImageInstance instance,
+        Map<String, QuadtreeNode> nodeIndex,
+        double relativeScale
+    ) {
+        if (instance != deltaInstance || mergeAnalysis == null || mergeAnalysis.getImageDistances().isEmpty()) {
+            return;
+        }
+        double maxDistance = maxImageDistance();
+        if (maxDistance <= 0.0) {
+            return;
+        }
+
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glEnable(GL.GL_BLEND);
+        gl2.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
+        for (Map.Entry<String, Double> entry : mergeAnalysis.getImageDistances().entrySet()) {
+            double distance = entry.getValue();
+            if (distance <= 0.0) {
+                continue;
+            }
+            QuadtreeNode node = nodeIndex.get(entry.getKey());
+            if (node == null) {
+                continue;
+            }
+            float[] color = heatmapColor(distance / maxDistance);
+            gl2.glColor4f(color[0], color[1], color[2], 0.48f);
+            DrawCommand command = QuadtreeDrawPlanner.commandForNode(node, instance, relativeScale);
+            Vector3Dd[] corners = command.corners();
+            gl2.glBegin(GL2.GL_QUADS);
+            for (Vector3Dd corner : corners) {
+                gl2.glVertex3d(corner.x(), corner.y(), corner.z() + 0.0006);
+            }
+            gl2.glEnd();
+        }
+    }
+
+    private double maxImageDistance() {
+        double maxDistance = 0.0;
+        for (double distance : mergeAnalysis.getImageDistances().values()) {
+            if (distance > maxDistance) {
+                maxDistance = distance;
+            }
+        }
+        return maxDistance;
+    }
+
+    private float[] heatmapColor(double normalizedDistance) {
+        float t = (float) Math.max(0.0, Math.min(1.0, normalizedDistance));
+        return new float[] { t, 0.0f, 1.0f - t };
     }
 
     private void drawResolutionMatchBorders(

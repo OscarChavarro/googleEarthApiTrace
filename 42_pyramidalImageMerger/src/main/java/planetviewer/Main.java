@@ -17,8 +17,13 @@ import planetviewer.render.Jogl4PyramidalImageMergerRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public class Main {
+    private static final int INTERACTIVE_VIEWER_STARTED = Integer.MIN_VALUE;
+
     public static void main(String[] args) {
-        System.exit(run(args));
+        int exitCode = run(args);
+        if (exitCode != INTERACTIVE_VIEWER_STARTED) {
+            System.exit(exitCode);
+        }
     }
 
     static int run(String[] args) {
@@ -57,7 +62,7 @@ public class Main {
         );
         InteractiveViewer interactiveViewer = new InteractiveViewer(model, renderer);
         interactiveViewer.launchDesktop();
-        return 0;
+        return INTERACTIVE_VIEWER_STARTED;
     }
 
     private static int runOfflineMerge(PyramidalImage destination, PyramidalImage delta, boolean dryRun) {
