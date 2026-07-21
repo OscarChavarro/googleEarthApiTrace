@@ -2,6 +2,7 @@ import java.awt.AWTException;
 import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Robot;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -15,36 +16,55 @@ import javax.swing.SwingUtilities;
 final class GoogleEarthUi {
     private enum UiEventType {
         SHOW_WINDOW,
+        CLICK_START,
+        SET_STARTING,
         SET_RUNNING,
         ADVANCE_COMPLETED,
-        SET_COMPLETED
+        SET_COMPLETED,
+        SET_FEEDBACK
     }
 
     private static final class UiEvent {
         private final UiEventType type;
         private final boolean running;
+        private final boolean starting;
         private final boolean completed;
+        private final String feedback;
 
-        private UiEvent(UiEventType type, boolean running, boolean completed) {
+        private UiEvent(UiEventType type, boolean running, boolean starting, boolean completed, String feedback) {
             this.type = type;
             this.running = running;
+            this.starting = starting;
             this.completed = completed;
+            this.feedback = feedback;
         }
 
         static UiEvent showWindow() {
-            return new UiEvent(UiEventType.SHOW_WINDOW, false, false);
+            return new UiEvent(UiEventType.SHOW_WINDOW, false, false, false, null);
+        }
+
+        static UiEvent clickStart() {
+            return new UiEvent(UiEventType.CLICK_START, false, false, false, null);
+        }
+
+        static UiEvent setStarting(boolean starting) {
+            return new UiEvent(UiEventType.SET_STARTING, false, starting, false, null);
         }
 
         static UiEvent setRunning(boolean running) {
-            return new UiEvent(UiEventType.SET_RUNNING, running, false);
+            return new UiEvent(UiEventType.SET_RUNNING, running, false, false, null);
         }
 
         static UiEvent advanceCompleted() {
-            return new UiEvent(UiEventType.ADVANCE_COMPLETED, false, false);
+            return new UiEvent(UiEventType.ADVANCE_COMPLETED, false, false, false, null);
         }
 
         static UiEvent setCompleted(boolean completed) {
-            return new UiEvent(UiEventType.SET_COMPLETED, false, completed);
+            return new UiEvent(UiEventType.SET_COMPLETED, false, false, completed, null);
+        }
+
+        static UiEvent setFeedback(String feedback) {
+            return new UiEvent(UiEventType.SET_FEEDBACK, false, false, false, feedback);
         }
     }
 
@@ -62,7 +82,9 @@ final class GoogleEarthUi {
     private Thread uiEventConsumerThread;
     private volatile boolean uiConsumerRunning;
     private boolean runningState;
+    private boolean startingState;
     private boolean completedState;
+    private String feedbackState;
     private int advanceCount;
 
     GoogleEarthUi(Runnable onStartStop, Runnable onQuit, int totalPlacemarkCount) {
@@ -73,6 +95,7 @@ final class GoogleEarthUi {
         this.advanceCount = 0;
         this.runningState = false;
         this.completedState = false;
+        this.feedbackState = null;
     }
 
     int getSelectedPlacemarkLimit() {
@@ -105,12 +128,24 @@ final class GoogleEarthUi {
         enqueueEvent(UiEvent.setRunning(running));
     }
 
+    void setStarting(boolean starting) {
+        enqueueEvent(UiEvent.setStarting(starting));
+    }
+
+    void clickStart() {
+        enqueueEvent(UiEvent.clickStart());
+    }
+
     void markAdvanceCompleted() {
         enqueueEvent(UiEvent.advanceCompleted());
     }
 
     void setCompleted(boolean completed) {
         enqueueEvent(UiEvent.setCompleted(completed));
+    }
+
+    void setFeedback(String feedback) {
+        enqueueEvent(UiEvent.setFeedback(feedback));
     }
 
     void shutdown() {
@@ -126,8 +161,27 @@ final class GoogleEarthUi {
         robot.keyRelease(keyCode);
     }
 
+    void clickAt(int x, int y) {
+        robot.mouseMove(x, y);
+        robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+    }
+
     void pressDownThenEnter(long keyHoldMillis, long betweenKeysMillis) {
         pressAndHoldKey(KeyEvent.VK_DOWN, keyHoldMillis);
+        sleepInterruptibly(betweenKeysMillis);
+        pressAndHoldKey(KeyEvent.VK_ENTER, keyHoldMillis);
+    }
+
+    void quitGoogleEarthFromMenu(long keyHoldMillis, long betweenKeysMillis) {
+        robot.keyPress(KeyEvent.VK_ALT);
+        sleepInterruptibly(keyHoldMillis);
+        robot.keyPress(KeyEvent.VK_F);
+        sleepInterruptibly(keyHoldMillis);
+        robot.keyRelease(KeyEvent.VK_F);
+        robot.keyRelease(KeyEvent.VK_ALT);
+        sleepInterruptibly(betweenKeysMillis);
+        pressAndHoldKey(KeyEvent.VK_UP, keyHoldMillis);
         sleepInterruptibly(betweenKeysMillis);
         pressAndHoldKey(KeyEvent.VK_ENTER, keyHoldMillis);
     }
@@ -177,6 +231,19 @@ final class GoogleEarthUi {
             return;
         }
 
+        if (event.type == UiEventType.SET_STARTING) {
+            startingState = event.starting;
+            refreshViewState();
+            return;
+        }
+
+        if (event.type == UiEventType.CLICK_START) {
+            if (startStopButton != null && !runningState && !startingState) {
+                startStopButton.doClick();
+            }
+            return;
+        }
+
         if (event.type == UiEventType.ADVANCE_COMPLETED) {
             advanceCount++;
             refreshViewState();
@@ -185,6 +252,12 @@ final class GoogleEarthUi {
 
         if (event.type == UiEventType.SET_COMPLETED) {
             completedState = event.completed;
+            refreshViewState();
+            return;
+        }
+
+        if (event.type == UiEventType.SET_FEEDBACK) {
+            feedbackState = event.feedback;
             refreshViewState();
         }
     }
@@ -197,7 +270,11 @@ final class GoogleEarthUi {
 
         startStopButton = new JButton("START");
         startStopButton.setOpaque(true);
-        startStopButton.addActionListener(e -> onStartStop.run());
+        startStopButton.addActionListener(e -> {
+            if (!startingState) {
+                onStartStop.run();
+            }
+        });
 
         JButton quitButton = new JButton("QUIT");
         quitButton.addActionListener(e -> onQuit.run());
@@ -218,13 +295,16 @@ final class GoogleEarthUi {
         frame.add(statusLabel);
         frame.setSize(260, 135);
         frame.setResizable(false);
-        frame.setLocationRelativeTo(null);
+        frame.setLocation(0, 0);
         frame.setVisible(true);
     }
 
     private void refreshViewState() {
         if (startStopButton != null) {
-            if (runningState) {
+            if (startingState) {
+                startStopButton.setText("STARTING");
+                startStopButton.setBackground(Color.YELLOW);
+            } else if (runningState) {
                 startStopButton.setText("STOP");
                 startStopButton.setBackground(Color.RED);
             } else {
@@ -242,7 +322,7 @@ final class GoogleEarthUi {
         }
 
         if (limitTextField != null) {
-            limitTextField.setEnabled(!runningState);
+            limitTextField.setEnabled(!runningState && !startingState);
         }
     }
 
@@ -255,6 +335,12 @@ final class GoogleEarthUi {
     }
 
     private String formatStatus() {
+        if (feedbackState != null && !feedbackState.isBlank()) {
+            return feedbackState;
+        }
+        if (startingState) {
+            return "Starting";
+        }
         if (runningState) {
             return "Running";
         }

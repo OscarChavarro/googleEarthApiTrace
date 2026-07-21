@@ -54,6 +54,9 @@ public final class KmlPersistence {
         Element folderName = createElementSameNs(doc, documentElement, "name");
         folderName.setTextContent(turtleFolderName);
         folder.appendChild(folderName);
+        Element folderOpen = createElementSameNs(doc, documentElement, "open");
+        folderOpen.setTextContent("1");
+        folder.appendChild(folderOpen);
 
         appendPathPlacemark(doc, documentElement, folder, turtleStyleId, "turtle_path", points);
         appendPathPlacemark(doc, documentElement, folder, turtleStyleId, "0LongitudeSeam", zeroLongitudeSeamPoints);

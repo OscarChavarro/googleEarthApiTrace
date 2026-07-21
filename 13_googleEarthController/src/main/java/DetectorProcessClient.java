@@ -69,7 +69,9 @@ final class DetectorProcessClient {
             processToStop = process;
             readerThreadToJoin = readerThread;
             stdinToClose = stdin;
-            gracefulShutdownRequested = stdinToClose != null;
+            gracefulShutdownRequested = stdinToClose != null
+                && processToStop != null
+                && processToStop.isAlive();
             process = null;
             readerThread = null;
             stdin = null;
@@ -82,7 +84,9 @@ final class DetectorProcessClient {
                 stdinToClose.flush();
                 System.out.println("[OK] Exit command sent to detector process.");
             } catch (IOException ex) {
-                System.err.println("[ERROR] Could not write exit to detector stdin: " + ex.getMessage());
+                if (processToStop.isAlive()) {
+                    System.err.println("[ERROR] Could not write exit to detector stdin: " + ex.getMessage());
+                }
             }
         }
 

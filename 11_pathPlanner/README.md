@@ -12,6 +12,8 @@
 - Uses geodesic calculations to produce point sequences.
 - Writes routes and sampled marker points into the Google Earth KML file at
   `~/.googleearth/myplaces.kml`, inside a folder named `turtle`.
+- Marks the generated `turtle` folder with KML `<open>1</open>` so Google Earth
+  initially displays its route placemarks expanded in the Places tree.
 - For `spiral` and `zigzag`, prepends a set of altitude-calibration landmark points
   (`AltitudeGenerator`) before the route markers.
 - Always includes a zero-longitude seam reference line (`ZeroLongitudeSeamGenerator`).
