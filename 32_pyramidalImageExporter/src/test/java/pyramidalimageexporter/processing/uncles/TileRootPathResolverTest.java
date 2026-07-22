@@ -140,6 +140,40 @@ final class TileRootPathResolverTest {
     }
 
     @Test
+    void reentersUncleResolutionAfterCompletingEachParentGrid() {
+        MatrixLayer parent = layer(
+            tile("parent-seed", 0, 0),
+            tile("parent-east", 0, 1)
+        );
+        parent.setSourceFolderName("matrix_0");
+
+        MatrixLayerTile earlyOutlier = tile("child-outlier", 0, 0);
+        earlyOutlier.setUncles(List.of(
+            new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent-seed")
+        ));
+        MatrixLayerTile majorityWest = tile("child-west", 0, 2);
+        majorityWest.setUncles(List.of(
+            new ToUncleRelationship(UncleDirections.WEST_NORTH, "parent-east")
+        ));
+        MatrixLayerTile majorityEast = tile("child-east", 0, 3);
+        majorityEast.setUncles(List.of(
+            new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent-east")
+        ));
+        MatrixLayer child = layer(earlyOutlier, majorityWest, majorityEast);
+        child.setSourceFolderName("matrix_1");
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(parent, child),
+            Map.of("parent-seed", quadPath(2, 0, 0)),
+            Map.of()
+        );
+
+        assertEquals(quadPath(3, 0, 0), resolution.pathById().get("child-outlier"));
+        assertEquals(quadPath(3, 0, 2), resolution.pathById().get("child-west"));
+        assertEquals(quadPath(3, 0, 3), resolution.pathById().get("child-east"));
+    }
+
+    @Test
     void combinesIndependentStrictMajoritiesForAFullWorldMatrix() {
         MatrixLayer layer = layer(
             tile("a", 0, 0),

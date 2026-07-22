@@ -81,13 +81,14 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 |---|---|
 | `1` / `2` | Select previous / next matrix layer |
 | `t` | Toggle textured rendering |
+| `c` | Toggle the relative RMS color map for fine-to-coarse relationships |
 | `e` | Export the pyramidal image quadtree to `<inputFolder>/pyramidalImage` |
 | `ESC` | Exit |
 
 HUD:
 
 - `Layer [1, 2]: i/N | frame <id> | Matrix: <rows>x<cols>`: selected layer and its size.
-- `Toggle textures [t], Export [e], orbit camera with mouse, source: <inputFolder>`.
+- `Toggle textures [t], RMS color map [c]: ON/OFF (<n> comparisons), Export [e], ...`.
 - `Export destination: <inputFolder>/pyramidalImage | <last export status>`.
 - When the bounding-volume display mode is enabled, each visible tile is annotated with
   its id and `(i, j)` cell coordinates.
@@ -143,8 +144,13 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   identifies which quadrant of that texture is used by the finer tile. Resolution appends
   the corresponding quadrant digit to the uncle quadkey. The two direction spellings for
   each quadrant are equivalent (`WEST_NORTH`/`NORTH_WEST`, etc.).
-  This propagates as a fixpoint, so a chain of several uncle hops resolves one hop per
-  pass.
+  Before a readable relationship votes, the fine `256x256` image is scaled to `128x128`
+  and compared by RMS with all four `128x128` quadrants of the coarse image. There is no
+  absolute RMS threshold: the relationship votes when its declared quadrant has the
+  minimum RMS for that image pair (exact ties remain valid). Missing image evidence is
+  neutral for legacy datasets. This propagates as a fixpoint, one newly canonicalized
+  matrix per pass, so all relationships made available by a parent grid vote before its
+  child grid can propagate.
 - A contract-v3 `parentGridTransform` propagates a containing-parent placement after,
   and only after, the referenced parent matrix has an accepted absolute grid anchor. It
   is a matrix-to-matrix transform, not a substitute for an observed per-tile uncle
@@ -227,6 +233,11 @@ texture source:
   `/tmp/pyramidalImageExporter_offline.png`).
 - `--wires`: also draw tile borders in the offline snapshot (white = native resolution,
   green = borrowed from an ancestor image).
+- `--rms-map`: overlays the relative relationship diagnostic. RMS values are ranked only
+  within each parent/child layer pair: green to yellow denotes declared quadrants that are
+  the minimum RMS (low to high pair percentile), while orange to red marks relationships
+  for which another quadrant has a lower RMS. Tiles without comparable relationships are
+  left uncolored.
 
 The positional argument may appear in any order relative to the flags. If it is missing,
 or an extra positional argument is passed (there is no destination parameter), an English
@@ -236,6 +247,12 @@ message explaining the problem is printed to stderr and the program exits with c
 
 ```bash
 gradle run --args="--offline <inputFolder> --layer 4 --output /tmp/level4.png"
+```
+
+For an imported relationship layer with the RMS overlay:
+
+```bash
+gradle run --args="--offline --rms-map <inputFolder> --layer 8 --output /tmp/rms-map.png"
 ```
 
 ## Notes for agentic coding agents
@@ -270,8 +287,8 @@ In `pyramidalimageexporter.config.Configuration`:
 - `model`: matrix layers, tile coordinates, selection state, GPU texture budget, and
   `PyramidalImageWriteStatistics`.
 - `processing/toplevels`: synthesis of top-level (0..5) matrix layers.
-- `processing/uncles`: uncle relationship metadata and `TileRootPathResolver`, which anchors
-  tiles to a full quadtree path from the root.
+- `processing/uncles`: uncle relationship metadata, relative RMS analysis/color scores and
+  `TileRootPathResolver`, which anchors tiles to a full quadtree path from the root.
 - `processing/content`: content-hash anchoring against catalogued top-level images.
 - `processing`: session-local pyramidal image export (`SessionPyramidalImageExportService`).
 - `render`: JOGL renderer, culling, LOD and HUD.

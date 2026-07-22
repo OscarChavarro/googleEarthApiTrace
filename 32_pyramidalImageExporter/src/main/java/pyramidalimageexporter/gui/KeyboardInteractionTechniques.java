@@ -62,6 +62,11 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             }
             return;
         }
+        if (keyChar == 'c') {
+            model.toggleRmsHeatMap();
+            repaintAction.run();
+            return;
+        }
         if (renderingConfigurationController != null
             && renderingConfigurationController.processKeyPressedEvent(event)) {
             repaintAction.run();

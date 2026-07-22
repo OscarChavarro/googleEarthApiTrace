@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.io.MatrixLayerJsonReader;
 import pyramidalimageexporter.io.TopLevelTilesJsonReader;
@@ -14,6 +15,8 @@ import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.processing.SessionPyramidalImageExportService;
 import pyramidalimageexporter.processing.toplevels.TopLevelLayerMerger;
 import pyramidalimageexporter.processing.toplevels.TopLevelMatrixRebuilder;
+import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
+import pyramidalimageexporter.processing.uncles.UncleRmsAnalyzer;
 import pyramidalimageexporter.render.Jogl4PyramidalImageExporterRenderer;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
@@ -53,6 +56,7 @@ public final class PyramidalImageExporterApplication {
 
         PyramidalImageExporterState model = createState(inputPath);
         model.setSessionPyramidalImageExportPath(inputPath.resolve(SESSION_PYRAMID_SUBFOLDER).toString());
+        model.setRmsHeatMapEnabled(hasArg(args, "--rms-map"));
 
         if (hasArg(args, "--export")) {
             AppLogger.info("Export mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
@@ -106,16 +110,33 @@ public final class PyramidalImageExporterApplication {
         TopLevelTilesJsonReader topLevelTilesReader = new TopLevelTilesJsonReader();
         TopLevelMatrixRebuilder topLevelMatrixRebuilder = new TopLevelMatrixRebuilder();
         TopLevelTilesCatalog topLevelTiles = topLevelTilesReader.read(outputDirectory).orElse(null);
+        Map<String, String> cataloguedPaths = topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles);
         TopLevelLayerMerger.MergeResult mergeResult = new TopLevelLayerMerger().merge(
             topLevelMatrixRebuilder.importLayers(topLevelTiles),
             importedLayers,
-            topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles),
+            cataloguedPaths,
             outputDirectory
         );
 
         model.setMatrixLayers(mergeResult.layers());
         model.setMergedFullPathByOriginalId(mergeResult.mergedFullPathByOriginalId());
-        model.setCataloguedQuadPathsByImagePath(topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles));
+        model.setCataloguedQuadPathsByImagePath(cataloguedPaths);
+        ExternalUncleBridgeBuilder.Bridge diagnosticBridge = new ExternalUncleBridgeBuilder().build(
+            mergeResult.layers(),
+            cataloguedPaths,
+            outputDirectory
+        );
+        UncleRmsAnalyzer.Analysis rmsAnalysis =
+            new UncleRmsAnalyzer().analyze(mergeResult.layers(), diagnosticBridge.aliasById());
+        model.setUncleRmsAnalysis(rmsAnalysis);
+        long visualOutliers = rmsAnalysis.matches().values().stream()
+            .filter(match -> !match.declaredQuadrantIsMinimum())
+            .count();
+        AppLogger.info(
+            "Relative RMS relationship map: " + rmsAnalysis.matches().size()
+                + " comparison(s), " + visualOutliers
+                + " declared quadrant(s) were not the minimum RMS."
+        );
         return model;
     }
 
@@ -173,7 +194,8 @@ public final class PyramidalImageExporterApplication {
             if (arg == null || arg.isBlank()) {
                 continue;
             }
-            if ("--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg) || "--export".equals(arg)) {
+            if ("--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg)
+                || "--rms-map".equals(arg) || "--export".equals(arg)) {
                 continue;
             }
             if (isValueFlag(arg)) {
@@ -192,7 +214,7 @@ public final class PyramidalImageExporterApplication {
     private static void printUsage() {
         System.err.println(
             "Usage: gradle run --args=\"<inputFolder> "
-                + "[--export] [--offline] [--layer <i>] [--width <px>] [--height <px>] [--output <path>] [--wires]\""
+                + "[--export] [--offline] [--layer <i>] [--width <px>] [--height <px>] [--output <path>] [--wires] [--rms-map]\""
         );
     }
 

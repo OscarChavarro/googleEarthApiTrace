@@ -34,6 +34,7 @@ import pyramidalimageexporter.model.ParentGridTransform;
  */
 public final class TileRootPathResolver {
     private static final Pattern QUADKEY_PATTERN = Pattern.compile("[0-3]+");
+    private final UncleRmsAnalyzer rmsAnalyzer = new UncleRmsAnalyzer();
 
     public enum PathSource {
         DIRECT,
@@ -99,6 +100,7 @@ public final class TileRootPathResolver {
     ) {
         List<TileOccurrence> occurrences = collectTileOccurrences(layers);
         Map<String, List<String>> occurrenceKeysById = occurrenceKeysById(occurrences);
+        UncleRmsAnalyzer.Analysis rmsAnalysis = rmsAnalyzer.analyze(layers, uncleAliases);
 
         Map<String, String> resolvedPath = new HashMap<>();
         Map<String, PathSource> sourceById = new HashMap<>();
@@ -121,7 +123,12 @@ public final class TileRootPathResolver {
         // full-world layer has no arbitrary longitude phase: matrix column zero is
         // the antimeridian. Letting its noisy anchors reach a child first doubles
         // the longitudinal error at every subsequent quadtree level.
-        propagateByGridPosition(layers, resolvedPath, sourceById, discarded, true);
+        // Canonicalize complete-world grids to a fixpoint before relative evidence
+        // can escape into descendants. Grid propagation itself advances one layer
+        // at a time so every newly completed parent gets a fresh uncle pass.
+        while (propagateByGridPosition(layers, resolvedPath, sourceById, discarded, true)) {
+            // Deliberately empty.
+        }
         propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
         Set<String> seenStates = new HashSet<>();
         seenStates.add(resolutionStateSignature(resolvedPath, sourceById, discarded));
@@ -134,11 +141,12 @@ public final class TileRootPathResolver {
                 }
                 Set<String> candidates =
                     candidatePathsFor(
-                        occurrence.tile(),
+                        occurrence,
                         resolvedPath,
                         externalFullPaths,
                         uncleAliases,
-                        occurrenceKeysById
+                        occurrenceKeysById,
+                        rmsAnalysis
                     );
                 if (candidates.isEmpty()) {
                     continue;
@@ -276,6 +284,7 @@ public final class TileRootPathResolver {
             if (fullWorldOnly && layer.getCols() != side) {
                 continue;
             }
+            boolean layerChanged = false;
             for (MatrixLayerTile tile : layer.getTiles()) {
                 if (tile == null) {
                     continue;
@@ -295,11 +304,19 @@ public final class TileRootPathResolver {
                 if (!canonicalPath.equals(previousPath)) {
                     sourceById.put(key, PathSource.GRID);
                     progress = true;
+                    layerChanged = true;
                 }
                 else if (sourceById.get(key) != PathSource.DIRECT) {
+                    if (sourceById.get(key) != PathSource.GRID) {
+                        progress = true;
+                        layerChanged = true;
+                    }
                     sourceById.put(key, PathSource.GRID);
                 }
                 discarded.remove(key);
+            }
+            if (layerChanged) {
+                return true;
             }
         }
         return progress;
@@ -590,19 +607,27 @@ public final class TileRootPathResolver {
     }
 
     private static Set<String> candidatePathsFor(
-        MatrixLayerTile tile,
+        TileOccurrence occurrence,
         Map<String, String> resolvedPath,
         Map<String, String> externalFullPaths,
         Map<String, String> uncleAliases,
-        Map<String, List<String>> occurrenceKeysById
+        Map<String, List<String>> occurrenceKeysById,
+        UncleRmsAnalyzer.Analysis rmsAnalysis
     ) {
         Set<String> candidates = new LinkedHashSet<>();
+        MatrixLayerTile tile = occurrence == null ? null : occurrence.tile();
+        if (tile == null) {
+            return candidates;
+        }
         List<ToUncleRelationship> uncles = tile.getUncles();
         if (uncles == null) {
             return candidates;
         }
         for (ToUncleRelationship relation : uncles) {
             if (relation == null || relation.direction() == null || relation.uncleContentId() == null) {
+                continue;
+            }
+            if (rmsAnalysis != null && !rmsAnalysis.accepts(occurrence.layer(), tile, relation)) {
                 continue;
             }
             String uncleId = uncleAliases.getOrDefault(relation.uncleContentId(), relation.uncleContentId());

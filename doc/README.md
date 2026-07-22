@@ -173,7 +173,11 @@ preserve this evidence order:
    force `rowOffset = 0`. Apply this canonicalization before the matrix is allowed to seed
    descendants.
 4. Resolve uncle constraints one level at a time by appending the quadrant from the
-   direction table. Canonicalize every newly anchored matrix before the next pass.
+   direction table. When both images are readable, scale the fine image to one coarse
+   quadrant and compare all four quadrants by RMS; only a declared quadrant attaining the
+   minimum RMS for that image pair votes, without a global RMS threshold. Canonicalize at
+   most one newly anchored matrix before returning to the relationship phase, so newly
+   available parent paths participate before a descendant grid propagates.
 5. Within a matrix, vote using only its strongest available evidence class. Absolute seeds
    outrank an accepted grid, and an accepted grid outranks uncle-derived candidates. Never
    let a larger number of weaker relative candidates outvote one absolute seed.

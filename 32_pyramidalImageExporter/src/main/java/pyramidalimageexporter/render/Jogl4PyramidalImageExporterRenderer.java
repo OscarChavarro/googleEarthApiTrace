@@ -217,7 +217,14 @@ public final class Jogl4PyramidalImageExporterRenderer implements GLEventListene
             16,
             h - 28
         );
-        hudTextRenderer.draw("Toggle textures [t], Export [e], orbit camera with mouse, source: " + safeInputFolder(), 16, h - 50);
+        hudTextRenderer.draw(
+            "Toggle textures [t], RMS color map [c]: "
+                + (model.isRmsHeatMapEnabled() ? "ON" : "OFF")
+                + " (" + model.getComparedUncleRelationshipCount() + " comparisons), Export [e], source: "
+                + safeInputFolder(),
+            16,
+            h - 50
+        );
         hudTextRenderer.draw("Export destination: " + safeExportPath() + " | " + safeExportStatus(), 16, h - 72);
         hudTextRenderer.endRendering();
         gl2.glEnable(GL2.GL_DEPTH_TEST);

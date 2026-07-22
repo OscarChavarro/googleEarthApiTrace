@@ -13,6 +13,7 @@ import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
+import pyramidalimageexporter.processing.uncles.UncleRmsAnalyzer;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
@@ -25,6 +26,9 @@ public final class Jogl4MatrixLayerRenderer {
         }
         if (renderingConfiguration.isSurfacesSet()) {
             drawSurfaces(gl2, matrixLayer, renderingConfiguration.isTextureSet(), model);
+        }
+        if (model.isRmsHeatMapEnabled()) {
+            drawRmsHeatMap(gl2, matrixLayer, model, false);
         }
         if (renderingConfiguration.isWiresSet()) {
             drawWires(gl2, matrixLayer, model, false);
@@ -185,9 +189,58 @@ public final class Jogl4MatrixLayerRenderer {
         }
         gl2.glBindTexture(GL2.GL_TEXTURE_2D, 0);
         gl2.glDisable(GL2.GL_TEXTURE_2D);
+        if (model.isRmsHeatMapEnabled()) {
+            drawRmsHeatMap(gl2, matrixLayer, model, true);
+        }
         if (model.getRenderingConfiguration().isWiresSet()) {
             drawWires(gl2, matrixLayer, model, true);
         }
+    }
+
+    private void drawRmsHeatMap(
+        GL2 gl2,
+        MatrixLayer matrixLayer,
+        PyramidalImageExporterState model,
+        boolean skipCulling
+    ) {
+        float offsetX = -(Math.max(0, matrixLayer.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrixLayer.getRows()) * 0.5f);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        gl2.glEnable(GL2.GL_BLEND);
+        gl2.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA);
+        for (MatrixLayerTile tile : matrixLayer.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            UncleRmsAnalyzer.TileScore score = model.getUncleRmsScore(matrixLayer, tile);
+            if (score == null) {
+                continue;
+            }
+            float x0 = tile.getJ() + offsetX;
+            float yTop = -tile.getI() + offsetY;
+            float x1 = tile.getJ() + 1.0f + offsetX;
+            float yBottom = -(tile.getI() + 1.0f) + offsetY;
+            if (!skipCulling
+                && !QuadFrustumIntersector.intersectsCameraFrustum(model.getViewingCamera(), x0, yTop, x1, yBottom)) {
+                continue;
+            }
+            float percentile = (float) Math.max(0.0, Math.min(1.0, score.layerPairPercentile()));
+            if (score.hasVisualMatch()) {
+                // Relative RMS within this layer pair: green (lowest) to yellow (highest).
+                gl2.glColor4f(percentile, 1.0f, 0.0f, 0.46f);
+            }
+            else {
+                // The declared quadrant was not the minimum RMS: orange to red.
+                gl2.glColor4f(1.0f, 0.45f * (1.0f - percentile), 0.0f, 0.62f);
+            }
+            gl2.glBegin(GL2.GL_QUADS);
+            gl2.glVertex3f(x0, yBottom, 0.003f);
+            gl2.glVertex3f(x1, yBottom, 0.003f);
+            gl2.glVertex3f(x1, yTop, 0.003f);
+            gl2.glVertex3f(x0, yTop, 0.003f);
+            gl2.glEnd();
+        }
+        gl2.glDisable(GL2.GL_BLEND);
     }
 
     private static void drawTexturedQuad(GL2 gl2, Texture texture, MatrixLayerTile tile, float x0, float yTop, float x1, float yBottom) {

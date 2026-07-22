@@ -75,6 +75,7 @@ final class TopLevelVisualAnchorResolver {
         Map<Anchor, Integer> votes = new LinkedHashMap<>();
         Map<Anchor, Integer> plausibleVotes = new LinkedHashMap<>();
         int accepted = 0;
+        int plausibleAccepted = 0;
         int readable = 0;
         double lowestRmse = Double.POSITIVE_INFINITY;
         double lowestRatio = Double.POSITIVE_INFINITY;
@@ -89,6 +90,7 @@ final class TopLevelVisualAnchorResolver {
                 );
                 if (pair.best().rmse() <= MAX_RMSE) {
                     plausibleVotes.merge(anchorFor(probe, pair.best()), 1, Integer::sum);
+                    plausibleAccepted++;
                 }
             }
             if (!confident(pair)) {
@@ -109,6 +111,24 @@ final class TopLevelVisualAnchorResolver {
         if (best != null && bestVotes >= MIN_ANCHOR_VOTES && bestVotes * 2 > accepted) {
             return new AnchorChoice(best, bestVotes, accepted, "confident visual");
         }
+        Anchor plausibleBest = null;
+        int plausibleBestVotes = 0;
+        for (Map.Entry<Anchor, Integer> vote : plausibleVotes.entrySet()) {
+            if (vote.getValue() > plausibleBestVotes) {
+                plausibleBest = vote.getKey();
+                plausibleBestVotes = vote.getValue();
+            }
+        }
+        if (plausibleBest != null
+            && plausibleBestVotes >= MIN_ANCHOR_VOTES
+            && plausibleBestVotes * 2 > plausibleAccepted) {
+            return new AnchorChoice(
+                plausibleBest,
+                plausibleBestVotes,
+                plausibleAccepted,
+                "majority plausible visual"
+            );
+        }
         if (imported.getTiles().size() >= 2
             && imported.getTiles().size() < MIN_ANCHOR_VOTES
             && readable == imported.getTiles().size()
@@ -127,6 +147,8 @@ final class TopLevelVisualAnchorResolver {
             "TopLevelVisualAnchorResolver: layer " + imported.getSourceFolderName()
                 + " not visually anchored in this pass; confident probes=" + accepted
                 + ", best rigid vote=" + bestVotes
+                + ", plausible probes=" + plausibleAccepted
+                + ", best plausible rigid vote=" + plausibleBestVotes
                 + ", readable probes=" + readable
                 + (imported.getTiles().size() < MIN_ANCHOR_VOTES
                     ? ", plausible rigid votes=" + plausibleVotes

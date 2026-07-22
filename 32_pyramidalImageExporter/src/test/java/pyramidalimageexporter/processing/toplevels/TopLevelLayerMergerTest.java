@@ -176,6 +176,38 @@ final class TopLevelLayerMergerTest {
     }
 
     @Test
+    void visuallyAnchorsAThreeTileLayerFromPlausibleMajority() throws IOException {
+        Path atlas = tempDir.resolve("plausible-majority-atlas.png");
+        writePlausibleMajorityAtlas(atlas);
+        List<MatrixLayerTile> topCells = new ArrayList<>();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                MatrixLayerTile cell = tile(quadPath(2, row, col), row, col, atlas.toString());
+                cell.setTextureSubRect(col / 4.0, (3 - row) / 4.0, (col + 1) / 4.0, (4 - row) / 4.0);
+                topCells.add(cell);
+            }
+        }
+        MatrixLayer top = new MatrixLayer();
+        top.setSourceFolderName("topLevel_matrix_02");
+        top.setRows(4);
+        top.setCols(4);
+        top.setTiles(topCells);
+
+        MatrixLayer imported = layer(
+            "matrix_plausible_majority",
+            plausibleTile("plausible-0", 0, 0, 102, tempDir.resolve("plausible-0.png")),
+            plausibleTile("plausible-1", 0, 1, 122, tempDir.resolve("plausible-1.png")),
+            plausibleTile("plausible-2", 0, 2, 142, tempDir.resolve("plausible-2.png"))
+        );
+
+        Map<String, String> anchors = new TopLevelVisualAnchorResolver().resolve(List.of(top), List.of(imported));
+
+        assertEquals(quadPath(2, 1, 1), anchors.get("plausible-0"));
+        assertEquals(quadPath(2, 1, 2), anchors.get("plausible-1"));
+        assertEquals(quadPath(2, 1, 3), anchors.get("plausible-2"));
+    }
+
+    @Test
     void retainsTopLevelVisualAnchorsForATwoTileLayerDuringMerge() throws IOException {
         Path parentTexture = tempDir.resolve("top-parent.png");
         writeQuadrantParent(parentTexture);
@@ -284,6 +316,12 @@ final class TopLevelLayerMergerTest {
         ImageIO.write(image, "png", output.toFile());
     }
 
+    private static MatrixLayerTile plausibleTile(String id, int i, int j, int gray, Path output) throws IOException {
+        int rgb = (gray << 16) | (gray << 8) | gray;
+        writeSolidTile(output, rgb);
+        return tile(id, i, j, output.toString());
+    }
+
     private static void writeQuadrantParent(Path output) throws IOException {
         BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
@@ -296,6 +334,36 @@ final class TopLevelLayerMergerTest {
         graphics.setColor(Color.YELLOW);
         graphics.fillRect(128, 128, 128, 128);
         graphics.dispose();
+        ImageIO.write(image, "png", output.toFile());
+    }
+
+    private static void writePlausibleMajorityAtlas(Path output) throws IOException {
+        BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                int gray = switch (row) {
+                    case 0 -> switch (col) {
+                        case 1 -> 99;
+                        case 2 -> 119;
+                        case 3 -> 139;
+                        default -> 40;
+                    };
+                    case 1 -> switch (col) {
+                        case 1 -> 100;
+                        case 2 -> 120;
+                        case 3 -> 140;
+                        default -> 60;
+                    };
+                    default -> 180 + row * 10 + col;
+                };
+                int rgb = (gray << 16) | (gray << 8) | gray;
+                for (int y = row * 64; y < (row + 1) * 64; y++) {
+                    for (int x = col * 64; x < (col + 1) * 64; x++) {
+                        image.setRGB(x, y, rgb);
+                    }
+                }
+            }
+        }
         ImageIO.write(image, "png", output.toFile());
     }
 
