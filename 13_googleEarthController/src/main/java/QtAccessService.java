@@ -5,6 +5,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -17,6 +18,8 @@ final class QtAccessService {
     private static final String ATSPI_ROOT_PATH = "/org/a11y/atspi/accessible/root";
     private static final String GOOGLE_EARTH_NAME = "Google Earth Pro";
     private static final String TURTLE_FOLDER_NAME = "turtle";
+    private static final String CONTINUE_BUTTON_NAME = "Continue";
+    private static final String REPAIR_TOOL_BUTTON_NAME = "Launch Repair Tool";
     // In Google Earth's Qt tree, the folder and child visibility checkboxes share
     // this column relative to the tree's left edge (as opposed to the row center).
     private static final int CHECKBOX_CENTER_OFFSET_X = 38;
@@ -84,6 +87,12 @@ final class QtAccessService {
         );
     }
 
+    Optional<LocatedPoint> locateCrashDialogContinueButton() {
+        String busAddress = getAtSpiBusAddress();
+        String destination = findGoogleEarthDestination(busAddress);
+        return findCrashDialogContinueButton(busAddress, destination);
+    }
+
     private AccessibleItem toAccessibleItem(AccessibleNode node) {
         return new AccessibleItem(node.name(), node.path());
     }
@@ -98,6 +107,49 @@ final class QtAccessService {
         return new LocatedPoint(
             node.name(), node.path(), checkboxCenterX, bounds.y() + bounds.height() / 2
         );
+    }
+
+    private Optional<LocatedPoint> findCrashDialogContinueButton(String busAddress, String destination) {
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        pending.add(ATSPI_ROOT_PATH);
+
+        String continuePath = null;
+        String repairToolPath = null;
+
+        while (!pending.isEmpty() && visited.size() < MAX_TRAVERSED_NODES) {
+            String path = pending.removeFirst();
+            if (!visited.add(path)) {
+                continue;
+            }
+
+            try {
+                String role = getRoleName(busAddress, destination, path);
+                String name = getName(busAddress, destination, path);
+                if ("push button".equals(role)) {
+                    if (CONTINUE_BUTTON_NAME.equals(name)) {
+                        continuePath = path;
+                    } else if (REPAIR_TOOL_BUTTON_NAME.equals(name)) {
+                        repairToolPath = path;
+                    }
+                }
+                pending.addAll(getChildren(busAddress, destination, path));
+            } catch (RuntimeException ignored) {
+                // The startup dialog can appear or vanish while its subtree is being traversed.
+            }
+        }
+
+        if (continuePath == null || repairToolPath == null) {
+            return Optional.empty();
+        }
+
+        Bounds bounds = getBounds(busAddress, destination, continuePath);
+        return Optional.of(new LocatedPoint(
+            CONTINUE_BUTTON_NAME,
+            continuePath,
+            bounds.x() + bounds.width() / 2,
+            bounds.y() + bounds.height() / 2
+        ));
     }
 
     private Bounds getBounds(String busAddress, String destination, String path) {

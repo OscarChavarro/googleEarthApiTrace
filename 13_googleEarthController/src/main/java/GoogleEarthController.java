@@ -10,12 +10,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class GoogleEarthController {
+    private static final String CRASH_DIALOG_TITLE = "Google Earth Crash Detected";
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
     private static final long CONTINUE_DELAY_SECONDS = 2;
     private static final long KEY_HOLD_MILLIS = 430;
     private static final long BETWEEN_KEYS_MILLIS = 1000;
     private static final long AFTER_TURTLE_DISABLE_MILLIS = 2000;
     private static final long BETWEEN_CHILD_ENABLE_ACTIONS_MILLIS = 1000;
+    private static final long AFTER_CRASH_DIALOG_CLICK_MILLIS = 1500;
+    private static final int WINDOW_RECOVERY_ATTEMPTS = 10;
+    private static final long WINDOW_RECOVERY_RETRY_MILLIS = 500;
     private static final long OFFLINE_START_DELAY_SECONDS = 2;
     private static final Path SCREENSHOT_PATH = Path.of("/tmp", "screenshot.png");
     private static final char[] SPINNER_FRAMES = {'-', '/', '|', '\\'};
@@ -115,6 +119,20 @@ public class GoogleEarthController {
         X11AccessService.X11Window window = googleEarthWindow.get();
         System.out.println("[OK] Google Earth X11 window found: " + window.id()
             + " title=\"" + window.title() + "\" class=" + window.windowClass());
+
+        if (dismissCrashDialogIfPresent()) {
+            Optional<X11AccessService.X11Window> recoveredWindow = recoverGoogleEarthWindowAfterCrashDialog();
+            if (recoveredWindow.isEmpty()) {
+                System.err.println("[ERROR] Google Earth crash dialog was dismissed but no main window became available.");
+                ui.setFeedback("Google Earth main window not found");
+                finishStarting();
+                return;
+            }
+            window = recoveredWindow.get();
+            System.out.println("[OK] Google Earth window recovered after crash dialog: " + window.id()
+                + " title=\"" + window.title() + "\" class=" + window.windowClass());
+        }
+
         try {
             Path screenshot = x11AccessService.captureWindow(window, SCREENSHOT_PATH);
             System.out.println("[OK] Google Earth screenshot exported to " + screenshot + ".");
@@ -212,6 +230,38 @@ public class GoogleEarthController {
         ui.clickAt(target.centerX(), target.centerY());
         System.out.println("[OK] Clicked checkbox for " + target.name() + " at ("
             + target.centerX() + ", " + target.centerY() + ").");
+    }
+
+    private boolean dismissCrashDialogIfPresent() {
+        Optional<QtAccessService.LocatedPoint> continueButton;
+        try {
+            continueButton = qtAccessService.locateCrashDialogContinueButton();
+        } catch (RuntimeException e) {
+            System.err.println("[WARN] Google Earth crash dialog inspection failed: " + e.getMessage());
+            return false;
+        }
+
+        if (continueButton.isEmpty()) {
+            return false;
+        }
+
+        QtAccessService.LocatedPoint target = continueButton.get();
+        ui.clickAt(target.centerX(), target.centerY());
+        System.out.println("[OK] Clicked crash dialog button " + target.name() + " at ("
+            + target.centerX() + ", " + target.centerY() + ").");
+        sleepInterruptibly(AFTER_CRASH_DIALOG_CLICK_MILLIS);
+        return true;
+    }
+
+    private Optional<X11AccessService.X11Window> recoverGoogleEarthWindowAfterCrashDialog() {
+        for (int attempt = 0; attempt < WINDOW_RECOVERY_ATTEMPTS; attempt++) {
+            Optional<X11AccessService.X11Window> window = x11AccessService.findGoogleEarthWindow();
+            if (window.isPresent() && !CRASH_DIALOG_TITLE.equals(window.get().title())) {
+                return window;
+            }
+            sleepInterruptibly(WINDOW_RECOVERY_RETRY_MILLIS);
+        }
+        return Optional.empty();
     }
 
     private void stop() {
