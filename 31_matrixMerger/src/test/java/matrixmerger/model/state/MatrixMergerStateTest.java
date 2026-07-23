@@ -128,6 +128,32 @@ final class MatrixMergerStateTest {
         assertEquals("00020_3", tileId(state.getFrameMatrices().get(1)));
     }
 
+    @Test
+    void discardsMatricesBelowMinimumTileCountAndReportsTheirTiles() {
+        MatrixMergerState state = new MatrixMergerState();
+        FrameMatrixSet small = frame(10, "10_1", null);
+        FrameMatrixSet retained = new FrameMatrixSet();
+        retained.setFrameId(20);
+        retained.setMatrices(List.of(matrix(
+            20,
+            java.util.stream.IntStream.range(0, 10)
+                .mapToObj(i -> tile("20_" + i, 0, i))
+                .toList(),
+            1,
+            10
+        )));
+        state.setFrameMatrices(List.of(small, retained));
+
+        MatrixMergerState.SmallMatrixDiscardReport report =
+            state.discardMatricesWithFewerThanTiles(10);
+
+        assertEquals(1, report.matrixCount());
+        assertEquals(2, report.tileCount());
+        assertEquals(List.of("00010_1", "00010_9999"), report.tileIds());
+        assertEquals(1, state.getMatrixCount());
+        assertEquals(10, state.getHierarchyOrderDiagnostics().get(0).tileCount());
+    }
+
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId) {
         return frame(frameId, tileId, uncleId, null);
     }

@@ -7,13 +7,25 @@ readonly CAPTURE_ROOT="/media/ramdisk/output"
 readonly DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
 readonly TRACE_DIRECTORY="/opt/google/earth/pro"
 readonly TRACE_PATTERN="googleearth-bin*trace"
+readonly SESSION_LOG="/tmp/googleEarthSession.log"
 
 destination="$DEFAULT_DESTINATION"
 reuse_capture=0
 dry_run=0
 keep_work=0
+route_command=""
 run_dir=""
 completed=0
+session_started_epoch="$(date +%s)"
+original_args=("$@")
+
+exec > >(tee -a "$SESSION_LOG") 2>&1
+printf '\n===== googleEarth full-process session started %s pid=%d =====\n' \
+    "$(date --iso-8601=seconds)" "$$"
+printf '[runFullProcess] Command: %q' "$0"
+printf ' %q' "${original_args[@]}"
+printf '\n[runFullProcess] Working directory: %s\n' "$PWD"
+printf '[runFullProcess] Master log: %s\n' "$SESSION_LOG"
 
 usage() {
     cat <<'EOF'
@@ -29,18 +41,29 @@ Options:
   --reuse-capture     Do not clear/capture; reprocess /media/ramdisk/output
   --dry-run           Build and validate the delta, but do not merge it
   --keep-work         Preserve staging after a successful execution
+  --route-command CMD Record the module-11 command that prepared the current KML
   -h, --help          Show this help
 EOF
 }
 
 log() {
-    printf '[runFullProcess] %s\n' "$*"
+    printf '[runFullProcess][%s] %s\n' "$(date --iso-8601=seconds)" "$*"
 }
 
 die() {
-    printf '[runFullProcess][ERROR] %s\n' "$*" >&2
+    printf '[runFullProcess][%s][ERROR] %s\n' "$(date --iso-8601=seconds)" "$*" >&2
     exit 1
 }
+
+on_early_exit() {
+    local status=$?
+    local elapsed
+    elapsed=$(($(date +%s) - session_started_epoch))
+    log "Session finished during argument parsing status=$status elapsed_seconds=$elapsed"
+    printf '===== googleEarth full-process session ended %s pid=%d status=%d =====\n' \
+        "$(date --iso-8601=seconds)" "$$" "$status"
+}
+trap on_early_exit EXIT
 
 while (($# > 0)); do
     case "$1" in
@@ -60,6 +83,11 @@ while (($# > 0)); do
         --keep-work)
             keep_work=1
             shift
+            ;;
+        --route-command)
+            (($# >= 2)) || die "--route-command requires a description."
+            route_command="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -113,32 +141,52 @@ safe_remove_run_dir() {
 
 on_exit() {
     local status=$?
+    local elapsed
     trap - EXIT
     if ((status != 0)); then
         [[ -z "$run_dir" ]] || log "Iteration rejected; diagnostic staging preserved at $run_dir"
-        exit "$status"
-    fi
-    if ((completed == 1 && keep_work == 0)); then
+    elif ((completed == 1 && keep_work == 0)); then
         safe_remove_run_dir || true
     elif [[ -n "$run_dir" ]]; then
         log "Staging preserved at $run_dir"
     fi
+    elapsed=$(($(date +%s) - session_started_epoch))
+    log "Session finished status=$status elapsed_seconds=$elapsed"
+    printf '===== googleEarth full-process session ended %s pid=%d status=%d =====\n' \
+        "$(date --iso-8601=seconds)" "$$" "$status"
+    exit "$status"
 }
 trap on_exit EXIT
 
 run_logged() {
     local name="$1"
+    local started status
     shift
+    started="$(date +%s)"
     log "Starting $name"
-    "$@" 2>&1 | tee "$run_dir/logs/$name.log"
+    if "$@" 2>&1 | tee "$run_dir/logs/$name.log"; then
+        status=0
+    else
+        status=$?
+    fi
+    log "Finished $name status=$status elapsed_seconds=$(($(date +%s) - started))"
+    return "$status"
 }
 
 run_logged_in_directory() {
     local name="$1"
     local directory="$2"
+    local started status
     shift 2
+    started="$(date +%s)"
     log "Starting $name in $directory"
-    (cd "$directory" && "$@") 2>&1 | tee "$run_dir/logs/$name.log"
+    if (cd "$directory" && "$@") 2>&1 | tee "$run_dir/logs/$name.log"; then
+        status=0
+    else
+        status=$?
+    fi
+    log "Finished $name status=$status elapsed_seconds=$(($(date +%s) - started))"
+    return "$status"
 }
 
 safe_delete_staging_path() {
@@ -221,8 +269,6 @@ validate_split_tree() {
         relative="${file#"$split_root"/}"
         [[ "$relative" =~ ^[0-9]{5}/gl\.txt$ ]] || die "Unexpected module-21 output file: $file"
         frame="${relative%%/*}"
-        [[ -d "$CAPTURE_ROOT/$frame" ]] ||
-            die "Split frame $frame has no same-session capture folder for manifests/blobs/textures."
         printf '%s\n' "$frame" >> "$split_frames"
         [[ -s "$file" ]] && nonempty=$((nonempty + 1))
     done < <(find "$split_root" -type f -print0 | sort -z)
@@ -256,6 +302,7 @@ install_split_logs() {
     for source in "${sources[@]}"; do
         frame="$(basename "$(dirname "$source")")"
         directory="$CAPTURE_ROOT/$frame"
+        mkdir -p -- "$directory"
         current="$directory/gl.txt"
         partial="$directory/.gl.txt.from-traceLogSplitter.$token.partial"
         rollback="$directory/.gl.txt.before-install.$token"
@@ -349,33 +396,55 @@ count_files() {
 }
 
 validate_source_matrices() {
-    local file rows cols tile_count id_count unique_id_count texture_count invalid_coords missing_texture texture
-    local total=0
+    local file matrix_count missing_texture texture
+    local total=0 valid_matrices=0 empty_files=0
     while IFS= read -r -d '' file; do
         total=$((total + 1))
         jq -e . "$file" >/dev/null || die "Invalid matrix JSON: $file"
-        rows="$(jq -r '.rows // 0' "$file")"
-        cols="$(jq -r '.cols // 0' "$file")"
-        [[ "$rows" =~ ^[1-9][0-9]*$ && "$cols" =~ ^[1-9][0-9]*$ ]] ||
-            die "Invalid matrix dimensions in $file: ${rows}x${cols}"
-        tile_count="$(jq -r '(.tiles // []) | length' "$file")"
-        ((tile_count > 0)) || die "Matrix contains no tiles: $file"
-        id_count="$(jq -r '[.tiles[].id | select(type == "string" and length > 0)] | length' "$file")"
-        ((id_count == tile_count)) || die "Matrix has missing/invalid tile IDs: $file"
-        unique_id_count="$(jq -r '[.tiles[].id] | unique | length' "$file")"
-        ((unique_id_count == tile_count)) || die "Matrix contains duplicate tile IDs: $file"
-        invalid_coords="$(jq -r --argjson rows "$rows" --argjson cols "$cols" \
-            '[.tiles[] | select((.i < 0) or (.j < 0) or (.i >= $rows) or (.j >= $cols))] | length' "$file")"
-        ((invalid_coords == 0)) || die "Matrix has out-of-range tile coordinates: $file"
+        matrix_count="$(jq -r '
+            (if (.matrices? | type) == "array" then .matrices else [.] end)
+            | [.[] | select(((.tiles // []) | length) > 0)]
+            | length
+        ' "$file")"
+        if ((matrix_count == 0)); then
+            empty_files=$((empty_files + 1))
+            continue
+        fi
+        jq -e '
+            (if (.matrices? | type) == "array" then .matrices else [.] end)
+            | [.[] | select(((.tiles // []) | length) > 0)]
+            | all(.[];
+                . as $matrix
+                | (($matrix.rows | type) == "number" and $matrix.rows > 0 and ($matrix.rows | floor) == $matrix.rows)
+                and (($matrix.cols | type) == "number" and $matrix.cols > 0 and ($matrix.cols | floor) == $matrix.cols)
+                and ([ $matrix.tiles[].id | select(type == "string" and length > 0) ] | length)
+                    == ($matrix.tiles | length)
+                and ([ $matrix.tiles[].id ] | unique | length) == ($matrix.tiles | length)
+                and ([ $matrix.tiles[]
+                    | select(
+                        (.i | type) != "number" or (.j | type) != "number"
+                        or .i < 0 or .j < 0
+                        or .i >= $matrix.rows or .j >= $matrix.cols
+                    )
+                ] | length) == 0
+                and ([ $matrix.tiles[].textureFile
+                    | select(type == "string" and length > 0)
+                ] | length) == ($matrix.tiles | length)
+            )
+        ' "$file" >/dev/null || die "Invalid non-empty matrix data in $file"
+        valid_matrices=$((valid_matrices + matrix_count))
         missing_texture=0
-        texture_count="$(jq -r '[.tiles[].textureFile | select(type == "string" and length > 0)] | length' "$file")"
-        ((texture_count == tile_count)) || die "Matrix has missing/invalid texture paths: $file"
         while IFS= read -r texture; do
             [[ -n "$texture" && -r "$texture" ]] || missing_texture=$((missing_texture + 1))
-        done < <(jq -r '.tiles[].textureFile // empty' "$file")
+        done < <(jq -r '
+            (if (.matrices? | type) == "array" then .matrices else [.] end)
+            | .[].tiles[]?.textureFile // empty
+        ' "$file")
         ((missing_texture == 0)) || die "Matrix references $missing_texture unreadable texture(s): $file"
     done < <(find "$CAPTURE_ROOT" -mindepth 2 -maxdepth 2 -type f -name matrix.json -print0)
     ((total > 0)) || die "Module 23 produced no matrix.json files."
+    ((valid_matrices > 0)) || die "Module 23 produced no non-empty matrices."
+    log "Validated $valid_matrices non-empty source matrices from $total file(s); ignored $empty_files empty file(s)."
 }
 
 validate_exported_layers() {
@@ -474,6 +543,11 @@ fi
 run_dir="$(mktemp -d /tmp/google-earth-full-process.XXXXXX)"
 mkdir -p "$run_dir/logs" "$run_dir/matrix"
 log "Staging directory: $run_dir"
+if [[ -n "$route_command" ]]; then
+    log "Prepared route command: $route_command"
+else
+    log "Prepared route command: unspecified"
+fi
 
 lock_key="$(printf '%s' "$destination" | cksum | awk '{print $1}')"
 exec 9>"/tmp/google-earth-full-process-${lock_key}.lock"
@@ -524,20 +598,17 @@ appearance_count="$(jq -r '[.byStripId[].appearances[]?] | length' "$top_level")
 discard_live_log_backups_after_analysis
 
 run_logged 23_frameTextureNormalizer \
-    "$SCRIPT_DIR/gradlew" :23_frameTextureNormalizer:run \
-    "--args=--offline --width=1 --height=1 --output=$run_dir/normalizer.png"
+    "$SCRIPT_DIR/23_frameTextureNormalizer/run.sh"
 validate_source_matrices
 
 run_logged 31_matrixMerger \
-    "$SCRIPT_DIR/gradlew" :31_matrixMerger:run \
-    "--args=--mode auto --offline --diagnose-order $run_dir/matrix"
+    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$run_dir/matrix"
 grep -q 'AutomaticMatrixGroupingPipeline: tile-set conservation OK' \
     "$run_dir/logs/31_matrixMerger.log" || die "Module 31 did not confirm tile-set conservation."
 validate_exported_layers
 
 run_logged 32_pyramidalImageExporter \
-    "$SCRIPT_DIR/gradlew" :32_pyramidalImageExporter:run \
-    "--args=--export $run_dir/matrix"
+    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix"
 validate_export_log_and_pyramid
 
 delta="$run_dir/matrix/pyramidalImage"

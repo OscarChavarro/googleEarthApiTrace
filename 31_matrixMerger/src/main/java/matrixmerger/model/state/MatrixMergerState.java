@@ -326,6 +326,50 @@ public final class MatrixMergerState {
         return true;
     }
 
+    public SmallMatrixDiscardReport discardMatricesWithFewerThanTiles(int minimumTileCount) {
+        int threshold = Math.max(0, minimumTileCount);
+        int discardedMatrices = 0;
+        int discardedTiles = 0;
+        List<String> discardedTileIds = new ArrayList<>();
+        List<FrameMatrixSet> discardedFrames = new ArrayList<>();
+        for (FrameMatrixSet frame : frameMatrices) {
+            int tileCount = tileCountOfFrame(frame);
+            if (tileCount >= threshold) {
+                continue;
+            }
+            discardedFrames.add(frame);
+            discardedMatrices++;
+            discardedTiles += tileCount;
+            if (frame == null || frame.getMatrices() == null) {
+                continue;
+            }
+            for (FrameTileMatrix matrix : frame.getMatrices()) {
+                if (matrix == null || matrix.getTiles() == null) {
+                    continue;
+                }
+                for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                    if (tile != null && tile.getId() != null && !tile.getId().isBlank()) {
+                        discardedTileIds.add(tile.getId());
+                    }
+                }
+            }
+        }
+        for (FrameMatrixSet frame : discardedFrames) {
+            invalidReasonByFrameId.remove(frame.getFrameId());
+            hierarchyLevelByFrame.remove(frame);
+        }
+        frameMatrices.removeAll(discardedFrames);
+        maximumRetryCount = frameMatrices.size();
+        normalizeSelection();
+        refreshHierarchyOrdering(false);
+        lastMergeFailedForCurrentSelection = false;
+        return new SmallMatrixDiscardReport(
+            discardedMatrices,
+            discardedTiles,
+            List.copyOf(discardedTileIds)
+        );
+    }
+
     public boolean mergeSelectedMatrixWithNext() {
         if (isSelectedFrameInvalid()) {
             lastMergeFailedForCurrentSelection = false;
@@ -1183,6 +1227,13 @@ public final class MatrixMergerState {
         List<Integer> resolvedParentIndexes,
         int unresolvedUncleCount,
         int tileCount
+    ) {
+    }
+
+    public record SmallMatrixDiscardReport(
+        int matrixCount,
+        int tileCount,
+        List<String> tileIds
     ) {
     }
 

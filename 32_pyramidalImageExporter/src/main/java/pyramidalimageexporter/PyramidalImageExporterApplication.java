@@ -28,7 +28,7 @@ public final class PyramidalImageExporterApplication {
     private static final String[] VALUE_FLAGS = {"--layer", "--width", "--height", "--output"};
 
     public void run(String[] args) {
-        boolean offline = hasArg(args, "--ofline") || hasArg(args, "--offline");
+        boolean offline = hasArg(args, "-offline") || hasArg(args, "--ofline") || hasArg(args, "--offline");
         List<String> positionalArgs = parsePositionalArgs(args);
         if (positionalArgs.isEmpty()) {
             AppLogger.error("Missing required <inputFolder> argument: no default paths are assumed.");
@@ -58,29 +58,12 @@ public final class PyramidalImageExporterApplication {
         model.setSessionPyramidalImageExportPath(inputPath.resolve(SESSION_PYRAMID_SUBFOLDER).toString());
         model.setRmsHeatMapEnabled(hasArg(args, "--rms-map"));
 
-        if (hasArg(args, "--export")) {
-            AppLogger.info("Export mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
-            new SessionPyramidalImageExportService().export(model);
-            return;
-        }
-        if (offline) {
-            AppLogger.info("Offline mode loaded " + model.getMatrixLayerCount() + " matrix layers.");
-            int layerIndex = intArgValue(args, "--layer", 0);
-            if (!model.selectLayerIndex(layerIndex) && model.getMatrixLayerCount() > 0) {
-                AppLogger.warn(
-                    "Layer index " + layerIndex + " is out of range [0, "
-                        + (model.getMatrixLayerCount() - 1) + "]; using layer 0."
-                );
-            }
-            if (hasArg(args, "--wires")) {
-                model.getRenderingConfiguration().setWires(true);
-            }
-            renderOffline(
-                model,
-                stringArgValue(args, "--output", DEFAULT_OFFLINE_OUTPUT),
-                intArgValue(args, "--width", DEFAULT_OFFLINE_WIDTH),
-                intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT)
+        if (offline || hasArg(args, "--export")) {
+            AppLogger.info(
+                (offline ? "Offline export mode" : "Export mode")
+                    + " loaded " + model.getMatrixLayerCount() + " matrix layers."
             );
+            new SessionPyramidalImageExportService().export(model);
             return;
         }
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
@@ -194,7 +177,7 @@ public final class PyramidalImageExporterApplication {
             if (arg == null || arg.isBlank()) {
                 continue;
             }
-            if ("--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg)
+            if ("-offline".equals(arg) || "--offline".equals(arg) || "--ofline".equals(arg) || "--wires".equals(arg)
                 || "--rms-map".equals(arg) || "--export".equals(arg)) {
                 continue;
             }

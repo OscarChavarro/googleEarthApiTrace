@@ -27,9 +27,12 @@ iteration. The consolidated pyramid is the only long-lived result.
    new capture, but it must not be changed or cleared between modules 22 and 32.
    `32_pyramidalImageExporter` reads `topLevelTiles.json` and may read original
    per-frame `frame.json` and texture paths even after modules 23 and 31 have finished.
-2. Module 31 must run in `--mode auto --offline` mode for automation. Its tile-set
-   conservation check must succeed, and it must export contract-v3 `matrixLayer.json`
-   files plus every referenced texture.
+2. Module 31 must run in `--mode auto --offline` mode for unattended automation. Its
+   grouping tile-set conservation check must succeed before any explicit filtering, and
+   it must export contract-v3 `matrixLayer.json` files plus every referenced texture.
+   During the current operator-assisted protocol, a reviewed small-matrix filter may
+   intentionally discard tiles only when its threshold and discarded tile IDs/count are
+   reported separately from the conservation check.
 3. Module 32 must run with `--export`. A successful process exit is not sufficient:
    some exporter failures are reported in the log without a non-zero exit status. The
    automation must also check the placement report, the completion message, and the
@@ -95,6 +98,102 @@ Verify all of the following before changing any data:
 
 The automation acquires an advisory lock for this workflow. Manual invocations of the
 individual modules do not honor that lock, so they must not run concurrently.
+
+## Capacity, duration, and progress baseline
+
+Capacity is a correctness condition, not only an operational concern. Running out of
+space can leave an incomplete trace, a partial dump, missing capture blobs, or a
+partially copied destination. A later process may still exit successfully while
+consuming those incomplete artifacts. Every filesystem used by the workflow must
+therefore have its own preflight and runtime budget:
+
+- `/media/ramdisk` holds the capture and is constrained by both bytes and inodes.
+- The filesystem containing `/opt/google/earth/pro` holds the binary trace while capture
+  data is written to the RAMDISK.
+- The filesystem containing the iteration staging directory (currently `/tmp`) holds
+  controller logs, the textual dump, the duplicate split tree, matrices, and the delta
+  pyramid. Rejected staging directories from earlier iterations also consume this
+  filesystem.
+- The filesystem containing the consolidated destination needs room for the complete
+  delta and a safety reserve. This is especially important because module 42 does not
+  currently provide rollback after a copy I/O failure.
+
+Use bytes from `df -B1` and inode counts from `df -Pi` in automation. Human-readable
+`df -h` output is useful for operator reports but must not be parsed. In this document,
+`GB` means decimal bytes as reported by file sizes and `GiB` means powers of 1024.
+
+The first baseline run on 2026-07-23 used route
+`zigzag -20.0 -170.000 200000 6000 200000 10.0 30.0`. It was rejected during the
+module-21 frame-set validation by an initial, overly strict implementation. That rejection
+does not invalidate the capture: frames are allowed to have no detector-managed images or
+blobs. The measurements below cover capture through split, not modules 22 through 42:
+
+| Measurement | Observed value |
+|---|---:|
+| Route points reported by the controller | 128 |
+| Capture duration, including startup and controlled shutdown | about 24 min 27 s |
+| Capture frame directories | 24,628 |
+| Split `gl.txt` files | 24,634 |
+| Capture files | 10,222,362 |
+| RAMDISK allocation after capture | about 49 GiB |
+| RAMDISK inodes after capture | 10,246,992 |
+| Binary trace | 14.27 GB |
+| `apitrace dump` duration | about 5 min 42 s |
+| Text dump | 5.97 GB |
+| Module-21 split duration | about 13 s |
+| Isolated split tree | 6.08 GB |
+| Module-14 runtime logs | 1.14 GB |
+
+The operational planning envelope for similarly sized areas of interest is at most
+120 GiB of RAMDISK allocation and at most 25,000 frames. These are provisional upper
+bounds, not evidence that a capture is complete. The observed run was already within
+372 frame directories of the frame bound despite using only about 49 GiB. Frame count,
+byte consumption, and inode consumption must therefore be monitored independently.
+
+Before starting a normal capture, the initial automation should conservatively require:
+
+- At least the full 120 GiB expected RAMDISK budget plus a 10 GiB emergency reserve, and
+  enough free inodes for 12.5 million files. The inode figure is the observed 10.2
+  million files plus roughly 20 percent margin; it must be recalibrated with more runs.
+- A configurable trace-filesystem budget. Scaling the observed trace-to-capture ratio to
+  the 120 GiB capture envelope gives approximately 35 GB; 45 GB free is a reasonable
+  initial alert threshold, not a guaranteed upper bound.
+- A configurable staging budget for controller logs and post-capture work. Once the
+  binary trace exists, the current hard check of `4 * trace_bytes + 1 GiB` before dump
+  remains deliberately conservative. It covered the observed simultaneous dump, split,
+  and log footprint with substantial margin.
+- No rejected staging directories that the operator has not explicitly chosen to keep.
+  Automation must list their sizes and refuse to delete them implicitly.
+
+During capture, sample at a fixed interval and record timestamp, frame-directory count,
+capture bytes, free RAMDISK bytes/inodes, trace bytes, and free trace-filesystem bytes.
+The detector should warn when any budget reaches 80 percent or when recent growth
+projects exhaustion before the route can finish. It should request a controlled module-14
+shutdown before free RAMDISK space falls below 10 GiB, before fewer than 10 percent of
+RAMDISK inodes remain, or before the trace filesystem reaches its reserve. A hard process
+kill is a last resort; regardless of shutdown quality, a capacity-triggered stop rejects
+the capture and must never advance to `apitrace dump`.
+
+Progress detection must complement capacity detection:
+
+- Warn if neither frame count, capture allocation, nor trace size changes for a
+  configurable interval. A five-minute no-progress interval is a reasonable initial
+  candidate, but it must be tuned from additional sessions rather than treated as a
+  protocol invariant.
+- For `apitrace dump`, track the partial file's size and modification time as well as
+  free staging space. No growth, an I/O error, a non-zero exit, or encroaching on the
+  reserve deletes the guarded partial dump and rejects the iteration.
+- For module 21 and later stages, track both free bytes and output counts. A process that
+  produces no new output can be stalled even when disk space is plentiful.
+- Report elapsed time at every phase boundary. Use the baseline for warnings and
+  estimates, not as a hard success condition; content validation and process exit status
+  remain authoritative.
+
+The following capacity checks still need measurements from a successful iteration:
+peak module-22/23 RAMDISK growth, matrix staging size, delta-pyramid size, module
+31/32 duration, dry-run duration, commit duration, and destination growth. Until those
+measurements exist, modules 22 through 42 require extra operator supervision and
+conservative free-space reserves.
 
 ## Phase 1: capture and regenerate the per-frame GL logs
 
@@ -189,19 +288,31 @@ Required postconditions:
 - Module 21 exits with status `0` and reports positive line and file counts.
 - At least one staged `output/%05d/gl.txt` is non-empty.
 - Every result has exactly the `output/<five digits>/gl.txt` shape.
-- Every staged frame folder already exists in `/media/ramdisk/output`, where the matching
-  manifests, blobs, and textures from the same capture live.
-- If the tracer also emitted live `gl.txt` files, their frame-folder set exactly matches
-  the regenerated set. A mismatch rejects the iteration instead of mixing two numbering
-  schemes or two sessions.
+- A staged frame is not required to have an existing `/media/ramdisk/output/%05d`
+  directory. Some frames legitimately contain GL calls but no images or blobs emitted by
+  the filesystem detector. Publication creates the missing numeric directory.
+- Existing capture directories are not required to have a staged `gl.txt`; detector
+  artifacts may be written before the first split frame. If the tracer also emitted a
+  live `gl.txt` for a particular frame, compare that file with the regenerated file when
+  both exist, but do not require equality of the complete directory sets.
 
 Module 21 creates one final empty file after a trailing `glXSwapBuffers`; that file is
 allowed. The dump as a whole and the other split files must still contain data.
 
+The 2026-07-23 baseline exposed this expected startup scenario: the capture contained
+frame directories `00000` and `00008..24634`, while module 21 produced
+`00001..24634`. Frames `00001..00007` have GL logs but no detector-managed resources;
+`00000` has a detector artifact but no split log. Neither condition should reject the
+iteration. Modules 21 and 22 must be allowed to complete, and useful reconstructed
+content is first required at the module-23 boundary.
+
 ### Phase 1.4: publish the regenerated `gl.txt` files
 
-Only after validating the complete staged split, copy every result to a temporary sibling
-inside its destination frame folder. After **all** copies succeed:
+Only after validating the complete staged split, create any missing numeric destination
+frame folders and copy every result to a temporary sibling inside its destination frame
+folder. Folder creation must remain restricted to the exact
+`/media/ramdisk/output/%05d` shape derived from validated splitter output. After **all**
+copies succeed:
 
 1. Preserve an existing live log as `gl.txt.before-trace-split` the first time that frame
    is regenerated.
@@ -249,6 +360,18 @@ even if Gradle returned success.
 
 ## Phase 3: normalize frame textures and matrices (module 23)
 
+During the current operator-assisted protocol, run:
+
+```bash
+./23_frameTextureNormalizer/run.sh
+```
+
+The operator must review and define the west cutters in the interactive window, then
+close the application to let the workflow continue. Do not silently substitute offline
+mode while this review is required. Offline execution is acceptable only for a region
+that does not expose the `-180` meridian seam, or when a previously validated
+`westCutters.json` makes the result deterministic for that capture.
+
 For unattended processing, run module 23 offline over the complete frame range:
 
 ```bash
@@ -286,6 +409,18 @@ Create a unique staging directory and run:
 
 Do not use the interactive `31_matrixMerger/run.sh` in automation: without `--offline`
 it opens a GUI and exports only when the viewer closes.
+
+During operator-assisted iterations, use the interactive launcher and review the
+automatically grouped matrices before closing the viewer. The empirical criterion used
+in the 2026-07-23 baseline was to delete every resulting matrix with fewer than 10 tiles.
+This reduced 12 grouped layers to 8 retained layers and intentionally reduced the native
+tile set from 1,859 to 1,848 IDs. The retained layer sizes were 45, 52, 80, 1,290, 43,
+32, 177, and 129 tiles.
+
+The `< 10` rule is a provisional manual quality filter, not yet an unattended invariant.
+Before automating it, module 31 must report the deleted matrix identities, tile counts,
+and native tile IDs, then confirm conservation of every retained tile through export.
+This makes intentional quality filtering distinguishable from an accidental lossy merge.
 
 This phase is critical. The automatic pipeline performs retry-merge sweeps, west-cutter
 splits, hierarchy ordering, and conservative visual parent inference. Pairwise overlap
@@ -334,6 +469,21 @@ Required postconditions:
 - `<staging>/matrix/pyramidalImage/0.png` exists and is readable.
 - Every PNG uses a valid absolute quadkey filename and the per-digit directory layout.
 
+A size-aware operator check complements these structural conditions during the current
+manual protocol. For captures near the documented 25,000-frame area-of-interest
+baseline:
+
+- More than 1,000 written quadtree tiles is the usual empirical acceptance signal.
+- Fewer than 200 written tiles is a strong indication that placement or earlier
+  processing failed; stop before module 42 even if the exporter exited successfully.
+- Between 200 and 1,000 tiles is an inconclusive review band. Inspect the placement
+  report, retained matrices, coverage, and prior-phase counts before accepting it.
+
+These thresholds do not replace full placement or quadtree validation and must be scaled
+or recalibrated for materially smaller input sessions. The 2026-07-23 baseline wrote
+1,884 new tiles with every retained imported layer fully placed, so it passed both the
+structural checks and the empirical size check.
+
 If any matrix cannot be positioned, reject the complete iteration. Do not merge a
 top-level-only or partially positioned delta merely because it contains a valid `0.png`.
 This prevents a plausible-looking but shifted `-1`, `-2`, `-4`, ... descendant sequence
@@ -356,6 +506,13 @@ Interpret the result as follows:
 | `0` | No incompatible overlapping quadkeys | Continue to the real merge |
 | `2` | One or more content conflicts | Reject the iteration; do not modify the destination |
 | `1` | Invalid input, unreadable tree, or comparison error | Reject and investigate |
+
+The adjacent `-10..0, -170..-140` iteration on 2026-07-23 exercised the conflict path:
+module 32 successfully wrote 1,849 tiles and fully placed every retained matrix, but
+module 42 found visually incompatible overlaps at levels 6 and 7 against the previously
+committed `-20..-10` iteration. The dry run exited with status `2`; the real merge was
+not run and the destination remained unchanged. A large, structurally valid delta is
+therefore not sufficient evidence to bypass overlap conflicts.
 
 Only after a successful dry run, while still holding the workflow lock, run:
 
@@ -396,7 +553,7 @@ placement, conflict, and post-merge checks above.
 | Clean capture root -> module 14 | Exact cleanup target; live desktop; prepared `turtle` | Unsafe path, missing prerequisites | No |
 | Module 14 -> `apitrace dump` | Exit `0`; exactly one stable non-empty trace | Capture/controller failure, missing or ambiguous trace | No |
 | Dump -> module 21 | Complete non-empty dump with a frame boundary | Partial dump, no space, missing boundary | No |
-| Module 21 -> 22 | Valid isolated split; matching frame set; verified publication | Split failure, frame mismatch, incomplete copy | No |
+| Module 21 -> 22 | Valid isolated split; safe frame-folder creation; verified publication | Split failure, invalid path shape, incomplete copy | No |
 | Module 22 -> 23 | Frame JSONs; 320 strips; non-zero appearances | Parse failure, empty/broken TOP catalogue | No |
 | Module 23 -> 31 | Non-empty valid matrix set | No surviving matrices or invalid references | No |
 | Module 31 -> 32 | Conservation OK; contract-v3 layers and copied PNGs | Lossy/conflicting grouping or incomplete export | No |
@@ -410,6 +567,11 @@ placement, conflict, and post-merge checks above.
 
 - It starts after route generation (module 11 is not invoked), then executes capture,
   `apitrace dump`, module 21, and modules 22/23/31/32/42 in order.
+- In the current operator-assisted phase it opens module 23 interactively and waits for
+  the operator to define west cutters and close the window.
+- Modules 31 and 32 use their process-only `runOffline.sh` launchers. Module 31 applies
+  the documented `< 10` tile filter and module 32 performs the same export action as the
+  interactive `e` key without starting JOGL.
 - It uses a unique `/tmp/google-earth-full-process.*` staging directory.
 - It preserves staging on every failure and deletes it after success unless
   `--keep-work` is given.
@@ -419,7 +581,6 @@ placement, conflict, and post-merge checks above.
   consolidated dataset.
 - It logs every module separately and treats module 32's textual failure states as fatal.
 
-This first version intentionally does not solve two infrastructure limitations: module 23
-still lacks a process-only mode, and module 42 still lacks rollback/atomic directory
-replacement. Those are the highest-value small follow-up improvements for reliable
-planet-scale unattended runs.
+Module 23 remains interactive for the next iterations. Before fully unattended operation,
+its west-cutter decision needs a region-safe automatic contract. Module 42 also still
+lacks rollback/atomic directory replacement.

@@ -21,6 +21,7 @@ import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public final class MatrixMergerApplication {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
+    private static final int OFFLINE_MINIMUM_TILE_COUNT = 10;
     private static final int DEFAULT_OFFLINE_WIDTH = 1024;
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
 
@@ -30,7 +31,7 @@ public final class MatrixMergerApplication {
     }
 
     public void run(String[] args) {
-        boolean offline = hasArg(args, "--offline");
+        boolean offline = hasArg(args, "--offline") || hasArg(args, "-offline");
         boolean renderAllLevels = hasArg(args, "--all-levels");
         boolean renderLevel = argValue(args, "--level") != null || renderAllLevels;
         Mode mode = parseMode(args);
@@ -45,6 +46,7 @@ public final class MatrixMergerApplication {
         printMissingOutputFolderWarning(model);
         if (offline && !renderLevel) {
             processOfflineWithoutRendering(model, mode);
+            discardSmallOfflineMatrices(model);
             finishProcessing(model, outputPath, args);
             return;
         }
@@ -83,6 +85,20 @@ public final class MatrixMergerApplication {
         model.mergeFullSet();
         int after = model.getMatrixCount();
         AppLogger.info("Offline full-set merge done. Matrices: " + before + " -> " + after);
+    }
+
+    private static void discardSmallOfflineMatrices(MatrixMergerState model) {
+        MatrixMergerState.SmallMatrixDiscardReport report =
+            model.discardMatricesWithFewerThanTiles(OFFLINE_MINIMUM_TILE_COUNT);
+        AppLogger.info(
+            "Offline small-matrix filter: retained matrices=" + model.getMatrixCount()
+                + ", discarded matrices=" + report.matrixCount()
+                + ", discarded tiles=" + report.tileCount()
+                + ", threshold=<" + OFFLINE_MINIMUM_TILE_COUNT + "."
+        );
+        if (!report.tileIds().isEmpty()) {
+            AppLogger.info("Offline small-matrix filter discarded tile ids: " + report.tileIds());
+        }
     }
 
     /**
@@ -283,7 +299,7 @@ public final class MatrixMergerApplication {
             }
             if (arg.startsWith("--mode=") || arg.startsWith("--level=")
                 || arg.startsWith("--output=") || arg.startsWith("--width=")
-                || arg.startsWith("--height=") || "--offline".equals(arg)
+                || arg.startsWith("--height=") || "--offline".equals(arg) || "-offline".equals(arg)
                 || "--diagnose-order".equals(arg) || "--all-levels".equals(arg)) {
                 continue;
             }
