@@ -4,7 +4,6 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.util.Locale;
 import pyramidalimagecoverage.model.TileAddress;
 import pyramidalimagecoverage.model.TileRecord;
@@ -31,13 +30,14 @@ public final class MouseInteractionTechniques implements MouseListener {
             return;
         }
         vsdk.toolkit.gui.MouseEvent vitralEvent = AwtSystem.awt2vsdkEvent(event);
-        TileRecord tile = canvas.tileAtCanvasPosition(xOf(vitralEvent), yOf(vitralEvent));
-        if (tile == null) {
+        TileAddress address = canvas.tileAddressAtCanvasPosition(xOf(vitralEvent), yOf(vitralEvent));
+        if (address == null) {
             model.clearSelection();
             return;
         }
-        printTileInfo(tile);
-        model.toggleSelection(tile);
+        TileRecord tile = model.catalog().tileAt(address.depth(), address.column(), address.southRow());
+        printTileInfo(address, tile);
+        model.toggleSelection(address);
     }
 
     @Override
@@ -64,19 +64,20 @@ public final class MouseInteractionTechniques implements MouseListener {
         return coordinate(event, "y", "getY");
     }
 
-    private void printTileInfo(TileRecord tile) {
-        TileAddress address = tile.address();
-        Path imagePath = model.catalog().rootFolder().relativize(tile.imagePath());
+    private void printTileInfo(TileAddress address, TileRecord tile) {
+        String imagePath = tile == null
+            ? "<missing>"
+            : model.catalog().rootFolder().relativize(tile.imagePath()).toString();
         System.out.printf(
             Locale.US,
-            "Clicked tile: image=%s, quadkey=%s, depth=%d, column=%d, southRow=%d, lowerLeftLat=%.8f, lowerLeftLon=%.8f%n",
+            "Clicked tile: image=%s, quadkey=%s, depth=%d, column=%d, southRow=%d, centerLat=%.8f, centerLon=%.8f%n",
             imagePath,
             address.quadKey(),
             address.depth(),
             address.column(),
             address.southRow(),
-            address.lowerLeftLatitude(),
-            address.lowerLeftLongitude()
+            address.centerLatitude(),
+            address.centerLongitude()
         );
     }
 

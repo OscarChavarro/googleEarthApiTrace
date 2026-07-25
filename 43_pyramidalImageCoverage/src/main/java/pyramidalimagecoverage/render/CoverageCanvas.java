@@ -9,11 +9,13 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.util.Locale;
 import javax.swing.JViewport;
 import pyramidalimagecoverage.io.TileImageRepository;
 import pyramidalimagecoverage.model.PyramidCatalog;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.RenderMode;
+import pyramidalimagecoverage.model.TileAddress;
 import pyramidalimagecoverage.model.TileRecord;
 import pyramidalimagecoverage.model.ViewerModel;
 import pyramidalimagecoverage.processing.LevelLayout;
@@ -22,6 +24,7 @@ import pyramidalimagecoverage.processing.TileSourceResolver;
 
 public final class CoverageCanvas extends Canvas {
     private static final Color BACKGROUND = new Color(18, 18, 20);
+    private static final Color MISSING_DATA = Color.RED;
     private static final Color UNSELECTED_BORDER = Color.BLACK;
     private static final Color SELECTED_BORDER = new Color(0, 255, 0);
     private static final Color HUD_BACKGROUND = new Color(0, 0, 0, 190);
@@ -51,6 +54,13 @@ public final class CoverageCanvas extends Canvas {
     }
 
     public TileRecord tileAtCanvasPosition(int x, int y) {
+        TileAddress address = tileAddressAtCanvasPosition(x, y);
+        return address == null ? null : model.catalog().tileAt(
+            address.depth(), address.column(), address.southRow()
+        );
+    }
+
+    public TileAddress tileAddressAtCanvasPosition(int x, int y) {
         int pixelsPerTile = layout.pixelsPerTile();
         int originX = Math.max(0, (getWidth() - layout.contentSide()) / 2);
         int originY = Math.max(0, (getHeight() - layout.contentSide()) / 2);
@@ -65,7 +75,15 @@ public final class CoverageCanvas extends Canvas {
             return null;
         }
         int southRow = layout.matrixSide() - 1 - northRow;
-        return model.catalog().tileAt(model.selectedDepth(), column, southRow);
+        TileAddress address = TileAddress.fromCoordinates(model.selectedDepth(), column, southRow);
+        if (!address.hasGeographicCoverage()) {
+            return null;
+        }
+        if (model.selectedDepth() <= 1
+            && !isInsideGeographicPartOfLowLevelTile(southRow, relativeY % pixelsPerTile)) {
+            return null;
+        }
+        return address;
     }
 
     @Override
@@ -103,13 +121,18 @@ public final class CoverageCanvas extends Canvas {
 
         for (int northRow = firstNorthRow; northRow <= lastNorthRow; northRow++) {
             int southRow = layout.matrixSide() - 1 - northRow;
+            TileAddress address = TileAddress.fromCoordinates(depth, 0, southRow);
+            if (!address.hasGeographicCoverage()) {
+                continue;
+            }
             int y = originY + northRow * pixelsPerTile;
             for (int column = firstColumn; column <= lastColumn; column++) {
+                int x = originX + column * pixelsPerTile;
                 TileRecord target = catalog.tileAt(depth, column, southRow);
                 if (target == null) {
+                    drawMissingTile(g, depth, column, southRow, x, y);
                     continue;
                 }
-                int x = originX + column * pixelsPerTile;
                 drawTile(g, target, depth, column, southRow, x, y);
             }
         }
@@ -130,25 +153,50 @@ public final class CoverageCanvas extends Canvas {
             if (image != null) {
                 drawImage(g, image, x, y, 256, 0, 0, image.getWidth(), image.getHeight());
             }
+            else {
+                drawMissingData(g, depth, southRow, x, y);
+            }
             return;
         }
         int outputPixels = layout.imagePixelsPerTile();
         SourceRegion source = sourceResolver.resolve(depth, column, southRow, outputPixels);
         if (source == null) {
+            drawMissingData(g, depth, southRow, x, y);
             return;
         }
         BufferedImage image = images.load(source.tile().imagePath());
         if (image == null) {
+            drawMissingData(g, depth, southRow, x, y);
             return;
         }
         drawImage(g, image, x, y, outputPixels, source.x0(), source.y0(), source.x1(), source.y1());
+    }
+
+    private void drawMissingTile(Graphics2D g, int depth, int column, int southRow, int x, int y) {
+        if (layout.imagePixelsPerTile() > 1) {
+            g.setColor(model.isSelectedAt(depth, column, southRow) ? SELECTED_BORDER : UNSELECTED_BORDER);
+            g.fillRect(x, y, layout.pixelsPerTile(), layout.pixelsPerTile());
+        }
+        drawMissingData(g, depth, southRow, x, y);
+    }
+
+    private void drawMissingData(Graphics2D g, int depth, int southRow, int x, int y) {
+        int outputPixels = layout.imagePixelsPerTile();
+        int inset = outputPixels == 1 ? 0 : 1;
+        int validY0 = validImageY0(depth, southRow, outputPixels);
+        int validY1 = validImageY1(depth, southRow, outputPixels);
+        g.setColor(MISSING_DATA);
+        g.fillRect(x + inset, y + inset + validY0, outputPixels, validY1 - validY0);
     }
 
     private void drawTileBorder(Graphics2D g, TileRecord target, int x, int y) {
         if (layout.imagePixelsPerTile() <= 1) {
             return;
         }
-        g.setColor(target.selected() ? SELECTED_BORDER : UNSELECTED_BORDER);
+        TileAddress address = target.address();
+        g.setColor(model.isSelectedAt(address.depth(), address.column(), address.southRow())
+            ? SELECTED_BORDER
+            : UNSELECTED_BORDER);
         g.fillRect(x, y, layout.pixelsPerTile(), layout.pixelsPerTile());
     }
 
@@ -173,12 +221,7 @@ public final class CoverageCanvas extends Canvas {
     }
 
     private void drawHud(Graphics2D g, Rectangle visible) {
-        String[] lines = {
-            "Quadtree depth [1/2]: " + model.selectedDepth() + " / " + model.catalog().maxDepth(),
-            "Matrix: " + layout.matrixSide() + " x " + layout.matrixSide(),
-            "LOD: " + layout.description(),
-            "Fullscreen [F]: " + (isFullScreen() ? "on" : "off")
-        };
+        String[] lines = hudLines();
         g.setFont(HUD_FONT);
         FontMetrics metrics = g.getFontMetrics();
         int lineHeight = metrics.getHeight();
@@ -198,6 +241,20 @@ public final class CoverageCanvas extends Canvas {
         }
     }
 
+    String[] hudLines() {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        lines.add("Quadtree depth [1/2]: " + model.selectedDepth() + " / " + model.catalog().maxDepth());
+        lines.add("Matrix: " + layout.matrixSide() + " x " + layout.matrixSide());
+        lines.add("LOD: " + layout.description());
+        TileAddress selected = model.selectedAddress();
+        if (selected != null) {
+            lines.add(String.format(Locale.US, "lat: %.8f", selected.centerLatitude()));
+            lines.add(String.format(Locale.US, "lon: %.8f", selected.centerLongitude()));
+        }
+        lines.add("Fullscreen [F]: " + (isFullScreen() ? "on" : "off"));
+        return lines.toArray(String[]::new);
+    }
+
     private boolean isFullScreen() {
         return javax.swing.SwingUtilities.getWindowAncestor(this) instanceof javax.swing.JFrame frame
             && frame.getGraphicsConfiguration().getDevice().getFullScreenWindow() == frame;
@@ -205,6 +262,34 @@ public final class CoverageCanvas extends Canvas {
 
     private Rectangle visibleRectangle() {
         return viewport == null ? new Rectangle(0, 0, getWidth(), getHeight()) : viewport.getViewRect();
+    }
+
+    private boolean isInsideGeographicPartOfLowLevelTile(int southRow, int localY) {
+        int outputPixels = layout.imagePixelsPerTile();
+        int inset = outputPixels == 1 ? 0 : 1;
+        int validY0 = validImageY0(model.selectedDepth(), southRow, outputPixels);
+        int validY1 = validImageY1(model.selectedDepth(), southRow, outputPixels);
+        return localY >= inset + validY0 && localY < inset + validY1;
+    }
+
+    private static int validImageY0(int depth, int southRow, int outputPixels) {
+        if (depth == 0) {
+            return outputPixels / 4;
+        }
+        if (depth == 1 && southRow == 1) {
+            return outputPixels / 2;
+        }
+        return 0;
+    }
+
+    private static int validImageY1(int depth, int southRow, int outputPixels) {
+        if (depth == 0) {
+            return (3 * outputPixels + 3) / 4;
+        }
+        if (depth == 1 && southRow == 0) {
+            return (outputPixels + 1) / 2;
+        }
+        return outputPixels;
     }
 
     private static int clamp(int value, int minimum, int maximum) {

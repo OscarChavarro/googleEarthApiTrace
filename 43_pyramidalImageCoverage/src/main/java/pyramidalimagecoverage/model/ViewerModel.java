@@ -7,6 +7,7 @@ public final class ViewerModel {
     private final PyramidCatalog catalog;
     private final List<Runnable> listeners = new ArrayList<>();
     private int selectedDepth;
+    private TileAddress selectedAddress;
 
     public ViewerModel(PyramidCatalog catalog) {
         this.catalog = catalog;
@@ -33,13 +34,52 @@ public final class ViewerModel {
     }
 
     public void toggleSelection(TileRecord tile) {
-        if (catalog.setSelectionRecursively(tile, tile != null && !tile.selected())) {
+        if (tile != null) {
+            toggleSelection(tile.address());
+        }
+    }
+
+    public void toggleSelection(TileAddress address) {
+        if (address == null || !address.hasGeographicCoverage()) {
+            return;
+        }
+        TileRecord tile = catalog.tileAt(address.depth(), address.column(), address.southRow());
+        boolean selecting = tile == null
+            ? !address.equals(selectedAddress)
+            : !tile.selected();
+        boolean changed = tile != null && catalog.setSelectionRecursively(tile, selecting);
+        TileAddress newSelectedAddress = selecting ? address : null;
+        if (!java.util.Objects.equals(selectedAddress, newSelectedAddress)) {
+            selectedAddress = newSelectedAddress;
+            changed = true;
+        }
+        if (changed) {
             notifyListeners();
         }
     }
 
+    public TileAddress selectedAddress() {
+        return selectedAddress;
+    }
+
+    public boolean isSelectedAt(int depth, int column, int southRow) {
+        TileRecord tile = catalog.tileAt(depth, column, southRow);
+        if (tile != null && tile.selected()) {
+            return true;
+        }
+        return selectedAddress != null
+            && selectedAddress.depth() == depth
+            && selectedAddress.column() == column
+            && selectedAddress.southRow() == southRow;
+    }
+
     public void clearSelection() {
-        if (catalog.clearSelection()) {
+        boolean changed = catalog.clearSelection();
+        if (selectedAddress != null) {
+            selectedAddress = null;
+            changed = true;
+        }
+        if (changed) {
             notifyListeners();
         }
     }

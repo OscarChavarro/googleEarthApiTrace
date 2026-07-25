@@ -6,7 +6,7 @@ public record TileAddress(String quadKey, int depth, int column, int southRow) {
     }
 
     public double lowerLeftLatitude() {
-        return -90.0 + southRow * latitudeSpan();
+        return Math.max(-90.0, nominalLowerLatitude());
     }
 
     public double longitudeSpan() {
@@ -14,7 +14,31 @@ public record TileAddress(String quadKey, int depth, int column, int southRow) {
     }
 
     public double latitudeSpan() {
-        return 180.0 / matrixSide();
+        return Math.max(0.0, upperRightLatitude() - lowerLeftLatitude());
+    }
+
+    public double centerLongitude() {
+        return lowerLeftLongitude() + longitudeSpan() / 2.0;
+    }
+
+    public double centerLatitude() {
+        return lowerLeftLatitude() + latitudeSpan() / 2.0;
+    }
+
+    public boolean hasGeographicCoverage() {
+        return nominalLowerLatitude() < 90.0 && nominalUpperLatitude() > -90.0;
+    }
+
+    private double upperRightLatitude() {
+        return Math.min(90.0, nominalUpperLatitude());
+    }
+
+    private double nominalLowerLatitude() {
+        return -180.0 + southRow * longitudeSpan();
+    }
+
+    private double nominalUpperLatitude() {
+        return nominalLowerLatitude() + longitudeSpan();
     }
 
     private int matrixSide() {
@@ -39,5 +63,30 @@ public record TileAddress(String quadKey, int depth, int column, int southRow) {
             }
         }
         return new TileAddress(quadKey, quadKey.length() - 1, column, southRow);
+    }
+
+    public static TileAddress fromCoordinates(int depth, int column, int southRow) {
+        if (depth < 0 || depth > PyramidCatalog.MAX_ADDRESSABLE_DEPTH) {
+            throw new IllegalArgumentException("Invalid depth: " + depth);
+        }
+        int matrixSide = 1 << depth;
+        if (column < 0 || column >= matrixSide || southRow < 0 || southRow >= matrixSide) {
+            throw new IllegalArgumentException(
+                "Tile coordinates outside depth " + depth + ": " + column + ", " + southRow
+            );
+        }
+        StringBuilder quadKey = new StringBuilder(depth + 1).append('0');
+        for (int bit = depth - 1; bit >= 0; bit--) {
+            int east = (column >>> bit) & 1;
+            int north = (southRow >>> bit) & 1;
+            quadKey.append(switch (north * 2 + east) {
+                case 0 -> '0';
+                case 1 -> '1';
+                case 2 -> '3';
+                case 3 -> '2';
+                default -> throw new AssertionError();
+            });
+        }
+        return new TileAddress(quadKey.toString(), depth, column, southRow);
     }
 }

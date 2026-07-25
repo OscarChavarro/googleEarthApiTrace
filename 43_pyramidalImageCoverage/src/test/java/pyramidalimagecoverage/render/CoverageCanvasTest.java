@@ -1,6 +1,9 @@
 package pyramidalimagecoverage.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
@@ -71,5 +74,103 @@ class CoverageCanvasTest {
 
         assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(0, 200));
         assertEquals(Color.BLUE.getRGB(), result.getRGB(1, 200));
+    }
+
+    @Test
+    void missingNativeTilesPaintTheirInteriorRedAndKeepBlackBorders() throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        ViewerModel model = new ViewerModel(catalog);
+        model.nextDepth();
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(516, 516);
+        canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(516, 516)));
+
+        BufferedImage result = new BufferedImage(516, 516, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        assertEquals(Color.BLACK.getRGB(), result.getRGB(100, 100));
+        assertEquals(Color.RED.getRGB(), result.getRGB(100, 200));
+        assertEquals(Color.BLACK.getRGB(), result.getRGB(258, 200));
+        assertEquals(Color.RED.getRGB(), result.getRGB(400, 300));
+        assertEquals(Color.BLACK.getRGB(), result.getRGB(400, 400));
+        assertEquals(Color.BLUE.getRGB(), result.getRGB(100, 400));
+        assertNull(canvas.tileAddressAtCanvasPosition(100, 100));
+        assertNotNull(canvas.tileAddressAtCanvasPosition(100, 200));
+    }
+
+    @Test
+    void missingCoverageCellsPaintTheirPixelRed() throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        ViewerModel model = new ViewerModel(catalog);
+        model.nextDepth();
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(2, 2);
+        canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(1, 1)));
+
+        BufferedImage result = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        assertEquals(Color.RED.getRGB(), result.getRGB(1, 0));
+        assertEquals(Color.RED.getRGB(), result.getRGB(1, 1));
+        assertEquals(Color.BLUE.getRGB(), result.getRGB(0, 1));
+    }
+
+    @Test
+    void selectedMissingTileGetsGreenBorderAndItsCenterCoordinatesInHud() throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        ViewerModel model = new ViewerModel(catalog);
+        model.nextDepth();
+        model.toggleSelection(TileAddress.fromCoordinates(1, 1, 1));
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(516, 516);
+        canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(516, 516)));
+
+        BufferedImage result = new BufferedImage(516, 516, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(258, 200));
+        assertEquals(Color.RED.getRGB(), result.getRGB(259, 200));
+        assertTrue(java.util.Arrays.asList(canvas.hudLines()).contains("lat: 45.00000000"));
+        assertTrue(java.util.Arrays.asList(canvas.hudLines()).contains("lon: 90.00000000"));
+    }
+
+    @Test
+    void levelTwoLeavesRowsOutsideEarthLatitudesDarkAndUnclickable() throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("003"), temporaryFolder.resolve("0.png")));
+        ViewerModel model = new ViewerModel(catalog);
+        model.nextDepth();
+        model.nextDepth();
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(4, 4);
+        canvas.setLayoutDescription(LevelLayout.choose(2, new PixelSize(1, 1)));
+
+        BufferedImage result = new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        int background = new Color(18, 18, 20).getRGB();
+        assertEquals(background, result.getRGB(3, 0));
+        assertEquals(Color.RED.getRGB(), result.getRGB(3, 1));
+        assertEquals(Color.RED.getRGB(), result.getRGB(3, 2));
+        assertEquals(background, result.getRGB(3, 3));
+        assertNull(canvas.tileAddressAtCanvasPosition(3, 0));
+        assertNotNull(canvas.tileAddressAtCanvasPosition(3, 1));
+        assertNotNull(canvas.tileAddressAtCanvasPosition(3, 2));
+        assertNull(canvas.tileAddressAtCanvasPosition(3, 3));
+    }
+
+    private PyramidCatalog catalogWithBlueRootAndSouthWestChild() throws IOException {
+        Path rootPath = temporaryFolder.resolve("0.png");
+        BufferedImage root = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D graphics = root.createGraphics();
+        graphics.setColor(Color.BLUE);
+        graphics.fillRect(0, 0, 256, 256);
+        graphics.dispose();
+        ImageIO.write(root, "png", rootPath.toFile());
+
+        PyramidCatalog catalog = new PyramidCatalog(temporaryFolder);
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("0"), rootPath));
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("00"), rootPath));
+        return catalog;
     }
 }

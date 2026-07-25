@@ -1,6 +1,8 @@
 package pyramidalimagecoverage.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +28,37 @@ class TileAddressTest {
 
         TileAddress tile = TileAddress.fromQuadKey("002");
         assertEquals(-90.0, tile.lowerLeftLongitude());
-        assertEquals(-45.0, tile.lowerLeftLatitude());
+        assertEquals(-90.0, tile.lowerLeftLatitude());
+    }
+
+    @Test
+    void createsAddressFromMatrixCoordinatesAndCalculatesItsCenter() {
+        TileAddress address = TileAddress.fromCoordinates(1, 1, 1);
+
+        assertEquals("02", address.quadKey());
+        assertEquals(45.0, address.centerLatitude());
+        assertEquals(90.0, address.centerLongitude());
+    }
+
+    @Test
+    void clipsSquareQuadtreeTilesToValidEarthLatitudes() {
+        TileAddress root = TileAddress.fromCoordinates(0, 0, 0);
+        TileAddress levelOneSouth = TileAddress.fromCoordinates(1, 0, 0);
+        TileAddress levelOneNorth = TileAddress.fromCoordinates(1, 0, 1);
+        TileAddress levelTwoOutsideSouth = TileAddress.fromCoordinates(2, 0, 0);
+        TileAddress levelTwoSouth = TileAddress.fromCoordinates(2, 0, 1);
+        TileAddress levelTwoNorth = TileAddress.fromCoordinates(2, 0, 2);
+        TileAddress levelTwoOutsideNorth = TileAddress.fromCoordinates(2, 0, 3);
+
+        assertEquals(-90.0, root.lowerLeftLatitude());
+        assertEquals(180.0, root.latitudeSpan());
+        assertEquals(-45.0, levelOneSouth.centerLatitude());
+        assertEquals(45.0, levelOneNorth.centerLatitude());
+        assertEquals(-45.0, levelTwoSouth.centerLatitude());
+        assertEquals(45.0, levelTwoNorth.centerLatitude());
+        assertFalse(levelTwoOutsideSouth.hasGeographicCoverage());
+        assertFalse(levelTwoOutsideNorth.hasGeographicCoverage());
+        assertTrue(levelTwoSouth.hasGeographicCoverage());
+        assertTrue(levelTwoNorth.hasGeographicCoverage());
     }
 }

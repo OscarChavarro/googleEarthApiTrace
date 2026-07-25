@@ -45,6 +45,24 @@ class ViewerModelSelectionTest {
         assertFalse(grandchild.selected());
     }
 
+    @Test
+    void selectsAndClearsAnAddressWithoutImageData() {
+        PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
+        add(catalog, "0");
+        ViewerModel model = new ViewerModel(catalog);
+        TileAddress missing = TileAddress.fromCoordinates(1, 1, 1);
+
+        model.toggleSelection(missing);
+
+        assertTrue(model.isSelectedAt(1, 1, 1));
+        assertTrue(missing.equals(model.selectedAddress()));
+
+        model.toggleSelection(missing);
+
+        assertFalse(model.isSelectedAt(1, 1, 1));
+        assertTrue(model.selectedAddress() == null);
+    }
+
     private static TileRecord add(PyramidCatalog catalog, String quadKey) {
         TileRecord tile = new TileRecord(TileAddress.fromQuadKey(quadKey), Path.of(quadKey + ".png"));
         catalog.add(tile);

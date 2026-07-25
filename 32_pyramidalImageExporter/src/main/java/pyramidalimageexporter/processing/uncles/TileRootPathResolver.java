@@ -34,6 +34,7 @@ import pyramidalimageexporter.model.ParentGridTransform;
  */
 public final class TileRootPathResolver {
     private static final Pattern QUADKEY_PATTERN = Pattern.compile("[0-3]+");
+    private static final int MIN_GRID_ANCHOR_VOTES = 3;
     private final UncleRmsAnalyzer rmsAnalyzer = new UncleRmsAnalyzer();
 
     public enum PathSource {
@@ -388,6 +389,17 @@ public final class TileRootPathResolver {
                     + " has no majority among its inconsistent anchors ("
                     + votes.size() + " candidates " + votes
                     + "); skipping grid propagation for it."
+            );
+            return null;
+        }
+        int requiredVotes = strongestSource == PathSource.UNCLE
+            ? Math.min(MIN_GRID_ANCHOR_VOTES, layer.getTiles().size())
+            : 1;
+        if (winner.count() < requiredVotes) {
+            System.out.println(
+                "TileRootPathResolver: layer " + layer.getSourceFolderName()
+                    + " has only " + winner.count() + " vote(s) for its best anchor; "
+                    + requiredVotes + " are required before propagating a rigid grid."
             );
             return null;
         }

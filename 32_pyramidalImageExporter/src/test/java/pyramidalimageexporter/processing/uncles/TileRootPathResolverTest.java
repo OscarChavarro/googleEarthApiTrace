@@ -50,7 +50,7 @@ final class TileRootPathResolverTest {
     void positionsTheWholeMatrixFromOneAbsoluteUncleAnchor() {
         MatrixLayerTile anchored = tile("child-a", 0, 0);
         anchored.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_WEST, "parent")));
-        MatrixLayer layer = layer(anchored, tile("child-b", 0, 1));
+        MatrixLayer layer = layer(anchored);
 
         TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
             List.of(layer),
@@ -59,9 +59,28 @@ final class TileRootPathResolverTest {
         );
 
         assertEquals("030", resolution.pathById().get("child-a"));
-        assertEquals("031", resolution.pathById().get("child-b"));
         assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("child-a"));
-        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("child-b"));
+    }
+
+    @Test
+    void doesNotPositionALargeMatrixFromOnlyTwoWeakVotes() {
+        MatrixLayerTile first = tile("first", 0, 0);
+        first.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "parent")));
+        MatrixLayerTile second = tile("second", 0, 1);
+        second.setUncles(List.of(new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent")));
+        MatrixLayerTile outlier = tile("outlier", 1, 0);
+        outlier.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_WEST, "other-parent")));
+        MatrixLayer layer = layer(first, second, outlier, tile("unanchored", 1, 1));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer),
+            Map.of("parent", "03", "other-parent", "00"),
+            Map.of()
+        );
+
+        assertFalse(resolution.pathById().containsKey("unanchored"));
+        assertEquals(TileRootPathResolver.PathSource.UNCLE, resolution.sourceById().get("first"));
+        assertEquals(TileRootPathResolver.PathSource.UNCLE, resolution.sourceById().get("second"));
     }
 
     @Test
@@ -151,6 +170,10 @@ final class TileRootPathResolverTest {
         earlyOutlier.setUncles(List.of(
             new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent-seed")
         ));
+        MatrixLayerTile majorityCenter = tile("child-center", 0, 1);
+        majorityCenter.setUncles(List.of(
+            new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent-seed")
+        ));
         MatrixLayerTile majorityWest = tile("child-west", 0, 2);
         majorityWest.setUncles(List.of(
             new ToUncleRelationship(UncleDirections.WEST_NORTH, "parent-east")
@@ -159,7 +182,7 @@ final class TileRootPathResolverTest {
         majorityEast.setUncles(List.of(
             new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent-east")
         ));
-        MatrixLayer child = layer(earlyOutlier, majorityWest, majorityEast);
+        MatrixLayer child = layer(earlyOutlier, majorityCenter, majorityWest, majorityEast);
         child.setSourceFolderName("matrix_1");
 
         TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
@@ -169,6 +192,7 @@ final class TileRootPathResolverTest {
         );
 
         assertEquals(quadPath(3, 0, 0), resolution.pathById().get("child-outlier"));
+        assertEquals(quadPath(3, 0, 1), resolution.pathById().get("child-center"));
         assertEquals(quadPath(3, 0, 2), resolution.pathById().get("child-west"));
         assertEquals(quadPath(3, 0, 3), resolution.pathById().get("child-east"));
     }
