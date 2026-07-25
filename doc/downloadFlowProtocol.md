@@ -27,12 +27,10 @@ iteration. The consolidated pyramid is the only long-lived result.
    new capture, but it must not be changed or cleared between modules 22 and 32.
    `32_pyramidalImageExporter` reads `topLevelTiles.json` and may read original
    per-frame `frame.json` and texture paths even after modules 23 and 31 have finished.
-2. Module 31 must run in `--mode auto --offline` mode for unattended automation. Its
-   grouping tile-set conservation check must succeed before any explicit filtering, and
-   it must export contract-v3 `matrixLayer.json` files plus every referenced texture.
-   During the current operator-assisted protocol, a reviewed small-matrix filter may
-   intentionally discard tiles only when its threshold and discarded tile IDs/count are
-   reported separately from the conservation check.
+2. During the current operator-assisted protocol, module 31 runs interactively in
+   `--mode auto`. The operator reviews and edits the grouped matrices, then closes the
+   window to export them. The orchestrator does not validate or count the generated
+   matrix set before passing it to module 32.
 3. Module 32 must run with `--export`. A successful process exit is not sufficient:
    some exporter failures are reported in the log without a non-zero exit status. The
    automation must also check the placement report, the completion message, and the
@@ -42,9 +40,10 @@ iteration. The consolidated pyramid is the only long-lived result.
    write, or a missing root tile rejects the whole iteration. Sparse output caused by
    genuinely absent child tiles is valid; losing a captured native tile during placement
    is not.
-5. Module 42 must first run with `--dry-run`. If it reports a conflict (exit status `2`),
-   the real merge must not run. The iteration is rejected and the consolidated pyramid
-   remains untouched.
+5. Module 42 must first run with `--dry-run`. If it reports content conflicts, the real
+   merge must not run with that delta. Reopen interactive module 31 so the operator can
+   reduce the matrix set, then rebuild module 32 and repeat the module-42 dry run.
+   Module 43 has no dry-run mode; it is the later coverage viewer.
 6. Only module 42 may modify the consolidated pyramid. Modules 31 and 32 operate in a
    new per-iteration staging directory under `/tmp`.
 7. Quadtree paths use `0` as the root marker and digits `0..3` for descendants. New files
@@ -189,6 +188,14 @@ Progress detection must complement capacity detection:
   estimates, not as a hard success condition; content validation and process exit status
   remain authoritative.
 
+`runFullProcess.sh` writes every program and material validation boundary with explicit
+`started_at=<ISO-8601>` and `finished_at=<ISO-8601>` fields, plus
+`elapsed_seconds=<n>` on completion. This includes capture cleanup, trace selection and
+stability checking, `apitrace dump`, modules 14/21/22/23/31/32/42, module-21 publication,
+the postconditions after modules 21, 22, 32 and 42, and successful staging cleanup.
+These markers are intended to make the cost of successful processing and validation
+separately measurable over several iterations; they do not add a new acceptance check.
+
 The following capacity checks still need measurements from a successful iteration:
 peak module-22/23 RAMDISK growth, matrix staging size, delta-pyramid size, module
 31/32 duration, dry-run duration, commit duration, and destination growth. Until those
@@ -299,6 +306,10 @@ Required postconditions:
 Module 21 creates one final empty file after a trailing `glXSwapBuffers`; that file is
 allowed. The dump as a whole and the other split files must still contain data.
 
+Before splitting, module 21 counts the `glXSwapBuffers` boundaries and reports progress
+over the resulting number of output frames with the locally copied/adapted VITRAL console
+`ProgressMonitor`. The final empty output frame, when present, is included in that total.
+
 The 2026-07-23 baseline exposed this expected startup scenario: the capture contained
 frame directories `00000` and `00008..24634`, while module 21 produced
 `00001..24634`. Frames `00001..00007` have GL logs but no detector-managed resources;
@@ -398,50 +409,37 @@ Module 23 deliberately deletes obsolete matrices for filtered or invalid frames.
 valid normalization behavior; zero surviving matrices is not a useful iteration and must
 be rejected.
 
+The orchestrator does not perform a second exhaustive `validate_source_matrices` pass.
+That pass reparsed every `matrix.json` and checked every referenced texture separately,
+adding about 15 minutes to a typical iteration after module 23 had already generated the
+data. Module 31 consumes the module-23 output directly.
+
 ## Phase 4: consolidate matrix layers in isolated staging (module 31)
 
-Create a unique staging directory and run:
+Create a unique staging directory and run the interactive launcher:
 
 ```bash
-./gradlew :31_matrixMerger:run \
-  --args="--mode auto --offline --diagnose-order <staging>/matrix"
+./31_matrixMerger/run.sh <staging>/matrix
 ```
 
-Do not use the interactive `31_matrixMerger/run.sh` in automation: without `--offline`
-it opens a GUI and exports only when the viewer closes.
-
-During operator-assisted iterations, use the interactive launcher and review the
-automatically grouped matrices before closing the viewer. The empirical criterion used
-in the 2026-07-23 baseline was to delete every resulting matrix with fewer than 10 tiles.
+Review the automatically grouped matrices and close the viewer to export the retained
+set. The empirical criterion used in the 2026-07-23 baseline was to delete every
+resulting matrix with fewer than 10 tiles.
 This reduced 12 grouped layers to 8 retained layers and intentionally reduced the native
 tile set from 1,859 to 1,848 IDs. The retained layer sizes were 45, 52, 80, 1,290, 43,
 32, 177, and 129 tiles.
 
-The `< 10` rule is a provisional manual quality filter, not yet an unattended invariant.
-Before automating it, module 31 must report the deleted matrix identities, tile counts,
-and native tile IDs, then confirm conservation of every retained tile through export.
-This makes intentional quality filtering distinguishable from an accidental lossy merge.
+The `< 10` rule remains an operator heuristic, not an orchestrator validation.
 
 This phase is critical. The automatic pipeline performs retry-merge sweeps, west-cutter
 splits, hierarchy ordering, and conservative visual parent inference. Pairwise overlap
 conflicts must fail instead of silently consuming only part of a matrix. Its final
-tile-set conservation check must report the same unique native tile-ID set before and
-after grouping.
+tile-set conservation message remains available to the operator as a diagnostic, but
+the orchestrator does not inspect it.
 
-Required postconditions:
-
-- The log contains `AutomaticMatrixGroupingPipeline: tile-set conservation OK`.
-- At least one `<staging>/matrix/matrix_<n>/matrixLayer.json` exists.
-- Every layer has `contractVersion: 3`, a non-empty `matrices` array, valid matrix bounds,
-  and readable copied tile PNGs.
-- `parentMatrixIndex`, when present, names an earlier exported matrix.
-- `hierarchyLevel`, `parentGridTransform`, and
-  `hierarchyRelationshipsByTileId` remain relative hierarchy evidence; directory order is
-  never treated as an absolute position.
-
-There is no supported "tile-size restriction" retry option in module 31's current CLI.
-If automatic grouping fails, do not invent one or fall back to the lossy legacy global
-merge. Preserve the staging/logs, fix or recapture the session, and rerun the iteration.
+The orchestrator intentionally performs no postcondition checks over the matrix set
+exported by 31. Module 32 becomes the next automated boundary: if the interactive export
+is empty, unreadable, ambiguous, or cannot be positioned, module 32 must reject it.
 
 ## Phase 5: place matrices and export the session delta (module 32)
 
@@ -501,18 +499,26 @@ First perform the read-only validation:
 
 Interpret the result as follows:
 
-| Exit status | Meaning | Action |
-|---:|---|---|
-| `0` | No incompatible overlapping quadkeys | Continue to the real merge |
-| `2` | One or more content conflicts | Reject the iteration; do not modify the destination |
-| `1` | Invalid input, unreadable tree, or comparison error | Reject and investigate |
+| Module-42 result | Meaning | Action |
+|---|---|---|
+| Exit `0` | No incompatible overlapping quadkeys | Continue to the real merge |
+| Semantic conflict; Java exits `2` | One or more content conflicts | Do not merge this delta; reopen interactive module 31 |
+| Technical failure; Java exits `1` | Invalid input, unreadable tree, or comparison error | Reject and investigate |
+
+When module 42 reports content conflicts, discard the current staging matrix/delta,
+reopen module 31 interactively, and let the operator remove additional suspect matrices.
+After the operator closes 31, rerun 32 and the module-42 dry run. Repeat until the dry run
+succeeds or the operator/process rejects the iteration. Gradle normally
+maps Java's exit status `2` to its own status `1`, so automation identifies this case
+using module 42's `Merge blocked: red.` and `Conflict details:` output. Input, I/O,
+comparison-process, module-31, or module-32 failures remain immediately fatal.
 
 The adjacent `-10..0, -170..-140` iteration on 2026-07-23 exercised the conflict path:
 module 32 successfully wrote 1,849 tiles and fully placed every retained matrix, but
 module 42 found visually incompatible overlaps at levels 6 and 7 against the previously
 committed `-20..-10` iteration. The dry run exited with status `2`; the real merge was
-not run and the destination remained unchanged. A large, structurally valid delta is
-therefore not sufficient evidence to bypass overlap conflicts.
+not run automatically and the destination remained unchanged. A large, structurally
+valid delta is not sufficient evidence to bypass overlap conflicts.
 
 Only after a successful dry run, while still holding the workflow lock, run:
 
@@ -555,10 +561,10 @@ placement, conflict, and post-merge checks above.
 | Dump -> module 21 | Complete non-empty dump with a frame boundary | Partial dump, no space, missing boundary | No |
 | Module 21 -> 22 | Valid isolated split; safe frame-folder creation; verified publication | Split failure, invalid path shape, incomplete copy | No |
 | Module 22 -> 23 | Frame JSONs; 320 strips; non-zero appearances | Parse failure, empty/broken TOP catalogue | No |
-| Module 23 -> 31 | Non-empty valid matrix set | No surviving matrices or invalid references | No |
-| Module 31 -> 32 | Conservation OK; contract-v3 layers and copied PNGs | Lossy/conflicting grouping or incomplete export | No |
+| Module 23 -> 31 | Module 23 exits successfully | Normalizer failure | No |
+| Module 31 -> 32 | Operator closes interactive 31 | Module 31 process failure; generated set is not validated here | No |
 | Module 32 -> 42 dry run | Every layer fully placed; valid non-empty pyramid | Unplaced/ambiguous tiles, export/write/layout failure | No |
-| Dry run -> real module 42 | Exit `0`, zero conflicts | Exit `1` or `2` | No |
+| Dry run -> retry/real module 42 | Exit `0`, or semantic conflict that reopens interactive 31 | Technical failure | No |
 | Real module 42 -> complete | Exit `0`; every delta quadkey visible after rescan | Copy or post-merge verification failure | Yes |
 
 ## First automation implementation
@@ -569,9 +575,12 @@ placement, conflict, and post-merge checks above.
   `apitrace dump`, module 21, and modules 22/23/31/32/42 in order.
 - In the current operator-assisted phase it opens module 23 interactively and waits for
   the operator to define west cutters and close the window.
-- Modules 31 and 32 use their process-only `runOffline.sh` launchers. Module 31 applies
-  the documented `< 10` tile filter and module 32 performs the same export action as the
+- Module 31 uses its interactive `run.sh` launcher; the operator reviews the set and
+  closes the viewer to export. The orchestrator does not validate that generated matrix
+  set. Module 32 remains process-only and performs the same export action as the
   interactive `e` key without starting JOGL.
+- If module 42's dry run reports content conflicts, it reopens interactive module 31,
+  then reruns modules 32 and 42 after the operator closes it.
 - It uses a unique `/tmp/google-earth-full-process.*` staging directory.
 - It preserves staging on every failure and deletes it after success unless
   `--keep-work` is given.

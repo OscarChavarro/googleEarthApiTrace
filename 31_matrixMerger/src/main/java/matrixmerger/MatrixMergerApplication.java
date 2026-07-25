@@ -21,7 +21,7 @@ import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public final class MatrixMergerApplication {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
-    private static final int OFFLINE_MINIMUM_TILE_COUNT = 10;
+    private static final int DEFAULT_OFFLINE_MINIMUM_TILE_COUNT = 10;
     private static final int DEFAULT_OFFLINE_WIDTH = 1024;
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
 
@@ -34,6 +34,11 @@ public final class MatrixMergerApplication {
         boolean offline = hasArg(args, "--offline") || hasArg(args, "-offline");
         boolean renderAllLevels = hasArg(args, "--all-levels");
         boolean renderLevel = argValue(args, "--level") != null || renderAllLevels;
+        int minimumTileCount = nonNegativeIntArgValue(
+            args,
+            "--minimum-tile-count",
+            DEFAULT_OFFLINE_MINIMUM_TILE_COUNT
+        );
         Mode mode = parseMode(args);
         if (!offline && !Jogl4Renderer.verifyOpenGLAvailability()) {
             AppLogger.warn("Can not start OpenGL/JOGL.");
@@ -46,7 +51,7 @@ public final class MatrixMergerApplication {
         printMissingOutputFolderWarning(model);
         if (offline && !renderLevel) {
             processOfflineWithoutRendering(model, mode);
-            discardSmallOfflineMatrices(model);
+            discardSmallOfflineMatrices(model, minimumTileCount);
             finishProcessing(model, outputPath, args);
             return;
         }
@@ -87,14 +92,14 @@ public final class MatrixMergerApplication {
         AppLogger.info("Offline full-set merge done. Matrices: " + before + " -> " + after);
     }
 
-    private static void discardSmallOfflineMatrices(MatrixMergerState model) {
+    private static void discardSmallOfflineMatrices(MatrixMergerState model, int minimumTileCount) {
         MatrixMergerState.SmallMatrixDiscardReport report =
-            model.discardMatricesWithFewerThanTiles(OFFLINE_MINIMUM_TILE_COUNT);
+            model.discardMatricesWithFewerThanTiles(minimumTileCount);
         AppLogger.info(
             "Offline small-matrix filter: retained matrices=" + model.getMatrixCount()
                 + ", discarded matrices=" + report.matrixCount()
                 + ", discarded tiles=" + report.tileCount()
-                + ", threshold=<" + OFFLINE_MINIMUM_TILE_COUNT + "."
+                + ", threshold=<" + minimumTileCount + "."
         );
         if (!report.tileIds().isEmpty()) {
             AppLogger.info("Offline small-matrix filter discarded tile ids: " + report.tileIds());
@@ -288,6 +293,23 @@ public final class MatrixMergerApplication {
         }
     }
 
+    private static int nonNegativeIntArgValue(String[] args, String flag, int fallback) {
+        String value = argValue(args, flag);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed < 0) {
+                throw new NumberFormatException();
+            }
+            return parsed;
+        }
+        catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(flag + " must be a non-negative integer.", ex);
+        }
+    }
+
     private static String parseOutputFolder(String[] args) {
         if (args == null) {
             return null;
@@ -299,12 +321,14 @@ public final class MatrixMergerApplication {
             }
             if (arg.startsWith("--mode=") || arg.startsWith("--level=")
                 || arg.startsWith("--output=") || arg.startsWith("--width=")
-                || arg.startsWith("--height=") || "--offline".equals(arg) || "-offline".equals(arg)
+                || arg.startsWith("--height=") || arg.startsWith("--minimum-tile-count=")
+                || "--offline".equals(arg) || "-offline".equals(arg)
                 || "--diagnose-order".equals(arg) || "--all-levels".equals(arg)) {
                 continue;
             }
             if ("--mode".equals(arg) || "--level".equals(arg) || "--output".equals(arg)
-                || "--width".equals(arg) || "--height".equals(arg)) {
+                || "--width".equals(arg) || "--height".equals(arg)
+                || "--minimum-tile-count".equals(arg)) {
                 i++;
                 continue;
             }

@@ -21,7 +21,6 @@ public class GoogleEarthController {
     private static final int WINDOW_RECOVERY_ATTEMPTS = 10;
     private static final long WINDOW_RECOVERY_RETRY_MILLIS = 500;
     private static final long OFFLINE_START_DELAY_SECONDS = 2;
-    private static final Path SCREENSHOT_PATH = Path.of("/tmp", "screenshot.png");
     private static final char[] SPINNER_FRAMES = {'-', '/', '|', '\\'};
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -131,16 +130,6 @@ public class GoogleEarthController {
             window = recoveredWindow.get();
             System.out.println("[OK] Google Earth window recovered after crash dialog: " + window.id()
                 + " title=\"" + window.title() + "\" class=" + window.windowClass());
-        }
-
-        try {
-            Path screenshot = x11AccessService.captureWindow(window, SCREENSHOT_PATH);
-            System.out.println("[OK] Google Earth screenshot exported to " + screenshot + ".");
-        } catch (RuntimeException e) {
-            System.err.println("[ERROR] Google Earth screenshot failed: " + e.getMessage());
-            ui.setFeedback("Google Earth screenshot failed");
-            finishStarting();
-            return;
         }
 
         try {

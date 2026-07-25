@@ -13,6 +13,8 @@ apitrace dump googleearth-bin.trace > textfile.txt
 - Reads a large input GL trace text file.
 - Splits the stream into per-frame files under `./output/%05d/gl.txt`.
 - Uses `glXSwapBuffers` as the frame boundary trigger.
+- Counts those boundaries in a first pass and displays VITRAL-style console progress
+  over the exact number of output frames during the split pass.
 
 ## Build and run
 
@@ -30,3 +32,5 @@ cmake --build build -j
   missing), one numbered folder per frame.
 - On success it prints the number of files created and total lines processed, and
   exits with code `0`; any I/O error exits with code `1`.
+- The final output frame can be empty when the input ends immediately after a
+  `glXSwapBuffers`; it is included in the reported progress total.

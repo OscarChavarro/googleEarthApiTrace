@@ -1,9 +1,46 @@
 #!/usr/bin/env bash
+
+# Bash reads a script incrementally.  A long capture can therefore be corrupted
+# if this file is saved while the process is waiting for an external module:
+# the running shell may continue with a mixture of the old and new contents.
+# Execute each invocation from a private snapshot so its source cannot change
+# underneath it.  The snapshot unlinks itself once Bash has opened it.
+if [[ -z "${RUN_FULL_PROCESS_SNAPSHOT_ACTIVE:-}" ]]; then
+    run_full_process_source="${BASH_SOURCE[0]}"
+    run_full_process_dir="$(
+        cd "$(dirname "$run_full_process_source")" && pwd
+    )"
+    run_full_process_snapshot="$(
+        mktemp /tmp/google-earth-runFullProcess.snapshot.XXXXXX
+    )"
+    cp -- "$run_full_process_source" "$run_full_process_snapshot"
+    RUN_FULL_PROCESS_SNAPSHOT_ACTIVE=1 \
+    RUN_FULL_PROCESS_SCRIPT_DIR="$run_full_process_dir" \
+    RUN_FULL_PROCESS_SNAPSHOT_PATH="$run_full_process_snapshot" \
+        exec bash "$run_full_process_snapshot" "$@"
+fi
+
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR="$RUN_FULL_PROCESS_SCRIPT_DIR"
+readonly SCRIPT_SNAPSHOT_PATH="$RUN_FULL_PROCESS_SNAPSHOT_PATH"
+case "$SCRIPT_SNAPSHOT_PATH" in
+    /tmp/google-earth-runFullProcess.snapshot.[A-Za-z0-9]*)
+        find "$SCRIPT_SNAPSHOT_PATH" -maxdepth 0 -type f -delete
+        ;;
+    *)
+        printf 'Refusing to remove unexpected script snapshot: %s\n' \
+            "$SCRIPT_SNAPSHOT_PATH" >&2
+        exit 2
+        ;;
+esac
+unset RUN_FULL_PROCESS_SNAPSHOT_ACTIVE
+unset RUN_FULL_PROCESS_SCRIPT_DIR
+unset RUN_FULL_PROCESS_SNAPSHOT_PATH
+
 readonly CAPTURE_ROOT="/media/ramdisk/output"
+readonly TRACE_DUMP_DIR="/media/ramdisk/output"
 readonly DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
 readonly TRACE_DIRECTORY="/opt/google/earth/pro"
 readonly TRACE_PATTERN="googleearth-bin*trace"
@@ -15,7 +52,7 @@ dry_run=0
 keep_work=0
 route_command=""
 run_dir=""
-completed=0
+trace_dump_dir="$TRACE_DUMP_DIR"
 session_started_epoch="$(date +%s)"
 original_args=("$@")
 
@@ -40,7 +77,7 @@ Options:
                       /samples/datasets/googleEarth/toplevel)
   --reuse-capture     Do not clear/capture; reprocess /media/ramdisk/output
   --dry-run           Build and validate the delta, but do not merge it
-  --keep-work         Preserve staging after a successful execution
+  --keep-work         Preserve staging when the script exits
   --route-command CMD Record the module-11 command that prepared the current KML
   -h, --help          Show this help
 EOF
@@ -143,10 +180,8 @@ on_exit() {
     local status=$?
     local elapsed
     trap - EXIT
-    if ((status != 0)); then
-        [[ -z "$run_dir" ]] || log "Iteration rejected; diagnostic staging preserved at $run_dir"
-    elif ((completed == 1 && keep_work == 0)); then
-        safe_remove_run_dir || true
+    if [[ -n "$run_dir" ]] && ((keep_work == 0)); then
+        run_timed_step temporary_staging_cleanup safe_remove_run_dir || true
     elif [[ -n "$run_dir" ]]; then
         log "Staging preserved at $run_dir"
     fi
@@ -160,32 +195,53 @@ trap on_exit EXIT
 
 run_logged() {
     local name="$1"
-    local started status
+    local started started_at finished_at status
     shift
     started="$(date +%s)"
-    log "Starting $name"
+    started_at="$(date --iso-8601=seconds)"
+    log "Starting $name started_at=$started_at"
     if "$@" 2>&1 | tee "$run_dir/logs/$name.log"; then
         status=0
     else
         status=$?
     fi
-    log "Finished $name status=$status elapsed_seconds=$(($(date +%s) - started))"
+    finished_at="$(date --iso-8601=seconds)"
+    log "Finished $name finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
     return "$status"
 }
 
 run_logged_in_directory() {
     local name="$1"
     local directory="$2"
-    local started status
+    local started started_at finished_at status
     shift 2
     started="$(date +%s)"
-    log "Starting $name in $directory"
+    started_at="$(date --iso-8601=seconds)"
+    log "Starting $name started_at=$started_at working_directory=$directory"
     if (cd "$directory" && "$@") 2>&1 | tee "$run_dir/logs/$name.log"; then
         status=0
     else
         status=$?
     fi
-    log "Finished $name status=$status elapsed_seconds=$(($(date +%s) - started))"
+    finished_at="$(date --iso-8601=seconds)"
+    log "Finished $name finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
+    return "$status"
+}
+
+run_timed_step() {
+    local name="$1"
+    local started started_at finished_at status
+    shift
+    started="$(date +%s)"
+    started_at="$(date --iso-8601=seconds)"
+    log "Starting $name started_at=$started_at"
+    if "$@"; then
+        status=0
+    else
+        status=$?
+    fi
+    finished_at="$(date --iso-8601=seconds)"
+    log "Finished $name finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
     return "$status"
 }
 
@@ -197,6 +253,17 @@ safe_delete_staging_path() {
     target_resolved="$(realpath -e -- "$target")"
     [[ "$target_resolved" == "$staging_resolved/"* ]] ||
         die "Refusing to delete path outside iteration staging: $target_resolved"
+    find "$target_resolved" -xdev -depth -delete
+}
+
+safe_delete_trace_dump_path() {
+    local target="$1"
+    local dump_dir_resolved target_resolved
+    [[ -e "$target" ]] || return 0
+    dump_dir_resolved="$(realpath -e -- "$trace_dump_dir")"
+    target_resolved="$(realpath -e -- "$target")"
+    [[ "$target_resolved" == "$dump_dir_resolved/"* ]] ||
+        die "Refusing to delete path outside trace dump staging: $target_resolved"
     find "$target_resolved" -xdev -depth -delete
 }
 
@@ -225,168 +292,39 @@ select_completed_trace() {
 
 dump_completed_trace() {
     local trace_file="$1"
-    local partial="$run_dir/bigtrace.log.partial"
-    local dump_file="$run_dir/bigtrace.log"
-    local trace_bytes free_bytes minimum_free
+    local partial="$trace_dump_dir/bigtrace.log.partial"
+    local dump_file="$trace_dump_dir/bigtrace.log"
+    local free_bytes minimum_free
 
-    trace_bytes="$(stat -c '%s' -- "$trace_file")"
-    free_bytes="$(available_bytes "$run_dir")"
-    minimum_free=$((trace_bytes * 4 + 1073741824))
+    free_bytes="$(available_bytes "$trace_dump_dir")"
+    minimum_free=$((5 * 1024 * 1024 * 1024))
     ((free_bytes >= minimum_free)) ||
-        die "Insufficient staging space for trace dump/split: need at least $minimum_free bytes, have $free_bytes."
+        die "Insufficient staging space for trace dump/split: need at least 5 GiB ($minimum_free bytes) free, have $free_bytes bytes."
 
-    log "Dumping completed trace $trace_file"
-    if ! apitrace dump "$trace_file" > "$partial" 2> >(tee "$run_dir/logs/apitrace_dump.log" >&2); then
-        safe_delete_staging_path "$partial"
+    local started started_at finished_at status
+    started="$(date +%s)"
+    started_at="$(date --iso-8601=seconds)"
+    log "Starting apitrace_dump started_at=$started_at trace=$trace_file"
+    if apitrace dump "$trace_file" > "$partial" 2> >(tee "$run_dir/logs/apitrace_dump.log" >&2); then
+        status=0
+    else
+        status=$?
+    fi
+    finished_at="$(date --iso-8601=seconds)"
+    log "Finished apitrace_dump finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
+    if ((status != 0)); then
+        safe_delete_trace_dump_path "$partial"
         die "apitrace dump failed; its partial output was discarded."
     fi
     [[ -s "$partial" ]] || {
-        safe_delete_staging_path "$partial"
+        safe_delete_trace_dump_path "$partial"
         die "apitrace dump produced an empty file."
     }
     grep -q 'glXSwapBuffers' "$partial" || {
-        safe_delete_staging_path "$partial"
+        safe_delete_trace_dump_path "$partial"
         die "Trace dump contains no glXSwapBuffers frame boundary."
     }
     mv -- "$partial" "$dump_file"
-}
-
-validate_split_tree() {
-    local split_root="$1"
-    local splitter_log="$run_dir/logs/21_traceLogSplitter.log"
-    local file relative frame nonempty=0
-    local split_frames="$run_dir/split-frame-set.txt"
-    local live_frames="$run_dir/live-frame-set.txt"
-    local live_count
-
-    grep -Eq 'Done\. Files created: [1-9][0-9]*' "$splitter_log" ||
-        die "Module 21 did not report a positive output-file count."
-    grep -Eq 'Lines processed: [1-9][0-9]*' "$splitter_log" ||
-        die "Module 21 did not report a positive processed-line count."
-
-    : > "$split_frames"
-    while IFS= read -r -d '' file; do
-        relative="${file#"$split_root"/}"
-        [[ "$relative" =~ ^[0-9]{5}/gl\.txt$ ]] || die "Unexpected module-21 output file: $file"
-        frame="${relative%%/*}"
-        printf '%s\n' "$frame" >> "$split_frames"
-        [[ -s "$file" ]] && nonempty=$((nonempty + 1))
-    done < <(find "$split_root" -type f -print0 | sort -z)
-    [[ -s "$split_frames" ]] || die "Module 21 produced no per-frame gl.txt files."
-    ((nonempty > 0)) || die "All module-21 gl.txt files are empty."
-
-    find "$CAPTURE_ROOT" -mindepth 2 -maxdepth 2 -type f -name gl.txt \
-        -printf '%h\n' | sed 's#^.*/##' | sort > "$live_frames"
-    live_count="$(awk 'END { print NR + 0 }' "$live_frames")"
-    if ((live_count > 0)); then
-        cmp -s "$split_frames" "$live_frames" ||
-            die "Live and regenerated gl.txt frame-folder sets differ; refusing to mix them."
-    fi
-}
-
-install_split_logs() {
-    local split_root="$1"
-    local token="${run_dir##*.}"
-    local source frame directory current partial rollback canonical_backup
-    local i j verification_failed=0 split_bytes capture_free minimum_free
-    local -a sources=() currents=() partials=() rollbacks=()
-
-    mapfile -d '' sources < <(find "$split_root" -type f -name gl.txt -print0 | sort -z)
-    ((${#sources[@]} > 0)) || die "There are no validated split logs to install."
-    split_bytes="$(du -sb "$split_root" | awk '{print $1}')"
-    capture_free="$(available_bytes "$CAPTURE_ROOT")"
-    minimum_free=$((split_bytes + 67108864))
-    ((capture_free >= minimum_free)) ||
-        die "Insufficient RAMDISK space to stage regenerated logs safely: need $minimum_free bytes, have $capture_free."
-
-    for source in "${sources[@]}"; do
-        frame="$(basename "$(dirname "$source")")"
-        directory="$CAPTURE_ROOT/$frame"
-        mkdir -p -- "$directory"
-        current="$directory/gl.txt"
-        partial="$directory/.gl.txt.from-traceLogSplitter.$token.partial"
-        rollback="$directory/.gl.txt.before-install.$token"
-        [[ ! -e "$partial" && ! -e "$rollback" ]] ||
-            die "Refusing to overwrite an existing integration temporary in $directory"
-        if ! cp -- "$source" "$partial" || ! cmp -s "$source" "$partial"; then
-            for partial in "${partials[@]}" "$partial"; do
-                [[ -e "$partial" ]] && find "$partial" -maxdepth 0 -type f -delete
-            done
-            die "Could not stage and verify regenerated log for frame $frame."
-        fi
-        currents+=("$current")
-        partials+=("$partial")
-        rollbacks+=("$rollback")
-    done
-
-    for ((i = 0; i < ${#sources[@]}; i++)); do
-        current="${currents[i]}"
-        partial="${partials[i]}"
-        rollback="${rollbacks[i]}"
-        if [[ -e "$current" ]]; then
-            if ! mv -- "$current" "$rollback"; then
-                break
-            fi
-        fi
-        if ! mv -- "$partial" "$current"; then
-            [[ ! -e "$rollback" ]] || mv -- "$rollback" "$current"
-            break
-        fi
-    done
-
-    if ((i < ${#sources[@]})); then
-        for ((j = 0; j < i; j++)); do
-            current="${currents[j]}"
-            rollback="${rollbacks[j]}"
-            find "$current" -maxdepth 0 -type f -delete
-            [[ ! -e "$rollback" ]] || mv -- "$rollback" "$current"
-        done
-        for partial in "${partials[@]}"; do
-            [[ -e "$partial" ]] && find "$partial" -maxdepth 0 -type f -delete
-        done
-        die "Publishing regenerated gl.txt files failed; previous live logs were restored."
-    fi
-
-    for ((i = 0; i < ${#sources[@]}; i++)); do
-        if ! cmp -s "${sources[i]}" "${currents[i]}"; then
-            verification_failed=1
-            break
-        fi
-    done
-    if ((verification_failed == 1)); then
-        for ((j = 0; j < ${#sources[@]}; j++)); do
-            current="${currents[j]}"
-            rollback="${rollbacks[j]}"
-            [[ ! -e "$current" ]] || find "$current" -maxdepth 0 -type f -delete
-            [[ ! -e "$rollback" ]] || mv -- "$rollback" "$current"
-        done
-        die "Installed gl.txt verification failed; previous live logs were restored."
-    fi
-
-    for ((i = 0; i < ${#sources[@]}; i++)); do
-        rollback="${rollbacks[i]}"
-        [[ -e "$rollback" ]] || continue
-        directory="$(dirname "${currents[i]}")"
-        canonical_backup="$directory/gl.txt.before-trace-split"
-        if [[ -e "$canonical_backup" ]]; then
-            find "$rollback" -maxdepth 0 -type f -delete
-        else
-            mv -- "$rollback" "$canonical_backup"
-        fi
-    done
-    sync "$CAPTURE_ROOT"
-}
-
-discard_live_log_backups_after_analysis() {
-    local backup_count
-    backup_count="$(find "$CAPTURE_ROOT" -mindepth 2 -maxdepth 2 -type f \
-        -name gl.txt.before-trace-split -print | awk 'END { print NR + 0 }')"
-    if ((backup_count > 0)); then
-        find "$CAPTURE_ROOT" -mindepth 2 -maxdepth 2 -type f \
-            -name gl.txt.before-trace-split -delete
-        sync "$CAPTURE_ROOT"
-        log "Removed $backup_count validated live-log backup(s) after module 22 succeeded."
-    fi
 }
 
 count_files() {
@@ -395,88 +333,20 @@ count_files() {
     find "$root" -type f -name "$name" -print | awk 'END { print NR + 0 }'
 }
 
-validate_source_matrices() {
-    local file matrix_count missing_texture texture
-    local total=0 valid_matrices=0 empty_files=0
-    while IFS= read -r -d '' file; do
-        total=$((total + 1))
-        jq -e . "$file" >/dev/null || die "Invalid matrix JSON: $file"
-        matrix_count="$(jq -r '
-            (if (.matrices? | type) == "array" then .matrices else [.] end)
-            | [.[] | select(((.tiles // []) | length) > 0)]
-            | length
-        ' "$file")"
-        if ((matrix_count == 0)); then
-            empty_files=$((empty_files + 1))
-            continue
-        fi
-        jq -e '
-            (if (.matrices? | type) == "array" then .matrices else [.] end)
-            | [.[] | select(((.tiles // []) | length) > 0)]
-            | all(.[];
-                . as $matrix
-                | (($matrix.rows | type) == "number" and $matrix.rows > 0 and ($matrix.rows | floor) == $matrix.rows)
-                and (($matrix.cols | type) == "number" and $matrix.cols > 0 and ($matrix.cols | floor) == $matrix.cols)
-                and ([ $matrix.tiles[].id | select(type == "string" and length > 0) ] | length)
-                    == ($matrix.tiles | length)
-                and ([ $matrix.tiles[].id ] | unique | length) == ($matrix.tiles | length)
-                and ([ $matrix.tiles[]
-                    | select(
-                        (.i | type) != "number" or (.j | type) != "number"
-                        or .i < 0 or .j < 0
-                        or .i >= $matrix.rows or .j >= $matrix.cols
-                    )
-                ] | length) == 0
-                and ([ $matrix.tiles[].textureFile
-                    | select(type == "string" and length > 0)
-                ] | length) == ($matrix.tiles | length)
-            )
-        ' "$file" >/dev/null || die "Invalid non-empty matrix data in $file"
-        valid_matrices=$((valid_matrices + matrix_count))
-        missing_texture=0
-        while IFS= read -r texture; do
-            [[ -n "$texture" && -r "$texture" ]] || missing_texture=$((missing_texture + 1))
-        done < <(jq -r '
-            (if (.matrices? | type) == "array" then .matrices else [.] end)
-            | .[].tiles[]?.textureFile // empty
-        ' "$file")
-        ((missing_texture == 0)) || die "Matrix references $missing_texture unreadable texture(s): $file"
-    done < <(find "$CAPTURE_ROOT" -mindepth 2 -maxdepth 2 -type f -name matrix.json -print0)
-    ((total > 0)) || die "Module 23 produced no matrix.json files."
-    ((valid_matrices > 0)) || die "Module 23 produced no non-empty matrices."
-    log "Validated $valid_matrices non-empty source matrices from $total file(s); ignored $empty_files empty file(s)."
-}
-
-validate_exported_layers() {
-    local file parent index texture tile_count texture_count layer_count=0
-    while IFS= read -r -d '' file; do
-        layer_count=$((layer_count + 1))
-        index="$(basename "$(dirname "$file")")"
-        index="${index#matrix_}"
-        jq -e '
-            .contractVersion == 3 and
-            (.matrices | type == "array" and length > 0) and
-            ([.matrices[] | select((.rows // 0) <= 0 or (.cols // 0) <= 0)] | length == 0) and
-            ([.matrices[].tiles[]? | select((.id | type) != "string" or (.id | length) == 0)] | length == 0)
-        ' "$file" >/dev/null || die "Invalid contract-v3 matrix layer: $file"
-        parent="$(jq -r '.parentMatrixIndex // empty' "$file")"
-        if [[ -n "$parent" ]]; then
-            [[ "$parent" =~ ^[0-9]+$ ]] || die "Invalid parentMatrixIndex in $file"
-            ((parent < index)) || die "parentMatrixIndex must name an earlier layer in $file"
-        fi
-        tile_count="$(jq -r '[.matrices[].tiles[]?] | length' "$file")"
-        texture_count="$(jq -r '[.matrices[].tiles[]?.textureFile | select(type == "string" and length > 0)] | length' "$file")"
-        ((tile_count > 0 && texture_count == tile_count)) ||
-            die "Exported layer has missing tiles or texture paths: $file"
-        while IFS= read -r texture; do
-            [[ -r "$texture" ]] || die "Exported layer references unreadable texture: $texture"
-        done < <(jq -r '.matrices[].tiles[].textureFile // empty' "$file")
-    done < <(find "$run_dir/matrix" -mindepth 2 -maxdepth 2 -type f -name matrixLayer.json -print0 | sort -z)
-    ((layer_count > 0)) || die "Module 31 exported no matrix layers."
+validate_dump_analyzer_outputs() {
+    local frame_count top_level strip_count appearance_count
+    frame_count="$(count_files "$CAPTURE_ROOT" frame.json)"
+    ((frame_count > 0)) || die "Module 22 produced no frame.json files."
+    top_level="$CAPTURE_ROOT/topLevelTiles.json"
+    jq -e . "$top_level" >/dev/null || die "Missing or invalid topLevelTiles.json."
+    strip_count="$(jq -r '.byStripId | length' "$top_level")"
+    appearance_count="$(jq -r '[.byStripId[].appearances[]?] | length' "$top_level")"
+    ((strip_count == 320)) || die "Expected 320 top-level strips; found $strip_count."
+    ((appearance_count > 0)) || die "Top-level catalogue contains no appearances."
 }
 
 validate_export_log_and_pyramid() {
-    local export_log="$run_dir/logs/32_pyramidalImageExporter.log"
+    local export_log="$1"
     local pyramid="$run_dir/matrix/pyramidalImage"
     local png_count file filename quadkey digits expected digit
 
@@ -517,7 +387,26 @@ validate_export_log_and_pyramid() {
     done < <(find "$pyramid" -type f -name '*.png' -print0)
 }
 
-for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum compare identify mktemp mkdir basename dirname stat df du sleep cp mv cmp; do
+reset_matrix_attempt_staging() {
+    safe_delete_staging_path "$run_dir/matrix"
+    mkdir "$run_dir/matrix"
+}
+
+module_42_reported_conflicts() {
+    local log_file="$1"
+    grep -q 'Merge blocked: red\.' "$log_file" &&
+        grep -q 'Conflict details:' "$log_file"
+}
+
+validate_merge_completed() {
+    local merge_log="$1"
+    grep -q 'Merge completed\.' "$merge_log" ||
+        die "Module 42 did not report a completed merge."
+}
+
+preflight_started="$(date +%s)"
+log "Starting preflight started_at=$(date --iso-8601=seconds)"
+for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum compare identify mktemp mkdir basename dirname stat df sleep cp mv; do
     require_command "$command_name"
 done
 [[ -x "$SCRIPT_DIR/gradlew" ]] || die "Gradle wrapper is not executable: $SCRIPT_DIR/gradlew"
@@ -530,6 +419,10 @@ capture_resolved="$(canonical_directory "$CAPTURE_ROOT")"
 [[ "$capture_resolved" == "$CAPTURE_ROOT" ]] ||
     die "Capture root resolved to '$capture_resolved', not the required '$CAPTURE_ROOT'."
 [[ -w "$capture_resolved" ]] || die "Capture root is not writable: $capture_resolved"
+trace_dump_dir_resolved="$(canonical_directory "$TRACE_DUMP_DIR")"
+[[ "$trace_dump_dir_resolved" == "$TRACE_DUMP_DIR" ]] ||
+    die "Trace dump directory resolved to '$trace_dump_dir_resolved', not the required '$TRACE_DUMP_DIR'."
+[[ -w "$trace_dump_dir_resolved" ]] || die "Trace dump directory is not writable: $trace_dump_dir_resolved"
 canonical_directory "$TRACE_DIRECTORY" >/dev/null
 
 if ((reuse_capture == 0)); then
@@ -543,6 +436,7 @@ fi
 run_dir="$(mktemp -d /tmp/google-earth-full-process.XXXXXX)"
 mkdir -p "$run_dir/logs" "$run_dir/matrix"
 log "Staging directory: $run_dir"
+log "Trace dump directory: $trace_dump_dir"
 if [[ -n "$route_command" ]]; then
     log "Prepared route command: $route_command"
 else
@@ -552,6 +446,7 @@ fi
 lock_key="$(printf '%s' "$destination" | cksum | awk '{print $1}')"
 exec 9>"/tmp/google-earth-full-process-${lock_key}.lock"
 flock -n 9 || die "Another automated iteration is using destination $destination"
+log "Finished preflight finished_at=$(date --iso-8601=seconds) status=0 elapsed_seconds=$(($(date +%s) - preflight_started))"
 
 run_logged 21_traceLogSplitter_configure \
     cmake -S "$SCRIPT_DIR/21_traceLogSplitter" -B "$SCRIPT_DIR/21_traceLogSplitter/build"
@@ -561,76 +456,85 @@ splitter="$SCRIPT_DIR/21_traceLogSplitter/build/traceLogSplitter"
 [[ -x "$splitter" ]] || die "Module 21 build did not produce an executable splitter: $splitter"
 
 if ((reuse_capture == 0)); then
-    safe_clear_capture_root
+    run_timed_step capture_root_cleanup safe_clear_capture_root
     run_logged 14_sessionController "$SCRIPT_DIR/14_sessionController/run.sh"
 else
     log "Reusing the existing capture; cleanup and module 14 are skipped."
 fi
 
-trace_file="$(select_completed_trace)"
-log "Selected completed trace: $trace_file"
+trace_selection_started="$(date +%s)"
+log "Starting completed_trace_selection started_at=$(date --iso-8601=seconds)"
+if trace_file="$(select_completed_trace)"; then
+    trace_selection_status=0
+else
+    trace_selection_status=$?
+fi
+log "Finished completed_trace_selection finished_at=$(date --iso-8601=seconds) status=$trace_selection_status elapsed_seconds=$(($(date +%s) - trace_selection_started)) trace=${trace_file:-unavailable}"
+((trace_selection_status == 0)) || exit "$trace_selection_status"
 dump_completed_trace "$trace_file"
-dump_file="$run_dir/bigtrace.log"
-split_work="$run_dir/trace-split"
-mkdir "$split_work"
-run_logged_in_directory 21_traceLogSplitter "$split_work" "$splitter" "$dump_file"
-validate_split_tree "$split_work/output"
-install_split_logs "$split_work/output"
-safe_delete_staging_path "$dump_file"
-safe_delete_staging_path "$split_work"
-log "Regenerated gl.txt files were validated and published; large temporary dump/split data was removed."
-
-gl_count="$(count_files "$CAPTURE_ROOT" gl.txt)"
-((gl_count > 0)) || die "Capture contains no gl.txt frame files."
+dump_file="$trace_dump_dir/bigtrace.log"
+run_logged_in_directory 21_traceLogSplitter \
+    "$(dirname "$CAPTURE_ROOT")" "$splitter" "$dump_file"
 
 run_logged 22_dumpAnalyzer \
     "$SCRIPT_DIR/gradlew" :22_dumpAnalyzer:run \
     "--args=--offline --start-frame 3 --output $run_dir/dumpAnalyzer.png"
 
-frame_count="$(count_files "$CAPTURE_ROOT" frame.json)"
-((frame_count > 0)) || die "Module 22 produced no frame.json files."
-top_level="$CAPTURE_ROOT/topLevelTiles.json"
-jq -e . "$top_level" >/dev/null || die "Missing or invalid topLevelTiles.json."
-strip_count="$(jq -r '.byStripId | length' "$top_level")"
-appearance_count="$(jq -r '[.byStripId[].appearances[]?] | length' "$top_level")"
-((strip_count == 320)) || die "Expected 320 top-level strips; found $strip_count."
-((appearance_count > 0)) || die "Top-level catalogue contains no appearances."
-discard_live_log_backups_after_analysis
+run_timed_step 22_dumpAnalyzer_validation validate_dump_analyzer_outputs
+run_timed_step trace_dump_cleanup safe_delete_trace_dump_path "$dump_file"
 
 run_logged 23_frameTextureNormalizer \
     "$SCRIPT_DIR/23_frameTextureNormalizer/run.sh"
-validate_source_matrices
 
-run_logged 31_matrixMerger \
-    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$run_dir/matrix"
-grep -q 'AutomaticMatrixGroupingPipeline: tile-set conservation OK' \
-    "$run_dir/logs/31_matrixMerger.log" || die "Module 31 did not confirm tile-set conservation."
-validate_exported_layers
+matrix_attempt=1
+while true; do
+    attempt_suffix="$(printf 'attempt_%02d_interactive' "$matrix_attempt")"
+    matrix_attempt_started="$(date +%s)"
+    log "Starting matrix/delta_attempt_$matrix_attempt started_at=$(date --iso-8601=seconds) with interactive module 31"
+    run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_staging
 
-run_logged 32_pyramidalImageExporter \
-    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix"
-validate_export_log_and_pyramid
+    run_logged "31_matrixMerger_${attempt_suffix}" \
+        "$SCRIPT_DIR/31_matrixMerger/run.sh" "$run_dir/matrix"
+    log "Interactive module 31 closed on attempt $matrix_attempt; continuing without validating its generated matrix set."
 
-delta="$run_dir/matrix/pyramidalImage"
-run_logged 42_pyramidalImageMerger_dry_run \
-    "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
-    "--args=--dry-run $destination $delta"
+    module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
+    run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
+        "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix"
+    run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
+        validate_export_log_and_pyramid "$module_32_log"
+
+    delta="$run_dir/matrix/pyramidalImage"
+    module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
+    if run_logged "42_pyramidalImageMerger_dry_run_${attempt_suffix}" \
+        "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
+        "--args=--dry-run $destination $delta"; then
+        log "Module 42 dry run accepted matrix/delta attempt $matrix_attempt."
+        log "Finished matrix/delta_attempt_$matrix_attempt finished_at=$(date --iso-8601=seconds) status=0 result=accepted elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+        break
+    else
+        dry_run_status=$?
+    fi
+    if ! module_42_reported_conflicts "$module_42_log"; then
+        die "Module 42 dry run failed for a reason other than content conflicts (status=$dry_run_status); interactive matrix retry is not applicable."
+    fi
+
+    log "Module 42 reported content conflicts. Reopening interactive module 31 so the operator can reduce the matrix set before rerunning modules 32 and 42."
+    log "Finished matrix/delta_attempt_$matrix_attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=content_conflict elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+    matrix_attempt=$((matrix_attempt + 1))
+done
 
 if ((dry_run == 1)); then
     log "Dry run succeeded. Destination was not modified."
-    keep_work=1
-    completed=1
     exit 0
 fi
 
 run_logged 42_pyramidalImageMerger_commit \
     "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
     "--args=--offline $destination $delta"
-grep -q 'Merge completed\.' "$run_dir/logs/42_pyramidalImageMerger_commit.log" ||
-    die "Module 42 did not report a completed merge."
+run_timed_step 42_pyramidalImageMerger_commit_validation \
+    validate_merge_completed "$run_dir/logs/42_pyramidalImageMerger_commit.log"
 
-completed=1
 log "Iteration committed successfully to $destination"
 if ((keep_work == 0)); then
-    log "Successful staging will now be removed. Use --keep-work to retain it."
+    log "Temporary staging will now be removed. Use --keep-work to retain it."
 fi

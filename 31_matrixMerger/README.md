@@ -160,6 +160,8 @@ them.
   `/tmp/frame00.png`, `/tmp/frame01.png`, and so on in one grouping run.
 - `--diagnose-order`: print the resolved parent matrices, uncle counts and last capture
   frame used by the final hierarchy ordering.
+- `--minimum-tile-count <n>`: in process-only `--offline` mode, discard grouped matrix
+  layers with fewer than `n` tiles before export (default: `10`).
 
 ### Results export
 
@@ -195,7 +197,8 @@ folder is cleared so stale `matrix_<n>` folders from previous runs do not surviv
 For a completely non-interactive automatic grouping and export:
 
 ```bash
-./gradlew :31_matrixMerger:run --args="--mode auto --offline /tmp/matrix"
+./gradlew :31_matrixMerger:run \
+  --args="--mode auto --offline --minimum-tile-count=10 /tmp/matrix"
 ```
 
 Export-only offline execution does not initialize or require OpenGL. Offline rendering
