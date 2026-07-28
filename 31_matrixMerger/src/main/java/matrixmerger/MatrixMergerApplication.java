@@ -115,7 +115,7 @@ public final class MatrixMergerApplication {
         if (hasArg(args, "--diagnose-order")) {
             printHierarchyOrderDiagnostics(model);
         }
-        printMissingTopLevelUncles(model, outputPath);
+        printMissingTopLevelUncles(model);
         if (model.getOutputFolder() != null) {
             new MatrixLayerExportWriter(model, outputPath).export(model.getOutputFolder());
         }
@@ -183,37 +183,13 @@ public final class MatrixMergerApplication {
         return model;
     }
 
-    private static void printMissingTopLevelUncles(MatrixMergerState model, Path outputPath) {
-        if (model == null || outputPath == null) {
+    private static void printMissingTopLevelUncles(MatrixMergerState model) {
+        if (model == null) {
             return;
         }
-        for (String tileId : model.getMissingTopLevelUncleTileIds()) {
-            String path = toAbsoluteTilePath(outputPath, tileId);
-            if (path != null && !path.isBlank()) {
-                AppLogger.info(path);
-            }
-        }
-    }
-
-    private static String toAbsoluteTilePath(Path outputPath, String scopedTileId) {
-        String normalized = WestCuttersJsonReader.normalizeScopedTileId(scopedTileId);
-        if (normalized == null || normalized.isBlank()) {
-            return null;
-        }
-        int separator = normalized.indexOf('_');
-        if (separator <= 0 || separator >= normalized.length() - 1) {
-            return normalized;
-        }
-        try {
-            int frameId = Integer.parseInt(normalized.substring(0, separator));
-            int tileId = Integer.parseInt(normalized.substring(separator + 1));
-            return outputPath.resolve(String.format("%05d", frameId))
-                .resolve("256x256_" + tileId + ".png")
-                .toAbsolutePath()
-                .toString();
-        }
-        catch (NumberFormatException ex) {
-            return normalized;
+        int missingTileCount = model.getMissingTopLevelUncleTileIds().size();
+        if (missingTileCount > 0) {
+            AppLogger.info("Missing top-level uncle tiles: " + missingTileCount + ".");
         }
     }
 

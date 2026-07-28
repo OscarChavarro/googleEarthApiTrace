@@ -534,7 +534,9 @@ run_logged 42_pyramidalImageMerger_commit \
 run_timed_step 42_pyramidalImageMerger_commit_validation \
     validate_merge_completed "$run_dir/logs/42_pyramidalImageMerger_commit.log"
 
-log "Iteration committed successfully to $destination"
+printf '\n'
+log "ITERATION COMMITTED SUCCESSFULLY TO $destination"
+printf '\n'
 if ((keep_work == 0)); then
     log "Temporary staging will now be removed. Use --keep-work to retain it."
 fi

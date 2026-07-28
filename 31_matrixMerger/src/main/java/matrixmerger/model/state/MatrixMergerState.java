@@ -313,12 +313,15 @@ public final class MatrixMergerState {
 
     public boolean deleteSelectedMatrix() {
         FrameMatrixSet selected = getSelectedFrameMatrices();
-        if (selected == null) {
+        if (selected == null || frameMatrices.size() <= 1) {
             return false;
         }
         invalidReasonByFrameId.remove(selected.getFrameId());
         hierarchyLevelByFrame.remove(selected);
         frameMatrices.remove(selectedFrameIndex);
+        if (selectedFrameIndex >= frameMatrices.size()) {
+            selectedFrameIndex = frameMatrices.size() - 1;
+        }
         maximumRetryCount = frameMatrices.size();
         normalizeSelection();
         refreshHierarchyOrdering(false);
@@ -590,6 +593,11 @@ public final class MatrixMergerState {
     }
 
     private void normalizeSelection() {
+        if (frameMatrices.isEmpty()) {
+            selectedFrameIndex = 0;
+            return;
+        }
+        selectedFrameIndex = Math.max(0, Math.min(selectedFrameIndex, frameMatrices.size() - 1));
         while (!frameMatrices.isEmpty() && isEmpty(frameMatrices.get(selectedFrameIndex))) {
             frameMatrices.remove(selectedFrameIndex);
             if (selectedFrameIndex >= frameMatrices.size()) {
