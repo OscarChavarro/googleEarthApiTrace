@@ -33,6 +33,10 @@ The extraction workflow is split into stages. Each stage has separate codebases,
     inspection tools. `41_planetViewer` is the current viewer. The on-disk pyramid layout
     now uses one folder per quadrant digit after the root marker, so a tile such as
     `0303301` is stored as `3/0/3/3/0/1/0303301.png`.
+- Projects starting with `5` are the **Geospatial Derivative stage**.
+  - `51_demResampler` converts the global FABDEM V1.2 GeoTIFF elevation collection into
+    the same quadtree address/folder topology, using raw little-endian Int16 DEM tiles
+    instead of PNG imagery.
 
 ## Projects
 
@@ -46,6 +50,7 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 - [31_matrixMerger/README.md](31_matrixMerger/README.md): Loads per-frame tile matrices, visualizes one matrix at a time, supports interactive/automatic matrix merging and west-cutter splitting, and exports consolidated layer matrices either interactively or through a headless `--offline` run.
 - [32_pyramidalImageExporter/README.md](32_pyramidalImageExporter/README.md): Imports consolidated layer matrices from `31_matrixMerger` plus global top-level tile data from `22_dumpAnalyzer`, visualizes the quadtree layers, and exports the session's pyramidal image into the input folder itself (`<inputFolder>/pyramidalImage`); it never reads or writes any other pyramidal image — cross-session merging belongs to a separate, future program.
 - [41_planetViewer/README.md](41_planetViewer/README.md): Loads one or more exported pyramidal images and visualizes them interactively or offline, including stacked overlays and multi-view inspection.
+- [51_demResampler/README.md](51_demResampler/README.md): Uses GDAL from a Java 17 CLI to resample FABDEM at quadtree level 12 and recursively build raw `256x256` Int16 little-endian elevation tiles through level 0.
 
 ## Notes
 
