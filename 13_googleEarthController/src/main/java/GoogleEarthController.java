@@ -320,11 +320,6 @@ public class GoogleEarthController {
     }
 
     private void runInteractionSequence(long session) {
-        runBlockingSync();
-        if (!isCurrentSession(session)) {
-            return;
-        }
-
         ui.pressAndHoldKey(java.awt.event.KeyEvent.VK_DOWN, KEY_HOLD_MILLIS);
         if (!isCurrentSession(session)) {
             return;
@@ -355,21 +350,6 @@ public class GoogleEarthController {
 
     private void logTraversalCompleted() {
         System.out.println("[OK] Finished traversing " + selectedPlacemarkLimit + " points.");
-    }
-
-    private void runBlockingSync() {
-        try {
-            Process process = new ProcessBuilder("sync").start();
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                System.err.println("[WARN] sync exited with code " + exitCode + ".");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            System.err.println("[WARN] sync was interrupted.");
-        } catch (Exception e) {
-            System.err.println("[WARN] Could not run sync: " + e.getMessage());
-        }
     }
 
     private void sleepInterruptibly(long millis) {
