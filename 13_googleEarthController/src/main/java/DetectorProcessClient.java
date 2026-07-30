@@ -5,10 +5,14 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 final class DetectorProcessClient {
     private static final long GRACEFUL_SHUTDOWN_TIMEOUT_MILLIS = 1000;
+    private static final long STARTUP_TIMEOUT_MILLIS = 10_000;
 
     private final Object lock = new Object();
 
@@ -17,6 +21,7 @@ final class DetectorProcessClient {
     private Thread readerThread;
 
     boolean start(Path executable, String outputFolder, Consumer<String> onLine) {
+        StartupSignal startup = new StartupSignal();
         synchronized (lock) {
             if (process != null) {
                 return true;
@@ -29,10 +34,11 @@ final class DetectorProcessClient {
 
                 process = newProcess;
                 stdin = new BufferedWriter(new OutputStreamWriter(newProcess.getOutputStream(), StandardCharsets.UTF_8));
-                readerThread = new Thread(() -> readOutput(newProcess, onLine), "detector-output-reader");
+                readerThread = new Thread(
+                    () -> readOutput(newProcess, onLine, startup),
+                    "detector-output-reader");
                 readerThread.setDaemon(true);
                 readerThread.start();
-                return true;
             } catch (IOException ex) {
                 System.err.println("[ERROR] Could not start detector process: " + ex.getMessage());
                 process = null;
@@ -41,6 +47,22 @@ final class DetectorProcessClient {
                 return false;
             }
         }
+
+        boolean signalled;
+        try {
+            signalled = startup.latch.await(STARTUP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            signalled = false;
+        }
+        if (!signalled || !startup.ready.get() || !isProcessAlive()) {
+            System.err.println(
+                "[ERROR] Detector did not report ready within "
+                    + STARTUP_TIMEOUT_MILLIS + " ms.");
+            stop();
+            return false;
+        }
+        return true;
     }
 
     void sendExit() {
@@ -99,7 +121,7 @@ final class DetectorProcessClient {
 
         if (processToStop != null) {
             try {
-                if (!processToStop.waitFor(GRACEFUL_SHUTDOWN_TIMEOUT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (!processToStop.waitFor(GRACEFUL_SHUTDOWN_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
                     processToStop.destroy();
                 }
             } catch (InterruptedException e) {
@@ -117,19 +139,38 @@ final class DetectorProcessClient {
         }
     }
 
-    private void readOutput(Process trackedProcess, Consumer<String> onLine) {
+    private void readOutput(
+        Process trackedProcess,
+        Consumer<String> onLine,
+        StartupSignal startup
+    ) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(trackedProcess.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (!isCurrentProcess(trackedProcess)) {
                     break;
                 }
-                onLine.accept(line);
+                if (line.equals("ready")) {
+                    startup.ready.set(true);
+                    startup.latch.countDown();
+                } else if (line.equals("activity")) {
+                    onLine.accept(line);
+                } else {
+                    System.err.println("[DETECTOR] " + line);
+                }
             }
         } catch (IOException ex) {
             if (isCurrentProcess(trackedProcess)) {
                 System.err.println("[ERROR] Error reading detector output: " + ex.getMessage());
             }
+        } finally {
+            startup.latch.countDown();
+        }
+    }
+
+    private boolean isProcessAlive() {
+        synchronized (lock) {
+            return process != null && process.isAlive();
         }
     }
 
@@ -137,5 +178,10 @@ final class DetectorProcessClient {
         synchronized (lock) {
             return process == trackedProcess;
         }
+    }
+
+    private static final class StartupSignal {
+        private final CountDownLatch latch = new CountDownLatch(1);
+        private final AtomicBoolean ready = new AtomicBoolean();
     }
 }

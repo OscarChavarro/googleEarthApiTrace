@@ -26,6 +26,7 @@ GOOGLE_EARTH_STARTUP_SECONDS = 10
 CONTROLLER_STARTUP_TIMEOUT_SECONDS = 180
 POLL_INTERVAL_SECONDS = 0.25
 SHUTDOWN_TIMEOUT_SECONDS = 5
+GOOGLE_EARTH_FINALIZATION_TIMEOUT_SECONDS = 10
 
 SUCCESS_PATTERN = re.compile(rb"\[OK\] Finished traversing (\d+) points\.")
 ERROR_PATTERNS = (
@@ -110,6 +111,15 @@ class ManagedProcess:
         except ProcessLookupError:
             pass
 
+    def terminate_process(self) -> None:
+        if self.process is None or self.process.poll() is not None:
+            return
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+
 
 class ControllerOutputReader(threading.Thread):
     def __init__(self, stream: BinaryIO, output_queue: queue.Queue, log_file: BinaryIO) -> None:
@@ -135,20 +145,14 @@ class ControllerOutputReader(threading.Thread):
 
 class SessionController:
     def __init__(self) -> None:
-        log_directory = Path("/tmp") / f"14_sessionController-{os.getpid()}"
+        log_root = Path("/media/ramdisk/logs")
+        log_root.mkdir(parents=True, exist_ok=True)
+        log_directory = log_root / f"14_sessionController-{os.getpid()}"
         log_directory.mkdir(parents=True, exist_ok=False)
         self.log_directory = log_directory
-        self.detector_log = (log_directory / "12_fileSystemChangesDetector.log").open("wb")
         self.google_earth_log = (log_directory / "google-earth.log").open("wb")
         self.controller_log = (log_directory / "13_googleEarthController.log").open("wb")
 
-        self.detector = ManagedProcess(
-            "12_fileSystemChangesDetector",
-            [str(DETECTOR), str(OUTPUT_DIRECTORY)],
-            DETECTOR.parent,
-            self.detector_log,
-            subprocess.PIPE,
-        )
         self.google_earth = ManagedProcess(
             "Google Earth",
             [str(GOOGLE_EARTH)],
@@ -165,14 +169,15 @@ class SessionController:
         )
         self.controller_output_queue: queue.Queue = queue.Queue()
         self.controller_reader: Optional[ControllerOutputReader] = None
+        self.controller_completed_successfully = False
 
     def run(self) -> int:
         try:
             self.validate_prerequisites()
             print(f"[SESSION] Runtime logs: {self.log_directory}", flush=True)
-            self.start_detector()
             self.start_google_earth()
             point_count = self.start_and_monitor_controller()
+            self.controller_completed_successfully = True
             print(f"[SESSION] SUCCESS: controller traversed {point_count} points.", flush=True)
             return 0
         except SessionFailure as error:
@@ -202,11 +207,6 @@ class SessionController:
         if not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
             raise SessionFailure("DBUS_SESSION_BUS_ADDRESS is not set; AT-SPI requires the desktop D-Bus session")
 
-    def start_detector(self) -> None:
-        self.detector.start()
-        self.wait_while_checking_processes(1, (self.detector,))
-        print("[SESSION] 12_fileSystemChangesDetector is running.", flush=True)
-
     def start_google_earth(self) -> None:
         self.remove_google_earth_traces()
         self.google_earth.start()
@@ -216,7 +216,7 @@ class SessionController:
         )
         self.wait_while_checking_processes(
             GOOGLE_EARTH_STARTUP_SECONDS,
-            (self.detector, self.google_earth),
+            (self.google_earth,),
         )
         print("[SESSION] Google Earth startup wait completed.", flush=True)
 
@@ -260,12 +260,10 @@ class SessionController:
         overlap = b""
         milestones_reported: set[bytes] = set()
         initial_enter_seen = False
+        google_earth_exit_requested = False
         started_at = time.monotonic()
 
         while True:
-            self.detector.require_running()
-            self.google_earth.require_running()
-
             try:
                 chunk = self.controller_output_queue.get(timeout=POLL_INTERVAL_SECONDS)
             except queue.Empty:
@@ -289,6 +287,13 @@ class SessionController:
                 if success is not None:
                     return int(success.group(1))
 
+                if (
+                    b"[STEP] Requesting Google Earth quit through AT-SPI File, then UP, ENTER."
+                    in searchable
+                    or b"[OK] Google Earth is already closed." in searchable
+                ):
+                    google_earth_exit_requested = True
+
                 for milestone in MILESTONES:
                     if milestone in searchable and milestone not in milestones_reported:
                         milestones_reported.add(milestone)
@@ -301,6 +306,9 @@ class SessionController:
                 raise SessionFailure(
                     f"13_googleEarthController exited with code {exit_code} before reporting completion"
                 )
+
+            if not google_earth_exit_requested:
+                self.google_earth.require_running()
 
             if (
                 not initial_enter_seen
@@ -341,24 +349,36 @@ class SessionController:
         print("[SESSION] Stopping 13_googleEarthController.", flush=True)
         self.controller.terminate_group()
 
-        print("[SESSION] Stopping 12_fileSystemChangesDetector.", flush=True)
-        detector_process = self.detector.process
-        if detector_process is not None and detector_process.poll() is None and detector_process.stdin:
-            try:
-                detector_process.stdin.write(b"exit\n")
-                detector_process.stdin.flush()
-                detector_process.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
-            except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
-                pass
-        self.detector.terminate_group()
-
-        print("[SESSION] Stopping Google Earth.", flush=True)
-        self.google_earth.terminate_group()
+        if self.google_earth.exit_code() is None:
+            if self.controller_completed_successfully:
+                print(
+                    "[SESSION] Waiting up to 10 seconds for Google Earth/apitrace finalization.",
+                    flush=True,
+                )
+                try:
+                    self.google_earth.process.wait(
+                        timeout=GOOGLE_EARTH_FINALIZATION_TIMEOUT_SECONDS
+                    )
+                    print("[SESSION] Google Earth/apitrace finalized naturally.", flush=True)
+                except subprocess.TimeoutExpired:
+                    print(
+                        "[SESSION] Google Earth/apitrace is still running after 10 seconds; "
+                        "stopping only its managed PID.",
+                        flush=True,
+                    )
+                    self.google_earth.terminate_process()
+            else:
+                print(
+                    "[SESSION] Google Earth is still running after a failed session; "
+                    "stopping only its managed PID.",
+                    flush=True,
+                )
+                self.google_earth.terminate_process()
+        else:
+            print("[SESSION] Google Earth already exited; no kill is needed.", flush=True)
 
         if self.controller_reader is not None:
             self.controller_reader.join(timeout=1)
-        if not self.detector_log.closed:
-            self.detector_log.close()
         if not self.google_earth_log.closed:
             self.google_earth_log.close()
         if not self.controller_log.closed:

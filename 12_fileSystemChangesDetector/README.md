@@ -11,9 +11,12 @@ The `01_tracer` writes texture/frame artifacts asynchronously. While writes are 
 
 ## Runtime behavior
 
-- Watches one directory tree recursively for `IN_CREATE` and `IN_MOVED_TO` events.
-- Prints one line per detected update:
-  - `Updated at <timestamp>`
+- Watches one directory tree recursively for `IN_CREATE`, `IN_MOVED_TO`, and
+  `IN_CLOSE_WRITE` events.
+- Prints and flushes `ready` once all initial watches are installed.
+- Prints and flushes `activity` at most once per second while changes continue. A trailing
+  line is emitted after a shorter burst, so the consumer never bases inactivity on an
+  event older than the last observed change.
 - Accepts `exit` on stdin for graceful shutdown.
 - Adds watches dynamically for newly created subdirectories.
 
@@ -46,7 +49,8 @@ Or use:
 - Fully scriptable, no GUI. One positional argument: the directory to watch.
 - `./run.sh` is a fixed-path convenience wrapper; pass a custom directory only when
   invoking the compiled binary directly.
-- Output protocol on stdout: one `Updated at <timestamp>` line per detected file
-  creation/move-in event. Consumers (like `13_googleEarthController`) parse these lines.
+- Output protocol on stdout: one `ready` line followed by coalesced `activity` lines.
+  Protocol lines are explicitly flushed because the normal consumer uses a pipe rather
+  than a terminal. Diagnostics are written only to stderr.
 - Control protocol on stdin: writing `exit` terminates the process gracefully.
 - No other command-line options exist.

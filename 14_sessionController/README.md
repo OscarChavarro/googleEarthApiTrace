@@ -3,9 +3,12 @@
 `14_sessionController` orchestrates a complete unattended Google Earth tracing session.
 It starts and monitors:
 
-1. `12_fileSystemChangesDetector`.
-2. Google Earth Pro.
-3. `13_googleEarthController --offline`.
+1. Google Earth Pro.
+2. `13_googleEarthController --offline`.
+
+Module 13 starts, owns, and stops the single `12_fileSystemChangesDetector` instance.
+Module 14 validates that the detector binary exists but does not launch a redundant
+second watcher.
 
 The controller waits ten seconds after launching Google Earth before starting module 13.
 Immediately before launching Google Earth, it removes files matching
@@ -20,11 +23,18 @@ It then monitors module 13 until it prints:
 That message is the only successful completion condition. An `[ERROR]` message, a missing
 Google Earth window, a startup timeout, or the unexpected termination of any managed
 process marks the session as failed. In every case the script closes module 13 and its
-child processes, module 12, and Google Earth before exiting.
+child detector process before exiting. Module 13 first opens `File` through AT-SPI and
+sends `UP` + `ENTER` to activate `Exit`. After successful traversal, the session controller
+gives the managed Google Earth/apitrace launcher ten seconds to finish and flush the trace
+naturally. It never kills Google Earth's whole process group (which could include an
+externally opened Chrome); it targets only the managed Google Earth PID if a fallback is
+still needed.
 
 The exit status is `0` after a successful traversal, `1` after a runtime or validation
 failure, and `130` when interrupted with `Ctrl+C`. Complete process output is retained in
-a per-run directory named `/tmp/14_sessionController-PID/`.
+a per-run directory named
+`/media/ramdisk/logs/14_sessionController-PID/`. The controller log includes module 13
+diagnostics; module 12 no longer has a second high-volume raw log.
 
 ## Google Earth accessibility requirement
 

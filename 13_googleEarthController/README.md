@@ -18,8 +18,11 @@ button from the panel and leave the session alone. The controller uses AT-SPI to
 uses `Robot` to click and clear the `turtle` checkbox, enables its first two items with `DOWN` + `SPACE`, and clicks the first route point's reported
 center, sends its initial <Enter>, and then runs over the remaining points by pressing <Down> and <Enter>
 on the keyboard, so no other applications can be used on the session while downloading data in the controlled Google Earth
-session. Once the configured traversal finishes, the controller asks Google Earth to exit through
-the `File -> Quit` menu path by sending `Alt+F`, `Up`, `Enter`, assuming `Quit` is the last entry.
+session. Once the configured traversal finishes, the controller uses Google Earth's
+AT-SPI tree to activate `File`, waits for the menu to open, and sends `UP`, then `ENTER`
+to choose the final `Exit` entry. It then waits up to ten seconds for Google Earth to
+close normally. Only if it remains open does it send a termination signal to the exact
+PID published by Google Earth's own X11 window.
 
 After clearing `turtle`, the controller waits two seconds before enabling the first child,
 then waits one second before enabling the second child.
@@ -40,7 +43,10 @@ controller activates `START` automatically two seconds after launch.
 It is recommended to use this panel in sync with `12_fileSystemChangesDetector` for optimal
 speed operation in current system. The current implementation expects the detector binary
 at `../12_fileSystemChangesDetector/build/fileSystemChangesDetector`; if it cannot be
-executed, the automatic navigation session does not start.
+executed, the automatic navigation session does not start. Module 13 is the sole owner of
+the detector process. It waits up to ten seconds for the detector's flushed `ready`
+handshake before clicking the first route point, then consumes only coalesced `activity`
+protocol lines.
 
 ## Purpose in the pipeline
 
@@ -54,7 +60,7 @@ The panel requests the top-left X11 position `(0, 0)` (`+0+0` geometry) when it 
 | Control | Action |
 |---|---|
 | `START` / `STARTING` / `STOP` button | Starts or pauses the automatic advance cycle; it stays yellow and ignores clicks while Google Earth is being prepared |
-| `QUIT` button | Stops the detector process, sends `File -> Quit` to Google Earth, and exits |
+| `QUIT` button | Stops the detector process, activates `File` through AT-SPI, sends `UP` + `ENTER` for `Exit`, waits for Google Earth to close, and exits |
 
 The progress label shows how many route placemarks have been advanced out of the total
 counted in the `turtle` folder of `~/.googleearth/myplaces.kml`. When that count can be

@@ -9,7 +9,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class X11AccessService {
-    record X11Window(String id, String title, String windowClass) {
+    record X11Window(String id, String title, String windowClass, long processId) {
     }
 
     record WidgetInspection(int childWindowCount, String rawTree) {
@@ -23,6 +23,9 @@ final class X11AccessService {
     private static final Pattern WINDOW_ID_PATTERN = Pattern.compile("0x[0-9a-fA-F]+");
     private static final Pattern QUOTED_VALUE_PATTERN = Pattern.compile("= \\\"(.*?)\\\"");
     private static final Pattern CHILD_WINDOW_PATTERN = Pattern.compile("(?m)^\\s+(0x[0-9a-fA-F]+)\\s+");
+    private static final Pattern PROCESS_ID_PATTERN = Pattern.compile(
+        "_NET_WM_PID(?:\\([^)]*\\))?\\s*=\\s*(\\d+)"
+    );
     private static final String GOOGLE_EARTH_X11_CLASS = "googleearth-bin";
 
     Optional<X11Window> findGoogleEarthWindow() {
@@ -79,10 +82,20 @@ final class X11AccessService {
         return new WidgetInspection(childWindowCount, tree.output());
     }
 
+    boolean terminateGoogleEarthProcess(X11Window window) {
+        if (window == null || window.processId() <= 0 || !isGoogleEarth(window)) {
+            return false;
+        }
+        return ProcessHandle.of(window.processId())
+            .filter(ProcessHandle::isAlive)
+            .map(ProcessHandle::destroy)
+            .orElse(true);
+    }
+
     private Optional<X11Window> readWindow(String windowId) {
         CommandResult properties = runCommand(
             QUERY_TIMEOUT,
-            "xprop", "-id", windowId, "_NET_WM_NAME", "WM_NAME", "WM_CLASS"
+            "xprop", "-id", windowId, "_NET_WM_NAME", "WM_NAME", "WM_CLASS", "_NET_WM_PID"
         );
         if (properties.exitCode() != 0) {
             return Optional.empty();
@@ -90,14 +103,20 @@ final class X11AccessService {
 
         String title = "";
         String windowClass = "";
+        long processId = -1;
         for (String line : properties.output().split("\\R")) {
             if (line.startsWith("_NET_WM_NAME") || (title.isEmpty() && line.startsWith("WM_NAME"))) {
                 title = extractQuotedValue(line).orElse(title);
             } else if (line.startsWith("WM_CLASS")) {
                 windowClass = line.substring(line.indexOf('=') + 1).trim();
+            } else if (line.startsWith("_NET_WM_PID")) {
+                Matcher pidMatcher = PROCESS_ID_PATTERN.matcher(line);
+                if (pidMatcher.find()) {
+                    processId = Long.parseLong(pidMatcher.group(1));
+                }
             }
         }
-        return Optional.of(new X11Window(windowId, title, windowClass));
+        return Optional.of(new X11Window(windowId, title, windowClass, processId));
     }
 
     private boolean isGoogleEarth(X11Window window) {

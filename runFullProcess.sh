@@ -273,7 +273,6 @@ available_bytes() {
 
 select_completed_trace() {
     local -a traces=()
-    local before after
     mapfile -d '' traces < <(
         find "$TRACE_DIRECTORY" -maxdepth 1 -type f -name "$TRACE_PATTERN" -print0 | sort -z
     )
@@ -282,11 +281,7 @@ select_completed_trace() {
     [[ -r "${traces[0]}" && -s "${traces[0]}" ]] ||
         die "Trace is empty or unreadable: ${traces[0]}"
 
-    before="$(stat -c '%s:%Y' -- "${traces[0]}")"
     sync "${traces[0]}"
-    sleep 2
-    after="$(stat -c '%s:%Y' -- "${traces[0]}")"
-    [[ "$before" == "$after" ]] || die "Trace changed during the stability check: ${traces[0]}"
     printf '%s\n' "${traces[0]}"
 }
 

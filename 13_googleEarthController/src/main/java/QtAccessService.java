@@ -17,6 +17,8 @@ final class QtAccessService {
     private static final String ATSPI_REGISTRY_DESTINATION = "org.a11y.atspi.Registry";
     private static final String ATSPI_ROOT_PATH = "/org/a11y/atspi/accessible/root";
     private static final String GOOGLE_EARTH_NAME = "Google Earth Pro";
+    private static final Set<String> FILE_MENU_NAMES = Set.of("file");
+    private static final Set<String> MENU_ROLES = Set.of("menu", "menu item");
     private static final String TURTLE_FOLDER_NAME = "turtle";
     private static final String CONTINUE_BUTTON_NAME = "Continue";
     private static final String REPAIR_TOOL_BUTTON_NAME = "Launch Repair Tool";
@@ -38,6 +40,9 @@ final class QtAccessService {
         "\\(\\((-?\\d+), (-?\\d+), (-?\\d+), (-?\\d+)\\),\\)"
     );
     private static final Pattern MARKER_NAME_PATTERN = Pattern.compile("(?:L\\d+|z\\d{4})");
+    private static final Pattern ACTION_PATTERN = Pattern.compile(
+        "\\('([^']*)',\\s*'[^']*',\\s*'[^']*'\\)"
+    );
 
     TurtlePreparation locateTurtlePreparation() {
         String busAddress = getAtSpiBusAddress();
@@ -91,6 +96,98 @@ final class QtAccessService {
         String busAddress = getAtSpiBusAddress();
         String destination = findGoogleEarthDestination(busAddress);
         return findCrashDialogContinueButton(busAddress, destination);
+    }
+
+    boolean activateFileMenu() {
+        return activateNamedAccessible(FILE_MENU_NAMES, MENU_ROLES);
+    }
+
+    private boolean activateNamedAccessible(Set<String> acceptedNames, Set<String> acceptedRoles) {
+        String busAddress = getAtSpiBusAddress();
+        String destination = findGoogleEarthDestination(busAddress);
+        Optional<AccessibleNode> target = findNamedAccessible(
+            busAddress, destination, acceptedNames, acceptedRoles
+        );
+        if (target.isEmpty()) {
+            return false;
+        }
+        activate(busAddress, destination, target.get().path());
+        return true;
+    }
+
+    private Optional<AccessibleNode> findNamedAccessible(
+        String busAddress,
+        String destination,
+        Set<String> acceptedNames,
+        Set<String> acceptedRoles
+    ) {
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        pending.add(ATSPI_ROOT_PATH);
+
+        while (!pending.isEmpty() && visited.size() < MAX_TRAVERSED_NODES) {
+            String path = pending.removeFirst();
+            if (!visited.add(path)) {
+                continue;
+            }
+            try {
+                String role = getRoleName(busAddress, destination, path);
+                String name = normalizeMenuName(getName(busAddress, destination, path));
+                if (acceptedRoles.contains(role) && acceptedNames.contains(name)) {
+                    return Optional.of(new AccessibleNode(path, name));
+                }
+                pending.addAll(getChildren(busAddress, destination, path));
+            } catch (RuntimeException ignored) {
+                // Menus can be rebuilt while they are being opened.
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void activate(String busAddress, String destination, String path) {
+        String actions = callAtSpi(
+            busAddress,
+            destination,
+            path,
+            "org.a11y.atspi.Action.GetActions"
+        );
+        int actionIndex = preferredActionIndex(actions);
+        String output = callAtSpi(
+            busAddress,
+            destination,
+            path,
+            "org.a11y.atspi.Action.DoAction",
+            Integer.toString(actionIndex)
+        );
+        if (!output.contains("true")) {
+            throw new IllegalStateException("AT-SPI could not activate menu item " + path);
+        }
+    }
+
+    private int preferredActionIndex(String actions) {
+        Matcher matcher = ACTION_PATTERN.matcher(actions);
+        int index = 0;
+        int fallback = -1;
+        while (matcher.find()) {
+            if (fallback < 0) {
+                fallback = index;
+            }
+            String action = matcher.group(1).toLowerCase(java.util.Locale.ROOT);
+            if ("click".equals(action) || "activate".equals(action) || "press".equals(action)) {
+                return index;
+            }
+            index++;
+        }
+        if (fallback >= 0) {
+            return fallback;
+        }
+        throw new IllegalStateException("AT-SPI menu item exposes no actions");
+    }
+
+    private String normalizeMenuName(String name) {
+        return name == null
+            ? ""
+            : name.replace("&", "").replace("_", "").trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private AccessibleItem toAccessibleItem(AccessibleNode node) {

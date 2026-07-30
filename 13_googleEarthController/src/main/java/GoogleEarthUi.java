@@ -173,14 +173,7 @@ final class GoogleEarthUi {
         pressAndHoldKey(KeyEvent.VK_ENTER, keyHoldMillis);
     }
 
-    void quitGoogleEarthFromMenu(long keyHoldMillis, long betweenKeysMillis) {
-        robot.keyPress(KeyEvent.VK_ALT);
-        sleepInterruptibly(keyHoldMillis);
-        robot.keyPress(KeyEvent.VK_F);
-        sleepInterruptibly(keyHoldMillis);
-        robot.keyRelease(KeyEvent.VK_F);
-        robot.keyRelease(KeyEvent.VK_ALT);
-        sleepInterruptibly(betweenKeysMillis);
+    void pressUpThenEnter(long keyHoldMillis, long betweenKeysMillis) {
         pressAndHoldKey(KeyEvent.VK_UP, keyHoldMillis);
         sleepInterruptibly(betweenKeysMillis);
         pressAndHoldKey(KeyEvent.VK_ENTER, keyHoldMillis);

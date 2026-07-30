@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/inotify.h>
@@ -22,27 +21,6 @@ onSignal(int) {
 }
 
 void
-formatNow(char* out, size_t outSize) {
-    time_t now = time(nullptr);
-    struct tm localTime;
-    localtime_r(&now, &localTime);
-
-    if (out == nullptr || outSize == 0) {
-        return;
-    }
-
-    out[0] = '\0';
-    strftime(out, outSize, "%Y_%m%b%d_%H:%M.%S", &localTime);
-
-    for (size_t i = 0; out[i] != '\0'; ++i) {
-        char& c = out[i];
-        if (c >= 'A' && c <= 'Z') {
-            c = static_cast<char>(c - 'A' + 'a');
-        }
-    }
-}
-
-void
 printUsage(const char* prog) {
     std::fprintf(stderr, "Usage: %s <folder_path>\n", prog);
 }
@@ -58,7 +36,7 @@ addWatchRecursive(
     int inotifyFd,
     const std::string& folderPath,
     std::unordered_map<int, std::string>& wdToPath) {
-    const uint32_t watchMask = IN_CREATE | IN_MOVED_TO;
+    const uint32_t watchMask = IN_CREATE | IN_MOVED_TO | IN_CLOSE_WRITE;
     int wd = inotify_add_watch(inotifyFd, folderPath.c_str(), watchMask);
     if (wd < 0) {
         std::fprintf(
@@ -117,7 +95,7 @@ initializeInotify(const char* folderPath, std::unordered_map<int, std::string>& 
 }
 
 int
-waitForEvents(int inotifyFd, bool watchStdin, struct pollfd* fds) {
+waitForEvents(int inotifyFd, bool watchStdin, struct pollfd* fds, int timeoutMillis) {
     fds[0].fd = inotifyFd;
     fds[0].events = POLLIN;
     fds[0].revents = 0;
@@ -126,7 +104,7 @@ waitForEvents(int inotifyFd, bool watchStdin, struct pollfd* fds) {
     fds[1].events = watchStdin ? POLLIN : 0;
     fds[1].revents = 0;
 
-    int pollResult = poll(fds, 2, -1);
+    int pollResult = poll(fds, 2, timeoutMillis);
     if (pollResult < 0 && errno != EINTR) {
         std::fprintf(stderr, "poll failed: %s\n", std::strerror(errno));
     }
@@ -165,12 +143,10 @@ bool
 handleSingleInotifyEvent(
     const struct inotify_event* event,
     std::unordered_map<int, std::string>& wdToPath,
-    int inotifyFd) {
-    if ((event->mask & (IN_CREATE | IN_MOVED_TO)) != 0) {
-        char timestamp[64] = {0};
-        formatNow(timestamp, sizeof(timestamp));
-        std::printf("Updated at %s\n", timestamp);
-
+    int inotifyFd,
+    bool* sawActivity) {
+    if ((event->mask & (IN_CREATE | IN_MOVED_TO | IN_CLOSE_WRITE)) != 0) {
+        *sawActivity = true;
         if ((event->mask & IN_ISDIR) != 0 && event->len > 0) {
             auto it = wdToPath.find(event->wd);
             if (it != wdToPath.end()) {
@@ -183,6 +159,10 @@ handleSingleInotifyEvent(
             }
         }
     }
+    if ((event->mask & IN_Q_OVERFLOW) != 0) {
+        *sawActivity = true;
+        std::fprintf(stderr, "inotify event queue overflow; treating it as activity\n");
+    }
 
     return true;
 }
@@ -192,7 +172,8 @@ processInotifyEvents(
     int inotifyFd,
     char* buffer,
     size_t bufferSize,
-    std::unordered_map<int, std::string>& wdToPath) {
+    std::unordered_map<int, std::string>& wdToPath,
+    bool* sawActivity) {
     ssize_t bytesRead = read(inotifyFd, buffer, bufferSize);
     if (bytesRead < 0) {
         if (errno == EINTR) {
@@ -210,7 +191,7 @@ processInotifyEvents(
     while (offset + sizeof(struct inotify_event) <= static_cast<size_t>(bytesRead)) {
         const struct inotify_event* event =
             reinterpret_cast<const struct inotify_event*>(buffer + offset);
-        if (!handleSingleInotifyEvent(event, wdToPath, inotifyFd)) {
+        if (!handleSingleInotifyEvent(event, wdToPath, inotifyFd, sawActivity)) {
             return false;
         }
         offset += sizeof(struct inotify_event) + event->len;
@@ -219,24 +200,58 @@ processInotifyEvents(
     return true;
 }
 
+long long
+monotonicMilliseconds() {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return static_cast<long long>(now.tv_sec) * 1000LL + now.tv_nsec / 1000000LL;
+}
+
+void
+emitActivity() {
+    std::puts("activity");
+    std::fflush(stdout);
+}
+
 int
 runEventLoop(int inotifyFd, std::unordered_map<int, std::string>& wdToPath) {
     constexpr size_t kBufferSize = 16 * 1024;
+    constexpr int kActivityIntervalMillis = 1000;
     alignas(struct inotify_event) char buffer[kBufferSize];
 
     char stdinLine[1024] = {0};
     size_t stdinLen = 0;
     bool watchStdin = true;
+    bool pendingActivity = false;
+    long long lastEmission =
+        monotonicMilliseconds() - kActivityIntervalMillis;
 
     while (g_running) {
+        int timeoutMillis = -1;
+        if (pendingActivity) {
+            long long elapsed = monotonicMilliseconds() - lastEmission;
+            timeoutMillis = elapsed >= kActivityIntervalMillis
+                ? 0
+                : static_cast<int>(kActivityIntervalMillis - elapsed);
+        }
+
         struct pollfd fds[2];
-        int pollResult = waitForEvents(inotifyFd, watchStdin, fds);
+        int pollResult = waitForEvents(
+            inotifyFd, watchStdin, fds, timeoutMillis);
 
         if (pollResult < 0) {
             if (errno == EINTR) {
                 continue;
             }
             return 1;
+        }
+        if (pollResult == 0 && pendingActivity) {
+            emitActivity();
+            pendingActivity = false;
+            lastEmission = monotonicMilliseconds();
+            continue;
         }
 
         if (watchStdin && (fds[1].revents & POLLIN) != 0) {
@@ -248,8 +263,23 @@ runEventLoop(int inotifyFd, std::unordered_map<int, std::string>& wdToPath) {
         }
 
         if ((fds[0].revents & POLLIN) != 0) {
-            if (!processInotifyEvents(inotifyFd, buffer, sizeof(buffer), wdToPath)) {
+            bool sawActivity = false;
+            if (!processInotifyEvents(
+                    inotifyFd,
+                    buffer,
+                    sizeof(buffer),
+                    wdToPath,
+                    &sawActivity)) {
                 return 1;
+            }
+            if (sawActivity) {
+                pendingActivity = true;
+                long long now = monotonicMilliseconds();
+                if (now - lastEmission >= kActivityIntervalMillis) {
+                    emitActivity();
+                    pendingActivity = false;
+                    lastEmission = now;
+                }
             }
         }
     }
@@ -272,6 +302,8 @@ main(int argc, char* argv[]) {
         return 1;
     }
 
+    std::puts("ready");
+    std::fflush(stdout);
     int result = runEventLoop(inotifyFd, wdToPath);
     close(inotifyFd);
     return result;

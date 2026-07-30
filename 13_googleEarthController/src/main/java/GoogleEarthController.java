@@ -20,6 +20,12 @@ public class GoogleEarthController {
     private static final long AFTER_CRASH_DIALOG_CLICK_MILLIS = 1500;
     private static final int WINDOW_RECOVERY_ATTEMPTS = 10;
     private static final long WINDOW_RECOVERY_RETRY_MILLIS = 500;
+    private static final long MENU_DISCOVERY_TIMEOUT_MILLIS = 10_000;
+    private static final long MENU_DISCOVERY_RETRY_MILLIS = 250;
+    private static final long AFTER_FILE_MENU_ACTIVATION_MILLIS = 750;
+    private static final long GOOGLE_EARTH_EXIT_TIMEOUT_MILLIS = 10_000;
+    private static final long GOOGLE_EARTH_EXIT_POLL_MILLIS = 250;
+    private static final long FALLBACK_TERMINATION_TIMEOUT_MILLIS = 3_000;
     private static final long OFFLINE_START_DELAY_SECONDS = 2;
     private static final char[] SPINNER_FRAMES = {'-', '/', '|', '\\'};
 
@@ -189,7 +195,6 @@ public class GoogleEarthController {
         System.out.println("[OK] Initial ENTER sent to " + firstPoint.name() + ".");
         markPointCompleted();
         if (shouldAutoStopAfterCompletedAdvance()) {
-            logTraversalCompleted();
             ui.setCompleted(true);
             finishTraversalAndQuitGoogleEarth();
             return;
@@ -337,7 +342,6 @@ public class GoogleEarthController {
 
         markPointCompleted();
         if (shouldAutoStopAfterCompletedAdvance()) {
-            logTraversalCompleted();
             ui.setCompleted(true);
             finishTraversalAndQuitGoogleEarth();
         }
@@ -372,13 +376,108 @@ public class GoogleEarthController {
 
     private void finishTraversalAndQuitGoogleEarth() {
         stop();
-        requestGoogleEarthQuit();
+        if (requestGoogleEarthQuit()) {
+            logTraversalCompleted();
+        }
+        else {
+            System.err.println("[ERROR] Google Earth did not close after File, UP, ENTER and PID fallback.");
+        }
     }
 
-    private void requestGoogleEarthQuit() {
-        System.out.println("[STEP] Requesting Google Earth quit through File -> Quit.");
-        ui.quitGoogleEarthFromMenu(KEY_HOLD_MILLIS, BETWEEN_KEYS_MILLIS);
-        System.out.println("[OK] Google Earth quit sequence sent: Alt+F, Up, Enter.");
+    private boolean requestGoogleEarthQuit() {
+        try {
+            Optional<X11AccessService.X11Window> initialWindow =
+                x11AccessService.findGoogleEarthWindow();
+            if (initialWindow.isEmpty()) {
+                System.out.println("[OK] Google Earth is already closed.");
+                return true;
+            }
+        } catch (RuntimeException e) {
+            System.err.println("[WARN] Could not inspect the initial Google Earth shutdown state: "
+                + e.getMessage());
+        }
+
+        System.out.println("[STEP] Requesting Google Earth quit through AT-SPI File, then UP, ENTER.");
+        if (!retryAtSpiAction(qtAccessService::activateFileMenu, "File menu")) {
+            System.err.println("[WARN] AT-SPI could not activate the Google Earth File menu.");
+        }
+        else {
+            System.out.println("[OK] Google Earth File menu activated through AT-SPI.");
+            sleepInterruptibly(AFTER_FILE_MENU_ACTIVATION_MILLIS);
+            ui.pressUpThenEnter(KEY_HOLD_MILLIS, BETWEEN_KEYS_MILLIS);
+            System.out.println("[OK] Google Earth Exit requested with UP, ENTER.");
+        }
+
+        if (waitForGoogleEarthToClose(GOOGLE_EARTH_EXIT_TIMEOUT_MILLIS)) {
+            System.out.println("[OK] Google Earth closed normally after File -> Exit.");
+            return true;
+        }
+
+        Optional<X11AccessService.X11Window> remainingWindow;
+        try {
+            remainingWindow = x11AccessService.findGoogleEarthWindow();
+        } catch (RuntimeException e) {
+            System.err.println("[WARN] Could not resolve Google Earth's PID for fallback termination: "
+                + e.getMessage());
+            return false;
+        }
+        if (remainingWindow.isEmpty()) {
+            return true;
+        }
+        X11AccessService.X11Window window = remainingWindow.get();
+        if (window.processId() <= 0) {
+            System.err.println("[WARN] Google Earth's X11 window did not publish a PID; "
+                + "refusing to run a broad fallback kill.");
+            return false;
+        }
+        System.err.println("[WARN] Google Earth is still open after 10 seconds; terminating only PID "
+            + window.processId() + ".");
+        if (!x11AccessService.terminateGoogleEarthProcess(window)) {
+            return false;
+        }
+        return waitForGoogleEarthToClose(FALLBACK_TERMINATION_TIMEOUT_MILLIS);
+    }
+
+    private boolean retryAtSpiAction(java.util.function.BooleanSupplier action, String description) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(MENU_DISCOVERY_TIMEOUT_MILLIS);
+        RuntimeException lastFailure = null;
+        do {
+            try {
+                if (action.getAsBoolean()) {
+                    return true;
+                }
+            } catch (RuntimeException e) {
+                lastFailure = e;
+            }
+            sleepInterruptibly(MENU_DISCOVERY_RETRY_MILLIS);
+        } while (System.nanoTime() < deadline && !Thread.currentThread().isInterrupted());
+        if (lastFailure != null) {
+            System.err.println("[WARN] AT-SPI " + description + " lookup failed: "
+                + lastFailure.getMessage());
+        }
+        return false;
+    }
+
+    private boolean waitForGoogleEarthToClose(long timeoutMillis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        do {
+            try {
+                if (x11AccessService.findGoogleEarthWindow().isEmpty()) {
+                    return true;
+                }
+            } catch (RuntimeException e) {
+                System.err.println("[WARN] Could not inspect Google Earth shutdown state: "
+                    + e.getMessage());
+            }
+            sleepInterruptibly(GOOGLE_EARTH_EXIT_POLL_MILLIS);
+        } while (System.nanoTime() < deadline && !Thread.currentThread().isInterrupted());
+        try {
+            return x11AccessService.findGoogleEarthWindow().isEmpty();
+        } catch (RuntimeException e) {
+            System.err.println("[WARN] Final Google Earth shutdown inspection failed: "
+                + e.getMessage());
+            return false;
+        }
     }
 
     private void cancelInactivityTimer() {
