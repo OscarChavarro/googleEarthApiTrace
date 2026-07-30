@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import matrixmerger.model.contract.FrameMatrixSet;
+import matrixmerger.processing.uncles.UncleRelationshipKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,5 +48,39 @@ final class FrameMatrixReaderTest {
         assertEquals(2, frames.get(0).getMatrices().size());
         assertEquals(20, frames.get(0).getFrameId());
         assertEquals(2, frames.get(0).getContractVersion());
+    }
+
+    @Test
+    void readsVersionFourRelationshipKind() throws Exception {
+        Path frameDirectory = Files.createDirectory(tempDir.resolve("00040"));
+        Files.writeString(frameDirectory.resolve("matrix.json"), """
+            {
+              "contractVersion": 4,
+              "frameId": 40,
+              "matrices": [{
+                "rows": 1,
+                "cols": 1,
+                "tiles": [{
+                  "id": "00040_1",
+                  "i": 0,
+                  "j": 0,
+                  "textureFile": "/tmp/1.png",
+                  "uncles": [{
+                    "direction": "EAST_SOUTH",
+                    "uncleContentId": "00030_1",
+                    "relationshipKind": "ADJACENT_BORDER"
+                  }]
+                }]
+              }]
+            }
+            """);
+
+        FrameMatrixSet frame = new FrameMatrixReader().readAllFromOutput(tempDir).get(0);
+
+        assertEquals(4, frame.getContractVersion());
+        assertEquals(
+            UncleRelationshipKind.ADJACENT_BORDER,
+            frame.getMatrices().get(0).getTiles().get(0).getUncles().get(0).relationshipKind()
+        );
     }
 }

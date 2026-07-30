@@ -112,7 +112,7 @@ public final class MatrixLayerExportWriter {
             exportedFrame.setMatrices(List.of());
             return exportedFrame;
         }
-        exportedFrame.setContractVersion(3);
+        exportedFrame.setContractVersion(4);
         exportedFrame.setFrameId(frame.getFrameId());
         exportedFrame.setHierarchyLevel(hierarchy == null ? null : hierarchy.level());
         exportedFrame.setParentMatrixIndex(

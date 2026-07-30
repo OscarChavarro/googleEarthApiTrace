@@ -136,6 +136,15 @@ public final class TileRootPathResolver {
         boolean progress = true;
         while (progress) {
             progress = false;
+            progress |= propagateLegacyRelationshipConsensus(
+                layers,
+                resolvedPath,
+                sourceById,
+                discarded,
+                externalFullPaths,
+                uncleAliases,
+                occurrenceKeysById
+            );
             for (TileOccurrence occurrence : occurrences) {
                 if (resolvedPath.containsKey(occurrence.key()) || discarded.contains(occurrence.key())) {
                     continue;
@@ -639,7 +648,15 @@ public final class TileRootPathResolver {
             if (relation == null || relation.direction() == null || relation.uncleContentId() == null) {
                 continue;
             }
-            if (rmsAnalysis != null && !rmsAnalysis.accepts(occurrence.layer(), tile, relation)) {
+            UncleRelationshipKind relationshipKind = relation.relationshipKind();
+            if (relationshipKind == null) {
+                // Legacy records are resolved as competing containing/adjacent
+                // hypotheses by the rigid-grid consensus pass.
+                continue;
+            }
+            if (relationshipKind == UncleRelationshipKind.CONTAINING_QUADRANT
+                && rmsAnalysis != null
+                && !rmsAnalysis.accepts(occurrence.layer(), tile, relation)) {
                 continue;
             }
             String uncleId = uncleAliases.getOrDefault(relation.uncleContentId(), relation.uncleContentId());
@@ -648,7 +665,14 @@ public final class TileRootPathResolver {
                 String unclePath = resolvedPath.get(uncleOccurrenceKey);
                 if (unclePath != null) {
                     foundLoadedUnclePath = true;
-                    candidates.add(unclePath + quadrantDigit(relation.direction()));
+                    String candidate = childPathForRelationship(
+                        unclePath,
+                        relation.direction(),
+                        relationshipKind
+                    );
+                    if (candidate != null) {
+                        candidates.add(candidate);
+                    }
                 }
             }
             if (foundLoadedUnclePath) {
@@ -658,9 +682,257 @@ public final class TileRootPathResolver {
             if (unclePath == null) {
                 continue;
             }
-            candidates.add(unclePath + quadrantDigit(relation.direction()));
+            String candidate = childPathForRelationship(
+                unclePath,
+                relation.direction(),
+                relationshipKind
+            );
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
         }
         return candidates;
+    }
+
+    /**
+     * Contract-v3 and older files did not distinguish a containing coarse
+     * texture from an adjacent coarse tile. Evaluate both interpretations
+     * once per relationship and select the unique rigid-grid anchor supported
+     * by the most distinct relationships.
+     */
+    private static boolean propagateLegacyRelationshipConsensus(
+        List<MatrixLayer> layers,
+        Map<String, String> resolvedPath,
+        Map<String, PathSource> sourceById,
+        Set<String> discarded,
+        Map<String, String> externalFullPaths,
+        Map<String, String> uncleAliases,
+        Map<String, List<String>> occurrenceKeysById
+    ) {
+        if (layers == null) {
+            return false;
+        }
+        for (MatrixLayer layer : layers) {
+            if (layer == null || layer.getTiles() == null || layer.getTiles().isEmpty()) {
+                continue;
+            }
+            PathSource strongest = strongestSourceInLayer(layer, resolvedPath, sourceById);
+            if (strongest == PathSource.DIRECT || strongest == PathSource.GRID) {
+                continue;
+            }
+            Map<List<Integer>, Set<String>> supportersByAnchor = new LinkedHashMap<>();
+            Set<String> usableRelationships = new LinkedHashSet<>();
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                if (tile == null || tile.getUncles() == null) {
+                    continue;
+                }
+                for (ToUncleRelationship relationship : tile.getUncles()) {
+                    if (relationship == null
+                        || relationship.relationshipKind() != null
+                        || relationship.direction() == null
+                        || relationship.uncleContentId() == null) {
+                        continue;
+                    }
+                    String relationshipKey = occurrenceKey(layer, tile)
+                        + "\u0001" + relationship.direction()
+                        + "\u0001" + relationship.uncleContentId();
+                    Set<String> parentPaths = parentPathsFor(
+                        relationship,
+                        resolvedPath,
+                        externalFullPaths,
+                        uncleAliases,
+                        occurrenceKeysById
+                    );
+                    Set<String> childCandidates = new LinkedHashSet<>();
+                    for (String parentPath : parentPaths) {
+                        childCandidates.add(parentPath + quadrantDigit(relationship.direction()));
+                        String adjacent = childPathAcrossUncleBorder(parentPath, relationship.direction());
+                        if (adjacent != null) {
+                            childCandidates.add(adjacent);
+                        }
+                    }
+                    if (childCandidates.isEmpty()) {
+                        continue;
+                    }
+                    usableRelationships.add(relationshipKey);
+                    for (String candidate : childCandidates) {
+                        int[] cell = decodeFullPath(candidate);
+                        if (cell == null) {
+                            continue;
+                        }
+                        int side = 1 << cell[0];
+                        List<Integer> anchor = List.of(
+                            cell[0],
+                            cell[1] - tile.getI(),
+                            Math.floorMod(cell[2] - tile.getJ(), side)
+                        );
+                        supportersByAnchor
+                            .computeIfAbsent(anchor, ignored -> new LinkedHashSet<>())
+                            .add(relationshipKey);
+                    }
+                }
+            }
+            if (usableRelationships.size() < MIN_GRID_ANCHOR_VOTES || supportersByAnchor.isEmpty()) {
+                continue;
+            }
+            List<Integer> winner = null;
+            int winnerSupport = 0;
+            int runnerUpSupport = 0;
+            for (Map.Entry<List<Integer>, Set<String>> candidate : supportersByAnchor.entrySet()) {
+                int support = candidate.getValue().size();
+                if (support > winnerSupport) {
+                    runnerUpSupport = winnerSupport;
+                    winner = candidate.getKey();
+                    winnerSupport = support;
+                }
+                else if (support > runnerUpSupport) {
+                    runnerUpSupport = support;
+                }
+            }
+            if (winner == null
+                || winnerSupport < MIN_GRID_ANCHOR_VOTES
+                || winnerSupport * 2 <= usableRelationships.size()
+                || winnerSupport <= runnerUpSupport) {
+                continue;
+            }
+            int level = winner.get(0);
+            int side = 1 << level;
+            boolean changed = false;
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                    continue;
+                }
+                int row = tile.getI() + winner.get(1);
+                int col = Math.floorMod(tile.getJ() + winner.get(2), side);
+                if (row < 0 || row >= side) {
+                    continue;
+                }
+                String key = occurrenceKey(layer, tile);
+                if (sourceById.get(key) == PathSource.DIRECT) {
+                    continue;
+                }
+                String path = "0" + encodeQuadtreeLabel(level, row, col);
+                if (!path.equals(resolvedPath.put(key, path)) || sourceById.get(key) != PathSource.GRID) {
+                    changed = true;
+                }
+                sourceById.put(key, PathSource.GRID);
+                discarded.remove(key);
+            }
+            if (changed) {
+                System.out.println(
+                    "TileRootPathResolver: layer " + layer.getSourceFolderName()
+                        + " resolved legacy uncle semantics at " + winner
+                        + " with " + winnerSupport + "/" + usableRelationships.size()
+                        + " relationship(s); runner-up support=" + runnerUpSupport + "."
+                );
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Set<String> parentPathsFor(
+        ToUncleRelationship relationship,
+        Map<String, String> resolvedPath,
+        Map<String, String> externalFullPaths,
+        Map<String, String> uncleAliases,
+        Map<String, List<String>> occurrenceKeysById
+    ) {
+        Set<String> paths = new LinkedHashSet<>();
+        String uncleId = uncleAliases.getOrDefault(
+            relationship.uncleContentId(),
+            relationship.uncleContentId()
+        );
+        for (String occurrenceKey : occurrenceKeysById.getOrDefault(uncleId, List.of())) {
+            String path = resolvedPath.get(occurrenceKey);
+            if (path != null) {
+                paths.add(path);
+            }
+        }
+        if (paths.isEmpty()) {
+            String external = externalFullPaths.get(uncleId);
+            if (external != null) {
+                paths.add(external);
+            }
+        }
+        return paths;
+    }
+
+    private static String childPathForRelationship(
+        String unclePath,
+        UncleDirections direction,
+        UncleRelationshipKind relationshipKind
+    ) {
+        return switch (relationshipKind) {
+            case CONTAINING_QUADRANT -> unclePath + quadrantDigit(direction);
+            case ADJACENT_BORDER -> childPathAcrossUncleBorder(unclePath, direction);
+        };
+    }
+
+    private static String childPathAcrossUncleBorder(
+        String unclePath,
+        UncleDirections direction
+    ) {
+        int[] uncle = decodeFullPath(unclePath);
+        if (uncle == null || direction == null) {
+            return null;
+        }
+        int level = uncle[0];
+        int side = 1 << level;
+        int parentRow = uncle[1];
+        int parentCol = uncle[2];
+        boolean childSouth;
+        boolean childEast;
+        switch (direction) {
+            case WEST_NORTH -> {
+                parentCol--;
+                childSouth = false;
+                childEast = true;
+            }
+            case WEST_SOUTH -> {
+                parentCol--;
+                childSouth = true;
+                childEast = true;
+            }
+            case EAST_NORTH -> {
+                parentCol++;
+                childSouth = false;
+                childEast = false;
+            }
+            case EAST_SOUTH -> {
+                parentCol++;
+                childSouth = true;
+                childEast = false;
+            }
+            case NORTH_WEST -> {
+                parentRow--;
+                childSouth = true;
+                childEast = false;
+            }
+            case NORTH_EAST -> {
+                parentRow--;
+                childSouth = true;
+                childEast = true;
+            }
+            case SOUTH_WEST -> {
+                parentRow++;
+                childSouth = false;
+                childEast = false;
+            }
+            case SOUTH_EAST -> {
+                parentRow++;
+                childSouth = false;
+                childEast = true;
+            }
+            default -> throw new IllegalStateException("Unexpected uncle direction: " + direction);
+        }
+        if (parentRow < 0 || parentRow >= side) {
+            return null;
+        }
+        parentCol = Math.floorMod(parentCol, side);
+        int childRow = 2 * parentRow + (childSouth ? 1 : 0);
+        int childCol = 2 * parentCol + (childEast ? 1 : 0);
+        return "0" + encodeQuadtreeLabel(level + 1, childRow, childCol);
     }
 
     private static String resolutionStateSignature(

@@ -46,7 +46,9 @@ GC pressure or an operating-system `SIGKILL` (commonly reported by Gradle as exi
 137). The required lifecycle and phase order are:
 
 1. Parse frames while retaining multipatch source geometry, including skipped tiles.
-2. Assign texture paths and compute ordinary neighbor/uncle relationships.
+2. Assign texture paths and compute ordinary neighbor/uncle relationships. Each uncle
+   records `relationshipKind`: `ADJACENT_BORDER` for direct neighboring geometry and
+   `CONTAINING_QUADRANT` for the L-shaped/missing-quadrant detector.
 3. Build `topLevelTiles.json` and `globalPatches.json` while the multipatches are still
    available.
 4. Release skipped source geometry with `TileInstance.releaseSkippedSourceGeometry()`.

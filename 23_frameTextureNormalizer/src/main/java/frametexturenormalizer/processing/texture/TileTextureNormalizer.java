@@ -130,7 +130,8 @@ public final class TileTextureNormalizer {
             String remappedUncleId = scopedIdRemap.getOrDefault(relationship.uncleContentId(), relationship.uncleContentId());
             out.add(new ToUncleRelationship(
                 relationship.direction(),
-                remappedUncleId
+                remappedUncleId,
+                relationship.relationshipKind()
             ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);

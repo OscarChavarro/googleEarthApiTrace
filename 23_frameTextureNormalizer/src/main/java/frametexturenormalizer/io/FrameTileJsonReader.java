@@ -16,6 +16,7 @@ import frametexturenormalizer.model.TileInstance.TriangleStripVertex;
 import frametexturenormalizer.model.contract.ScopedTileIds;
 import frametexturenormalizer.processing.uncles.ToUncleRelationship;
 import frametexturenormalizer.processing.uncles.UncleDirections;
+import frametexturenormalizer.processing.uncles.UncleRelationshipKind;
 
 public final class FrameTileJsonReader {
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+)");
@@ -137,7 +138,11 @@ public final class FrameTileJsonReader {
             if (direction == null || uncleContentId == null) {
                 continue;
             }
-            out.add(new ToUncleRelationship(direction, uncleContentId));
+            out.add(new ToUncleRelationship(
+                direction,
+                uncleContentId,
+                parseRelationshipKind(item.get("relationshipKind"))
+            ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
     }
@@ -165,6 +170,19 @@ public final class FrameTileJsonReader {
         }
         try {
             return UncleDirections.valueOf(text);
+        }
+        catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private static UncleRelationshipKind parseRelationshipKind(JsonNode node) {
+        String text = nullableText(node);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return UncleRelationshipKind.valueOf(text);
         }
         catch (IllegalArgumentException ex) {
             return null;

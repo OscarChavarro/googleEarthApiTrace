@@ -1,6 +1,7 @@
 package pyramidalimageexporter.io;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.processing.uncles.UncleDirections;
+import pyramidalimageexporter.processing.uncles.UncleRelationshipKind;
 
 final class MatrixLayerJsonReaderTest {
     @TempDir
@@ -46,6 +48,7 @@ final class MatrixLayerJsonReaderTest {
         assertEquals(1, layer.getTiles().get(0).getUncles().size());
         assertEquals(UncleDirections.NORTH_EAST, layer.getTiles().get(0).getUncles().get(0).direction());
         assertEquals("00010_1", layer.getTiles().get(0).getUncles().get(0).uncleContentId());
+        assertNull(layer.getTiles().get(0).getUncles().get(0).relationshipKind());
     }
 
     @Test
@@ -73,5 +76,40 @@ final class MatrixLayerJsonReaderTest {
         assertEquals(1, layer.getParentMatrixIndex());
         assertEquals(6, layer.getParentGridTransform().rowOffset());
         assertEquals(-2, layer.getParentGridTransform().colOffset());
+    }
+
+    @Test
+    void importsVersionFourExplicitRelationshipKind() throws Exception {
+        Path layerDirectory = Files.createDirectory(tempDir.resolve("matrix_4"));
+        Files.writeString(layerDirectory.resolve("matrixLayer.json"), """
+            {
+              "contractVersion": 4,
+              "frameId": 40,
+              "matrices": [{
+                "frameId": 40,
+                "rows": 1,
+                "cols": 1,
+                "tiles": [{
+                  "id": "00040_1",
+                  "i": 0,
+                  "j": 0,
+                  "textureFile": "/tmp/child.png",
+                  "uncles": [{
+                    "direction": "EAST_SOUTH",
+                    "uncleContentId": "00030_1",
+                    "relationshipKind": "ADJACENT_BORDER"
+                  }]
+                }]
+              }]
+            }
+            """);
+
+        MatrixLayer layer = new MatrixLayerJsonReader().readAllFromInput(tempDir).get(0);
+
+        assertEquals(4, layer.getContractVersion());
+        assertEquals(
+            UncleRelationshipKind.ADJACENT_BORDER,
+            layer.getTiles().get(0).getUncles().get(0).relationshipKind()
+        );
     }
 }

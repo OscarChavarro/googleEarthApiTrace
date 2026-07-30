@@ -96,6 +96,67 @@ final class TileRootPathResolverTest {
     }
 
     @Test
+    void mapsExplicitAdjacentBorderRelationshipsAcrossTheCoarseCellBorder() {
+        assertAdjacentUncleResolution(UncleDirections.WEST_NORTH, "0302");
+        assertAdjacentUncleResolution(UncleDirections.WEST_SOUTH, "0301");
+        assertAdjacentUncleResolution(UncleDirections.EAST_NORTH, "0203");
+        assertAdjacentUncleResolution(UncleDirections.EAST_SOUTH, "0200");
+        assertAdjacentUncleResolution(UncleDirections.NORTH_WEST, "0320");
+        assertAdjacentUncleResolution(UncleDirections.NORTH_EAST, "0321");
+        assertAdjacentUncleResolution(UncleDirections.SOUTH_WEST, "0023");
+        assertAdjacentUncleResolution(UncleDirections.SOUTH_EAST, "0022");
+    }
+
+    @Test
+    void resolvesTheObservedMixedLegacyRelationshipsByRigidGridConsensus() {
+        MatrixLayerTile containing = tile("00381_476", 2, 2);
+        containing.setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.EAST_NORTH,
+            "00222_284",
+            null
+        )));
+        MatrixLayerTile adjacentA = tile("00382_481", 3, 1);
+        adjacentA.setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.EAST_SOUTH,
+            "00222_283",
+            null
+        )));
+        MatrixLayerTile adjacentB = tile("00390_500", 5, 1);
+        adjacentB.setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.EAST_SOUTH,
+            "00234_336",
+            null
+        )));
+        MatrixLayerTile adjacentC = tile("00411_536", 7, 1);
+        adjacentC.setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.EAST_SOUTH,
+            "00234_334",
+            null
+        )));
+        MatrixLayerTile unanchored = tile("grid-filled", 0, 0);
+        MatrixLayer child = layer(containing, adjacentA, adjacentB, adjacentC, unanchored);
+        child.setSourceFolderName("matrix_4");
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(child),
+            Map.of(
+                "00222_284", "0120331",
+                "00222_283", "0120330",
+                "00234_336", "0120303",
+                "00234_334", "0120300"
+            ),
+            Map.of()
+        );
+
+        assertEquals("01203312", resolution.pathById().get("00381_476"));
+        assertEquals("01203310", resolution.pathById().get("00382_481"));
+        assertEquals("01203020", resolution.pathById().get("00390_500"));
+        assertEquals("01203010", resolution.pathById().get("00411_536"));
+        assertEquals(quadPath(7, 80, 97), resolution.pathById().get("grid-filled"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("grid-filled"));
+    }
+
+    @Test
     void reproducesTheObservedLevelFiveAndLevelSevenPlacements() {
         MatrixLayerTile levelFive = tile("00067_92", 0, 0);
         levelFive.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_SOUTH, "00068_44")));
@@ -416,6 +477,23 @@ final class TileRootPathResolverTest {
     private static void assertUncleResolution(UncleDirections direction, String expectedPath) {
         MatrixLayerTile child = tile("child", 0, 0);
         child.setUncles(List.of(new ToUncleRelationship(direction, "uncle")));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer(child)),
+            Map.of("uncle", "031"),
+            Map.of()
+        );
+
+        assertEquals(expectedPath, resolution.pathById().get("child"), direction.name());
+    }
+
+    private static void assertAdjacentUncleResolution(UncleDirections direction, String expectedPath) {
+        MatrixLayerTile child = tile("child", 0, 0);
+        child.setUncles(List.of(new ToUncleRelationship(
+            direction,
+            "uncle",
+            UncleRelationshipKind.ADJACENT_BORDER
+        )));
 
         TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
             List.of(layer(child)),

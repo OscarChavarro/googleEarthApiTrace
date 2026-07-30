@@ -139,11 +139,12 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   imported layers are candidates. Accepted matches become explicit retained
   `tileId -> quadkey` seeds for the export pass.
 - Any other tile can still be anchored if one of its `uncles` relationships
-  (`ToUncleRelationship(direction, uncleContentId)`) points, by id, to a tile that is
-  already anchored. The uncle id names the immediately coarser texture and `direction`
-  identifies which quadrant of that texture is used by the finer tile. Resolution appends
-  the corresponding quadrant digit to the uncle quadkey. The two direction spellings for
-  each quadrant are equivalent (`WEST_NORTH`/`NORTH_WEST`, etc.).
+  (`ToUncleRelationship(direction, uncleContentId, relationshipKind)`) points, by id, to
+  an anchored coarse tile. `CONTAINING_QUADRANT` appends the quadrant selected by
+  `direction`; `ADJACENT_BORDER` crosses the named coarse-cell border and selects the
+  touching child quadrant. For contract-v3 and older records without `relationshipKind`,
+  both interpretations are hypotheses and only a unique rigid-grid consensus supported
+  by at least three distinct relationships can place the matrix.
   Before a readable relationship votes, the fine `256x256` image is scaled to `128x128`
   and compared by RMS with all four `128x128` quadrants of the coarse image. There is no
   absolute RMS threshold: the relationship votes when its declared quadrant has the
@@ -151,7 +152,7 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   neutral for legacy datasets. This propagates as a fixpoint, one newly canonicalized
   matrix per pass, so all relationships made available by a parent grid vote before its
   child grid can propagate.
-- A contract-v3 `parentGridTransform` propagates a containing-parent placement after,
+- A contract-v3+ `parentGridTransform` propagates a containing-parent placement after,
   and only after, the referenced parent matrix has an accepted absolute grid anchor. It
   is a matrix-to-matrix transform, not a substitute for an observed per-tile uncle
   relationship. A top-level matrix merged into the reconstructed TOP layers is retained
@@ -173,8 +174,9 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   offset are required before the descendant layer is placed.
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
 
-Contract-v3 hierarchy roots repaired by `31_matrixMerger` carry an explicit rigid parent
-grid transform. Contract-v2 true uncle relationships remain supported. The exporter never
+Contract-v3+ hierarchy roots repaired by `31_matrixMerger` carry an explicit rigid parent
+grid transform. Contract-v4 adds explicit uncle relationship kinds; older relationships
+remain supported through legacy rigid-grid consensus. The exporter never
 assumes that `matrix_<n+1>` is the child of
 `matrix_<n>` merely because of folder order.
 

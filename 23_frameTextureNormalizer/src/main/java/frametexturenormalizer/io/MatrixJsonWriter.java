@@ -66,7 +66,7 @@ public final class MatrixJsonWriter {
         Path matrixJson = frameDir.resolve("matrix.json");
         try {
             Files.createDirectories(frameDir);
-            JSON.writerWithDefaultPrettyPrinter().writeValue(matrixJson.toFile(), new FrameMatricesJson(2, frameId, matrixJsons));
+            JSON.writerWithDefaultPrettyPrinter().writeValue(matrixJson.toFile(), new FrameMatricesJson(3, frameId, matrixJsons));
         }
         catch (IOException ex) {
             System.out.println("Unable to write " + matrixJson + ": " + ex.getMessage());
@@ -117,7 +117,11 @@ public final class MatrixJsonWriter {
                     scopedUncleId = relationship.uncleContentId();
                 }
             }
-            out.add(new ToUncleRelationshipJson(relationship.direction().name(), scopedUncleId));
+            out.add(new ToUncleRelationshipJson(
+                relationship.direction().name(),
+                scopedUncleId,
+                relationship.relationshipKind() == null ? null : relationship.relationshipKind().name()
+            ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
     }
@@ -143,6 +147,10 @@ public final class MatrixJsonWriter {
     private record TileJson(String id, int i, int j, String textureFile, List<ToUncleRelationshipJson> uncles) {
     }
 
-    private record ToUncleRelationshipJson(String direction, String uncleContentId) {
+    private record ToUncleRelationshipJson(
+        String direction,
+        String uncleContentId,
+        String relationshipKind
+    ) {
     }
 }

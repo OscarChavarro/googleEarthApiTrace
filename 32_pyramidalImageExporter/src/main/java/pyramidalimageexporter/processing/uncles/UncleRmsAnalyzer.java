@@ -122,6 +122,14 @@ public final class UncleRmsAnalyzer {
                         || relationship.uncleContentId() == null) {
                         continue;
                     }
+                    // Comparing a fine image with quadrants of the referenced
+                    // texture is meaningful only when that texture contains the
+                    // fine tile. Adjacent-border and untyped legacy records use
+                    // structural/grid consensus instead.
+                    if (relationship.relationshipKind()
+                        != UncleRelationshipKind.CONTAINING_QUADRANT) {
+                        continue;
+                    }
                     String parentId = aliases.getOrDefault(
                         relationship.uncleContentId(),
                         relationship.uncleContentId()

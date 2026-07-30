@@ -334,6 +334,9 @@ public final class FrameJsonWriter {
                 ObjectNode uncleNode = JSON.createObjectNode();
                 uncleNode.put("direction", uncle.direction().name());
                 uncleNode.put("uncleContentId", uncle.uncleContentId());
+                if (uncle.relationshipKind() != null) {
+                    uncleNode.put("relationshipKind", uncle.relationshipKind().name());
+                }
                 arr.add(uncleNode);
             }
         }

@@ -50,17 +50,21 @@ public final class UncleDetector {
             CandidateProfile profile = preparedCandidate.profile();
             debug(frame, tile, candidate, "candidate profile: " + profile.debugSummary());
 
-            for (UncleDirections direction : detectRelationshipsAgainstCandidate(tile, candidate, profile)) {
-                String key = direction + "|" + candidate.getContentId();
+            for (DetectedRelationship detected : detectRelationshipsAgainstCandidate(tile, candidate, profile)) {
+                String key = detected.direction() + "|" + candidate.getContentId();
                 if (seen.add(key)) {
-                    relationships.add(new ToUncleRelationship(direction, candidate.getContentId()));
+                    relationships.add(new ToUncleRelationship(
+                        detected.direction(),
+                        candidate.getContentId(),
+                        detected.kind()
+                    ));
                 }
             }
         }
         return List.copyOf(relationships);
     }
 
-    private static List<UncleDirections> detectRelationshipsAgainstCandidate(
+    private static List<DetectedRelationship> detectRelationshipsAgainstCandidate(
         TileInstance tile,
         TileInstance candidate,
         CandidateProfile profile
@@ -72,14 +76,18 @@ public final class UncleDetector {
                 return List.of();
             }
             UncleDirections direction = mapUncleDirection(comparison.directionFromAtoB(), profile.simpleBounds());
-            return direction == null ? List.of() : List.of(direction);
+            return direction == null
+                ? List.of()
+                : List.of(new DetectedRelationship(direction, UncleRelationshipKind.ADJACENT_BORDER));
         }
 
         if (profile.missingQuadrant() == null || profile.stripsByQuadrant() == null) {
             return List.of();
         }
         UncleDirections direction = detectLShapedRelationship(tile, profile);
-        return direction == null ? List.of() : List.of(direction);
+        return direction == null
+            ? List.of()
+            : List.of(new DetectedRelationship(direction, UncleRelationshipKind.CONTAINING_QUADRANT));
     }
 
     private static CandidateProfile classifyCandidate(TileInstance candidate) {
@@ -280,6 +288,11 @@ public final class UncleDetector {
         LOW,
         HIGH
     }
+
+    private record DetectedRelationship(
+        UncleDirections direction,
+        UncleRelationshipKind kind
+    ) {}
 
     private record UvBounds(double minU, double maxU, double minV, double maxV) {
         private boolean isDirectUncleRange() {

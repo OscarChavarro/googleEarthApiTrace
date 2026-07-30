@@ -137,13 +137,30 @@ public final class FrameJsonUncleMetadataRestorer {
                 continue;
             }
             try {
-                out.add(new ToUncleRelationship(UncleDirections.valueOf(direction), uncleContentId));
+                out.add(new ToUncleRelationship(
+                    UncleDirections.valueOf(direction),
+                    uncleContentId,
+                    relationshipKindOf(uncleNode)
+                ));
             }
             catch (IllegalArgumentException ignored) {
                 // Unknown direction label: skip this relation.
             }
         }
         return out;
+    }
+
+    private static UncleRelationshipKind relationshipKindOf(JsonNode uncleNode) {
+        String value = textOf(uncleNode, "relationshipKind");
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UncleRelationshipKind.valueOf(value);
+        }
+        catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static String textOf(JsonNode node, String field) {

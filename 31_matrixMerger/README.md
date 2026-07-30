@@ -171,14 +171,17 @@ remaining frame is written as:
 - `<exportFolder>/matrix_<n>/matrixLayer.json`
 - `<exportFolder>/matrix_<n>/<tileId>.png` (tile textures copied from the source data)
 
-`matrixLayer.json` uses contract version 3. Besides the matrix and its tiles, it exports:
+`matrixLayer.json` uses contract version 4. Besides the matrix and its tiles, it exports:
 
 - `hierarchyLevel`: relative matrix hierarchy depth, not an absolute quadtree level.
 - `parentMatrixIndex`: the exported `matrix_<n>` index of the immediate parent when known.
 - `parentGridTransform`: optional rigid containing-parent placement inferred visually.
 - `hierarchyUnclesByTileId`: compatibility `tileId -> [uncleId]` map.
-- `hierarchyRelationshipsByTileId`: lossless `tileId -> [{direction, uncleContentId}]`
-  map, preserving observed coarse-texture quadrant records.
+- `hierarchyRelationshipsByTileId`: lossless
+  `tileId -> [{direction, uncleContentId, relationshipKind}]` map. The kind distinguishes
+  a containing-texture quadrant from a fine tile reached across an adjacent coarse-cell
+  border. Older inputs without the field remain readable and are exported as legacy
+  unknown relationships.
 
 This metadata is required by `32_pyramidalImageExporter`; directory order alone is not
 treated as a hierarchy edge.

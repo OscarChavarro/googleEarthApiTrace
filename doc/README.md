@@ -39,10 +39,17 @@ westernmost quadtree column for a partial matrix. A matrix spanning the complete
 antimeridian and therefore has absolute `colOffset = 0`. At level `L`, absolute longitude
 columns are cyclic modulo `2^L`, while latitude rows never wrap.
 
-An "uncle" relationship (`ToUncleRelationship(direction, uncleContentId)`) links a fine
-tile to the immediately coarser texture from which it descends. `direction` identifies
-the quadrant of that texture used by the fine tile, so the child quadkey is the uncle
-quadkey followed by one digit:
+An uncle relationship is
+`ToUncleRelationship(direction, uncleContentId, relationshipKind)`. The kind is required
+because the producer has two geometrically different detectors:
+
+- `CONTAINING_QUADRANT`: `uncleContentId` is the containing coarse texture and
+  `direction` selects its child quadrant.
+- `ADJACENT_BORDER`: `uncleContentId` is an adjacent coarse tile; resolution crosses the
+  named border and selects the child quadrant touching that border.
+
+Contract-v3 and older records have no kind. Consumers must treat both interpretations as
+hypotheses and may select one only through a unique rigid-grid consensus.
 
 | Directions | Fine child quadrant |
 |---|---|
@@ -172,10 +179,10 @@ preserve this evidence order:
 3. If a matrix spans all `2^L` columns, force `colOffset = 0`; if it spans all `2^L` rows,
    force `rowOffset = 0`. Apply this canonicalization before the matrix is allowed to seed
    descendants.
-4. Resolve uncle constraints one level at a time by appending the quadrant from the
-   direction table. When both images are readable, scale the fine image to one coarse
-   quadrant and compare all four quadrants by RMS; only a declared quadrant attaining the
-   minimum RMS for that image pair votes, without a global RMS threshold. Canonicalize at
+4. Resolve typed uncle constraints one level at a time: append a quadrant for
+   `CONTAINING_QUADRANT`, or cross the coarse-cell border for `ADJACENT_BORDER`. For
+   legacy untyped records, evaluate both transformations and choose only a unique
+   rigid-grid consensus supported by at least three relationships. Canonicalize at
    most one newly anchored matrix before returning to the relationship phase, so newly
    available parent paths participate before a descendant grid propagates.
 5. Within a matrix, vote using only its strongest available evidence class. Absolute seeds
@@ -211,10 +218,10 @@ coordinate deltas per level, so a visually plausible but uniformly shifted resul
 
 ### Invalid assumptions — do not encode these in producers or consumers
 
-- **An uncle path must be crossed into an adjacent parent cell.** False: the id names the
-  coarser texture and the direction names its child quadrant. Crossing the border creates
-  the observed depth-scaled displacement; `childPath = unclePath + quadrantDigit` is the
-  contract.
+- **All uncle records have the same spatial meaning.** False: the legacy two-field shape
+  collapsed containing-quadrant and adjacent-border observations. Contract 4 carries
+  `relationshipKind`; older data requires hypothesis voting and must not default globally
+  to either interpretation.
 - **A full-world matrix may preserve an arbitrary cyclic phase.** False for normalized
   pipeline matrices: west-cutter normalization makes local column zero the antimeridian.
   Preserving a noisy phase of `-1` shifts the next levels by `-2`, `-4`, and so on.
@@ -455,13 +462,17 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Invariant**: `23_frameTextureNormalizer` relies on the same `contentId`,
   `textureFile`, and same-level neighbor fields (`southNeighbor`/etc.) described in
   Contract 3 — it does not re-derive neighborhood, only filters and regroups it.
+- `uncles[]` additionally carries `relationshipKind`: `ADJACENT_BORDER` is emitted by
+  the direct neighboring-geometry detector and `CONTAINING_QUADRANT` by the
+  L-shaped/missing-quadrant detector. Legacy `frame.json` files omit this field.
 
 ## Contract 5: `23_frameTextureNormalizer` → `31_matrixMerger`
 
 - **Producer**: `23_frameTextureNormalizer`.
 - **Consumer**: `31_matrixMerger`.
 - **Outputs** (per frame folder):
-  - `matrix.json` (fallback read: legacy `matrix.txt`): `{ rows, cols, tiles[] }`, `tiles[]`
+  - `matrix.json` (current envelope `contractVersion: 3`; fallback read: legacy
+    `matrix.txt`): `{ rows, cols, tiles[] }`, `tiles[]`
     entries `{ id, i, j, textureFile, uncles[] }`. `id` is the surviving tile's `contentId`
     string from Contract 3 (`"00328_163"` in the real sample — note this occurrence uses
     the zero-padded frame folder name as prefix, unlike the un-padded `frameId` used inside
@@ -472,9 +483,8 @@ model with quadtree neighborhood information — everything downstream depends o
     `rows`/`cols`). `textureFile` is still the Contract-1 texture path (frame folders are
     not renamed by this stage — legacy numeric `tileId` is also accepted on read for
     backward compatibility).
-  - `uncles[]` per tile: same `{ direction, uncleContentId }` shape as Contract 3,
-    propagated from `frame.json` (see the real example above: tile `"00328_161"` has an
-    uncle at `WEST_NORTH` pointing to `"00329_67"`).
+  - `uncles[]` per tile: `{ direction, uncleContentId, relationshipKind }`, propagated
+    from `frame.json`. `relationshipKind` is absent only in legacy captures.
   - `<output.directory>/westCutters.json` (root, session-wide): the set of tiles marked as
     "west cutters" (tiles that straddle the `-180°` meridian and must be split before
     merging matrices spatially). Written by `23_frameTextureNormalizer` (interactive `c`
@@ -504,7 +514,7 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerJsonReader`.
 - **Location**: `<exportFolder>/matrix_<n>/`, one folder per surviving merged matrix
   (`n` = 0-based export order), containing:
-  - `matrixLayer.json`: versioned envelope (current `contractVersion: 3`) with:
+  - `matrixLayer.json`: versioned envelope (current `contractVersion: 4`) with:
     - `frameId`: representative frame of the merged matrix.
     - `hierarchyLevel`: relative depth in the matrix hierarchy (`0` for a known hierarchy
       root, increasing by one through each parent edge; it is not inferred from `<n>`), or
@@ -520,8 +530,10 @@ model with quadtree neighborhood information — everything downstream depends o
     - `hierarchyUnclesByTileId`: compatibility map `tileId -> [uncleId]` used for graph
       ordering and diagnostics.
     - `hierarchyRelationshipsByTileId`: lossless map
-      `tileId -> [{direction, uncleContentId}]`. It preserves the quadrant direction even
-      when a merge keeps a duplicate tile record that originally had no `uncles`.
+      `tileId -> [{direction, uncleContentId, relationshipKind}]`. It preserves both the
+      direction and whether the producer observed a containing quadrant or an adjacent
+      coarse-cell border, even when a merge keeps a duplicate tile record that originally
+      had no `uncles`.
     - `matrices`: one or more `{frameId, rows, cols, tiles[]}` matrix records with
       `tiles[].id/i/j/textureFile/uncles[]`. `textureFile` points at the exported copy
       `<exportFolder>/matrix_<n>/<tileId>.png`, not the Contract-1 path.
