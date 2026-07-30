@@ -8,9 +8,12 @@ import demresampler.gdal.TiffHeaderScanner;
 import demresampler.io.FabdemScanner;
 import demresampler.io.FabdemSourceTile;
 import demresampler.io.RawTileIO;
+import demresampler.manifest.LevelManifest;
+import demresampler.manifest.ManifestStore;
 import demresampler.model.RasterMetadata;
 import demresampler.options.CliOptions;
 import demresampler.processing.LeafLevelGenerator;
+import demresampler.processing.ExistingTileIndexer;
 import demresampler.processing.ParentLevelGenerator;
 import demresampler.processing.TargetLevelSelector;
 import demresampler.processing.TileHaloGenerator;
@@ -61,42 +64,72 @@ public final class PyramidBuilder {
 
             Set<Long> leafCandidates = FabdemScanner.candidateTiles(sources, leafLevel);
             System.out.printf("Leaf coverage candidates: %,d tiles%n", leafCandidates.size());
+            ManifestStore manifests =
+                ManifestStore.create(options.outputRoot(), sources, leafLevel);
 
             Path workDirectory = Files.createTempDirectory("51-demResampler-");
             try (PyramidSizeTracker sizeTracker =
                      new PyramidSizeTracker(options.outputRoot())) {
                 Path vrt = GdalVrtBuilder.build(workDirectory, sources);
                 validateVrt(vrt);
-                sizeTracker.setStage("Leaf level " + leafLevel);
-                Set<Long> current = LeafLevelGenerator.generate(
-                    vrt,
-                    options.outputRoot(),
-                    leafLevel,
-                    leafCandidates,
-                    options.threads(),
-                    sourceMetadata.noData(),
-                    sizeTracker::recordTileFile);
-                if (current.isEmpty()) {
-                    throw new IOException("No valid elevation samples were produced");
+                Set<Long> current;
+                try (LevelManifest leafManifest =
+                         manifests.openLevel(leafLevel, leafCandidates)) {
+                    sizeTracker.recordTileFiles(leafManifest.presentCount());
+                    sizeTracker.setStage("Index existing level " + leafLevel);
+                    ExistingTileIndexer.index(
+                        options.outputRoot(),
+                        leafManifest,
+                        sizeTracker::recordTileFile);
+                    sizeTracker.setStage("Leaf level " + leafLevel);
+                    current = LeafLevelGenerator.generate(
+                        vrt,
+                        options.outputRoot(),
+                        leafLevel,
+                        options.threads(),
+                        sourceMetadata.noData(),
+                        leafManifest,
+                        sizeTracker::recordTileFile);
+                    if (current.isEmpty()) {
+                        throw new IOException("No valid elevation samples were produced");
+                    }
+                    sizeTracker.checkpoint("Leaf level " + leafLevel + " cores complete");
+                    sizeTracker.setStage("Halo level " + leafLevel);
+                    current = TileHaloGenerator.generate(
+                        options.outputRoot(),
+                        leafLevel,
+                        options.threads(),
+                        leafManifest);
                 }
-                sizeTracker.checkpoint("Leaf level " + leafLevel + " cores complete");
-                sizeTracker.setStage("Halo level " + leafLevel);
-                current = TileHaloGenerator.generate(
-                    options.outputRoot(), leafLevel, current, options.threads());
 
                 long totalTiles = current.size();
                 for (int level = leafLevel - 1; level >= 0; level--) {
-                    sizeTracker.setStage("Parent level " + level);
-                    current = ParentLevelGenerator.generate(
-                        options.outputRoot(),
-                        level,
-                        current,
-                        options.threads(),
-                        sizeTracker::recordTileFile);
-                    sizeTracker.checkpoint("Parent level " + level + " cores complete");
-                    sizeTracker.setStage("Halo level " + level);
-                    current = TileHaloGenerator.generate(
-                        options.outputRoot(), level, current, options.threads());
+                    Set<Long> parents =
+                        ParentLevelGenerator.parentCoordinates(level, current);
+                    try (LevelManifest parentManifest =
+                             manifests.openLevel(level, parents)) {
+                        sizeTracker.recordTileFiles(parentManifest.presentCount());
+                        sizeTracker.setStage("Index existing level " + level);
+                        ExistingTileIndexer.index(
+                            options.outputRoot(),
+                            parentManifest,
+                            sizeTracker::recordTileFile);
+                        sizeTracker.setStage("Parent level " + level);
+                        current = ParentLevelGenerator.generate(
+                            options.outputRoot(),
+                            level,
+                            options.threads(),
+                            parentManifest,
+                            sizeTracker::recordTileFile);
+                        sizeTracker.checkpoint(
+                            "Parent level " + level + " cores complete");
+                        sizeTracker.setStage("Halo level " + level);
+                        current = TileHaloGenerator.generate(
+                            options.outputRoot(),
+                            level,
+                            options.threads(),
+                            parentManifest);
+                    }
                     totalTiles += current.size();
                 }
                 if (current.size() != 1) {

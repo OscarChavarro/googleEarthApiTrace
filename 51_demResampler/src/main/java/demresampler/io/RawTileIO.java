@@ -11,6 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.concurrent.Semaphore;
 
 public final class RawTileIO {
@@ -138,7 +141,15 @@ public final class RawTileIO {
 
     public static boolean isComplete(Path pyramidRoot, TileAddress address) throws IOException {
         Path path = address.path(pyramidRoot);
-        return Files.isRegularFile(path) && Files.size(path) == BYTE_SIZE;
+        try {
+            BasicFileAttributes attributes = Files.readAttributes(
+                path,
+                BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS);
+            return attributes.isRegularFile() && attributes.size() == BYTE_SIZE;
+        } catch (NoSuchFileException exception) {
+            return false;
+        }
     }
 
     public static boolean isCoreComplete(Path pyramidRoot, TileAddress address) throws IOException {

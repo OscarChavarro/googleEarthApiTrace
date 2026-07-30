@@ -77,8 +77,13 @@ public final class ParallelTileRunner {
         boolean collectGenerated,
         Runnable generatedTileCallback
     ) throws Exception {
+        System.out.printf(
+            "%s: preparing %,d candidate tiles for %d workers%n",
+            stage,
+            items.length,
+            threadCount);
         Arrays.sort(items);
-        System.out.printf("%s: %,d candidate tiles, %d workers%n", stage, items.length, threadCount);
+        System.out.printf("%s: processing %,d candidate tiles%n", stage, items.length);
         if (items.length == 0) {
             return Set.of();
         }

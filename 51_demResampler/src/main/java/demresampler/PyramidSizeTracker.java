@@ -51,6 +51,10 @@ final class PyramidSizeTracker implements AutoCloseable {
         tileFiles.incrementAndGet();
     }
 
+    void recordTileFiles(long count) {
+        tileFiles.addAndGet(count);
+    }
+
     long tileFiles() {
         return tileFiles.get();
     }

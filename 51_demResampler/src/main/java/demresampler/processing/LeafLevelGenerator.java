@@ -2,6 +2,7 @@ package demresampler.processing;
 
 import demresampler.gdal.GdalDataset;
 import demresampler.io.RawTileIO;
+import demresampler.manifest.LevelManifest;
 import demresampler.model.TileAddress;
 
 import java.io.IOException;
@@ -10,6 +11,35 @@ import java.util.Set;
 
 public final class LeafLevelGenerator {
     private LeafLevelGenerator() {
+    }
+
+    public static Set<Long> generate(
+        Path vrt,
+        Path outputRoot,
+        int level,
+        int threads,
+        double sourceNoData,
+        LevelManifest manifest,
+        Runnable generatedTileCallback
+    ) throws Exception {
+        long[] items = manifest.unprocessedCoordinates();
+        ParallelTileRunner.run(
+            "Generate missing leaf level " + level,
+            items,
+            threads,
+            () -> GdalDataset.open(vrt),
+            (dataset, packed) -> {
+                boolean hasData = generateOneWithoutExistingCheck(
+                    dataset,
+                    outputRoot,
+                    TileAddress.unpack(level, packed),
+                    sourceNoData);
+                manifest.markCoreProcessed(packed, hasData);
+                return hasData;
+            },
+            generatedTileCallback);
+        manifest.checkpoint();
+        return manifest.presentCoordinateSet();
     }
 
     public static Set<Long> generate(
@@ -55,6 +85,15 @@ public final class LeafLevelGenerator {
         if (RawTileIO.isCoreComplete(outputRoot, address)) {
             return true;
         }
+        return generateOneWithoutExistingCheck(dataset, outputRoot, address, sourceNoData);
+    }
+
+    private static boolean generateOneWithoutExistingCheck(
+        GdalDataset dataset,
+        Path outputRoot,
+        TileAddress address,
+        double sourceNoData
+    ) throws Exception {
         float[] source;
         try {
             source = dataset.read(

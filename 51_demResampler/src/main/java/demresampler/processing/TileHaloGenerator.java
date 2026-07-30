@@ -1,6 +1,7 @@
 package demresampler.processing;
 
 import demresampler.io.RawTileIO;
+import demresampler.manifest.LevelManifest;
 import demresampler.model.TileAddress;
 
 import java.nio.file.Path;
@@ -9,6 +10,29 @@ import java.util.Set;
 
 public final class TileHaloGenerator {
     private TileHaloGenerator() {
+    }
+
+    public static Set<Long> generate(
+        Path outputRoot,
+        int level,
+        int threads,
+        LevelManifest manifest
+    ) throws Exception {
+        long[] items = manifest.incompleteHaloCoordinates();
+        ParallelTileRunner.runAll(
+            "Publish missing halos level " + level,
+            items,
+            threads,
+            EmptyContext::new,
+            (ignored, packed) -> {
+                publishOne(
+                    outputRoot,
+                    TileAddress.unpack(level, packed),
+                    neighbor -> manifest.isPresent(neighbor.packedCoordinates()));
+                manifest.markHaloComplete(packed);
+            });
+        manifest.checkpoint();
+        return manifest.presentCoordinateSet();
     }
 
     public static Set<Long> generate(
@@ -24,12 +48,18 @@ public final class TileHaloGenerator {
             threads,
             EmptyContext::new,
             (ignored, packed) -> publishOne(
-                outputRoot, TileAddress.unpack(level, packed))
+                outputRoot,
+                TileAddress.unpack(level, packed),
+                neighbor -> RawTileIO.isCoreComplete(outputRoot, neighbor))
         );
         return published;
     }
 
-    private static boolean publishOne(Path outputRoot, TileAddress address) throws Exception {
+    private static boolean publishOne(
+        Path outputRoot,
+        TileAddress address,
+        CoreAvailability coreAvailability
+    ) throws Exception {
         short[] core = RawTileIO.readCore(outputRoot, address);
         short[] stored = new short[RawTileIO.STORED_SAMPLE_COUNT];
         Arrays.fill(stored, RawTileIO.NODATA);
@@ -43,35 +73,51 @@ public final class TileHaloGenerator {
         }
 
         copyHorizontalBorder(
-            outputRoot, verticalNeighbor(address, -1), RawTileIO.Border.SOUTH, stored, 0);
+            outputRoot,
+            verticalNeighbor(address, -1),
+            RawTileIO.Border.SOUTH,
+            stored,
+            0,
+            coreAvailability);
         copyHorizontalBorder(
             outputRoot,
             verticalNeighbor(address, 1),
             RawTileIO.Border.NORTH,
             stored,
-            (RawTileIO.STORED_SIDE - 1) * RawTileIO.STORED_SIDE);
+            (RawTileIO.STORED_SIDE - 1) * RawTileIO.STORED_SIDE,
+            coreAvailability);
         copyVerticalBorder(
-            outputRoot, horizontalNeighbor(address, -1), RawTileIO.Border.EAST, stored, 0);
+            outputRoot,
+            horizontalNeighbor(address, -1),
+            RawTileIO.Border.EAST,
+            stored,
+            0,
+            coreAvailability);
         copyVerticalBorder(
             outputRoot,
             horizontalNeighbor(address, 1),
             RawTileIO.Border.WEST,
             stored,
-            RawTileIO.STORED_SIDE - 1);
+            RawTileIO.STORED_SIDE - 1,
+            coreAvailability);
 
         copyCorner(
             outputRoot, diagonalNeighbor(address, -1, -1),
-            RawTileIO.Border.SOUTH, RawTileIO.CORE_SIDE - 1, stored, 0);
+            RawTileIO.Border.SOUTH, RawTileIO.CORE_SIDE - 1, stored, 0,
+            coreAvailability);
         copyCorner(
             outputRoot, diagonalNeighbor(address, -1, 1),
-            RawTileIO.Border.SOUTH, 0, stored, RawTileIO.STORED_SIDE - 1);
+            RawTileIO.Border.SOUTH, 0, stored, RawTileIO.STORED_SIDE - 1,
+            coreAvailability);
         copyCorner(
             outputRoot, diagonalNeighbor(address, 1, -1),
             RawTileIO.Border.NORTH, RawTileIO.CORE_SIDE - 1,
-            stored, (RawTileIO.STORED_SIDE - 1) * RawTileIO.STORED_SIDE);
+            stored, (RawTileIO.STORED_SIDE - 1) * RawTileIO.STORED_SIDE,
+            coreAvailability);
         copyCorner(
             outputRoot, diagonalNeighbor(address, 1, 1),
-            RawTileIO.Border.NORTH, 0, stored, RawTileIO.STORED_SAMPLE_COUNT - 1);
+            RawTileIO.Border.NORTH, 0, stored, RawTileIO.STORED_SAMPLE_COUNT - 1,
+            coreAvailability);
 
         RawTileIO.write(outputRoot, address, stored);
         RawTileIO.deleteLegacyEdges(outputRoot, address);
@@ -83,9 +129,10 @@ public final class TileHaloGenerator {
         TileAddress neighbor,
         RawTileIO.Border sourceBorder,
         short[] target,
-        int targetOffset
+        int targetOffset,
+        CoreAvailability coreAvailability
     ) throws Exception {
-        if (!hasCore(outputRoot, neighbor)) {
+        if (!hasCore(neighbor, coreAvailability)) {
             return;
         }
         short[] source = RawTileIO.readCoreBorder(outputRoot, neighbor, sourceBorder);
@@ -97,9 +144,10 @@ public final class TileHaloGenerator {
         TileAddress neighbor,
         RawTileIO.Border sourceBorder,
         short[] target,
-        int targetColumn
+        int targetColumn,
+        CoreAvailability coreAvailability
     ) throws Exception {
-        if (!hasCore(outputRoot, neighbor)) {
+        if (!hasCore(neighbor, coreAvailability)) {
             return;
         }
         short[] source = RawTileIO.readCoreBorder(outputRoot, neighbor, sourceBorder);
@@ -114,17 +162,21 @@ public final class TileHaloGenerator {
         RawTileIO.Border sourceBorder,
         int sourceIndex,
         short[] target,
-        int targetIndex
+        int targetIndex,
+        CoreAvailability coreAvailability
     ) throws Exception {
-        if (!hasCore(outputRoot, neighbor)) {
+        if (!hasCore(neighbor, coreAvailability)) {
             return;
         }
         target[targetIndex] =
             RawTileIO.readCoreBorder(outputRoot, neighbor, sourceBorder)[sourceIndex];
     }
 
-    private static boolean hasCore(Path outputRoot, TileAddress address) throws Exception {
-        return address != null && RawTileIO.isCoreComplete(outputRoot, address);
+    private static boolean hasCore(
+        TileAddress address,
+        CoreAvailability coreAvailability
+    ) throws Exception {
+        return address != null && coreAvailability.hasCore(address);
     }
 
     private static TileAddress verticalNeighbor(TileAddress address, int deltaRow) {
@@ -154,5 +206,10 @@ public final class TileHaloGenerator {
         @Override
         public void close() {
         }
+    }
+
+    @FunctionalInterface
+    private interface CoreAvailability {
+        boolean hasCore(TileAddress address) throws Exception;
     }
 }

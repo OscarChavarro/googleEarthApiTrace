@@ -1,6 +1,8 @@
 package demresampler.io;
 
 import demresampler.model.TileAddress;
+import vsdk.toolkit.gui.feedback.ProgressMonitor;
+import vsdk.toolkit.gui.feedback.ProgressMonitorConsoleLongFormat;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -48,23 +50,34 @@ public final class FabdemScanner {
     }
 
     public static Set<Long> candidateTiles(List<FabdemSourceTile> sources, int level) {
+        System.out.printf(
+            "Enumerating leaf candidates from %,d source tiles:%n",
+            sources.size());
+        ProgressMonitor progress = new ProgressMonitorConsoleLongFormat();
+        progress.begin();
         int side = 1 << level;
         double tileDegrees = 360.0 / side;
         Set<Long> result = new HashSet<>();
-        for (FabdemSourceTile source : sources) {
-            int firstColumn = clamp(
-                floorIndex((source.westLongitude() + 180.0) / tileDegrees), 0, side - 1);
-            int lastColumn = clamp(
-                ceilIndex((source.eastLongitude() + 180.0) / tileDegrees) - 1, 0, side - 1);
-            int firstRow = clamp(
-                floorIndex((180.0 - source.northLatitude()) / tileDegrees), 0, side - 1);
-            int lastRow = clamp(
-                ceilIndex((180.0 - source.southLatitude()) / tileDegrees) - 1, 0, side - 1);
-            for (int row = firstRow; row <= lastRow; row++) {
-                for (int column = firstColumn; column <= lastColumn; column++) {
-                    result.add(TileAddress.pack(row, column));
+        try {
+            for (int index = 0; index < sources.size(); index++) {
+                FabdemSourceTile source = sources.get(index);
+                int firstColumn = clamp(
+                    floorIndex((source.westLongitude() + 180.0) / tileDegrees), 0, side - 1);
+                int lastColumn = clamp(
+                    ceilIndex((source.eastLongitude() + 180.0) / tileDegrees) - 1, 0, side - 1);
+                int firstRow = clamp(
+                    floorIndex((180.0 - source.northLatitude()) / tileDegrees), 0, side - 1);
+                int lastRow = clamp(
+                    ceilIndex((180.0 - source.southLatitude()) / tileDegrees) - 1, 0, side - 1);
+                for (int row = firstRow; row <= lastRow; row++) {
+                    for (int column = firstColumn; column <= lastColumn; column++) {
+                        result.add(TileAddress.pack(row, column));
+                    }
                 }
+                progress.update(0, sources.size(), index + 1);
             }
+        } finally {
+            progress.end();
         }
         return result;
     }

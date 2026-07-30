@@ -179,12 +179,28 @@ Optional arguments:
 
 - `--threads <n>` or `--threads=<n>`: worker count in `[1, 256]`. The default is
   `Runtime.availableProcessors()`, which is 72 on the current two-socket NUMA host.
-- `--resume`: retained as a backwards-compatible no-op.
+- `--resume`: retained for command-line compatibility; resumable manifests are always
+  enabled.
 
-Runs are automatically incremental: a tile whose size is exactly `133128` bytes is
-considered complete and skipped. Incomplete or missing tiles are regenerated, so the
-same command can safely continue an interrupted compatible import. Do not reuse an
-output folder produced with different inputs or settings.
+Runs are automatically incremental. Per-level manifests are stored below
+`/tmp/51-demResampler-manifests/<identity>/`, where the identity covers the normalized
+output path, its directory inode, the algorithm and tile format versions, and every input
+path, size and modification time. Each manifest contains the sorted candidate coordinates
+and compact bitsets for processed cores, present tile files and published halos. State is
+atomically checkpointed every 30 seconds and at every phase boundary.
+
+On the first run against an older non-empty output tree, four metadata workers inspect
+each expected tile once and populate the manifest. This one-time index has a
+`ParallelProgressMonitor`. Existing final filenames are accepted only when one attributes
+read confirms a regular file of exactly `133128` bytes. Because an old tile does not
+encode whether its halo was published, old halos are rebuilt once; subsequent runs skip
+both completed cores and completed halos directly from the manifest. Missing candidates
+are processed once and recorded even when GDAL reports only NoData.
+
+`/tmp` is intentionally authoritative resume state. If it is cleared or the computed
+identity changes, the output is indexed again. If files inside the output tree are
+manually changed without replacing its root directory, remove the matching manifest
+directory printed at startup so that 51 reindexes the files.
 
 The process maintains its own output inventory instead of traversing the generated tree
 with `du`. Every 30 seconds it reports the number of verified tile files and their exact
@@ -217,7 +233,9 @@ The implemented pipeline is split into restartable, bounded-memory phases:
    renames to four.
 4. **Publish leaf halos in parallel.** Once every core is available, workers copy the
    eight neighbouring edges/corners into those same `258x258` files. No edge sidecar
-   or second persistent file is created for a tile.
+   or second persistent file is created for a tile. Manifest membership replaces
+   filesystem existence checks for neighbouring cores, and completed halo bits prevent
+   rewrites on later runs.
 5. **Reduce and publish upper levels in parallel.** At every level, unique parent
    addresses form the next work queue. Workers read the four child cores, compute
    independent NoData-aware `2x2` means, then run the same neighbour-halo publication
