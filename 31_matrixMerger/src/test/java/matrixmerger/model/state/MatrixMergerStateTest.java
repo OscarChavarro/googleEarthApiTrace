@@ -69,14 +69,59 @@ final class MatrixMergerStateTest {
         state.setFrameMatrices(List.of(lateDisconnected, deepest, top, middle));
         state.sortFramesByUncleHierarchy();
 
-        assertEquals(List.of("00010_1", "00020_1", "00030_1", "00090_1"), state.getFrameMatrices().stream()
+        assertEquals(List.of("00010_1", "00090_1", "00020_1", "00030_1"), state.getFrameMatrices().stream()
             .map(MatrixMergerStateTest::tileId)
             .toList());
-        List<String> expectedLevels = List.of("l", "l + 1", "l + 2", "l");
+        List<String> expectedLevels = List.of("l", "l", "l + 1", "l + 2");
         for (int i = 0; i < state.getFrameMatrices().size(); i++) {
             state.selectFrameIndex(i);
             assertEquals(expectedLevels.get(i), state.getSelectedHierarchyLabel());
         }
+    }
+
+    @Test
+    void groupsMultipleMatricesAtEachDepthBeforeShowingTheNextDepth() {
+        FrameMatrixSet secondChild = frame(-1, "50_1", "40_1");
+        FrameMatrixSet firstChild = frame(-1, "20_1", "10_1");
+        FrameMatrixSet secondRoot = frame(-1, "40_1", null);
+        FrameMatrixSet firstRoot = frame(-1, "10_1", null);
+        MatrixMergerState state = new MatrixMergerState();
+
+        state.setFrameMatrices(List.of(secondChild, firstChild, secondRoot, firstRoot));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(List.of("00010_1", "00040_1", "00020_1", "00050_1"), state.getFrameMatrices().stream()
+            .map(MatrixMergerStateTest::tileId)
+            .toList());
+        assertEquals(List.of(0, 0, 1, 1), state.getHierarchyOrderDiagnostics().stream()
+            .map(MatrixMergerState.HierarchyOrderDiagnostic::level)
+            .toList());
+    }
+
+    @Test
+    void resolvesAChildWhoseParentLevelIsSplitAcrossMatrices() {
+        FrameMatrixSet child = frame(-1, "30_1", "10_1");
+        child.getMatrices().get(0).getTiles().get(1).setUncles(List.of(
+            new ToUncleRelationship(UncleDirections.WEST_NORTH, "20_1")
+        ));
+        MatrixMergerState state = new MatrixMergerState();
+
+        state.setFrameMatrices(List.of(
+            child,
+            frame(-1, "20_1", null),
+            frame(-1, "10_1", null)
+        ));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(List.of("00010_1", "00020_1", "00030_1"), state.getFrameMatrices().stream()
+            .map(MatrixMergerStateTest::tileId)
+            .toList());
+        assertEquals(List.of(0, 0, 1), state.getHierarchyOrderDiagnostics().stream()
+            .map(MatrixMergerState.HierarchyOrderDiagnostic::level)
+            .toList());
+        assertEquals(List.of(0, 1), state.getHierarchyOrderDiagnostics().get(2).resolvedParentIndexes());
+        state.selectFrameIndex(2);
+        assertEquals(MatrixMergerState.UncleHudState.NORMAL, state.getSelectedMatrixUncleHudStatus().state());
     }
 
     @Test
@@ -183,6 +228,25 @@ final class MatrixMergerStateTest {
         assertEquals(List.of("00010_1", "00010_9999"), report.tileIds());
         assertEquals(1, state.getMatrixCount());
         assertEquals(10, state.getHierarchyOrderDiagnostics().get(0).tileCount());
+    }
+
+    @Test
+    void assignsEveryTileToOnlyTheFirstRemainingMatrix() {
+        MatrixMergerState state = new MatrixMergerState();
+        FrameMatrixSet first = frame(10, "10_1", null, "10_2");
+        FrameMatrixSet overlapping = frame(20, "10_2", null, "20_1");
+        state.setFrameMatrices(List.of(first, overlapping));
+
+        MatrixMergerState.ExclusiveTileOwnershipReport report =
+            state.enforceExclusiveTileOwnership();
+
+        assertEquals(1, report.duplicateOccurrencesRemoved());
+        assertEquals(1, report.affectedMatrices());
+        assertEquals(0, report.emptyMatricesRemoved());
+        assertEquals(List.of("00010_1", "00010_2", "00020_1"), state.getFrameMatrices().stream()
+            .flatMap(frame -> frame.getMatrices().get(0).getTiles().stream())
+            .map(FrameTileMatrix.TileCoord::getId)
+            .toList());
     }
 
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId) {

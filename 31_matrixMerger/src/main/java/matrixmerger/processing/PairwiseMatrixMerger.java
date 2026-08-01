@@ -50,11 +50,12 @@ public final class PairwiseMatrixMerger {
         }
 
         Map<String, FrameTileMatrix.TileCoord> aByPos = indexTilesByPosition(a.getTiles());
-        if (aByPos == null) {
+        Map<String, FrameTileMatrix.TileCoord> bByPos = indexTilesByPosition(b.getTiles());
+        if (aByPos == null || bByPos == null) {
             return false;
         }
 
-        List<FrameTileMatrix.TileCoord> tilesToAppend = collectAlignedTilesFromB(b, aByPos, offset);
+        List<FrameTileMatrix.TileCoord> tilesToAppend = collectAlignedTilesFromB(b, aById, aByPos, offset);
         if (tilesToAppend == null) {
             return false;
         }
@@ -87,23 +88,27 @@ public final class PairwiseMatrixMerger {
         Map<String, FrameTileMatrix.TileCoord> aById,
         Map<String, FrameTileMatrix.TileCoord> bById
     ) {
-        Integer deltaI = null;
-        Integer deltaJ = null;
+        Map<MatrixOffset, Integer> votesByOffset = new HashMap<>();
         for (String id : sharedIds) {
             FrameTileMatrix.TileCoord at = aById.get(id);
             FrameTileMatrix.TileCoord bt = bById.get(id);
-            int di = at.getI() - bt.getI();
-            int dj = at.getJ() - bt.getJ();
-            if (deltaI == null) {
-                deltaI = di;
-                deltaJ = dj;
-                continue;
-            }
-            if (deltaI != di || deltaJ != dj) {
-                return null;
+            MatrixOffset candidate = new MatrixOffset(at.getI() - bt.getI(), at.getJ() - bt.getJ());
+            votesByOffset.merge(candidate, 1, Integer::sum);
+        }
+
+        MatrixOffset winner = null;
+        int winnerVotes = 0;
+        for (Map.Entry<MatrixOffset, Integer> entry : votesByOffset.entrySet()) {
+            if (entry.getValue() > winnerVotes) {
+                winner = entry.getKey();
+                winnerVotes = entry.getValue();
             }
         }
-        return deltaI == null ? null : new MatrixOffset(deltaI, deltaJ);
+
+        // Sparse captures can contain an occasional stale/misplaced repeated tile.  Such
+        // an outlier must not split one physical grid into two matrices, but an ambiguous
+        // vote must still fail rather than guessing a placement for the unique tiles.
+        return winnerVotes * 2 > sharedIds.size() ? winner : null;
     }
 
     private static Map<String, FrameTileMatrix.TileCoord> indexTilesById(List<FrameTileMatrix.TileCoord> tiles) {
@@ -117,7 +122,7 @@ public final class PairwiseMatrixMerger {
                 return null;
             }
             FrameTileMatrix.TileCoord prev = out.putIfAbsent(id, t);
-            if (prev != null && (prev.getI() != t.getI() || prev.getJ() != t.getJ())) {
+            if (prev != null) {
                 return null;
             }
         }
@@ -138,12 +143,18 @@ public final class PairwiseMatrixMerger {
 
     private List<FrameTileMatrix.TileCoord> collectAlignedTilesFromB(
         FrameTileMatrix b,
+        Map<String, FrameTileMatrix.TileCoord> aById,
         Map<String, FrameTileMatrix.TileCoord> aByPos,
         MatrixOffset offset
     ) {
         List<FrameTileMatrix.TileCoord> toAdd = new ArrayList<>();
         for (FrameTileMatrix.TileCoord bt : b.getTiles()) {
             if (bt == null) {
+                continue;
+            }
+            // A owns every shared native tile.  In particular, do not let a shared
+            // alignment outlier be appended at a second coordinate.
+            if (aById.containsKey(bt.getId())) {
                 continue;
             }
             int translatedI = bt.getI() + offset.deltaI();

@@ -20,9 +20,23 @@ public final class AutomaticMatrixGroupingPipeline {
             countChanged |= runRetryMergeSweep(model);
             countChanged |= runCutSweep(model);
             if (!countChanged && model.getFrameCount() == before) {
+                MatrixMergerState.ExclusiveTileOwnershipReport ownership =
+                    model.enforceExclusiveTileOwnership();
+                if (ownership.duplicateOccurrencesRemoved() > 0) {
+                    System.out.println(
+                        "AutomaticMatrixGroupingPipeline: removed "
+                            + ownership.duplicateOccurrencesRemoved()
+                            + " duplicate tile occurrences from "
+                            + ownership.affectedMatrices()
+                            + " matrices; removed empty matrices="
+                            + ownership.emptyMatricesRemoved()
+                            + "."
+                    );
+                }
                 model.sortFramesByUncleHierarchy();
                 new VisualHierarchyRelationshipInferrer().inferMissingParents(model);
                 assertTileSetConserved(inputTileIds, tileIds(model));
+                assertExclusiveTileOwnership(model);
                 return;
             }
         }
@@ -62,6 +76,36 @@ public final class AutomaticMatrixGroupingPipeline {
         System.out.println(
             "AutomaticMatrixGroupingPipeline: tile-set conservation OK ("
                 + after.size() + " unique native tile ids)."
+        );
+    }
+
+    private static void assertExclusiveTileOwnership(MatrixMergerState model) {
+        Set<String> assigned = new LinkedHashSet<>();
+        Set<String> duplicates = new LinkedHashSet<>();
+        for (FrameMatrixSet frame : model.getFrameMatrices()) {
+            if (frame == null || frame.getMatrices() == null) {
+                continue;
+            }
+            for (FrameTileMatrix matrix : frame.getMatrices()) {
+                if (matrix == null || matrix.getTiles() == null) {
+                    continue;
+                }
+                for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                    if (tile != null && tile.getId() != null && !tile.getId().isBlank()
+                        && !assigned.add(tile.getId())) {
+                        duplicates.add(tile.getId());
+                    }
+                }
+            }
+        }
+        if (!duplicates.isEmpty()) {
+            throw new IllegalStateException(
+                "Automatic grouping assigned native tiles to more than one matrix: " + sample(duplicates)
+            );
+        }
+        System.out.println(
+            "AutomaticMatrixGroupingPipeline: exclusive tile ownership OK ("
+                + assigned.size() + " assignments)."
         );
     }
 

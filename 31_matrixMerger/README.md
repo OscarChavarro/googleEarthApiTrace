@@ -85,12 +85,15 @@ HUD:
 
 Operates on two matrices `A` and `B`:
 
-1. Finds matching cells by `id` to compute one offset (`MatrixOffset`) for `B` over `A`.
-2. If the offset is not consistent for all shared `id` values, it fails.
+1. Finds matching cells by `id` and votes for an offset (`MatrixOffset`) for `B` over `A`.
+2. A unanimous offset is used normally. For sparse captures, a strict-majority offset is
+   accepted so an occasional stale/misplaced repeated tile cannot split one physical grid;
+   tied or minority-only alignments still fail as ambiguous.
 3. If overlapping cells contain conflicting content, it fails.
-4. Applies the validated offset to every tile in `B`, appending all non-overlapping tiles
-   to `A`. A successful merge must consume the whole native tile-id set from `B`; otherwise
-   removing `B` would make the automatic pipeline lossy.
+4. Applies the validated offset to every tile in `B`, appending only IDs not already owned
+   by `A`. Shared IDs remain in `A` exactly once, including alignment outliers. A successful
+   merge must consume the whole native tile-id set from `B`; otherwise removing `B` would
+   make the automatic pipeline lossy.
 5. Normalizes `A` coordinates to start at `0` and recalculates `rows/cols`.
 
 ### `processing.MatrixSetConsolidator`
@@ -115,8 +118,10 @@ column while the transient left side keeps the original transform.
 
 Repeats retry-merge sweeps and west-cutter split sweeps over all frames until the frame
 count stabilizes. It then follows the uncle relationships between the resulting matrices,
-orders them from the top quadtree level to the deepest one, and selects the top level for
-the viewer. If a later hierarchy root has lost its parent relationship,
+resolves every matrix's relative hierarchy depth, groups all matrices at the same depth,
+orders those groups from the top quadtree level to the deepest one, and selects the first
+top-level matrix for the viewer. Manual mode applies the same ordering immediately before
+opening the interactive viewer. If a later hierarchy root has lost its parent relationship,
 `VisualHierarchyRelationshipInferrer` compares up to 16 sampled child textures with the
 four quadrants of earlier matrices. A match is usable only below the RMSE threshold and
 when the best match clearly beats the second best; at least three accepted probes and a
@@ -127,9 +132,12 @@ uncles are observed per-tile coarse-texture quadrant relationships, not inferred
 matrix-to-matrix transforms. This is the batch equivalent of
 pressing `n` and `c` over every frame plus hierarchy repair.
 
-Before automatic grouping returns, it verifies that the set of unique native tile IDs is
-identical to the set loaded at its start. A missing or invented ID aborts the run instead
-of allowing a silently lossy export.
+After merge/cut convergence, first assignment wins for any repeated ID still left in
+different matrices; later occurrences are removed before hierarchy resolution. Before
+automatic grouping returns, it verifies both that the set of unique native tile IDs is
+identical to the set loaded at its start and that every ID has exactly one matrix owner.
+A missing, invented or multiply assigned ID aborts the run instead of allowing a silently
+lossy or duplicated export.
 
 ## Execution
 

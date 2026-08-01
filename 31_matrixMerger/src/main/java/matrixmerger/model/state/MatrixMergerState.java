@@ -196,7 +196,9 @@ public final class MatrixMergerState {
             state = UncleHudState.TOPLEVEL;
         }
         else if (uncleFrameIndexes.size() > 1) {
-            state = UncleHudState.BROKEN;
+            state = parentMatricesShareHierarchyLevel(uncleFrameIndexes)
+                ? UncleHudState.NORMAL
+                : UncleHudState.BROKEN;
         }
         else {
             state = UncleHudState.NORMAL;
@@ -208,6 +210,26 @@ public final class MatrixMergerState {
             missingUncleIds,
             buildLocatedUncleTiles(uncleCountsByTileId.keySet())
         );
+    }
+
+    private boolean parentMatricesShareHierarchyLevel(Set<Integer> frameIndexes) {
+        Integer sharedLevel = null;
+        for (Integer frameIndex : frameIndexes) {
+            if (frameIndex == null || frameIndex < 0 || frameIndex >= frameMatrices.size()) {
+                return false;
+            }
+            Integer level = hierarchyLevelByFrame.get(frameMatrices.get(frameIndex));
+            if (level == null || level < 0) {
+                return false;
+            }
+            if (sharedLevel == null) {
+                sharedLevel = level;
+            }
+            else if (!sharedLevel.equals(level)) {
+                return false;
+            }
+        }
+        return sharedLevel != null;
     }
 
     public FrameTileMatrix getSelectedMatrix() {
@@ -371,6 +393,77 @@ public final class MatrixMergerState {
             discardedTiles,
             List.copyOf(discardedTileIds)
         );
+    }
+
+    /**
+     * Makes final matrix membership exclusive while preserving first-assignment order.
+     * Shared IDs are still available as alignment anchors during merging; this method is
+     * intentionally called only after the automatic merge/cut sweeps have converged.
+     */
+    public ExclusiveTileOwnershipReport enforceExclusiveTileOwnership() {
+        Set<String> assignedTileIds = new LinkedHashSet<>();
+        int duplicateOccurrencesRemoved = 0;
+        int affectedMatrices = 0;
+        int emptyMatricesRemoved = 0;
+        List<FrameMatrixSet> emptyFrames = new ArrayList<>();
+
+        for (FrameMatrixSet frame : frameMatrices) {
+            if (frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()) {
+                continue;
+            }
+            FrameTileMatrix matrix = frame.getMatrices().get(0);
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            Set<String> removedFromMatrix = new LinkedHashSet<>();
+            matrix.getTiles().removeIf(tile -> {
+                if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                    return false;
+                }
+                if (assignedTileIds.add(tile.getId())) {
+                    return false;
+                }
+                removedFromMatrix.add(tile.getId());
+                return true;
+            });
+            if (!removedFromMatrix.isEmpty()) {
+                duplicateOccurrencesRemoved += removedFromMatrix.size();
+                affectedMatrices++;
+                removeHierarchyEntries(frame, removedFromMatrix);
+            }
+            if (matrix.getTiles().isEmpty()) {
+                emptyFrames.add(frame);
+            }
+        }
+
+        for (FrameMatrixSet frame : emptyFrames) {
+            invalidReasonByFrameId.remove(frame.getFrameId());
+            hierarchyLevelByFrame.remove(frame);
+            if (frameMatrices.remove(frame)) {
+                emptyMatricesRemoved++;
+            }
+        }
+        maximumRetryCount = frameMatrices.size();
+        normalizeSelection();
+        refreshHierarchyOrdering(false);
+        lastMergeFailedForCurrentSelection = false;
+        return new ExclusiveTileOwnershipReport(
+            duplicateOccurrencesRemoved,
+            affectedMatrices,
+            emptyMatricesRemoved
+        );
+    }
+
+    private static void removeHierarchyEntries(FrameMatrixSet frame, Set<String> removedTileIds) {
+        Map<String, List<String>> uncles = new LinkedHashMap<>(frame.getHierarchyUnclesByTileId());
+        Map<String, List<ToUncleRelationship>> relationships =
+            new LinkedHashMap<>(frame.getHierarchyRelationshipsByTileId());
+        for (String tileId : removedTileIds) {
+            uncles.remove(tileId);
+            relationships.remove(tileId);
+        }
+        frame.setHierarchyUnclesByTileId(uncles);
+        frame.setHierarchyRelationshipsByTileId(relationships);
     }
 
     public boolean mergeSelectedMatrixWithNext() {
@@ -813,26 +906,28 @@ public final class MatrixMergerState {
             Integer explicitParentFrameIndex = indexOfFrameIdentity(frame.getInferredParent());
 
             UncleHudState state;
-            Integer parentFrameIndex = null;
             if (explicitParentFrameIndex != null && explicitParentFrameIndex != frameIndex) {
                 state = UncleHudState.NORMAL;
-                parentFrameIndex = explicitParentFrameIndex;
+                resolvedUncleFrameIndexes.clear();
+                resolvedUncleFrameIndexes.add(explicitParentFrameIndex);
             }
             else if (resolvedUncleFrameIndexes.isEmpty()) {
                 state = UncleHudState.TOPLEVEL;
             }
             else if (resolvedUncleFrameIndexes.size() == 1) {
                 state = UncleHudState.NORMAL;
-                parentFrameIndex = resolvedUncleFrameIndexes.iterator().next();
             }
             else {
-                return;
+                // A sparse level may be split into several matrices.  Uncle tiles
+                // from one child matrix can therefore live in several matrices at
+                // the same parent depth without making the hierarchy unusable.
+                state = UncleHudState.BROKEN;
             }
             hierarchyNodes.add(new FrameHierarchyNode(
                 frame,
                 frameIndex,
                 state,
-                parentFrameIndex,
+                List.copyOf(resolvedUncleFrameIndexes),
                 findLastCaptureFrameId(frame),
                 hierarchyUncleIds.size()
             ));
@@ -898,27 +993,31 @@ public final class MatrixMergerState {
             .thenComparingInt(FrameHierarchyNode::originalIndex);
         PriorityQueue<FrameHierarchyNode> available = new PriorityQueue<>(localityOrder);
         for (FrameHierarchyNode node : nodes) {
-            int parentCount = node.parentFrameIndex() == null ? 0 : 1;
+            int parentCount = node.parentFrameIndexes().size();
             remainingParentsByFrameIndex.put(node.originalIndex(), parentCount);
-            if (node.parentFrameIndex() == null) {
+            if (node.parentFrameIndexes().isEmpty()) {
                 available.add(node);
             }
             else {
-                childrenByParentIndex.computeIfAbsent(node.parentFrameIndex(), unused -> new ArrayList<>()).add(node);
+                for (Integer parentFrameIndex : node.parentFrameIndexes()) {
+                    childrenByParentIndex.computeIfAbsent(parentFrameIndex, unused -> new ArrayList<>()).add(node);
+                }
             }
         }
 
-        List<FrameHierarchyNode> ordered = new ArrayList<>(nodes.size());
+        List<FrameHierarchyNode> resolved = new ArrayList<>(nodes.size());
         Map<Integer, Integer> levelByOriginalIndex = new HashMap<>();
         while (!available.isEmpty()) {
             FrameHierarchyNode next = available.remove();
-            int level = next.parentFrameIndex() == null
-                ? 0
-                : levelByOriginalIndex.getOrDefault(next.parentFrameIndex(), -1) + 1;
-            if (level < 0) {
-                return null;
+            int level = 0;
+            for (Integer parentFrameIndex : next.parentFrameIndexes()) {
+                Integer parentLevel = levelByOriginalIndex.get(parentFrameIndex);
+                if (parentLevel == null) {
+                    return null;
+                }
+                level = Math.max(level, parentLevel + 1);
             }
-            ordered.add(next.withLevel(level));
+            resolved.add(next.withLevel(level));
             levelByOriginalIndex.put(next.originalIndex(), level);
             for (FrameHierarchyNode child : childrenByParentIndex.getOrDefault(next.originalIndex(), List.of())) {
                 int remaining = remainingParentsByFrameIndex.get(child.originalIndex()) - 1;
@@ -928,10 +1027,19 @@ public final class MatrixMergerState {
                 }
             }
         }
-        if (ordered.size() != nodes.size()) {
+        if (resolved.size() != nodes.size()) {
             return null;
         }
-        return ordered;
+
+        // Topological traversal guarantees that a parent is resolved before its
+        // children, but it does not guarantee that every matrix at depth N appears
+        // before matrices at depth N+1 when there are multiple hierarchy roots.
+        // Keep level resolution and presentation order as separate phases.
+        resolved.sort(
+            Comparator.comparingInt(FrameHierarchyNode::level)
+                .thenComparing(localityOrder)
+        );
+        return resolved;
     }
 
     private static int topLevelEvidenceRank(FrameHierarchyNode node) {
@@ -1245,6 +1353,13 @@ public final class MatrixMergerState {
     ) {
     }
 
+    public record ExclusiveTileOwnershipReport(
+        int duplicateOccurrencesRemoved,
+        int affectedMatrices,
+        int emptyMatricesRemoved
+    ) {
+    }
+
     public enum UncleHudState {
         NORMAL,
         BROKEN,
@@ -1255,7 +1370,7 @@ public final class MatrixMergerState {
         FrameMatrixSet frame,
         int originalIndex,
         UncleHudState state,
-        Integer parentFrameIndex,
+        List<Integer> parentFrameIndexes,
         int lastCaptureFrameId,
         int hierarchyUncleCount,
         int level
@@ -1264,11 +1379,11 @@ public final class MatrixMergerState {
             FrameMatrixSet frame,
             int originalIndex,
             UncleHudState state,
-            Integer parentFrameIndex,
+            List<Integer> parentFrameIndexes,
             int lastCaptureFrameId,
             int hierarchyUncleCount
         ) {
-            this(frame, originalIndex, state, parentFrameIndex, lastCaptureFrameId, hierarchyUncleCount, -1);
+            this(frame, originalIndex, state, parentFrameIndexes, lastCaptureFrameId, hierarchyUncleCount, -1);
         }
 
         private FrameHierarchyNode withLevel(int newLevel) {
@@ -1276,7 +1391,7 @@ public final class MatrixMergerState {
                 frame,
                 originalIndex,
                 state,
-                parentFrameIndex,
+                parentFrameIndexes,
                 lastCaptureFrameId,
                 hierarchyUncleCount,
                 newLevel

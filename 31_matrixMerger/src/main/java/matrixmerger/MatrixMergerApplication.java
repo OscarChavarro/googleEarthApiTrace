@@ -58,6 +58,11 @@ public final class MatrixMergerApplication {
         if (mode == Mode.AUTO) {
             new AutomaticMatrixGroupingPipeline().run(model);
         }
+        if (!offline) {
+            // Manual mode does not run the automatic pipeline, so perform the
+            // hierarchy ordering explicitly before the first interactive frame.
+            model.sortFramesByUncleHierarchy();
+        }
         finishProcessing(model, outputPath, args);
         if (offline) {
             if (!Jogl4Renderer.verifyOpenGLAvailability()) {
