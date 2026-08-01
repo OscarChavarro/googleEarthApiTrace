@@ -1,6 +1,7 @@
 package pyramidalimagecoverage.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -132,6 +133,36 @@ class CoverageCanvasTest {
         assertEquals(Color.RED.getRGB(), result.getRGB(259, 200));
         assertTrue(java.util.Arrays.asList(canvas.hudLines()).contains("lat: 45.00000000"));
         assertTrue(java.util.Arrays.asList(canvas.hudLines()).contains("lon: 90.00000000"));
+    }
+
+    @Test
+    void selectedExistingTileFileHudUsesItsRelativePathAndExistsFlag() throws IOException {
+        Path childPath = temporaryFolder.resolve("0").resolve("00.png");
+        java.nio.file.Files.createDirectories(childPath.getParent());
+        BufferedImage tile = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        ImageIO.write(tile, "png", childPath.toFile());
+
+        PyramidCatalog catalog = new PyramidCatalog(temporaryFolder);
+        TileRecord childTile = new TileRecord(TileAddress.fromQuadKey("00"), childPath);
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("0"), temporaryFolder.resolve("0.png")));
+        catalog.add(childTile);
+        ViewerModel model = new ViewerModel(catalog);
+        model.toggleSelection(childTile);
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+
+        assertEquals(Path.of("0", "00.png").toString(), canvas.selectedTileFileName());
+        assertTrue(canvas.selectedTileFileExists());
+    }
+
+    @Test
+    void selectedMissingTileFileHudUsesExpectedDataFolderPathAndMissingFlag() throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        ViewerModel model = new ViewerModel(catalog);
+        model.toggleSelection(TileAddress.fromCoordinates(2, 2, 2));
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+
+        assertEquals(Path.of("2", "0", "020.png").toString(), canvas.selectedTileFileName());
+        assertFalse(canvas.selectedTileFileExists());
     }
 
     @Test

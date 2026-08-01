@@ -15,10 +15,13 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import matrixmerger.model.contract.FrameMatrixSet;
 import matrixmerger.model.contract.FrameTileMatrix;
+import matrixmerger.model.contract.ParentGridTransform;
 import matrixmerger.io.WestCuttersJsonReader;
 import matrixmerger.processing.WestCutterMatrixSplitter;
 import matrixmerger.processing.PairwiseMatrixMerger;
 import matrixmerger.processing.uncles.ToUncleRelationship;
+import matrixmerger.processing.uncles.UncleDirections;
+import matrixmerger.processing.uncles.UncleRelationshipKind;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 
@@ -396,6 +399,140 @@ public final class MatrixMergerState {
     }
 
     /**
+     * Rebuilds every matrix from its orthogonally connected tile components and drops
+     * components too small to carry useful spatial information. This must run after
+     * exclusive ownership, because removing a duplicated tile can split a formerly
+     * connected matrix into several islands.
+     */
+    public TopologyFilterReport discardSmallFourConnectedComponents(int minimumComponentTileCount) {
+        int threshold = Math.max(1, minimumComponentTileCount);
+        int inputMatrices = frameMatrices.size();
+        int discardedComponents = 0;
+        int discardedTiles = 0;
+        int splitMatrices = 0;
+        List<String> discardedTileIds = new ArrayList<>();
+        List<FrameMatrixSet> rebuiltFrames = new ArrayList<>();
+
+        for (FrameMatrixSet frame : frameMatrices) {
+            FrameTileMatrix matrix = firstMatrix(frame);
+            if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+                continue;
+            }
+            List<List<FrameTileMatrix.TileCoord>> components = fourConnectedComponents(matrix.getTiles());
+            int retainedFromFrame = 0;
+            for (List<FrameTileMatrix.TileCoord> component : components) {
+                if (component.size() < threshold) {
+                    discardedComponents++;
+                    discardedTiles += component.size();
+                    for (FrameTileMatrix.TileCoord tile : component) {
+                        if (tile != null && tile.getId() != null && !tile.getId().isBlank()) {
+                            discardedTileIds.add(tile.getId());
+                        }
+                    }
+                    continue;
+                }
+                rebuiltFrames.add(copyFrameForComponent(frame, component));
+                retainedFromFrame++;
+            }
+            if (retainedFromFrame > 1) {
+                splitMatrices++;
+            }
+        }
+
+        frameMatrices.clear();
+        frameMatrices.addAll(rebuiltFrames);
+        invalidReasonByFrameId.keySet().removeIf(frameId -> frameMatrices.stream()
+            .noneMatch(frame -> frame != null && frame.getFrameId() == frameId));
+        maximumRetryCount = frameMatrices.size();
+        normalizeSelection();
+        refreshHierarchyOrdering(false);
+        lastMergeFailedForCurrentSelection = false;
+        return new TopologyFilterReport(
+            inputMatrices,
+            frameMatrices.size(),
+            discardedComponents,
+            discardedTiles,
+            splitMatrices,
+            List.copyOf(discardedTileIds)
+        );
+    }
+
+    private static List<List<FrameTileMatrix.TileCoord>> fourConnectedComponents(
+        List<FrameTileMatrix.TileCoord> tiles
+    ) {
+        if (tiles == null || tiles.isEmpty()) {
+            return List.of();
+        }
+        Map<String, FrameTileMatrix.TileCoord> byPosition = new LinkedHashMap<>();
+        for (FrameTileMatrix.TileCoord tile : tiles) {
+            if (tile != null) {
+                byPosition.put(tile.getI() + ":" + tile.getJ(), tile);
+            }
+        }
+        Set<String> visited = new LinkedHashSet<>();
+        List<List<FrameTileMatrix.TileCoord>> components = new ArrayList<>();
+        for (FrameTileMatrix.TileCoord seed : tiles) {
+            if (seed == null) {
+                continue;
+            }
+            String seedKey = seed.getI() + ":" + seed.getJ();
+            if (!visited.add(seedKey)) {
+                continue;
+            }
+            ArrayDeque<FrameTileMatrix.TileCoord> pending = new ArrayDeque<>();
+            List<FrameTileMatrix.TileCoord> component = new ArrayList<>();
+            pending.addLast(seed);
+            while (!pending.isEmpty()) {
+                FrameTileMatrix.TileCoord current = pending.removeFirst();
+                component.add(current);
+                enqueueNeighbor(current.getI() - 1, current.getJ(), byPosition, visited, pending);
+                enqueueNeighbor(current.getI() + 1, current.getJ(), byPosition, visited, pending);
+                enqueueNeighbor(current.getI(), current.getJ() - 1, byPosition, visited, pending);
+                enqueueNeighbor(current.getI(), current.getJ() + 1, byPosition, visited, pending);
+            }
+            components.add(component);
+        }
+        return components;
+    }
+
+    private static FrameMatrixSet copyFrameForComponent(
+        FrameMatrixSet source,
+        List<FrameTileMatrix.TileCoord> component
+    ) {
+        int minI = component.stream().mapToInt(FrameTileMatrix.TileCoord::getI).min().orElse(0);
+        int minJ = component.stream().mapToInt(FrameTileMatrix.TileCoord::getJ).min().orElse(0);
+        int maxI = component.stream().mapToInt(FrameTileMatrix.TileCoord::getI).max().orElse(minI);
+        int maxJ = component.stream().mapToInt(FrameTileMatrix.TileCoord::getJ).max().orElse(minJ);
+        FrameTileMatrix matrix = new FrameTileMatrix();
+        matrix.setFrameId(source.getFrameId());
+        matrix.setRows(maxI - minI + 1);
+        matrix.setCols(maxJ - minJ + 1);
+        List<FrameTileMatrix.TileCoord> copiedTiles = new ArrayList<>(component.size());
+        for (FrameTileMatrix.TileCoord original : component) {
+            FrameTileMatrix.TileCoord copy = new FrameTileMatrix.TileCoord();
+            copy.setId(original.getId());
+            copy.setI(original.getI() - minI);
+            copy.setJ(original.getJ() - minJ);
+            copy.setTextureFile(original.getTextureFile());
+            copy.setUncles(original.getUncles());
+            copiedTiles.add(copy);
+        }
+        matrix.setTiles(copiedTiles);
+
+        FrameMatrixSet out = new FrameMatrixSet();
+        out.setContractVersion(source.getContractVersion());
+        out.setHierarchyLevel(source.getHierarchyLevel());
+        out.setParentMatrixIndex(source.getParentMatrixIndex());
+        out.setParentGridTransform(source.getParentGridTransform());
+        out.setInferredParent(source.getInferredParent());
+        out.setFrameId(source.getFrameId());
+        out.setMatrices(List.of(matrix));
+        out.setHierarchyUnclesByTileId(buildHierarchyUnclesByTileId(source, matrix));
+        out.setHierarchyRelationshipsByTileId(buildHierarchyRelationshipsByTileId(source, matrix));
+        return out;
+    }
+
+    /**
      * Makes final matrix membership exclusive while preserving first-assignment order.
      * Shared IDs are still available as alignment anchors during merging; this method is
      * intentionally called only after the automatic merge/cut sweeps have converged.
@@ -629,6 +766,204 @@ public final class MatrixMergerState {
         return mergedAny;
     }
 
+    /**
+     * Performs the output-layer merge pass. Only adjacent matrices in the resolved
+     * hierarchy order and at the same level are considered. Alignment must come from
+     * shared native tile IDs or from consistent observed uncle relationships to one
+     * common parent matrix.
+     */
+    public SameLevelCollapseReport collapseAdjacentMatricesAtSameHierarchyLevel() {
+        sortFramesByUncleHierarchy();
+        int inputCount = frameMatrices.size();
+        int sharedTileMerges = 0;
+        int relationshipClueMerges = 0;
+        int compatibleGridMerges = 0;
+        boolean changed;
+        do {
+            changed = false;
+            int index = 0;
+            while (index + 1 < frameMatrices.size()) {
+                FrameMatrixSet current = frameMatrices.get(index);
+                FrameMatrixSet next = frameMatrices.get(index + 1);
+                int currentLevel = hierarchyLevelByFrame.getOrDefault(current, -1);
+                int nextLevel = hierarchyLevelByFrame.getOrDefault(next, -1);
+                if (currentLevel < 0 || currentLevel != nextLevel) {
+                    index++;
+                    continue;
+                }
+
+                FrameTileMatrix currentMatrix = firstMatrix(current);
+                FrameTileMatrix nextMatrix = firstMatrix(next);
+                boolean merged = matrixMerger.merge(currentMatrix, nextMatrix);
+                if (merged) {
+                    sharedTileMerges++;
+                }
+                else {
+                    ParentSpaceAnchor currentAnchor = observedParentSpaceAnchor(current, currentLevel);
+                    ParentSpaceAnchor nextAnchor = observedParentSpaceAnchor(next, nextLevel);
+                    if (currentAnchor != null
+                        && nextAnchor != null
+                        && currentAnchor.parent() == nextAnchor.parent()) {
+                        int deltaI = nextAnchor.rowOffset() - currentAnchor.rowOffset();
+                        int deltaJ = nextAnchor.colOffset() - currentAnchor.colOffset();
+                        int minI = Math.min(minCoordinate(currentMatrix, true), minCoordinate(nextMatrix, true) + deltaI);
+                        int minJ = Math.min(minCoordinate(currentMatrix, false), minCoordinate(nextMatrix, false) + deltaJ);
+                        merged = matrixMerger.mergeWithOffset(currentMatrix, nextMatrix, deltaI, deltaJ);
+                        if (merged) {
+                            current.setParentGridTransform(new ParentGridTransform(
+                                currentAnchor.rowOffset() + minI,
+                                currentAnchor.colOffset() + minJ
+                            ));
+                            relationshipClueMerges++;
+                        }
+                    }
+                    if (!merged) {
+                        merged = matrixMerger.mergeWithOffset(currentMatrix, nextMatrix, 0, 0);
+                        if (merged) {
+                            compatibleGridMerges++;
+                        }
+                    }
+                }
+                if (!merged) {
+                    index++;
+                    continue;
+                }
+
+                mergeHierarchyUncles(current, next);
+                frameMatrices.remove(index + 1);
+                changed = true;
+                maximumRetryCount = frameMatrices.size();
+                refreshHierarchyOrdering(false);
+            }
+        }
+        while (changed);
+        sortFramesByUncleHierarchy();
+        normalizeSelection();
+        lastMergeFailedForCurrentSelection = false;
+        return new SameLevelCollapseReport(
+            inputCount,
+            frameMatrices.size(),
+            sharedTileMerges,
+            relationshipClueMerges,
+            compatibleGridMerges
+        );
+    }
+
+    private ParentSpaceAnchor observedParentSpaceAnchor(FrameMatrixSet child, int childLevel) {
+        if (child == null || childLevel <= 0) {
+            return null;
+        }
+        Map<String, ParentTileRef> parentTileById = new LinkedHashMap<>();
+        for (FrameMatrixSet candidateParent : frameMatrices) {
+            if (candidateParent == null
+                || hierarchyLevelByFrame.getOrDefault(candidateParent, -1) != childLevel - 1) {
+                continue;
+            }
+            FrameTileMatrix parentMatrix = firstMatrix(candidateParent);
+            if (parentMatrix == null || parentMatrix.getTiles() == null) {
+                continue;
+            }
+            for (FrameTileMatrix.TileCoord tile : parentMatrix.getTiles()) {
+                if (tile != null && tile.getId() != null && !tile.getId().isBlank()) {
+                    parentTileById.putIfAbsent(tile.getId(), new ParentTileRef(candidateParent, tile));
+                }
+            }
+        }
+
+        Map<ParentSpaceAnchor, Integer> votes = new LinkedHashMap<>();
+        int acceptedClues = 0;
+        FrameTileMatrix childMatrix = firstMatrix(child);
+        if (childMatrix == null || childMatrix.getTiles() == null) {
+            return null;
+        }
+        for (FrameTileMatrix.TileCoord tile : childMatrix.getTiles()) {
+            if (tile == null || tile.getUncles() == null) {
+                continue;
+            }
+            for (ToUncleRelationship relationship : tile.getUncles()) {
+                if (relationship == null
+                    || relationship.direction() == null
+                    || relationship.uncleContentId() == null
+                    || relationship.relationshipKind() == null) {
+                    continue;
+                }
+                String uncleId = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
+                ParentTileRef parent = parentTileById.get(uncleId);
+                int[] childPosition = childPositionInRefinedParentGrid(parent, relationship);
+                if (parent == null || childPosition == null) {
+                    continue;
+                }
+                ParentSpaceAnchor anchor = new ParentSpaceAnchor(
+                    parent.frame(),
+                    childPosition[0] - tile.getI(),
+                    childPosition[1] - tile.getJ()
+                );
+                votes.merge(anchor, 1, Integer::sum);
+                acceptedClues++;
+            }
+        }
+        ParentSpaceAnchor best = null;
+        int bestVotes = 0;
+        for (Map.Entry<ParentSpaceAnchor, Integer> vote : votes.entrySet()) {
+            if (vote.getValue() > bestVotes) {
+                best = vote.getKey();
+                bestVotes = vote.getValue();
+            }
+        }
+        return best != null && bestVotes * 2 > acceptedClues ? best : null;
+    }
+
+    private static int[] childPositionInRefinedParentGrid(
+        ParentTileRef parent,
+        ToUncleRelationship relationship
+    ) {
+        if (parent == null || parent.tile() == null || relationship == null) {
+            return null;
+        }
+        int parentI = parent.tile().getI();
+        int parentJ = parent.tile().getJ();
+        boolean south;
+        boolean east;
+        UncleDirections direction = relationship.direction();
+        if (relationship.relationshipKind() == UncleRelationshipKind.CONTAINING_QUADRANT) {
+            south = direction == UncleDirections.WEST_SOUTH
+                || direction == UncleDirections.SOUTH_WEST
+                || direction == UncleDirections.EAST_SOUTH
+                || direction == UncleDirections.SOUTH_EAST;
+            east = direction == UncleDirections.EAST_SOUTH
+                || direction == UncleDirections.SOUTH_EAST
+                || direction == UncleDirections.EAST_NORTH
+                || direction == UncleDirections.NORTH_EAST;
+        }
+        else if (relationship.relationshipKind() == UncleRelationshipKind.ADJACENT_BORDER) {
+            switch (direction) {
+                case WEST_NORTH -> { parentJ--; south = false; east = true; }
+                case WEST_SOUTH -> { parentJ--; south = true; east = true; }
+                case EAST_NORTH -> { parentJ++; south = false; east = false; }
+                case EAST_SOUTH -> { parentJ++; south = true; east = false; }
+                case NORTH_WEST -> { parentI--; south = true; east = false; }
+                case NORTH_EAST -> { parentI--; south = true; east = true; }
+                case SOUTH_WEST -> { parentI++; south = false; east = false; }
+                case SOUTH_EAST -> { parentI++; south = false; east = true; }
+                default -> { return null; }
+            }
+        }
+        else {
+            return null;
+        }
+        return new int[]{2 * parentI + (south ? 1 : 0), 2 * parentJ + (east ? 1 : 0)};
+    }
+
+    private static int minCoordinate(FrameTileMatrix matrix, boolean row) {
+        if (matrix == null || matrix.getTiles() == null || matrix.getTiles().isEmpty()) {
+            return 0;
+        }
+        return matrix.getTiles().stream()
+            .mapToInt(tile -> row ? tile.getI() : tile.getJ())
+            .min()
+            .orElse(0);
+    }
+
     public void sortFramesByTileCountAscending() {
         frameMatrices.sort(Comparator.comparingInt(MatrixMergerState::tileCountOfFrame));
         maximumRetryCount = frameMatrices.size();
@@ -789,6 +1124,12 @@ public final class MatrixMergerState {
         }
         FrameTileMatrix matrix = frame.getMatrices().get(0);
         return matrix == null || matrix.getTiles() == null ? 0 : matrix.getTiles().size();
+    }
+
+    private static FrameTileMatrix firstMatrix(FrameMatrixSet frame) {
+        return frame == null || frame.getMatrices() == null || frame.getMatrices().isEmpty()
+            ? null
+            : frame.getMatrices().get(0);
     }
 
     private static boolean isValidMatrix(FrameTileMatrix matrix) {
@@ -1358,6 +1699,31 @@ public final class MatrixMergerState {
         int affectedMatrices,
         int emptyMatricesRemoved
     ) {
+    }
+
+    public record TopologyFilterReport(
+        int inputMatrixCount,
+        int retainedMatrixCount,
+        int discardedComponentCount,
+        int discardedTileCount,
+        int splitMatrixCount,
+        List<String> discardedTileIds
+    ) {
+    }
+
+    public record SameLevelCollapseReport(
+        int inputMatrixCount,
+        int retainedMatrixCount,
+        int sharedTileMergeCount,
+        int relationshipClueMergeCount,
+        int compatibleGridMergeCount
+    ) {
+    }
+
+    private record ParentTileRef(FrameMatrixSet frame, FrameTileMatrix.TileCoord tile) {
+    }
+
+    private record ParentSpaceAnchor(FrameMatrixSet parent, int rowOffset, int colOffset) {
     }
 
     public enum UncleHudState {

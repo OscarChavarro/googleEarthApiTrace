@@ -134,6 +134,19 @@ identical to the set loaded at its start and that every ID has exactly one matri
 A missing, invented or multiply assigned ID aborts the run instead of allowing a silently
 lossy or duplicated export.
 
+Before display or export, final topology cleanup applies exclusive ownership again and
+decomposes every matrix into orthogonally (4-neighborhood) connected components. Components
+with fewer than 20 tiles are discarded as spatially uninformative islands; multiple retained
+components are emitted as separate matrices with normalized coordinates. Exclusive ownership
+is enforced once more after rebuilding, so no tile can belong to more than one output matrix.
+
+The ordered output also receives same-level collapse passes before and after topology cleanup.
+Only consecutive matrices with the same resolved hierarchy level are candidates; a level
+boundary is never crossed. Alignment is accepted from shared native tile IDs, from consistent
+observed `uncle` clues to a common parent, or from the matrices' current output-grid origin when
+no cell would overlap a different tile ID. A candidate that places different IDs in one cell is
+rejected without mutation. The pass repeats until no adjacent same-level pair can be collapsed.
+
 ## Execution
 
 ### Interactive mode

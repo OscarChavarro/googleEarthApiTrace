@@ -34,6 +34,15 @@ public final class AutomaticMatrixGroupingPipeline {
                     );
                 }
                 model.sortFramesByUncleHierarchy();
+                MatrixMergerState.SameLevelCollapseReport sameLevel =
+                    model.collapseAdjacentMatricesAtSameHierarchyLevel();
+                System.out.println(
+                    "AutomaticMatrixGroupingPipeline: same-level output collapse "
+                        + sameLevel.inputMatrixCount() + " -> " + sameLevel.retainedMatrixCount()
+                        + " (shared-tile merges=" + sameLevel.sharedTileMergeCount()
+                        + ", relationship-clue merges=" + sameLevel.relationshipClueMergeCount()
+                        + ", compatible-grid merges=" + sameLevel.compatibleGridMergeCount() + ")."
+                );
                 assertTileSetConserved(inputTileIds, tileIds(model));
                 assertExclusiveTileOwnership(model);
                 return;

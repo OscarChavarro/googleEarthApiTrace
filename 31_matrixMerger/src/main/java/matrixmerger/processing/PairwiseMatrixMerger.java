@@ -65,6 +65,34 @@ public final class PairwiseMatrixMerger {
         return true;
     }
 
+    /**
+     * Merges using an already observed rigid placement clue. The offset translates
+     * coordinates from {@code b} into {@code a}'s coordinate system.
+     */
+    public boolean mergeWithOffset(FrameTileMatrix a, FrameTileMatrix b, int deltaI, int deltaJ) {
+        if (!canMerge(a, b)) {
+            return false;
+        }
+        Map<String, FrameTileMatrix.TileCoord> aById = indexTilesById(a.getTiles());
+        Map<String, FrameTileMatrix.TileCoord> bById = indexTilesById(b.getTiles());
+        Map<String, FrameTileMatrix.TileCoord> aByPos = indexTilesByPosition(a.getTiles());
+        if (aById == null || bById == null || aByPos == null || indexTilesByPosition(b.getTiles()) == null) {
+            return false;
+        }
+        List<FrameTileMatrix.TileCoord> tilesToAppend = collectAlignedTilesFromB(
+            b,
+            aById,
+            aByPos,
+            new MatrixOffset(deltaI, deltaJ)
+        );
+        if (tilesToAppend == null) {
+            return false;
+        }
+        appendTiles(a, tilesToAppend);
+        normalizeIndices(a);
+        return true;
+    }
+
     private static boolean canMerge(FrameTileMatrix a, FrameTileMatrix b) {
         return a != null
             && b != null

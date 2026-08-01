@@ -1,5 +1,8 @@
 package pyramidalimagecoverage.gui;
 
+import java.awt.HeadlessException;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.lang.reflect.Field;
@@ -38,6 +41,7 @@ public final class MouseInteractionTechniques implements MouseListener {
         TileRecord tile = model.catalog().tileAt(address.depth(), address.column(), address.southRow());
         printTileInfo(address, tile);
         model.toggleSelection(address);
+        copySelectedTileFileNameToClipboard(address);
     }
 
     @Override
@@ -79,6 +83,21 @@ public final class MouseInteractionTechniques implements MouseListener {
             address.centerLatitude(),
             address.centerLongitude()
         );
+    }
+
+    private void copySelectedTileFileNameToClipboard(TileAddress clickedAddress) {
+        if (!clickedAddress.equals(model.selectedAddress())) {
+            return;
+        }
+        String fileName = model.catalog().relativePathFor(clickedAddress).toString();
+        try {
+            Toolkit.getDefaultToolkit()
+                .getSystemClipboard()
+                .setContents(new StringSelection(fileName), null);
+        }
+        catch (HeadlessException | IllegalStateException | SecurityException exception) {
+            System.err.println("WARNING: Could not copy selected tile file name to clipboard: " + exception.getMessage());
+        }
     }
 
     private static int coordinate(vsdk.toolkit.gui.MouseEvent event, String fieldName, String getterName) {

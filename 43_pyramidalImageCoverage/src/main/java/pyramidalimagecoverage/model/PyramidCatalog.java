@@ -80,6 +80,14 @@ public final class PyramidCatalog {
         return rootFolder;
     }
 
+    public Path relativePathFor(TileAddress address) {
+        TileRecord tile = tileAt(address.depth(), address.column(), address.southRow());
+        if (tile != null) {
+            return rootFolder.relativize(tile.imagePath());
+        }
+        return expectedRelativePathFor(address);
+    }
+
     public boolean setSelectionRecursively(TileRecord tile, boolean selected) {
         if (tile == null) {
             return false;
@@ -108,5 +116,14 @@ public final class PyramidCatalog {
 
     private static long key(int column, int southRow) {
         return ((long) column << 32) ^ (southRow & 0xffffffffL);
+    }
+
+    private static Path expectedRelativePathFor(TileAddress address) {
+        String quadKey = address.quadKey();
+        Path path = Path.of(quadKey + ".png");
+        for (int index = quadKey.length() - 1; index >= 1; index--) {
+            path = Path.of(String.valueOf(quadKey.charAt(index)), path.toString());
+        }
+        return path;
     }
 }

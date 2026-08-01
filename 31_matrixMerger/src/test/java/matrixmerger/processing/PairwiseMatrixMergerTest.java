@@ -52,6 +52,27 @@ final class PairwiseMatrixMergerTest {
             a.getTiles().stream().map(FrameTileMatrix.TileCoord::getId).toList());
     }
 
+    @Test
+    void mergesAtObservedOffsetWhenDifferentTilesDoNotOverlapOneCell() {
+        FrameTileMatrix a = matrix(List.of(tile("100_1", 0, 0), tile("100_2", 0, 1)));
+        FrameTileMatrix b = matrix(List.of(tile("200_1", 0, 0), tile("200_2", 0, 1)));
+
+        assertTrue(merger.mergeWithOffset(a, b, 0, 2));
+
+        assertEquals(4, a.getTiles().size());
+        assertEquals(4, a.getCols());
+    }
+
+    @Test
+    void rejectsObservedOffsetThatOverlapsDifferentTiles() {
+        FrameTileMatrix a = matrix(List.of(tile("100_1", 0, 0), tile("100_2", 0, 1)));
+        FrameTileMatrix b = matrix(List.of(tile("200_1", 0, 0), tile("200_2", 0, 1)));
+
+        assertFalse(merger.mergeWithOffset(a, b, 0, 1));
+
+        assertEquals(2, a.getTiles().size());
+    }
+
     private static FrameTileMatrix matrix(List<FrameTileMatrix.TileCoord> tiles) {
         FrameTileMatrix matrix = new FrameTileMatrix();
         matrix.setRows(100);

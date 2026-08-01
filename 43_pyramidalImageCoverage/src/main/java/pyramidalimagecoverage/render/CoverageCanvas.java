@@ -9,6 +9,7 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.nio.file.Files;
 import java.util.Locale;
 import javax.swing.JViewport;
 import pyramidalimagecoverage.io.TileImageRepository;
@@ -102,6 +103,7 @@ public final class CoverageCanvas extends Canvas {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             drawTiles(g, visible);
             drawHud(g, visible);
+            drawSelectedTileFileHud(g, visible);
         }
         finally {
             g.dispose();
@@ -241,6 +243,25 @@ public final class CoverageCanvas extends Canvas {
         }
     }
 
+    private void drawSelectedTileFileHud(Graphics2D g, Rectangle visible) {
+        TileAddress selected = model.selectedAddress();
+        if (selected == null) {
+            return;
+        }
+        String line = selectedTileFileName();
+        g.setFont(HUD_FONT);
+        FontMetrics metrics = g.getFontMetrics();
+        int lineHeight = metrics.getHeight();
+        int boxWidth = metrics.stringWidth(line) + 20;
+        int boxHeight = lineHeight + 16;
+        int x = visible.x + 12;
+        int y = visible.y + visible.height - boxHeight - 12;
+        g.setColor(HUD_BACKGROUND);
+        g.fillRect(x, y, boxWidth, boxHeight);
+        g.setColor(selectedTileFileExists() ? Color.WHITE : Color.RED);
+        g.drawString(line, x + 10, y + 8 + metrics.getAscent());
+    }
+
     String[] hudLines() {
         java.util.List<String> lines = new java.util.ArrayList<>();
         lines.add("Quadtree depth [1/2]: " + model.selectedDepth() + " / " + model.catalog().maxDepth());
@@ -253,6 +274,20 @@ public final class CoverageCanvas extends Canvas {
         }
         lines.add("Fullscreen [F]: " + (isFullScreen() ? "on" : "off"));
         return lines.toArray(String[]::new);
+    }
+
+    String selectedTileFileName() {
+        TileAddress selected = model.selectedAddress();
+        if (selected == null) {
+            return "";
+        }
+        return model.catalog().relativePathFor(selected).toString();
+    }
+
+    boolean selectedTileFileExists() {
+        TileAddress selected = model.selectedAddress();
+        return selected != null
+            && Files.isRegularFile(model.catalog().rootFolder().resolve(model.catalog().relativePathFor(selected)));
     }
 
     private boolean isFullScreen() {

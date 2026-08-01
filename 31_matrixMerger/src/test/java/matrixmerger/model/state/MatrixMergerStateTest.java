@@ -231,6 +231,58 @@ final class MatrixMergerStateTest {
     }
 
     @Test
+    void removesSmallFourConnectedAreasCreatedByExclusiveOwnership() {
+        MatrixMergerState state = new MatrixMergerState();
+        FrameMatrixSet owner = frame(10, "10_500", null);
+        List<FrameTileMatrix.TileCoord> stripTiles = java.util.stream.IntStream.range(0, 40)
+            .mapToObj(col -> tile(col == 20 ? "00010_500" : "00020_" + col, 0, col))
+            .toList();
+        FrameMatrixSet strip = new FrameMatrixSet();
+        strip.setFrameId(20);
+        strip.setMatrices(List.of(matrix(20, stripTiles, 1, 40)));
+        state.setFrameMatrices(List.of(owner, strip));
+
+        MatrixMergerState.ExclusiveTileOwnershipReport ownership = state.enforceExclusiveTileOwnership();
+        MatrixMergerState.TopologyFilterReport topology = state.discardSmallFourConnectedComponents(20);
+        MatrixMergerState.ExclusiveTileOwnershipReport finalOwnership = state.enforceExclusiveTileOwnership();
+
+        assertEquals(1, ownership.duplicateOccurrencesRemoved());
+        assertEquals(2, topology.discardedComponentCount());
+        assertEquals(21, topology.discardedTileCount());
+        assertEquals(1, state.getMatrixCount());
+        assertEquals(20, state.getFrameMatrices().get(0).getMatrices().get(0).getTiles().size());
+        assertEquals(0, finalOwnership.duplicateOccurrencesRemoved());
+        assertEquals(20, state.getFrameMatrices().stream()
+            .flatMap(item -> item.getMatrices().get(0).getTiles().stream())
+            .map(FrameTileMatrix.TileCoord::getId)
+            .distinct()
+            .count());
+    }
+
+    @Test
+    void splitsMultipleUsefulFourConnectedAreasInsteadOfKeepingADisconnectedMatrix() {
+        MatrixMergerState state = new MatrixMergerState();
+        FrameMatrixSet owner = frame(10, "10_500", null);
+        List<FrameTileMatrix.TileCoord> stripTiles = java.util.stream.IntStream.range(0, 41)
+            .mapToObj(col -> tile(col == 20 ? "00010_500" : "00020_" + col, 0, col))
+            .toList();
+        FrameMatrixSet strip = new FrameMatrixSet();
+        strip.setFrameId(20);
+        strip.setMatrices(List.of(matrix(20, stripTiles, 1, 41)));
+        state.setFrameMatrices(List.of(owner, strip));
+
+        state.enforceExclusiveTileOwnership();
+        MatrixMergerState.TopologyFilterReport topology = state.discardSmallFourConnectedComponents(20);
+
+        assertEquals(1, topology.splitMatrixCount());
+        assertEquals(2, state.getMatrixCount());
+        assertEquals(List.of(20, 20), state.getFrameMatrices().stream()
+            .map(item -> item.getMatrices().get(0).getTiles().size())
+            .sorted()
+            .toList());
+    }
+
+    @Test
     void assignsEveryTileToOnlyTheFirstRemainingMatrix() {
         MatrixMergerState state = new MatrixMergerState();
         FrameMatrixSet first = frame(10, "10_1", null, "10_2");
@@ -247,6 +299,83 @@ final class MatrixMergerStateTest {
             .flatMap(frame -> frame.getMatrices().get(0).getTiles().stream())
             .map(FrameTileMatrix.TileCoord::getId)
             .toList());
+    }
+
+    @Test
+    void collapsesAdjacentMatricesAtTheSameLevelUsingSharedTiles() {
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(
+            frame(10, "10_1", null, "10_2"),
+            frame(20, "10_2", null, "20_1")
+        ));
+
+        MatrixMergerState.SameLevelCollapseReport report =
+            state.collapseAdjacentMatricesAtSameHierarchyLevel();
+
+        assertEquals(2, report.inputMatrixCount());
+        assertEquals(1, report.retainedMatrixCount());
+        assertEquals(1, report.sharedTileMergeCount());
+        assertEquals(3, state.getFrameMatrices().get(0).getMatrices().get(0).getTiles().size());
+    }
+
+    @Test
+    void collapsesSameLevelMatricesUsingObservedCluesToACommonParent() {
+        FrameMatrixSet parent = frame(10, "10_1", null, "10_2");
+        FrameTileMatrix.TileCoord a0 = tile("20_1", 0, 0);
+        FrameTileMatrix.TileCoord a1 = tile("20_2", 0, 1);
+        a0.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "10_1")));
+        a1.setUncles(List.of(new ToUncleRelationship(UncleDirections.EAST_NORTH, "10_1")));
+        FrameTileMatrix.TileCoord b0 = tile("30_1", 0, 0);
+        FrameTileMatrix.TileCoord b1 = tile("30_2", 0, 1);
+        b0.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "10_2")));
+        b1.setUncles(List.of(new ToUncleRelationship(UncleDirections.EAST_NORTH, "10_2")));
+        FrameMatrixSet childA = frameWithTiles(20, List.of(a0, a1), 1, 2);
+        FrameMatrixSet childB = frameWithTiles(30, List.of(b0, b1), 1, 2);
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(childB, parent, childA));
+
+        MatrixMergerState.SameLevelCollapseReport report =
+            state.collapseAdjacentMatricesAtSameHierarchyLevel();
+
+        assertEquals(1, report.relationshipClueMergeCount());
+        assertEquals(2, state.getMatrixCount());
+        assertEquals(4, state.getFrameMatrices().get(1).getMatrices().get(0).getTiles().size());
+    }
+
+    @Test
+    void collapsesCompatibleSameLevelOutputGridsWithoutConflictingCells() {
+        FrameMatrixSet first = frameWithTiles(10, List.of(
+            tile("10_1", 0, 0),
+            tile("10_2", 0, 1)
+        ), 2, 2);
+        FrameMatrixSet second = frameWithTiles(20, List.of(
+            tile("20_1", 1, 0),
+            tile("20_2", 1, 1)
+        ), 2, 2);
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(first, second));
+
+        MatrixMergerState.SameLevelCollapseReport report =
+            state.collapseAdjacentMatricesAtSameHierarchyLevel();
+
+        assertEquals(1, report.compatibleGridMergeCount());
+        assertEquals(1, state.getMatrixCount());
+        assertEquals(4, state.getFrameMatrices().get(0).getMatrices().get(0).getTiles().size());
+    }
+
+    @Test
+    void neverCollapsesAdjacentMatricesFromDifferentLevels() {
+        FrameMatrixSet parent = frame(10, "10_1", null, "10_2");
+        FrameMatrixSet child = frame(20, "10_1", "10_2", "20_1");
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(child, parent));
+
+        MatrixMergerState.SameLevelCollapseReport report =
+            state.collapseAdjacentMatricesAtSameHierarchyLevel();
+
+        assertEquals(0, report.sharedTileMergeCount());
+        assertEquals(0, report.relationshipClueMergeCount());
+        assertEquals(2, state.getMatrixCount());
     }
 
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId) {
@@ -276,6 +405,18 @@ final class MatrixMergerStateTest {
         matrix.setCols(cols);
         matrix.setTiles(tiles);
         return matrix;
+    }
+
+    private static FrameMatrixSet frameWithTiles(
+        int frameId,
+        List<FrameTileMatrix.TileCoord> tiles,
+        int rows,
+        int cols
+    ) {
+        FrameMatrixSet frame = new FrameMatrixSet();
+        frame.setFrameId(frameId);
+        frame.setMatrices(List.of(matrix(frameId, tiles, rows, cols)));
+        return frame;
     }
 
     private static FrameTileMatrix.TileCoord tile(String tileId, int i, int j) {

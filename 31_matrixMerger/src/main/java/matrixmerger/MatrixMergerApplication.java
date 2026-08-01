@@ -22,6 +22,7 @@ import vsdk.toolkit.render.jogl.Jogl4Renderer;
 public final class MatrixMergerApplication {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
     private static final int DEFAULT_OFFLINE_MINIMUM_TILE_COUNT = 10;
+    private static final int MINIMUM_USEFUL_COMPONENT_TILE_COUNT = 20;
     private static final int DEFAULT_OFFLINE_WIDTH = 1024;
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
 
@@ -117,6 +118,7 @@ public final class MatrixMergerApplication {
      * contract in both modes.
      */
     private static void finishProcessing(MatrixMergerState model, Path outputPath, String[] args) {
+        enforceFinalMatrixTopology(model);
         if (hasArg(args, "--diagnose-order")) {
             printHierarchyOrderDiagnostics(model);
         }
@@ -124,6 +126,41 @@ public final class MatrixMergerApplication {
         if (model.getOutputFolder() != null) {
             new MatrixLayerExportWriter(model, outputPath).export(model.getOutputFolder());
         }
+    }
+
+    private static void enforceFinalMatrixTopology(MatrixMergerState model) {
+        MatrixMergerState.SameLevelCollapseReport collapse =
+            model.collapseAdjacentMatricesAtSameHierarchyLevel();
+        MatrixMergerState.ExclusiveTileOwnershipReport before = model.enforceExclusiveTileOwnership();
+        MatrixMergerState.TopologyFilterReport topology =
+            model.discardSmallFourConnectedComponents(MINIMUM_USEFUL_COMPONENT_TILE_COUNT);
+        MatrixMergerState.SameLevelCollapseReport finalCollapse =
+            model.collapseAdjacentMatricesAtSameHierarchyLevel();
+        MatrixMergerState.ExclusiveTileOwnershipReport after = model.enforceExclusiveTileOwnership();
+        AppLogger.info(
+            "Final same-level collapse: matrices=" + collapse.inputMatrixCount()
+                + " -> " + collapse.retainedMatrixCount()
+                + ", shared-tile merges=" + collapse.sharedTileMergeCount()
+                + ", relationship-clue merges=" + collapse.relationshipClueMergeCount()
+                + ", compatible-grid merges=" + collapse.compatibleGridMergeCount() + "."
+        );
+        AppLogger.info(
+            "Final topology filter: matrices=" + topology.inputMatrixCount()
+                + " -> " + topology.retainedMatrixCount()
+                + ", discarded 4-connected components=" + topology.discardedComponentCount()
+                + ", discarded tiles=" + topology.discardedTileCount()
+                + ", split matrices=" + topology.splitMatrixCount()
+                + ", duplicate occurrences removed="
+                + (before.duplicateOccurrencesRemoved() + after.duplicateOccurrencesRemoved())
+                + ", minimum component size=" + MINIMUM_USEFUL_COMPONENT_TILE_COUNT + "."
+        );
+        AppLogger.info(
+            "Post-filter same-level collapse: matrices=" + finalCollapse.inputMatrixCount()
+                + " -> " + finalCollapse.retainedMatrixCount()
+                + ", shared-tile merges=" + finalCollapse.sharedTileMergeCount()
+                + ", relationship-clue merges=" + finalCollapse.relationshipClueMergeCount()
+                + ", compatible-grid merges=" + finalCollapse.compatibleGridMergeCount() + "."
+        );
     }
 
     private static void renderOfflineLevel(MatrixMergerState model, String[] args) {
