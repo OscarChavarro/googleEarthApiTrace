@@ -33,15 +33,20 @@ import pyramidalimageexporter.model.MatrixLayerTile;
 public final class ExternalUncleBridgeBuilder {
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    public record Bridge(Map<String, String> fullPathByExternalId, Map<String, String> aliasById) {}
+    public record Bridge(
+        Map<String, String> fullPathByExternalId,
+        Map<String, String> aliasById,
+        Map<String, String> texturePathByExternalId
+    ) {}
 
     private final Map<String, JsonNode> frameJsonCache = new HashMap<>();
 
     public Bridge build(List<MatrixLayer> layers, Map<String, String> quadLabelByImagePath, Path outputDirectory) {
         Map<String, String> fullPathByExternalId = new HashMap<>();
         Map<String, String> aliasById = new HashMap<>();
+        Map<String, String> texturePathByExternalId = new HashMap<>();
         if (layers == null) {
-            return new Bridge(fullPathByExternalId, aliasById);
+            return new Bridge(fullPathByExternalId, aliasById, texturePathByExternalId);
         }
         Map<String, String> catalogued = quadLabelByImagePath == null ? Map.of() : quadLabelByImagePath;
 
@@ -50,6 +55,11 @@ public final class ExternalUncleBridgeBuilder {
         for (MatrixLayer layer : layers) {
             if (layer == null || layer.getTiles() == null) {
                 continue;
+            }
+            for (Map.Entry<String, String> entry : layer.getExternalUncleTextureFilesById().entrySet()) {
+                if (isReadableTexture(entry.getValue())) {
+                    texturePathByExternalId.putIfAbsent(entry.getKey(), entry.getValue());
+                }
             }
             for (MatrixLayerTile tile : layer.getTiles()) {
                 if (tile == null || tile.getId().isBlank()) {
@@ -94,6 +104,7 @@ public final class ExternalUncleBridgeBuilder {
                     if (textureFile == null) {
                         continue;
                     }
+                    texturePathByExternalId.putIfAbsent(uncleId, textureFile);
                     String label = catalogued.get(textureFile);
                     if (label != null) {
                         fullPathByExternalId.put(uncleId, requireFullPath(label));
@@ -106,7 +117,20 @@ public final class ExternalUncleBridgeBuilder {
                 }
             }
         }
-        return new Bridge(fullPathByExternalId, aliasById);
+        return new Bridge(fullPathByExternalId, aliasById, texturePathByExternalId);
+    }
+
+    private static boolean isReadableTexture(String textureFile) {
+        if (textureFile == null || textureFile.isBlank()) {
+            return false;
+        }
+        try {
+            Path path = Path.of(textureFile);
+            return Files.isRegularFile(path) && Files.isReadable(path);
+        }
+        catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     /**

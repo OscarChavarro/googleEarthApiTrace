@@ -68,6 +68,67 @@ final class TopLevelVisualAnchorResolver {
         return result;
     }
 
+    Map<String, String> resolveExternalTextures(
+        List<MatrixLayer> topLayers,
+        Map<String, String> texturePathByExternalId,
+        Map<String, java.util.Set<String>> candidatePathsByExternalId
+    ) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (topLayers == null || texturePathByExternalId == null || texturePathByExternalId.isEmpty()) {
+            return result;
+        }
+        Map<String, MatrixLayerTile> topCellByPath = topLayers.stream()
+            .filter(layer -> layer != null && layer.getTiles() != null)
+            .flatMap(layer -> layer.getTiles().stream())
+            .filter(tile -> tile != null && isQuadPath(tile.getId()))
+            .collect(java.util.stream.Collectors.toMap(
+                MatrixLayerTile::getId,
+                tile -> tile,
+                (first, ignored) -> first,
+                LinkedHashMap::new
+            ));
+        double lowestRmse = Double.POSITIVE_INFINITY;
+        double lowestRatio = Double.POSITIVE_INFINITY;
+        for (Map.Entry<String, String> entry : texturePathByExternalId.entrySet()) {
+            List<MatrixLayerTile> candidates = candidatePathsByExternalId
+                .getOrDefault(entry.getKey(), java.util.Set.of())
+                .stream()
+                .map(topCellByPath::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+            if (candidates.size() < 2) {
+                continue;
+            }
+            MatrixLayerTile probe = new MatrixLayerTile();
+            probe.setId(entry.getKey());
+            probe.setTextureFile(entry.getValue());
+            MatchPair pair = bestTwoDirectMatches(probe, candidates);
+            if (pair != null) {
+                lowestRmse = Math.min(lowestRmse, pair.best().rmse());
+                lowestRatio = Math.min(
+                    lowestRatio,
+                    pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse())
+                );
+            }
+            if (confident(pair)) {
+                result.put(entry.getKey(), encodeFullPath(
+                    pair.best().level(), pair.best().row(), pair.best().col()
+                ));
+            }
+        }
+        System.out.println(
+            "TopLevelVisualAnchorResolver: visually anchored " + result.size() + "/"
+                + texturePathByExternalId.size() + " unresolved external uncle texture(s)"
+                + (Double.isFinite(lowestRmse)
+                    ? "; lowest RMSE=" + String.format(java.util.Locale.ROOT, "%.2f", lowestRmse)
+                        + ", lowest best/second ratio="
+                        + String.format(java.util.Locale.ROOT, "%.3f", lowestRatio)
+                    : "; no readable visual candidates") + "."
+        );
+        imageCache.clear();
+        return result;
+    }
+
     private AnchorChoice chooseAnchor(MatrixLayer imported, List<MatrixLayerTile> topCells, int topLevel) {
         if (imported == null || imported.getTiles() == null || imported.getTiles().isEmpty()) {
             return null;
@@ -80,7 +141,7 @@ final class TopLevelVisualAnchorResolver {
         double lowestRmse = Double.POSITIVE_INFINITY;
         double lowestRatio = Double.POSITIVE_INFINITY;
         for (MatrixLayerTile probe : spatiallyDistributed(imported.getTiles(), MAX_PROBES)) {
-            MatchPair pair = bestTwoMatches(probe, topCells, topLevel);
+            MatchPair pair = bestTwoMatches(probe, topCells);
             if (pair != null) {
                 readable++;
                 lowestRmse = Math.min(lowestRmse, pair.best().rmse());
@@ -171,7 +232,7 @@ final class TopLevelVisualAnchorResolver {
         );
     }
 
-    private MatchPair bestTwoMatches(MatrixLayerTile probe, List<MatrixLayerTile> topCells, int topLevel) {
+    private MatchPair bestTwoMatches(MatrixLayerTile probe, List<MatrixLayerTile> topCells) {
         BufferedImage probeImage = imageOf(probe);
         if (probeImage == null) {
             return null;
@@ -183,9 +244,10 @@ final class TopLevelVisualAnchorResolver {
             if (cellImage == null) {
                 continue;
             }
+            int cellLevel = cell.getId().length() - 1;
             Match direct = new Match(
                 cell,
-                topLevel,
+                cellLevel,
                 cell.getI(),
                 cell.getJ(),
                 rmse(probeImage, cellImage, cell, 0, 0, 1)
@@ -197,7 +259,7 @@ final class TopLevelVisualAnchorResolver {
                 for (int subCol = 0; subCol < 2; subCol++) {
                     Match child = new Match(
                         cell,
-                        topLevel + 1,
+                        cellLevel + 1,
                         2 * cell.getI() + subRow,
                         2 * cell.getJ() + subCol,
                         rmse(probeImage, cellImage, cell, subRow, subCol, 2)
@@ -209,6 +271,28 @@ final class TopLevelVisualAnchorResolver {
             }
         }
         return best == null || second == null ? null : new MatchPair(best, second);
+    }
+
+    private MatchPair bestTwoDirectMatches(MatrixLayerTile probe, List<MatrixLayerTile> topCells) {
+        BufferedImage probeImage = imageOf(probe);
+        if (probeImage == null) {
+            return null;
+        }
+        MatchPair pair = new MatchPair(null, null);
+        for (MatrixLayerTile cell : topCells) {
+            BufferedImage cellImage = imageOf(cell);
+            if (cellImage == null) {
+                continue;
+            }
+            pair = insert(pair, new Match(
+                cell,
+                cell.getId().length() - 1,
+                cell.getI(),
+                cell.getJ(),
+                rmse(probeImage, cellImage, cell, 0, 0, 1)
+            ));
+        }
+        return pair.best() == null || pair.second() == null ? null : pair;
     }
 
     private BufferedImage imageOf(MatrixLayerTile tile) {
@@ -233,6 +317,12 @@ final class TopLevelVisualAnchorResolver {
     private static MatchPair insert(MatchPair pair, Match candidate) {
         Match best = pair.best();
         Match second = pair.second();
+        if (sameLocation(best, candidate)) {
+            return candidate.rmse() < best.rmse() ? new MatchPair(candidate, second) : pair;
+        }
+        if (sameLocation(second, candidate)) {
+            return candidate.rmse() < second.rmse() ? new MatchPair(best, candidate) : pair;
+        }
         if (best == null || candidate.rmse() < best.rmse()) {
             return new MatchPair(candidate, best);
         }
@@ -240,6 +330,13 @@ final class TopLevelVisualAnchorResolver {
             return new MatchPair(best, candidate);
         }
         return pair;
+    }
+
+    private static boolean sameLocation(Match left, Match right) {
+        return left != null && right != null
+            && left.level() == right.level()
+            && left.row() == right.row()
+            && left.col() == right.col();
     }
 
     private static double rmse(

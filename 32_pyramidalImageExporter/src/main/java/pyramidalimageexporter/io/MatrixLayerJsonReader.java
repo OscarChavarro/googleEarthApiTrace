@@ -85,6 +85,12 @@ public final class MatrixLayerJsonReader {
         layer.setContractVersion(nullableInt(root.get("contractVersion")));
         layer.setHierarchyLevel(nullableInt(root.get("hierarchyLevel")));
         layer.setParentMatrixIndex(nullableInt(root.get("parentMatrixIndex")));
+        JsonNode externalUncleTextures = root.get("externalUncleTextureFilesById");
+        if (externalUncleTextures != null && externalUncleTextures.isObject()) {
+            layer.setExternalUncleTextureFilesById(
+                JSON.convertValue(externalUncleTextures, new TypeReference<Map<String, String>>() {})
+            );
+        }
         JsonNode parentGridTransform = root.get("parentGridTransform");
         if (parentGridTransform != null && parentGridTransform.isObject()) {
             layer.setParentGridTransform(JSON.convertValue(parentGridTransform, ParentGridTransform.class));

@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,6 +18,8 @@ import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.ParentGridTransform;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
+import pyramidalimageexporter.processing.uncles.ToUncleRelationship;
+import pyramidalimageexporter.processing.uncles.UncleDirections;
 
 final class TopLevelLayerMergerTest {
     @TempDir
@@ -261,6 +264,87 @@ final class TopLevelLayerMergerTest {
         assertEquals(quadPath(1, 0, 0), anchors.get("child-nw"));
         assertEquals(quadPath(1, 0, 1), anchors.get("child-ne"));
         assertEquals(quadPath(1, 1, 0), anchors.get("child-sw"));
+    }
+
+    @Test
+    void visuallyAnchorsAnExternalUncleOnlyWithinNearbyCandidatePaths() throws IOException {
+        Path atlas = tempDir.resolve("external-uncle-atlas.png");
+        writeLevelTwoAtlas(atlas);
+        List<MatrixLayerTile> cells = new ArrayList<>();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                MatrixLayerTile cell = tile(quadPath(2, row, col), row, col, atlas.toString());
+                cell.setTextureSubRect(col / 4.0, (3 - row) / 4.0, (col + 1) / 4.0, (4 - row) / 4.0);
+                cells.add(cell);
+            }
+        }
+        MatrixLayer top = new MatrixLayer();
+        top.setTiles(cells);
+        Path uncleTexture = tempDir.resolve("external-uncle.png");
+        writeSolidTile(uncleTexture, colorOf(1, 2));
+
+        Map<String, String> anchors = new TopLevelVisualAnchorResolver().resolveExternalTextures(
+            List.of(top),
+            Map.of("00167_99", uncleTexture.toString()),
+            Map.of("00167_99", Set.of(
+                quadPath(2, 1, 1),
+                quadPath(2, 1, 2),
+                quadPath(2, 1, 3)
+            ))
+        );
+
+        assertEquals(quadPath(2, 1, 2), anchors.get("00167_99"));
+    }
+
+    @Test
+    void retainsVisualExternalUncleAnchorsForTheLaterExportPass() throws IOException {
+        Path atlas = tempDir.resolve("external-anchor-atlas.png");
+        writeLevelTwoAtlas(atlas);
+        List<MatrixLayerTile> topCells = new ArrayList<>();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                MatrixLayerTile cell = tile(quadPath(2, row, col), row, col, atlas.toString());
+                cell.setTextureSubRect(col / 4.0, (3 - row) / 4.0, (col + 1) / 4.0, (4 - row) / 4.0);
+                topCells.add(cell);
+            }
+        }
+        MatrixLayer top = layer("topLevel_matrix_02", topCells.toArray(MatrixLayerTile[]::new));
+        top.setRows(4);
+        top.setCols(4);
+
+        Path uncleTexture = tempDir.resolve("external-anchor-uncle.png");
+        writeSolidTile(uncleTexture, colorOf(1, 2));
+        List<MatrixLayerTile> importedTiles = new ArrayList<>();
+        for (int localCol = 0; localCol < 3; localCol++) {
+            Path texture = tempDir.resolve("external-anchor-child-" + localCol + ".png");
+            writeSolidTile(texture, colorOf(1, localCol + 1));
+            MatrixLayerTile importedTile = tile("child-" + localCol, 0, localCol, texture.toString());
+            importedTile.setUncles(List.of(
+                new ToUncleRelationship(UncleDirections.NORTH_WEST, "00167_99")
+            ));
+            importedTiles.add(importedTile);
+        }
+        MatrixLayer imported = layer("matrix_0", importedTiles.toArray(MatrixLayerTile[]::new));
+        imported.setRows(1);
+        imported.setCols(3);
+        imported.setExternalUncleTextureFilesById(Map.of("00167_99", uncleTexture.toString()));
+
+        TopLevelLayerMerger.MergeResult result = new TopLevelLayerMerger().merge(
+            List.of(top),
+            List.of(imported),
+            Map.of(),
+            tempDir
+        );
+
+        assertEquals(quadPath(2, 1, 2), result.mergedFullPathByOriginalId().get("00167_99"));
+        TileRootPathResolver.Resolution laterResolution = new TileRootPathResolver().resolve(
+            result.layers(),
+            result.mergedFullPathByOriginalId(),
+            Map.of()
+        );
+        assertEquals(3, importedTiles.stream()
+            .filter(tile -> laterResolution.pathById().containsKey(tile.getId()))
+            .count());
     }
 
     @Test

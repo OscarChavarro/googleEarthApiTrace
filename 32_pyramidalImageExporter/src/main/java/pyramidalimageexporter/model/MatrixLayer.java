@@ -18,6 +18,7 @@ public final class MatrixLayer {
     private List<MatrixLayerTile> tiles = new ArrayList<>();
     private Map<String, List<String>> hierarchyUnclesByTileId = new LinkedHashMap<>();
     private Map<String, List<ToUncleRelationship>> hierarchyRelationshipsByTileId = new LinkedHashMap<>();
+    private Map<String, String> externalUncleTextureFilesById = new LinkedHashMap<>();
 
     public Integer getContractVersion() {
         return contractVersion;
@@ -107,6 +108,21 @@ public final class MatrixLayer {
         Map<String, List<ToUncleRelationship>> hierarchyRelationshipsByTileId
     ) {
         this.hierarchyRelationshipsByTileId = copyListMap(hierarchyRelationshipsByTileId);
+    }
+
+    public Map<String, String> getExternalUncleTextureFilesById() {
+        return externalUncleTextureFilesById;
+    }
+
+    public void setExternalUncleTextureFilesById(Map<String, String> values) {
+        this.externalUncleTextureFilesById = new LinkedHashMap<>();
+        if (values != null) {
+            values.forEach((key, value) -> {
+                if (key != null && !key.isBlank() && value != null && !value.isBlank()) {
+                    this.externalUncleTextureFilesById.put(key, value);
+                }
+            });
+        }
     }
 
     private static <T> Map<String, List<T>> copyListMap(Map<String, List<T>> source) {

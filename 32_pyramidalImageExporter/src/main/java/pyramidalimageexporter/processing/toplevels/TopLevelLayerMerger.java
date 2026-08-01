@@ -40,9 +40,6 @@ public final class TopLevelLayerMerger {
             importedCopies,
             cataloguedQuadPathsByImagePath
         );
-        Map<String, String> topVisualFullPaths = new TopLevelVisualAnchorResolver()
-            .resolve(inferredCopies, importedCopies);
-        externalFullPaths.putAll(topVisualFullPaths);
         Map<String, String> cataloguedUnclePaths = buildExternalUncleFullPaths(cataloguedQuadPathsByImagePath);
         externalFullPaths.putAll(cataloguedUnclePaths);
 
@@ -52,6 +49,22 @@ public final class TopLevelLayerMerger {
             outputDirectory
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
+
+        Map<String, String> topVisualFullPaths = new TopLevelVisualAnchorResolver()
+            .resolve(inferredCopies, importedCopies);
+        Map<String, String> externalVisualUnclePaths = new TopLevelVisualAnchorResolver()
+            .resolveExternalTextures(
+                inferredCopies,
+                bridge.texturePathByExternalId(),
+                buildNearbyExternalUncleCandidates(importedCopies, topVisualFullPaths)
+            );
+        externalVisualUnclePaths.forEach(externalFullPaths::putIfAbsent);
+        suppressVisualFallbackForExternallyAnchoredLayers(
+            topVisualFullPaths,
+            importedCopies,
+            externalVisualUnclePaths.keySet()
+        );
+        externalFullPaths.putAll(topVisualFullPaths);
 
         TileRootPathResolver pathResolver = new TileRootPathResolver();
         TileRootPathResolver.Resolution resolution;
@@ -70,7 +83,8 @@ public final class TopLevelLayerMerger {
         Map<String, MatrixLayerTile> importedTileByTopPath = collectImportedTopTiles(importedCopies, resolution);
         if (importedTileByTopPath.isEmpty()) {
             inferredCopies.addAll(importedCopies);
-            Map<String, String> retainedFullPaths = new LinkedHashMap<>(topVisualFullPaths);
+            Map<String, String> retainedFullPaths = new LinkedHashMap<>(externalVisualUnclePaths);
+            retainedFullPaths.putAll(topVisualFullPaths);
             retainedFullPaths.putAll(visualDescendantFullPaths);
             return new MergeResult(inferredCopies, Map.copyOf(retainedFullPaths));
         }
@@ -91,6 +105,7 @@ public final class TopLevelLayerMerger {
             resolution,
             mergedTopPaths
         );
+        mergedFullPathByOriginalId.putAll(externalVisualUnclePaths);
         mergedFullPathByOriginalId.putAll(topVisualFullPaths);
         mergedFullPathByOriginalId.putAll(visualDescendantFullPaths);
         System.out.println(
@@ -297,7 +312,109 @@ public final class TopLevelLayerMerger {
         copy.setSourceFolderName(source.getSourceFolderName());
         copy.setHierarchyUnclesByTileId(source.getHierarchyUnclesByTileId());
         copy.setHierarchyRelationshipsByTileId(source.getHierarchyRelationshipsByTileId());
+        copy.setExternalUncleTextureFilesById(source.getExternalUncleTextureFilesById());
         return copy;
+    }
+
+    private static void suppressVisualFallbackForExternallyAnchoredLayers(
+        Map<String, String> topVisualFullPaths,
+        List<MatrixLayer> layers,
+        Set<String> visuallyAnchoredUncleIds
+    ) {
+        if (topVisualFullPaths.isEmpty() || visuallyAnchoredUncleIds.isEmpty()) {
+            return;
+        }
+        for (MatrixLayer layer : layers) {
+            boolean hasExternalAnchor = layer.getTiles().stream()
+                .flatMap(tile -> tile.getUncles().stream())
+                .anyMatch(relation -> relation != null
+                    && visuallyAnchoredUncleIds.contains(relation.uncleContentId()));
+            if (hasExternalAnchor) {
+                layer.getTiles().forEach(tile -> topVisualFullPaths.remove(tile.getId()));
+            }
+        }
+    }
+
+    private static Map<String, Set<String>> buildNearbyExternalUncleCandidates(
+        List<MatrixLayer> layers,
+        Map<String, String> visualChildPaths
+    ) {
+        Map<String, Set<String>> out = new LinkedHashMap<>();
+        for (MatrixLayer layer : layers) {
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                String childPath = visualChildPaths.get(tile.getId());
+                int[] child = decodeFullPath(childPath);
+                if (child == null) {
+                    continue;
+                }
+                for (var relation : tile.getUncles()) {
+                    if (relation == null || relation.uncleContentId() == null) {
+                        continue;
+                    }
+                    // Current captures can retain the relationship semantics but
+                    // reference a canonical texture from the neighboring LOD.
+                    // Search both legal uncle levels locally; TileRootPathResolver
+                    // still applies the declared relationship kind afterwards.
+                    addNearbyPaths(out, relation.uncleContentId(), child[0] - 1, child[1] / 2, child[2] / 2);
+                    addNearbyPaths(out, relation.uncleContentId(), child[0], child[1], child[2]);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static void addNearbyPaths(
+        Map<String, Set<String>> out,
+        String uncleId,
+        int level,
+        int centerRow,
+        int centerCol
+    ) {
+        if (level < 0 || level > MAX_TOP_LEVEL) {
+            return;
+        }
+        int side = 1 << level;
+        Set<String> paths = out.computeIfAbsent(uncleId, ignored -> new LinkedHashSet<>());
+        for (int rowDelta = -4; rowDelta <= 4; rowDelta++) {
+            int row = centerRow + rowDelta;
+            if (row < 0 || row >= side) {
+                continue;
+            }
+            for (int colDelta = -4; colDelta <= 4; colDelta++) {
+                int col = Math.floorMod(centerCol + colDelta, side);
+                paths.add(encodeFullPath(level, row, col));
+            }
+        }
+    }
+
+    private static int[] decodeFullPath(String path) {
+        if (path == null || !path.matches("0[0-3]*")) {
+            return null;
+        }
+        int row = 0;
+        int col = 0;
+        for (int index = 1; index < path.length(); index++) {
+            row <<= 1;
+            col <<= 1;
+            switch (path.charAt(index)) {
+                case '0' -> row++;
+                case '1' -> { row++; col++; }
+                case '2' -> col++;
+                case '3' -> { }
+                default -> { return null; }
+            }
+        }
+        return new int[]{path.length() - 1, row, col};
+    }
+
+    private static String encodeFullPath(int level, int row, int col) {
+        StringBuilder path = new StringBuilder("0");
+        for (int depth = level - 1; depth >= 0; depth--) {
+            boolean south = ((row >> depth) & 1) == 1;
+            boolean east = ((col >> depth) & 1) == 1;
+            path.append(south ? (east ? '1' : '0') : (east ? '2' : '3'));
+        }
+        return path.toString();
     }
 
     private static MatrixLayerTile copyTile(MatrixLayerTile source) {

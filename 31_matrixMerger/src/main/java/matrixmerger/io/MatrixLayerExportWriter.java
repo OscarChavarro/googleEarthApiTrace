@@ -1,6 +1,7 @@
 package matrixmerger.io;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -8,6 +9,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import matrixmerger.model.contract.FrameMatrixSet;
 import matrixmerger.model.contract.FrameTileMatrix;
 import matrixmerger.model.state.MatrixMergerState;
@@ -112,7 +117,7 @@ public final class MatrixLayerExportWriter {
             exportedFrame.setMatrices(List.of());
             return exportedFrame;
         }
-        exportedFrame.setContractVersion(4);
+        exportedFrame.setContractVersion(5);
         exportedFrame.setFrameId(frame.getFrameId());
         exportedFrame.setHierarchyLevel(hierarchy == null ? null : hierarchy.level());
         exportedFrame.setParentMatrixIndex(
@@ -131,7 +136,123 @@ public final class MatrixLayerExportWriter {
             }
         }
         exportedFrame.setMatrices(exportedMatrices);
+        exportedFrame.setExternalUncleTextureFilesById(copyExternalUncleTextures(frame, frameDirectory));
         return exportedFrame;
+    }
+
+    private Map<String, String> copyExternalUncleTextures(FrameMatrixSet frame, Path frameDirectory) {
+        Set<String> uncleIds = collectExternalUncleIds(frame);
+        if (uncleIds.isEmpty()) {
+            return Map.of();
+        }
+        Path uncleDirectory = frameDirectory.resolve("uncleTextures");
+        Map<String, String> exported = new LinkedHashMap<>();
+        for (String uncleId : uncleIds) {
+            Path source = resolveExternalUncleTexture(uncleId);
+            if (source == null) {
+                continue;
+            }
+            createDirectory(uncleDirectory, "external uncle texture directory");
+            Path target = uncleDirectory.resolve(uncleId + extensionOf(source.getFileName().toString()))
+                .toAbsolutePath().normalize();
+            copyFile(source, target);
+            exported.put(uncleId, target.toString());
+        }
+        if (!uncleIds.isEmpty()) {
+            System.out.println(
+                "MatrixLayerExportWriter: preserved " + exported.size() + "/" + uncleIds.size()
+                    + " external uncle texture(s) in " + frameDirectory.getFileName() + "."
+            );
+        }
+        return exported;
+    }
+
+    private static Set<String> collectExternalUncleIds(FrameMatrixSet frame) {
+        Set<String> ids = new LinkedHashSet<>();
+        if (frame == null) {
+            return ids;
+        }
+        if (frame.getMatrices() != null) {
+            for (FrameTileMatrix matrix : frame.getMatrices()) {
+                if (matrix == null || matrix.getTiles() == null) {
+                    continue;
+                }
+                for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                    collectUncleIds(tile == null ? null : tile.getUncles(), ids);
+                }
+            }
+        }
+        if (frame.getHierarchyRelationshipsByTileId() != null) {
+            for (var relationships : frame.getHierarchyRelationshipsByTileId().values()) {
+                collectUncleIds(relationships, ids);
+            }
+        }
+        return ids;
+    }
+
+    private static void collectUncleIds(
+        List<matrixmerger.processing.uncles.ToUncleRelationship> relationships,
+        Set<String> out
+    ) {
+        if (relationships == null) {
+            return;
+        }
+        for (var relationship : relationships) {
+            if (relationship != null && relationship.uncleContentId() != null
+                && !relationship.uncleContentId().isBlank()) {
+                out.add(relationship.uncleContentId());
+            }
+        }
+    }
+
+    Path resolveExternalUncleTexture(String uncleId) {
+        if (uncleId == null || sourceOutputDirectory == null || !uncleId.matches("\\d{1,5}_\\d+")) {
+            return null;
+        }
+        int separator = uncleId.lastIndexOf('_');
+        if (separator <= 0 || separator >= uncleId.length() - 1) {
+            return null;
+        }
+        int frameId;
+        try {
+            frameId = Integer.parseInt(uncleId.substring(0, separator));
+        }
+        catch (NumberFormatException ex) {
+            return null;
+        }
+        Path frameJson = sourceOutputDirectory.resolve(String.format("%05d", frameId)).resolve("frame.json");
+        if (!Files.isRegularFile(frameJson) || !Files.isReadable(frameJson)) {
+            return null;
+        }
+        try {
+            JsonNode tiles = JSON.readTree(frameJson.toFile()).get("tiles");
+            if (tiles == null || !tiles.isArray()) {
+                return null;
+            }
+            String wantedContentId = frameId + "_" + uncleId.substring(separator + 1);
+            for (JsonNode tile : tiles) {
+                String contentId = tile.path("contentId").asText();
+                if (!wantedContentId.equals(contentId) && !uncleId.equals(contentId)) {
+                    continue;
+                }
+                String textureFile = tile.path("textureFile").asText(null);
+                if (textureFile == null || textureFile.isBlank()) {
+                    return null;
+                }
+                Path texture = Path.of(textureFile);
+                if (!texture.isAbsolute()) {
+                    texture = frameJson.getParent().resolve(texture).normalize();
+                }
+                return Files.isRegularFile(texture) && Files.isReadable(texture) ? texture : null;
+            }
+        }
+        catch (IOException | RuntimeException ex) {
+            System.out.println(
+                "MatrixLayerExportWriter: could not preserve uncle " + uncleId + " from "
+                    + frameJson + " (" + ex.getMessage() + ")."
+            );
+        }
+        return null;
     }
 
     private FrameTileMatrix copyMatrixAssets(int frameId, FrameTileMatrix matrix, Path frameDirectory) {

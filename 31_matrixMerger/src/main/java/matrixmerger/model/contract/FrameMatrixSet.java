@@ -17,6 +17,7 @@ public final class FrameMatrixSet {
     private List<FrameTileMatrix> matrices = new ArrayList<>();
     private Map<String, List<String>> hierarchyUnclesByTileId = new LinkedHashMap<>();
     private Map<String, List<ToUncleRelationship>> hierarchyRelationshipsByTileId = new LinkedHashMap<>();
+    private Map<String, String> externalUncleTextureFilesById = new LinkedHashMap<>();
 
     public Integer getContractVersion() {
         return contractVersion;
@@ -111,6 +112,23 @@ public final class FrameMatrixSet {
             }
             List<ToUncleRelationship> relationships = entry.getValue() == null ? List.of() : entry.getValue();
             this.hierarchyRelationshipsByTileId.put(entry.getKey(), new ArrayList<>(relationships));
+        }
+    }
+
+    public Map<String, String> getExternalUncleTextureFilesById() {
+        return externalUncleTextureFilesById;
+    }
+
+    public void setExternalUncleTextureFilesById(Map<String, String> values) {
+        this.externalUncleTextureFilesById = new LinkedHashMap<>();
+        if (values == null) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (entry.getKey() != null && !entry.getKey().isBlank()
+                && entry.getValue() != null && !entry.getValue().isBlank()) {
+                this.externalUncleTextureFilesById.put(entry.getKey(), entry.getValue());
+            }
         }
     }
 }
