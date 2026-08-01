@@ -23,23 +23,22 @@ public final class MatrixJsonWriter {
     private MatrixJsonWriter() {
     }
 
-    private static MatrixJson toJsonMatrix(int frameId, TileMatrix matrix) {
+    private static MatrixJson toJsonMatrix(int frameId, TileMatrix matrix, Map<Integer, String> exportIdByTileId) {
         if (matrix == null) {
             return null;
         }
-        Map<Integer, String> scopedTileIdsByNumericId = buildScopedTileIdsByNumericId(matrix);
         List<TileJson> tiles = new ArrayList<>();
         for (TileMatrix.TileCoord tile : matrix.getTiles()) {
             if (tile == null) {
                 continue;
             }
-            String id = ScopedTileIds.formatFromTextureFile(tile.textureFile(), frameId, tile.tileId());
+            String id = exportIdByTileId.getOrDefault(tile.tileId(), ScopedTileIds.format(frameId, tile.tileId()));
             tiles.add(new TileJson(
                 id,
                 tile.i(),
                 tile.j(),
                 tile.textureFile(),
-                toJsonUncles(tile.uncles(), scopedTileIdsByNumericId)
+                toJsonUncles(frameId, tile.uncles(), exportIdByTileId)
             ));
         }
         return new MatrixJson(matrix.getRows(), matrix.getCols(), tiles);
@@ -49,12 +48,13 @@ public final class MatrixJsonWriter {
         if (frameId < 0 || matrices == null || matrices.isEmpty()) {
             return;
         }
+        Map<Integer, String> exportIdByTileId = buildExportIds(frameId, matrices);
         List<MatrixJson> matrixJsons = new ArrayList<>();
         for (TileMatrix matrix : matrices) {
             if (matrix == null || matrix.getTiles() == null || matrix.getTiles().size() < 2) {
                 continue;
             }
-            MatrixJson json = toJsonMatrix(frameId, matrix);
+            MatrixJson json = toJsonMatrix(frameId, matrix, exportIdByTileId);
             if (json != null && json.tiles() != null && json.tiles().size() >= 2) {
                 matrixJsons.add(json);
             }
@@ -73,26 +73,10 @@ public final class MatrixJsonWriter {
         }
     }
 
-    private static Map<Integer, String> buildScopedTileIdsByNumericId(TileMatrix matrix) {
-        Map<Integer, String> out = new HashMap<>();
-        if (matrix == null || matrix.getTiles() == null) {
-            return out;
-        }
-        for (TileMatrix.TileCoord tile : matrix.getTiles()) {
-            if (tile == null || tile.tileId() < 0) {
-                continue;
-            }
-            String scopedId = ScopedTileIds.formatFromTextureFile(tile.textureFile(), matrix.getFrameId(), tile.tileId());
-            if (scopedId != null) {
-                out.put(tile.tileId(), scopedId);
-            }
-        }
-        return out;
-    }
-
     private static List<ToUncleRelationshipJson> toJsonUncles(
+        int frameId,
         List<ToUncleRelationship> uncles,
-        Map<Integer, String> scopedTileIdsByNumericId
+        Map<Integer, String> exportIdByTileId
     ) {
         if (uncles == null || uncles.isEmpty()) {
             return List.of();
@@ -105,14 +89,17 @@ public final class MatrixJsonWriter {
             String normalizedScopedId = ScopedTileIds.normalize(relationship.uncleContentId());
             String scopedUncleId;
             if (normalizedScopedId != null && normalizedScopedId.contains("_")) {
-                scopedUncleId = normalizedScopedId;
+                Integer localUncleId = localTileId(normalizedScopedId, frameId);
+                scopedUncleId = localUncleId == null
+                    ? normalizedScopedId
+                    : exportIdByTileId.getOrDefault(localUncleId, normalizedScopedId);
             }
             else {
                 Integer numericUncleId = extractLastNumber(relationship.uncleContentId(), -1);
                 if (numericUncleId < 0) {
                     continue;
                 }
-                scopedUncleId = scopedTileIdsByNumericId.get(numericUncleId);
+                scopedUncleId = exportIdByTileId.get(numericUncleId);
                 if (scopedUncleId == null) {
                     scopedUncleId = relationship.uncleContentId();
                 }
@@ -124,6 +111,67 @@ public final class MatrixJsonWriter {
             ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    /**
+     * Uses a canonical texture-derived ID only when it identifies exactly one native
+     * tile in this frame. Identical pixels are not sufficient evidence that two tile
+     * occurrences are the same quadtree node (blank sea tiles are the common case).
+     */
+    static Map<Integer, String> buildExportIds(int frameId, List<TileMatrix> matrices) {
+        Map<Integer, String> nativeByTileId = new HashMap<>();
+        Map<Integer, String> candidateByTileId = new HashMap<>();
+        Map<String, Integer> candidateCounts = new HashMap<>();
+        Map<String, Integer> nativeOwners = new HashMap<>();
+        for (TileMatrix matrix : matrices) {
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            for (TileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null || tile.tileId() < 0) {
+                    continue;
+                }
+                String nativeId = ScopedTileIds.format(frameId, tile.tileId());
+                int canonicalTileId = extractLastNumber(tile.textureFile(), tile.tileId());
+                String candidate = ScopedTileIds.formatFromTextureFile(tile.textureFile(), frameId, canonicalTileId);
+                nativeByTileId.put(tile.tileId(), nativeId);
+                candidateByTileId.put(tile.tileId(), candidate);
+                candidateCounts.merge(candidate, 1, Integer::sum);
+                nativeOwners.put(nativeId, tile.tileId());
+            }
+        }
+
+        Map<Integer, String> out = new HashMap<>();
+        for (Map.Entry<Integer, String> entry : nativeByTileId.entrySet()) {
+            int tileId = entry.getKey();
+            String nativeId = entry.getValue();
+            String candidate = candidateByTileId.get(tileId);
+            Integer nativeOwner = nativeOwners.get(candidate);
+            boolean unambiguous = candidate != null
+                && candidateCounts.getOrDefault(candidate, 0) == 1
+                && (nativeOwner == null || nativeOwner == tileId);
+            out.put(tileId, unambiguous ? candidate : nativeId);
+        }
+        return out;
+    }
+
+    private static Integer localTileId(String scopedId, int frameId) {
+        if (scopedId == null) {
+            return null;
+        }
+        int separator = scopedId.indexOf('_');
+        if (separator <= 0 || separator >= scopedId.length() - 1) {
+            return null;
+        }
+        try {
+            if (Integer.parseInt(scopedId.substring(0, separator)) != frameId) {
+                return null;
+            }
+            return Integer.parseInt(scopedId.substring(separator + 1));
+        }
+        catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static int extractLastNumber(String text, int fallback) {

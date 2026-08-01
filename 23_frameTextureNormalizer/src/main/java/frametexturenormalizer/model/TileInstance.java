@@ -191,7 +191,7 @@ public final class TileInstance {
     }
 
     public String getScopedId() {
-        return ScopedTileIds.formatFromTextureFile(textureFile, frameId, tileId);
+        return ScopedTileIds.format(frameId, tileId);
     }
 
     public String getTextureFile() {

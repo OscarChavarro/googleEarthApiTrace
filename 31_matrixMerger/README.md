@@ -121,16 +121,11 @@ count stabilizes. It then follows the uncle relationships between the resulting 
 resolves every matrix's relative hierarchy depth, groups all matrices at the same depth,
 orders those groups from the top quadtree level to the deepest one, and selects the first
 top-level matrix for the viewer. Manual mode applies the same ordering immediately before
-opening the interactive viewer. If a later hierarchy root has lost its parent relationship,
-`VisualHierarchyRelationshipInferrer` compares up to 16 sampled child textures with the
-four quadrants of earlier matrices. A match is usable only below the RMSE threshold and
-when the best match clearly beats the second best; at least three accepted probes and a
-strict majority must agree on the same `(parentMatrixIndex,rowOffset,colOffset)`. The
-accepted containing-parent placement is persisted as `parentGridTransform`, and the
-hierarchy is sorted again. The pipeline deliberately does not fabricate an `uncle`:
-uncles are observed per-tile coarse-texture quadrant relationships, not inferred rigid
-matrix-to-matrix transforms. This is the batch equivalent of
-pressing `n` and `c` over every frame plus hierarchy repair.
+opening the interactive viewer. Hierarchy edges and parent transforms come exclusively
+from captured relationship metadata. Image resampling or similarity is not allowed to
+create a parent, an `uncle`, or a positioning transform; visual comparison may only be
+used as a non-mutating validation of an already observed positioning clue. This is the batch equivalent of
+pressing `n` and `c` over every frame followed by relationship-based hierarchy ordering.
 
 After merge/cut convergence, first assignment wins for any repeated ID still left in
 different matrices; later occurrences are removed before hierarchy resolution. Before
@@ -183,7 +178,7 @@ remaining frame is written as:
 
 - `hierarchyLevel`: relative matrix hierarchy depth, not an absolute quadtree level.
 - `parentMatrixIndex`: the exported `matrix_<n>` index of the immediate parent when known.
-- `parentGridTransform`: optional rigid containing-parent placement inferred visually.
+- `parentGridTransform`: optional rigid containing-parent placement supplied by observed metadata.
 - `hierarchyUnclesByTileId`: compatibility `tileId -> [uncleId]` map.
 - `hierarchyRelationshipsByTileId`: lossless
   `tileId -> [{direction, uncleContentId, relationshipKind}]` map. The kind distinguishes

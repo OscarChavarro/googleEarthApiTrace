@@ -35,6 +35,12 @@ On every run (interactive or offline) the program executes this pipeline:
 
 The exported `matrix.json` files and `westCutters.json` are the input of `31_matrixMerger`.
 
+Texture normalization changes only the image path. Native tile IDs and the neighbor/uncle
+relationships read from `frame.json` are preserved. A canonical texture-derived export ID
+is used only when that texture identifies a single tile occurrence in the frame; repeated
+pixel-identical images (for example, blank ocean tiles) retain their native scoped IDs.
+Matrix layout never fills a missing neighbor relationship.
+
 ## Requirements
 
 - Java 17

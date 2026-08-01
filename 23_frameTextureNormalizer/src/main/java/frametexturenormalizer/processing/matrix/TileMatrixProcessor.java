@@ -16,7 +16,6 @@ import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.processing.filtering.TileFiltererByConnectedComponents;
 import frametexturenormalizer.processing.filtering.TileFiltererByIsolatedTiles;
 import frametexturenormalizer.processing.filtering.TileFiltererByTextureCoverage;
-import frametexturenormalizer.processing.neighborhood.GeometricNeighborhoodSanitizer;
 import frametexturenormalizer.processing.texture.TileTextureNormalizer;
 
 public final class TileMatrixProcessor {
@@ -165,7 +164,6 @@ public final class TileMatrixProcessor {
         Map<String, String> canonicalTextureByTexture,
         TileFiltererByTextureCoverage textureCoverageFilterer,
         TileFiltererByIsolatedTiles isolatedTileFilterer,
-        GeometricNeighborhoodSanitizer sanitizer,
         TileFiltererByConnectedComponents connectedComponentsFilterer,
         TileSetToMatrixConverter localConvertor
     ) {
@@ -174,9 +172,6 @@ public final class TileMatrixProcessor {
         }
         FrameData normalized = TileTextureNormalizer.normalizeFrame(request.frame(), canonicalTextureByTexture);
         List<List<TileInstance>> components = connectedComponentsFilterer.partitionReciprocalComponents(normalized.getTiles());
-        components = repartitionFilteredComponents(normalized, components, connectedComponentsFilterer, tiles ->
-            sanitizer.sanitizeFrame(copyFrameWithTiles(normalized, tiles, false)).getTiles()
-        );
         components = repartitionFilteredComponents(normalized, components, connectedComponentsFilterer, tiles ->
             textureCoverageFilterer.removeNonFullResolutionTiles(copyFrameWithTiles(normalized, tiles, false)).getTiles()
         );
@@ -219,7 +214,6 @@ public final class TileMatrixProcessor {
         TileSetToMatrixConverter localConvertor = new TileSetToMatrixConverter();
         TileFiltererByTextureCoverage textureCoverageFilterer = new TileFiltererByTextureCoverage();
         TileFiltererByIsolatedTiles isolatedTileFilterer = new TileFiltererByIsolatedTiles();
-        GeometricNeighborhoodSanitizer sanitizer = new GeometricNeighborhoodSanitizer();
         TileFiltererByConnectedComponents connectedComponentsFilterer = new TileFiltererByConnectedComponents();
         while (true) {
             FrameRequest request = pendingFrames.poll();
@@ -235,7 +229,6 @@ public final class TileMatrixProcessor {
                 canonicalTextureByTexture,
                 textureCoverageFilterer,
                 isolatedTileFilterer,
-                sanitizer,
                 connectedComponentsFilterer,
                 localConvertor
             );

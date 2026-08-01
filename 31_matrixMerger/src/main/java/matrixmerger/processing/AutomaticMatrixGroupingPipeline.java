@@ -34,7 +34,6 @@ public final class AutomaticMatrixGroupingPipeline {
                     );
                 }
                 model.sortFramesByUncleHierarchy();
-                new VisualHierarchyRelationshipInferrer().inferMissingParents(model);
                 assertTileSetConserved(inputTileIds, tileIds(model));
                 assertExclusiveTileOwnership(model);
                 return;
