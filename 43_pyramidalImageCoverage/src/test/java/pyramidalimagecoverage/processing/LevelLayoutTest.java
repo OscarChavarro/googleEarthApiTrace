@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.RenderMode;
+import pyramidalimagecoverage.model.TileBounds;
 
 class LevelLayoutTest {
     private final PixelSize fullHd = new PixelSize(1920, 1080);
@@ -45,5 +46,27 @@ class LevelLayoutTest {
         assertEquals(RenderMode.SCALED, layout.mode());
         assertEquals(4, layout.imagePixelsPerTile());
         assertEquals(6, layout.pixelsPerTile());
+    }
+
+    @Test
+    void focusesAvailableTileBoundsFromDepthTenAndChoosesLodForThatArea() {
+        TileBounds iberianTiles = new TileBounds(480, 600, 499, 609);
+
+        LevelLayout layout = LevelLayout.choose(10, fullHd, iberianTiles);
+
+        assertTrue(layout.focused());
+        assertEquals(iberianTiles, layout.visibleTiles());
+        assertEquals(RenderMode.SCALED, layout.mode());
+        assertEquals(64, layout.imagePixelsPerTile());
+        assertEquals(1320, layout.contentWidth());
+        assertEquals(660, layout.contentHeight());
+    }
+
+    @Test
+    void keepsTheWorldMatrixThroughDepthNineEvenWhenBoundsAreProvided() {
+        LevelLayout layout = LevelLayout.choose(9, fullHd, new TileBounds(250, 250, 260, 260));
+
+        assertFalse(layout.focused());
+        assertEquals(new TileBounds(0, 0, 511, 511), layout.visibleTiles());
     }
 }

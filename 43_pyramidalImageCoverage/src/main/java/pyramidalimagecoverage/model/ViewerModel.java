@@ -8,6 +8,7 @@ public final class ViewerModel {
     private final List<Runnable> listeners = new ArrayList<>();
     private int selectedDepth;
     private TileAddress selectedAddress;
+    private TileAddress secondarySelectedAddress;
 
     public ViewerModel(PyramidCatalog catalog) {
         this.catalog = catalog;
@@ -62,6 +63,28 @@ public final class ViewerModel {
         return selectedAddress;
     }
 
+    public void toggleSecondarySelection(TileAddress address) {
+        if (address == null || !address.hasGeographicCoverage()) {
+            return;
+        }
+        TileAddress newAddress = address.equals(secondarySelectedAddress) ? null : address;
+        if (!java.util.Objects.equals(secondarySelectedAddress, newAddress)) {
+            secondarySelectedAddress = newAddress;
+            notifyListeners();
+        }
+    }
+
+    public TileAddress secondarySelectedAddress() {
+        return secondarySelectedAddress;
+    }
+
+    public boolean isSecondarySelectedAt(int depth, int column, int southRow) {
+        return secondarySelectedAddress != null
+            && secondarySelectedAddress.depth() == depth
+            && secondarySelectedAddress.column() == column
+            && secondarySelectedAddress.southRow() == southRow;
+    }
+
     public boolean isSelectedAt(int depth, int column, int southRow) {
         TileRecord tile = catalog.tileAt(depth, column, southRow);
         if (tile != null && tile.selected()) {
@@ -74,14 +97,36 @@ public final class ViewerModel {
     }
 
     public void clearSelection() {
-        boolean changed = catalog.clearSelection();
-        if (selectedAddress != null) {
-            selectedAddress = null;
+        boolean changed = clearPrimarySelectionWithoutNotification();
+        if (secondarySelectedAddress != null) {
+            secondarySelectedAddress = null;
             changed = true;
         }
         if (changed) {
             notifyListeners();
         }
+    }
+
+    public void clearPrimarySelection() {
+        if (clearPrimarySelectionWithoutNotification()) {
+            notifyListeners();
+        }
+    }
+
+    public void clearSecondarySelection() {
+        if (secondarySelectedAddress != null) {
+            secondarySelectedAddress = null;
+            notifyListeners();
+        }
+    }
+
+    private boolean clearPrimarySelectionWithoutNotification() {
+        boolean changed = catalog.clearSelection();
+        if (selectedAddress != null) {
+            selectedAddress = null;
+            changed = true;
+        }
+        return changed;
     }
 
     private void setSelectedDepth(int depth) {

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.io.TempDir;
 import pyramidalimagecoverage.io.TileImageRepository;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.PyramidCatalog;
+import pyramidalimagecoverage.model.RenderMode;
 import pyramidalimagecoverage.model.TileAddress;
 import pyramidalimagecoverage.model.TileRecord;
 import pyramidalimagecoverage.model.ViewerModel;
@@ -136,6 +137,29 @@ class CoverageCanvasTest {
     }
 
     @Test
+    void secondaryTileGetsYellowBorderAndHudShowsSignedDeltaAndDistance() throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        ViewerModel model = new ViewerModel(catalog);
+        model.nextDepth();
+        model.toggleSelection(TileAddress.fromCoordinates(1, 0, 0));
+        model.toggleSecondarySelection(TileAddress.fromCoordinates(1, 1, 1));
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(516, 516);
+        canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(516, 516)));
+
+        BufferedImage result = new BufferedImage(516, 516, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+        java.util.List<String> hud = java.util.Arrays.asList(canvas.hudLines());
+
+        assertEquals(new Color(255, 255, 0).getRGB(), result.getRGB(258, 250));
+        assertTrue(hud.contains("secondary lat: 45.00000000"));
+        assertTrue(hud.contains("secondary lon: 90.00000000"));
+        assertTrue(hud.contains("deltaLat (2-1): +90.00000000 deg"));
+        assertTrue(hud.contains("deltaLon (2-1): +180.00000000 deg"));
+        assertTrue(hud.contains("distance (1-2): 20015.114 km"));
+    }
+
+    @Test
     void selectedExistingTileFileHudUsesItsRelativePathAndExistsFlag() throws IOException {
         Path childPath = temporaryFolder.resolve("0").resolve("00.png");
         java.nio.file.Files.createDirectories(childPath.getParent());
@@ -188,6 +212,39 @@ class CoverageCanvasTest {
         assertNotNull(canvas.tileAddressAtCanvasPosition(3, 1));
         assertNotNull(canvas.tileAddressAtCanvasPosition(3, 2));
         assertNull(canvas.tileAddressAtCanvasPosition(3, 3));
+    }
+
+    @Test
+    void focusedLevelMapsCanvasBackToGlobalTileCoordinatesAndUsesAncestorPixels() throws IOException {
+        Path rootPath = temporaryFolder.resolve("0.png");
+        BufferedImage root = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D graphics = root.createGraphics();
+        graphics.setColor(Color.BLUE);
+        graphics.fillRect(0, 0, 256, 256);
+        graphics.dispose();
+        ImageIO.write(root, "png", rootPath.toFile());
+
+        PyramidCatalog catalog = new PyramidCatalog(temporaryFolder);
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("0"), rootPath));
+        catalog.add(new TileRecord(TileAddress.fromCoordinates(10, 480, 600), rootPath));
+        catalog.add(new TileRecord(TileAddress.fromCoordinates(10, 483, 601), rootPath));
+        ViewerModel model = new ViewerModel(catalog);
+        for (int depth = 0; depth < 10; depth++) model.nextDepth();
+
+        PixelSize viewport = new PixelSize(520, 260);
+        LevelLayout layout = LevelLayout.choose(10, viewport, catalog.tileBoundsAt(10).orElseThrow());
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(520, 260);
+        canvas.setLayoutDescription(layout);
+
+        BufferedImage result = new BufferedImage(520, 260, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        assertEquals(RenderMode.SCALED, layout.mode());
+        assertEquals(Color.BLUE.getRGB(), result.getRGB(10, 140));
+        assertEquals(Color.RED.getRGB(), result.getRGB(200, 140));
+        assertEquals(TileAddress.fromCoordinates(10, 480, 600), canvas.tileAddressAtCanvasPosition(10, 140));
+        assertEquals(TileAddress.fromCoordinates(10, 483, 601), canvas.tileAddressAtCanvasPosition(500, 10));
     }
 
     private PyramidCatalog catalogWithBlueRootAndSouthWestChild() throws IOException {

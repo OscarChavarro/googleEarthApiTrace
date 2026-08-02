@@ -29,17 +29,27 @@ public final class MouseInteractionTechniques implements MouseListener {
 
     @Override
     public void mouseClicked(MouseEvent event) {
-        if (event.getButton() != MouseEvent.BUTTON1) {
+        if (event.getButton() != MouseEvent.BUTTON1 && event.getButton() != MouseEvent.BUTTON3) {
             return;
         }
         vsdk.toolkit.gui.MouseEvent vitralEvent = AwtSystem.awt2vsdkEvent(event);
         TileAddress address = canvas.tileAddressAtCanvasPosition(xOf(vitralEvent), yOf(vitralEvent));
         if (address == null) {
-            model.clearSelection();
+            if (event.getButton() == MouseEvent.BUTTON3) {
+                model.clearSecondarySelection();
+            }
+            else {
+                model.clearPrimarySelection();
+            }
             return;
         }
         TileRecord tile = model.catalog().tileAt(address.depth(), address.column(), address.southRow());
-        printTileInfo(address, tile);
+        boolean secondary = event.getButton() == MouseEvent.BUTTON3;
+        printTileInfo(address, tile, secondary);
+        if (secondary) {
+            model.toggleSecondarySelection(address);
+            return;
+        }
         model.toggleSelection(address);
         copySelectedTileFileNameToClipboard(address);
     }
@@ -68,13 +78,14 @@ public final class MouseInteractionTechniques implements MouseListener {
         return coordinate(event, "y", "getY");
     }
 
-    private void printTileInfo(TileAddress address, TileRecord tile) {
+    private void printTileInfo(TileAddress address, TileRecord tile, boolean secondary) {
         String imagePath = tile == null
             ? "<missing>"
             : model.catalog().rootFolder().relativize(tile.imagePath()).toString();
         System.out.printf(
             Locale.US,
-            "Clicked tile: image=%s, quadkey=%s, depth=%d, column=%d, southRow=%d, centerLat=%.8f, centerLon=%.8f%n",
+            "%s clicked tile: image=%s, quadkey=%s, depth=%d, column=%d, southRow=%d, centerLat=%.8f, centerLon=%.8f%n",
+            secondary ? "Secondary" : "Primary",
             imagePath,
             address.quadKey(),
             address.depth(),

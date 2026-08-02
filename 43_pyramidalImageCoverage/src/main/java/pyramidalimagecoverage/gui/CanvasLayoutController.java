@@ -27,7 +27,11 @@ public final class CanvasLayoutController {
         if (extent.width <= 0 || extent.height <= 0) {
             return;
         }
-        LevelLayout layout = LevelLayout.choose(model.selectedDepth(), sizeOf(extent));
+        LevelLayout layout = LevelLayout.choose(
+            model.selectedDepth(),
+            sizeOf(extent),
+            model.catalog().tileBoundsAt(model.selectedDepth()).orElse(null)
+        );
         boolean centerActiveTiles = layout.scrollable() && centeredScrollableDepth != model.selectedDepth();
         if (!layout.scrollable()) {
             centeredScrollableDepth = -1;
@@ -39,8 +43,8 @@ public final class CanvasLayoutController {
 
         Dimension adjustedExtent = scrollPane.getViewport().getExtentSize();
         Dimension size = new Dimension(
-            Math.max(layout.contentSide(), adjustedExtent.width),
-            Math.max(layout.contentSide(), adjustedExtent.height)
+            Math.max(layout.contentWidth(), adjustedExtent.width),
+            Math.max(layout.contentHeight(), adjustedExtent.height)
         );
         canvas.setPreferredSize(size);
         canvas.setSize(size);
@@ -54,6 +58,13 @@ public final class CanvasLayoutController {
     }
 
     private void centerActiveTiles(LevelLayout layout) {
+        if (layout.focused()) {
+            PixelSize viewport = sizeOf(scrollPane.getViewport().getExtentSize());
+            int x = Math.max(0, (canvas.getWidth() - viewport.width()) / 2);
+            int y = Math.max(0, (canvas.getHeight() - viewport.height()) / 2);
+            scrollPane.getViewport().setViewPosition(new java.awt.Point(x, y));
+            return;
+        }
         model.catalog().tileBoundsAt(model.selectedDepth()).ifPresent(bounds -> {
             ViewPosition position = ScrollCenterCalculator.viewPosition(
                 bounds,

@@ -479,18 +479,31 @@ run_timed_step 22_dumpAnalyzer_validation validate_dump_analyzer_outputs
 run_timed_step trace_dump_cleanup safe_delete_trace_dump_path "$dump_file"
 
 run_logged 23_frameTextureNormalizer \
-    "$SCRIPT_DIR/23_frameTextureNormalizer/run.sh"
+    "$SCRIPT_DIR/gradlew" :23_frameTextureNormalizer:run \
+    "--args=--offline"
 
 matrix_attempt=1
 while true; do
-    attempt_suffix="$(printf 'attempt_%02d_interactive' "$matrix_attempt")"
     matrix_attempt_started="$(date +%s)"
-    log "Starting matrix/delta_attempt_$matrix_attempt started_at=$(date --iso-8601=seconds) with interactive module 31"
+    if ((matrix_attempt == 1)); then
+        attempt_suffix="$(printf 'attempt_%02d_offline_auto' "$matrix_attempt")"
+        matrix_mode="offline automatic"
+    else
+        attempt_suffix="$(printf 'attempt_%02d_interactive' "$matrix_attempt")"
+        matrix_mode="interactive"
+    fi
+    log "Starting matrix/delta_attempt_$matrix_attempt started_at=$(date --iso-8601=seconds) with $matrix_mode module 31"
     run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_staging
 
-    run_logged "31_matrixMerger_${attempt_suffix}" \
-        "$SCRIPT_DIR/31_matrixMerger/run.sh" "$run_dir/matrix"
-    log "Interactive module 31 closed on attempt $matrix_attempt; continuing without validating its generated matrix set."
+    if ((matrix_attempt == 1)); then
+        run_logged "31_matrixMerger_${attempt_suffix}" \
+            "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$run_dir/matrix"
+        log "Automatic offline module 31 completed on attempt $matrix_attempt."
+    else
+        run_logged "31_matrixMerger_${attempt_suffix}" \
+            "$SCRIPT_DIR/31_matrixMerger/run.sh" "$run_dir/matrix"
+        log "Interactive module 31 closed on attempt $matrix_attempt; continuing without validating its generated matrix set."
+    fi
 
     module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
     run_logged "32_pyramidalImageExporter_${attempt_suffix}" \

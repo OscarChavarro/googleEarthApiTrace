@@ -27,10 +27,12 @@ iteration. The consolidated pyramid is the only long-lived result.
    new capture, but it must not be changed or cleared between modules 22 and 32.
    `32_pyramidalImageExporter` reads `topLevelTiles.json` and may read original
    per-frame `frame.json` and texture paths even after modules 23 and 31 have finished.
-2. During the current operator-assisted protocol, module 31 runs interactively in
-   `--mode auto`. The operator reviews and edits the grouped matrices, then closes the
-   window to export them. The orchestrator does not validate or count the generated
-   matrix set before passing it to module 32.
+2. Module 31 first runs offline in `--mode auto`, accepting its automatic grouping and
+   filtering decisions without operator intervention. If module 42 later rejects the
+   resulting delta because of content conflicts, module 31 is reopened interactively so
+   the operator can edit the grouped matrices before closing the window to export them.
+   The orchestrator does not validate or count the generated matrix set before passing
+   it to module 32.
 3. Module 32 must run with `--export`. A successful process exit is not sufficient:
    some exporter failures are reported in the log without a non-zero exit status. The
    automation must also check the placement report, the completion message, and the
@@ -562,7 +564,7 @@ placement, conflict, and post-merge checks above.
 | Module 21 -> 22 | Valid isolated split; safe frame-folder creation; verified publication | Split failure, invalid path shape, incomplete copy | No |
 | Module 22 -> 23 | Frame JSONs; 320 strips; non-zero appearances | Parse failure, empty/broken TOP catalogue | No |
 | Module 23 -> 31 | Module 23 exits successfully | Normalizer failure | No |
-| Module 31 -> 32 | Operator closes interactive 31 | Module 31 process failure; generated set is not validated here | No |
+| Module 31 -> 32 | Offline automatic attempt completes, or operator closes an interactive retry | Module 31 process failure; generated set is not validated here | No |
 | Module 32 -> 42 dry run | Every layer fully placed; valid non-empty pyramid | Unplaced/ambiguous tiles, export/write/layout failure | No |
 | Dry run -> retry/real module 42 | Exit `0`, or semantic conflict that reopens interactive 31 | Technical failure | No |
 | Real module 42 -> complete | Exit `0`; every delta quadkey visible after rescan | Copy or post-merge verification failure | Yes |
@@ -573,12 +575,11 @@ placement, conflict, and post-merge checks above.
 
 - It starts after route generation (module 11 is not invoked), then executes capture,
   `apitrace dump`, module 21, and modules 22/23/31/32/42 in order.
-- In the current operator-assisted phase it opens module 23 interactively and waits for
-  the operator to define west cutters and close the window.
-- Module 31 uses its interactive `run.sh` launcher; the operator reviews the set and
-  closes the viewer to export. The orchestrator does not validate that generated matrix
-  set. Module 32 remains process-only and performs the same export action as the
-  interactive `e` key without starting JOGL.
+- Module 23 runs offline, processing and exporting its matrices without opening its
+  editor or defining west cutters.
+- On the first attempt, module 31 uses its offline automatic launcher and accepts the
+  generated matrix set without operator intervention. Module 32 remains process-only and
+  performs the same export action as the interactive `e` key without starting JOGL.
 - If module 42's dry run reports content conflicts, it reopens interactive module 31,
   then reruns modules 32 and 42 after the operator closes it.
 - It uses a unique `/tmp/google-earth-full-process.*` staging directory.

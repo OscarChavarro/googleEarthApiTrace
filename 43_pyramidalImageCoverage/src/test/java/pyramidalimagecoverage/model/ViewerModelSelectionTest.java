@@ -1,6 +1,8 @@
 package pyramidalimagecoverage.model;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -61,6 +63,30 @@ class ViewerModelSelectionTest {
 
         assertFalse(model.isSelectedAt(1, 1, 1));
         assertTrue(model.selectedAddress() == null);
+    }
+
+    @Test
+    void secondarySelectionIsIndependentFromPrimarySelection() {
+        PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
+        add(catalog, "0");
+        ViewerModel model = new ViewerModel(catalog);
+        TileAddress primary = TileAddress.fromCoordinates(1, 0, 0);
+        TileAddress secondary = TileAddress.fromCoordinates(1, 1, 1);
+
+        model.toggleSelection(primary);
+        model.toggleSecondarySelection(secondary);
+
+        assertEquals(primary, model.selectedAddress());
+        assertEquals(secondary, model.secondarySelectedAddress());
+        assertTrue(model.isSecondarySelectedAt(1, 1, 1));
+        assertFalse(model.isSecondarySelectedAt(1, 0, 0));
+
+        model.clearPrimarySelection();
+        assertNull(model.selectedAddress());
+        assertEquals(secondary, model.secondarySelectedAddress());
+
+        model.toggleSecondarySelection(secondary);
+        assertNull(model.secondarySelectedAddress());
     }
 
     private static TileRecord add(PyramidCatalog catalog, String quadKey) {

@@ -17,6 +17,7 @@ import pyramidalimagecoverage.model.PyramidCatalog;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.RenderMode;
 import pyramidalimagecoverage.model.TileAddress;
+import pyramidalimagecoverage.model.TileDelta;
 import pyramidalimagecoverage.model.TileRecord;
 import pyramidalimagecoverage.model.ViewerModel;
 import pyramidalimagecoverage.processing.LevelLayout;
@@ -28,6 +29,7 @@ public final class CoverageCanvas extends Canvas {
     private static final Color MISSING_DATA = Color.RED;
     private static final Color UNSELECTED_BORDER = Color.BLACK;
     private static final Color SELECTED_BORDER = new Color(0, 255, 0);
+    private static final Color SECONDARY_SELECTED_BORDER = new Color(255, 255, 0);
     private static final Color HUD_BACKGROUND = new Color(0, 0, 0, 190);
     private static final Font HUD_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 14);
 
@@ -63,19 +65,22 @@ public final class CoverageCanvas extends Canvas {
 
     public TileAddress tileAddressAtCanvasPosition(int x, int y) {
         int pixelsPerTile = layout.pixelsPerTile();
-        int originX = Math.max(0, (getWidth() - layout.contentSide()) / 2);
-        int originY = Math.max(0, (getHeight() - layout.contentSide()) / 2);
+        int originX = Math.max(0, (getWidth() - layout.contentWidth()) / 2);
+        int originY = Math.max(0, (getHeight() - layout.contentHeight()) / 2);
         int relativeX = x - originX;
         int relativeY = y - originY;
-        if (relativeX < 0 || relativeY < 0 || relativeX >= layout.contentSide() || relativeY >= layout.contentSide()) {
+        if (relativeX < 0 || relativeY < 0
+            || relativeX >= layout.contentWidth() || relativeY >= layout.contentHeight()) {
             return null;
         }
-        int column = relativeX / pixelsPerTile;
-        int northRow = relativeY / pixelsPerTile;
-        if (column < 0 || column >= layout.matrixSide() || northRow < 0 || northRow >= layout.matrixSide()) {
+        int localColumn = relativeX / pixelsPerTile;
+        int localNorthRow = relativeY / pixelsPerTile;
+        if (localColumn < 0 || localColumn >= layout.visibleTiles().columnCount()
+            || localNorthRow < 0 || localNorthRow >= layout.visibleTiles().rowCount()) {
             return null;
         }
-        int southRow = layout.matrixSide() - 1 - northRow;
+        int column = layout.visibleTiles().minimumColumn() + localColumn;
+        int southRow = layout.visibleTiles().maximumSouthRow() - localNorthRow;
         TileAddress address = TileAddress.fromCoordinates(model.selectedDepth(), column, southRow);
         if (!address.hasGeographicCoverage()) {
             return null;
@@ -112,24 +117,31 @@ public final class CoverageCanvas extends Canvas {
 
     private void drawTiles(Graphics2D g, Rectangle visible) {
         int pixelsPerTile = layout.pixelsPerTile();
-        int originX = Math.max(0, (getWidth() - layout.contentSide()) / 2);
-        int originY = Math.max(0, (getHeight() - layout.contentSide()) / 2);
-        int firstColumn = clamp(Math.floorDiv(visible.x - originX, pixelsPerTile), 0, layout.matrixSide() - 1);
-        int lastColumn = clamp(Math.floorDiv(visible.x + visible.width - 1 - originX, pixelsPerTile), 0, layout.matrixSide() - 1);
-        int firstNorthRow = clamp(Math.floorDiv(visible.y - originY, pixelsPerTile), 0, layout.matrixSide() - 1);
-        int lastNorthRow = clamp(Math.floorDiv(visible.y + visible.height - 1 - originY, pixelsPerTile), 0, layout.matrixSide() - 1);
+        int originX = Math.max(0, (getWidth() - layout.contentWidth()) / 2);
+        int originY = Math.max(0, (getHeight() - layout.contentHeight()) / 2);
+        int columnCount = layout.visibleTiles().columnCount();
+        int rowCount = layout.visibleTiles().rowCount();
+        int firstLocalColumn = clamp(Math.floorDiv(visible.x - originX, pixelsPerTile), 0, columnCount - 1);
+        int lastLocalColumn = clamp(
+            Math.floorDiv(visible.x + visible.width - 1 - originX, pixelsPerTile), 0, columnCount - 1
+        );
+        int firstLocalNorthRow = clamp(Math.floorDiv(visible.y - originY, pixelsPerTile), 0, rowCount - 1);
+        int lastLocalNorthRow = clamp(
+            Math.floorDiv(visible.y + visible.height - 1 - originY, pixelsPerTile), 0, rowCount - 1
+        );
         PyramidCatalog catalog = model.catalog();
         int depth = model.selectedDepth();
 
-        for (int northRow = firstNorthRow; northRow <= lastNorthRow; northRow++) {
-            int southRow = layout.matrixSide() - 1 - northRow;
+        for (int localNorthRow = firstLocalNorthRow; localNorthRow <= lastLocalNorthRow; localNorthRow++) {
+            int southRow = layout.visibleTiles().maximumSouthRow() - localNorthRow;
             TileAddress address = TileAddress.fromCoordinates(depth, 0, southRow);
             if (!address.hasGeographicCoverage()) {
                 continue;
             }
-            int y = originY + northRow * pixelsPerTile;
-            for (int column = firstColumn; column <= lastColumn; column++) {
-                int x = originX + column * pixelsPerTile;
+            int y = originY + localNorthRow * pixelsPerTile;
+            for (int localColumn = firstLocalColumn; localColumn <= lastLocalColumn; localColumn++) {
+                int column = layout.visibleTiles().minimumColumn() + localColumn;
+                int x = originX + localColumn * pixelsPerTile;
                 TileRecord target = catalog.tileAt(depth, column, southRow);
                 if (target == null) {
                     drawMissingTile(g, depth, column, southRow, x, y);
@@ -176,7 +188,7 @@ public final class CoverageCanvas extends Canvas {
 
     private void drawMissingTile(Graphics2D g, int depth, int column, int southRow, int x, int y) {
         if (layout.imagePixelsPerTile() > 1) {
-            g.setColor(model.isSelectedAt(depth, column, southRow) ? SELECTED_BORDER : UNSELECTED_BORDER);
+            g.setColor(selectionBorderColor(depth, column, southRow));
             g.fillRect(x, y, layout.pixelsPerTile(), layout.pixelsPerTile());
         }
         drawMissingData(g, depth, southRow, x, y);
@@ -196,10 +208,15 @@ public final class CoverageCanvas extends Canvas {
             return;
         }
         TileAddress address = target.address();
-        g.setColor(model.isSelectedAt(address.depth(), address.column(), address.southRow())
-            ? SELECTED_BORDER
-            : UNSELECTED_BORDER);
+        g.setColor(selectionBorderColor(address.depth(), address.column(), address.southRow()));
         g.fillRect(x, y, layout.pixelsPerTile(), layout.pixelsPerTile());
+    }
+
+    private Color selectionBorderColor(int depth, int column, int southRow) {
+        if (model.isSecondarySelectedAt(depth, column, southRow)) {
+            return SECONDARY_SELECTED_BORDER;
+        }
+        return model.isSelectedAt(depth, column, southRow) ? SELECTED_BORDER : UNSELECTED_BORDER;
     }
 
     private void drawImage(
@@ -266,11 +283,26 @@ public final class CoverageCanvas extends Canvas {
         java.util.List<String> lines = new java.util.ArrayList<>();
         lines.add("Quadtree depth [1/2]: " + model.selectedDepth() + " / " + model.catalog().maxDepth());
         lines.add("Matrix: " + layout.matrixSide() + " x " + layout.matrixSide());
+        if (layout.focused()) {
+            lines.add("Focused tiles: " + layout.visibleTiles().columnCount()
+                + " x " + layout.visibleTiles().rowCount());
+        }
         lines.add("LOD: " + layout.description());
         TileAddress selected = model.selectedAddress();
         if (selected != null) {
             lines.add(String.format(Locale.US, "lat: %.8f", selected.centerLatitude()));
             lines.add(String.format(Locale.US, "lon: %.8f", selected.centerLongitude()));
+        }
+        TileAddress secondary = model.secondarySelectedAddress();
+        if (secondary != null) {
+            lines.add(String.format(Locale.US, "secondary lat: %.8f", secondary.centerLatitude()));
+            lines.add(String.format(Locale.US, "secondary lon: %.8f", secondary.centerLongitude()));
+        }
+        if (selected != null && secondary != null) {
+            TileDelta delta = TileDelta.between(selected, secondary);
+            lines.add(String.format(Locale.US, "deltaLat (2-1): %+.8f deg", delta.latitudeDegrees()));
+            lines.add(String.format(Locale.US, "deltaLon (2-1): %+.8f deg", delta.longitudeDegrees()));
+            lines.add(String.format(Locale.US, "distance (1-2): %.3f km", delta.distanceKilometers()));
         }
         lines.add("Fullscreen [F]: " + (isFullScreen() ? "on" : "off"));
         return lines.toArray(String[]::new);
