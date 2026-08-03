@@ -11,4 +11,14 @@ if [ "$#" -lt 1 ]; then
     exit 1
 fi
 
+canonical_input="$(realpath -m "$1")"
+lock_key="$(printf '%s' "$canonical_input" | cksum | awk '{print $1}')"
+lock_file="${TMPDIR:-/tmp}/google-earth-matrix-${lock_key}.lock"
+exec 8>"$lock_file"
+if ! flock -n 8; then
+    echo "ERROR: Matrix folder is already being produced or consumed: $canonical_input" >&2
+    echo "Wait for the other program 31/32 execution to finish before retrying." >&2
+    exit 1
+fi
+
 gradle run --quiet --args="$*"
