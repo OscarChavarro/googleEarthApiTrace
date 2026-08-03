@@ -19,10 +19,11 @@ import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
  */
 final class ImportedLayerVisualAnchorResolver {
     private static final int MAX_PROBES = 16;
-    private static final int SAMPLE_STEP = 8;
+    private static final int MAX_ANCESTOR_LEVEL_GAP = 3;
     private static final int MIN_ANCHOR_VOTES = 3;
     private static final double MAX_RMSE = 35.0;
     private static final double MAX_BEST_TO_SECOND_RATIO = 0.75;
+    private static final double MAX_ANCESTOR_BEST_TO_SECOND_RATIO = 0.90;
 
     private final Map<String, BufferedImage> imageCache = new HashMap<>();
 
@@ -30,11 +31,21 @@ final class ImportedLayerVisualAnchorResolver {
         List<MatrixLayer> layers,
         TileRootPathResolver.Resolution resolution
     ) {
+        return resolve(layers, resolution, Map.of());
+    }
+
+    Map<String, String> resolve(
+        List<MatrixLayer> layers,
+        TileRootPathResolver.Resolution resolution,
+        Map<String, String> referenceQuadPathsByImagePath
+    ) {
         Map<String, String> anchors = new LinkedHashMap<>();
         if (layers == null || resolution == null) {
             return anchors;
         }
         List<ParentTile> parents = stronglyAnchoredParents(layers, resolution);
+        parents.addAll(referenceParentTiles(referenceQuadPathsByImagePath));
+        int maximumTargetLevel = deepestReferenceLevel(referenceQuadPathsByImagePath);
         for (MatrixLayer childLayer : layers) {
             if (childLayer == null || childLayer.getTiles() == null || childLayer.getTiles().isEmpty()) {
                 continue;
@@ -42,7 +53,7 @@ final class ImportedLayerVisualAnchorResolver {
             if (isStronglyResolved(childLayer, resolution)) {
                 continue;
             }
-            AnchorChoice choice = chooseAnchor(childLayer, layers, parents);
+            AnchorChoice choice = chooseAnchor(childLayer, layers, parents, maximumTargetLevel);
             if (choice == null) {
                 continue;
             }
@@ -69,32 +80,98 @@ final class ImportedLayerVisualAnchorResolver {
         return anchors;
     }
 
-    private AnchorChoice chooseAnchor(
-        MatrixLayer childLayer,
+    Map<String, String> resolveExternalTextures(
+        Map<String, String> texturePathByExternalId,
         List<MatrixLayer> layers,
-        List<ParentTile> parents
+        TileRootPathResolver.Resolution resolution,
+        int maximumTargetLevel
     ) {
-        Map<Anchor, Integer> votes = new LinkedHashMap<>();
-        int accepted = 0;
-        MatrixLayer designatedParent = designatedParentOf(childLayer, layers);
-        for (MatrixLayerTile child : evenlySpaced(childLayer.getTiles(), MAX_PROBES)) {
-            MatchPair pair = bestTwoMatches(child, childLayer, designatedParent, parents);
+        Map<String, String> anchors = new LinkedHashMap<>();
+        if (texturePathByExternalId == null || texturePathByExternalId.isEmpty()
+            || layers == null || resolution == null) {
+            return anchors;
+        }
+        List<ParentTile> parents = stronglyAnchoredParents(layers, resolution);
+        Map<String, String> plausibleAnchors = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : texturePathByExternalId.entrySet()) {
+            MatrixLayerTile external = new MatrixLayerTile();
+            external.setId(entry.getKey());
+            external.setTextureFile(entry.getValue());
+            MatchPair pair = bestTwoMatches(
+                external,
+                null,
+                null,
+                parents,
+                maximumTargetLevel,
+                maximumTargetLevel,
+                1
+            );
+            if (pair != null && pair.best().rmse() <= MAX_RMSE) {
+                Anchor candidate = anchorFor(external, pair.best());
+                plausibleAnchors.put(
+                    entry.getKey(),
+                    encodeFullPath(candidate.level(), candidate.rowOffset(), candidate.colOffset())
+                );
+            }
             if (!confident(pair)) {
                 continue;
             }
-            ParentTile parent = pair.best().parent();
-            int level = parent.level() + 1;
-            int side = 1 << level;
-            boolean south = pair.best().quadrant() == 0 || pair.best().quadrant() == 1;
-            boolean east = pair.best().quadrant() == 1 || pair.best().quadrant() == 2;
-            int childRow = 2 * parent.row() + (south ? 1 : 0);
-            int childCol = 2 * parent.col() + (east ? 1 : 0);
-            Anchor anchor = new Anchor(
-                level,
-                childRow - child.getI(),
-                Math.floorMod(childCol - child.getJ(), side)
+            Anchor anchor = anchorFor(external, pair.best());
+            anchors.put(entry.getKey(), encodeFullPath(anchor.level(), anchor.rowOffset(), anchor.colOffset()));
+        }
+        if (plausibleAnchors.size() >= 2) {
+            plausibleAnchors.forEach(anchors::putIfAbsent);
+            System.out.println(
+                "ImportedLayerVisualAnchorResolver: forwarding " + plausibleAnchors.size()
+                    + " jointly plausible external texture anchor(s) for structural consistency checks."
             );
-            votes.merge(anchor, 1, Integer::sum);
+        }
+        if (!anchors.isEmpty()) {
+            System.out.println(
+                "ImportedLayerVisualAnchorResolver: visually anchored " + anchors.size()
+                    + " external texture(s) against resolved immediate-parent tiles."
+            );
+        }
+        imageCache.clear();
+        return anchors;
+    }
+
+    private AnchorChoice chooseAnchor(
+        MatrixLayer childLayer,
+        List<MatrixLayer> layers,
+        List<ParentTile> parents,
+        int maximumTargetLevel
+    ) {
+        Map<Anchor, Integer> votes = new LinkedHashMap<>();
+        Map<Anchor, Integer> plausibleVotes = new LinkedHashMap<>();
+        int accepted = 0;
+        int readable = 0;
+        double lowestRmse = Double.POSITIVE_INFINITY;
+        double lowestRatio = Double.POSITIVE_INFINITY;
+        MatrixLayer designatedParent = designatedParentOf(childLayer, layers);
+        for (MatrixLayerTile child : evenlySpaced(childLayer.getTiles(), MAX_PROBES)) {
+            MatchPair pair = bestTwoMatches(
+                child,
+                childLayer,
+                designatedParent,
+                parents,
+                0,
+                maximumTargetLevel,
+                MAX_ANCESTOR_LEVEL_GAP
+            );
+            if (pair != null) {
+                readable++;
+                double ratio = pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse());
+                lowestRmse = Math.min(lowestRmse, pair.best().rmse());
+                lowestRatio = Math.min(lowestRatio, ratio);
+                if (pair.best().rmse() <= MAX_RMSE) {
+                    plausibleVotes.merge(anchorFor(child, pair.best()), 1, Integer::sum);
+                }
+            }
+            if (!confident(pair)) {
+                continue;
+            }
+            votes.merge(anchorFor(child, pair.best()), 1, Integer::sum);
             accepted++;
         }
         Anchor best = null;
@@ -105,23 +182,54 @@ final class ImportedLayerVisualAnchorResolver {
                 bestVotes = vote.getValue();
             }
         }
-        return best != null && bestVotes >= MIN_ANCHOR_VOTES && bestVotes * 2 > accepted
-            ? new AnchorChoice(best, bestVotes, accepted)
-            : null;
+        if (best != null && bestVotes >= MIN_ANCHOR_VOTES && bestVotes * 2 > accepted) {
+            return new AnchorChoice(best, bestVotes, accepted);
+        }
+        System.out.println(
+            "ImportedLayerVisualAnchorResolver: layer " + childLayer.getSourceFolderName()
+                + " not anchored; confident probes=" + accepted
+                + ", distinct confident anchors=" + votes.size()
+                + ", best confident vote=" + bestVotes
+                + ", plausible probes=" + plausibleVotes.values().stream().mapToInt(Integer::intValue).sum()
+                + ", distinct plausible anchors=" + plausibleVotes.size()
+                + ", best plausible vote="
+                + plausibleVotes.values().stream().mapToInt(Integer::intValue).max().orElse(0)
+                + ", readable probes=" + readable
+                + ", lowest RMSE=" + String.format(java.util.Locale.ROOT, "%.2f", lowestRmse)
+                + ", lowest best/second ratio="
+                + String.format(java.util.Locale.ROOT, "%.3f", lowestRatio) + "."
+        );
+        return null;
+    }
+
+    private static Anchor anchorFor(MatrixLayerTile child, Match match) {
+        ParentTile parent = match.parent();
+        int level = parent.level() + match.levelGap();
+        int side = 1 << level;
+        int scale = 1 << match.levelGap();
+        int childRow = scale * parent.row() + match.subRow();
+        int childCol = scale * parent.col() + match.subCol();
+        return new Anchor(
+            level,
+            childRow - child.getI(),
+            Math.floorMod(childCol - child.getJ(), side)
+        );
     }
 
     private MatchPair bestTwoMatches(
         MatrixLayerTile child,
         MatrixLayer childLayer,
         MatrixLayer designatedParent,
-        List<ParentTile> parents
+        List<ParentTile> parents,
+        int minimumTargetLevel,
+        int maximumTargetLevel,
+        int maximumLevelGap
     ) {
         BufferedImage childImage = imageOf(child);
         if (childImage == null) {
             return null;
         }
-        Match best = null;
-        Match second = null;
+        Map<CandidateCell, Match> bestMatchByCell = new HashMap<>();
         for (ParentTile parent : parents) {
             if (parent.layer() == childLayer
                 || (designatedParent != null && parent.layer() != designatedParent)) {
@@ -131,15 +239,54 @@ final class ImportedLayerVisualAnchorResolver {
             if (parentImage == null) {
                 continue;
             }
-            for (int quadrant = 0; quadrant < 4; quadrant++) {
-                Match candidate = new Match(parent, quadrant, rmse(parentImage, childImage, quadrant));
-                if (best == null || candidate.rmse() < best.rmse()) {
-                    second = best;
-                    best = candidate;
+            for (int levelGap = 1; levelGap <= maximumLevelGap; levelGap++) {
+                int targetLevel = parent.level() + levelGap;
+                if (targetLevel < minimumTargetLevel || targetLevel > maximumTargetLevel) {
+                    continue;
                 }
-                else if (second == null || candidate.rmse() < second.rmse()) {
-                    second = candidate;
+                int scale = 1 << levelGap;
+                for (int subRow = 0; subRow < scale; subRow++) {
+                    for (int subCol = 0; subCol < scale; subCol++) {
+                        Match candidate = new Match(
+                            parent,
+                            levelGap,
+                            subRow,
+                            subCol,
+                            rmse(parentImage, childImage, levelGap, subRow, subCol)
+                        );
+                        CandidateCell cell = new CandidateCell(
+                            parent.level() + levelGap,
+                            scale * parent.row() + subRow,
+                            scale * parent.col() + subCol
+                        );
+                        Match previous = bestMatchByCell.get(cell);
+                        if (previous == null || candidate.rmse() < previous.rmse()) {
+                            bestMatchByCell.put(cell, candidate);
+                        }
+                    }
                 }
+            }
+        }
+        Match best = null;
+        Match second = null;
+        for (Match candidate : bestMatchByCell.values()) {
+            if (best == null
+                || candidate.rmse() < best.rmse()
+                || (candidate.rmse() == best.rmse() && candidate.levelGap() < best.levelGap())) {
+                best = candidate;
+            }
+        }
+        if (best == null) {
+            return null;
+        }
+        int bestTargetLevel = best.parent().level() + best.levelGap();
+        for (Match candidate : bestMatchByCell.values()) {
+            int candidateTargetLevel = candidate.parent().level() + candidate.levelGap();
+            if (candidate == best || candidateTargetLevel != bestTargetLevel) {
+                continue;
+            }
+            if (second == null || candidate.rmse() < second.rmse()) {
+                second = candidate;
             }
         }
         return best == null || second == null ? null : new MatchPair(best, second);
@@ -183,6 +330,44 @@ final class ImportedLayerVisualAnchorResolver {
         return parents;
     }
 
+    private static List<ParentTile> referenceParentTiles(Map<String, String> pathsByImage) {
+        if (pathsByImage == null || pathsByImage.isEmpty()) {
+            return List.of();
+        }
+        int deepestLevel = pathsByImage.values().stream()
+            .filter(path -> path != null && path.matches("0[0-3]*"))
+            .mapToInt(path -> path.length() - 1)
+            .max()
+            .orElse(-1);
+        int parentLevel = deepestLevel - 1;
+        if (parentLevel < 0) {
+            return List.of();
+        }
+        List<ParentTile> parents = new ArrayList<>();
+        for (Map.Entry<String, String> entry : pathsByImage.entrySet()) {
+            int[] cell = decodeFullPath(entry.getValue());
+            if (cell == null || cell[0] != parentLevel) {
+                continue;
+            }
+            MatrixLayerTile tile = new MatrixLayerTile();
+            tile.setId(entry.getValue());
+            tile.setTextureFile(entry.getKey());
+            parents.add(new ParentTile(null, tile, cell[0], cell[1], cell[2]));
+        }
+        return parents;
+    }
+
+    private static int deepestReferenceLevel(Map<String, String> pathsByImage) {
+        if (pathsByImage == null || pathsByImage.isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+        return pathsByImage.values().stream()
+            .filter(path -> path != null && path.matches("0[0-3]*"))
+            .mapToInt(path -> path.length() - 1)
+            .max()
+            .orElse(Integer.MAX_VALUE);
+    }
+
     private boolean isStronglyResolved(MatrixLayer layer, TileRootPathResolver.Resolution resolution) {
         for (MatrixLayerTile tile : layer.getTiles()) {
             TileRootPathResolver.PathSource source = resolution.sourceFor(layer, tile);
@@ -213,19 +398,28 @@ final class ImportedLayerVisualAnchorResolver {
         return image;
     }
 
-    private static double rmse(BufferedImage parent, BufferedImage child, int quadrant) {
+    private static double rmse(
+        BufferedImage parent,
+        BufferedImage child,
+        int levelGap,
+        int subRow,
+        int subCol
+    ) {
         if (parent.getWidth() < 256 || parent.getHeight() < 256
             || child.getWidth() < 256 || child.getHeight() < 256) {
             return Double.POSITIVE_INFINITY;
         }
-        int x0 = quadrant == 1 || quadrant == 2 ? 128 : 0;
-        int y0 = quadrant == 0 || quadrant == 1 ? 128 : 0;
+        int scale = 1 << levelGap;
+        int regionSize = 256 / scale;
+        int x0 = subCol * regionSize;
+        int y0 = subRow * regionSize;
+        int step = Math.max(1, regionSize / 16);
         double sum = 0.0;
         long count = 0L;
-        for (int y = 0; y < 128; y += SAMPLE_STEP) {
-            for (int x = 0; x < 128; x += SAMPLE_STEP) {
+        for (int y = 0; y < regionSize; y += step) {
+            for (int x = 0; x < regionSize; x += step) {
                 int parentRgb = parent.getRGB(x0 + x, y0 + y);
-                int childRgb = child.getRGB(x * 2, y * 2);
+                int childRgb = child.getRGB(x * scale, y * scale);
                 for (int shift : new int[]{16, 8, 0}) {
                     int delta = ((parentRgb >> shift) & 0xff) - ((childRgb >> shift) & 0xff);
                     sum += delta * delta;
@@ -237,9 +431,12 @@ final class ImportedLayerVisualAnchorResolver {
     }
 
     private static boolean confident(MatchPair pair) {
+        double maxRatio = pair != null && pair.best().levelGap() > 1
+            ? MAX_ANCESTOR_BEST_TO_SECOND_RATIO
+            : MAX_BEST_TO_SECOND_RATIO;
         return pair != null
             && pair.best().rmse() <= MAX_RMSE
-            && pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse()) <= MAX_BEST_TO_SECOND_RATIO;
+            && pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse()) <= maxRatio;
     }
 
     private static <T> List<T> evenlySpaced(List<T> values, int limit) {
@@ -280,6 +477,7 @@ final class ImportedLayerVisualAnchorResolver {
     private record Anchor(int level, int rowOffset, int colOffset) {}
     private record AnchorChoice(Anchor anchor, int votes, int acceptedProbes) {}
     private record ParentTile(MatrixLayer layer, MatrixLayerTile tile, int level, int row, int col) {}
-    private record Match(ParentTile parent, int quadrant, double rmse) {}
+    private record CandidateCell(int level, int row, int col) {}
+    private record Match(ParentTile parent, int levelGap, int subRow, int subCol, double rmse) {}
     private record MatchPair(Match best, Match second) {}
 }

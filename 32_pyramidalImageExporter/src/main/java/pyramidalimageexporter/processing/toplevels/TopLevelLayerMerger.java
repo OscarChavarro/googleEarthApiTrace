@@ -69,10 +69,34 @@ public final class TopLevelLayerMerger {
         TileRootPathResolver pathResolver = new TileRootPathResolver();
         TileRootPathResolver.Resolution resolution;
         Map<String, String> visualDescendantFullPaths = new LinkedHashMap<>();
+        Set<String> replaceableExternalVisualIds = new LinkedHashSet<>(externalVisualUnclePaths.keySet());
         while (true) {
             resolution = pathResolver.resolve(importedCopies, externalFullPaths, bridge.aliasById());
-            Map<String, String> visualDescendantAnchors = new ImportedLayerVisualAnchorResolver()
-                .resolve(importedCopies, resolution);
+            ImportedLayerVisualAnchorResolver visualResolver = new ImportedLayerVisualAnchorResolver();
+            Map<String, String> unresolvedExternalTextures = referencedExternalTexturesOfUnresolvedLayers(
+                importedCopies,
+                resolution,
+                bridge.texturePathByExternalId(),
+                externalFullPaths.keySet(),
+                replaceableExternalVisualIds
+            );
+            Map<String, String> externalDescendantAnchors = visualResolver.resolveExternalTextures(
+                unresolvedExternalTextures,
+                importedCopies,
+                resolution,
+                deepestCataloguedLevel(cataloguedQuadPathsByImagePath) - 1
+            );
+            if (!externalDescendantAnchors.isEmpty()) {
+                externalFullPaths.putAll(externalDescendantAnchors);
+                visualDescendantFullPaths.putAll(externalDescendantAnchors);
+                replaceableExternalVisualIds.removeAll(externalDescendantAnchors.keySet());
+                continue;
+            }
+            Map<String, String> visualDescendantAnchors = visualResolver.resolve(
+                importedCopies,
+                resolution,
+                cataloguedQuadPathsByImagePath
+            );
             visualDescendantAnchors.keySet().removeAll(externalFullPaths.keySet());
             if (visualDescendantAnchors.isEmpty()) {
                 break;
@@ -114,6 +138,42 @@ public final class TopLevelLayerMerger {
                 + remainingImportedLayers.size() + " imported layer(s)."
         );
         return new MergeResult(mergedLayers, Map.copyOf(mergedFullPathByOriginalId));
+    }
+
+    private static Map<String, String> referencedExternalTexturesOfUnresolvedLayers(
+        List<MatrixLayer> layers,
+        TileRootPathResolver.Resolution resolution,
+        Map<String, String> texturePathByExternalId,
+        Set<String> alreadyAnchoredIds,
+        Set<String> replaceableAnchoredIds
+    ) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (MatrixLayer layer : layers) {
+            boolean unresolved = layer.getTiles().stream()
+                .anyMatch(tile -> resolution.pathFor(layer, tile) == null);
+            if (!unresolved) {
+                continue;
+            }
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                for (var relation : tile.getUncles()) {
+                    String id = relation == null ? null : relation.uncleContentId();
+                    String texture = id == null ? null : texturePathByExternalId.get(id);
+                    if (texture != null
+                        && (!alreadyAnchoredIds.contains(id) || replaceableAnchoredIds.contains(id))) {
+                        out.putIfAbsent(id, texture);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static int deepestCataloguedLevel(Map<String, String> pathsByImage) {
+        return pathsByImage.values().stream()
+            .filter(path -> path != null && path.matches("0[0-3]*"))
+            .mapToInt(path -> path.length() - 1)
+            .max()
+            .orElse(Integer.MAX_VALUE);
     }
 
     private static Map<String, String> collectMergedAliases(

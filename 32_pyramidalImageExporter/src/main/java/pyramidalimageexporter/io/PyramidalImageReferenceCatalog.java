@@ -8,10 +8,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 
-/** Catalogues the deepest tiles of an existing folder-based pyramidal image. */
+/** Catalogues tiles from the deepest levels of an existing folder-based pyramidal image. */
 public final class PyramidalImageReferenceCatalog {
     public Map<String, String> readDeepestLevel(Path rootFolder) {
-        Map<String, String> deepest = new LinkedHashMap<>();
+        return readDeepestLevels(rootFolder, 1);
+    }
+
+    public Map<String, String> readDeepestLevels(Path rootFolder, int levelCount) {
+        if (levelCount <= 0) {
+            throw new IllegalArgumentException("Reference level count must be positive.");
+        }
+        Map<String, String> valid = new LinkedHashMap<>();
         int deepestLevel = -1;
         try (Stream<Path> paths = Files.walk(rootFolder)) {
             for (Path path : paths.filter(Files::isRegularFile).filter(this::isPng).toList()) {
@@ -21,21 +28,25 @@ public final class PyramidalImageReferenceCatalog {
                     continue;
                 }
                 int level = quadPath.length() - 1;
-                if (level > deepestLevel) {
-                    deepest.clear();
-                    deepestLevel = level;
-                }
-                if (level == deepestLevel) {
-                    deepest.put(path.toAbsolutePath().normalize().toString(), quadPath);
-                }
+                deepestLevel = Math.max(deepestLevel, level);
+                valid.put(path.toAbsolutePath().normalize().toString(), quadPath);
             }
         }
         catch (IOException ex) {
             throw new IllegalArgumentException("Could not scan reference pyramid " + rootFolder + ": " + ex.getMessage(), ex);
         }
+        int shallowestIncludedLevel = Math.max(0, deepestLevel - levelCount + 1);
+        Map<String, String> deepest = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : valid.entrySet()) {
+            int level = entry.getValue().length() - 1;
+            if (level >= shallowestIncludedLevel) {
+                deepest.put(entry.getKey(), entry.getValue());
+            }
+        }
         System.out.println(
             "PyramidalImageReferenceCatalog: catalogued " + deepest.size()
-                + " reference tile(s) at deepest level " + deepestLevel + "."
+                + " reference tile(s) at level(s) " + shallowestIncludedLevel
+                + ".." + deepestLevel + "."
         );
         return deepest;
     }

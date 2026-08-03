@@ -188,11 +188,14 @@ correctness no longer depends on layer iteration order.
 ### Session-local export
 
 `<inputFolder>/pyramidalImage` is created if missing, and every placed tile is written
-there from this session's data. With `--reference-pyramid <folder>`, the deepest level
-of an existing pyramid is indexed read-only so external parent textures can anchor a
-sparse child layer by exact content hash. Reference tiles are never copied into the
-session pyramid. Without that option no existing pyramid is read. A re-export also
-regenerates the session output without reading its old PNGs back. Two counters are
+there from this session's data. With `--reference-pyramid <folder>`, the two deepest
+levels of an existing pyramid are indexed read-only so external parent textures can
+anchor a sparse child layer by exact content hash. If holes also remove that immediate
+parent, conservative visual matching can bridge up to three hierarchy levels; it
+requires a low-error, unique match and a strict majority of grid-offset votes.
+Reference tiles are never copied into the session pyramid. Without that option no
+existing pyramid is read. A re-export also regenerates the session output without
+reading its old PNGs back. Two counters are
 accumulated in `pyramidalimageexporter.model.PyramidalImageWriteStatistics`
 and printed to the console (via its `toString()`) once the export finishes:
 
@@ -224,8 +227,8 @@ texture source:
 ## Command-line options
 
 - `<inputFolder>` (positional, required, the only positional argument): see Inputs.
-- `--reference-pyramid <folder>`: read the deepest level of an existing pyramid as an
-  anchoring catalogue. This is useful when a sparse higher-resolution capture has no
+- `--reference-pyramid <folder>`: read the two deepest levels of an existing pyramid as
+  an anchoring catalogue. This is useful when a sparse higher-resolution capture has no
   in-session overlap with its parent level. The reference is never exported or modified.
 - `--export`: writes the pyramidal image quadtree to `<inputFolder>/pyramidalImage` and
   exits, with no GUI and no OpenGL/JOGL required (same operation as pressing `e`

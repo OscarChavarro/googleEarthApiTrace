@@ -101,7 +101,11 @@ public final class PyramidalImageExporterApplication {
         Map<String, String> cataloguedPaths = topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles);
         Map<String, String> referencePaths = referencePyramid == null
             ? Map.of()
-            : new PyramidalImageReferenceCatalog().readDeepestLevel(referencePyramid);
+            // A disconnected finest-level island is positioned through the
+            // texture of its immediate parent. Once the destination itself
+            // contains finest-level tiles, indexing only its deepest level
+            // makes those parent anchors disappear.
+            : new PyramidalImageReferenceCatalog().readDeepestLevels(referencePyramid, 2);
         Map<String, String> anchorPaths = new LinkedHashMap<>(cataloguedPaths);
         if (referencePyramid != null) {
             anchorPaths.putAll(referencePaths);

@@ -29,6 +29,23 @@ final class PyramidalImageReferenceCatalogTest {
         ), catalog);
     }
 
+    @Test
+    void cataloguesTheImmediateParentLevelNeededToAnchorDisconnectedTiles() throws IOException {
+        Files.write(tempDir.resolve("0.png"), new byte[]{0});
+        Path parent = writeTile("01");
+        Path deepestA = writeTile("012");
+        Path deepestB = writeTile("013");
+
+        Map<String, String> catalog = new PyramidalImageReferenceCatalog()
+            .readDeepestLevels(tempDir, 2);
+
+        assertEquals(Map.of(
+            parent.toAbsolutePath().normalize().toString(), "01",
+            deepestA.toAbsolutePath().normalize().toString(), "012",
+            deepestB.toAbsolutePath().normalize().toString(), "013"
+        ), catalog);
+    }
+
     private Path writeTile(String quadPath) throws IOException {
         Path directory = tempDir;
         for (int index = 1; index < quadPath.length(); index++) {
