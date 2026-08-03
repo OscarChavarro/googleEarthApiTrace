@@ -59,6 +59,11 @@ public final class KeyboardInteractionTechniques implements KeyListener {
             repaintAction.run();
             return;
         }
+        if (event.keycode == KeyEvent.KEY_SPACE) {
+            model.cycleOperationMode();
+            repaintAction.run();
+            return;
+        }
         if (event.keycode == KeyEvent.KEY_l && loadImageAction != null) {
             loadImageAction.run();
             return;
@@ -80,6 +85,16 @@ public final class KeyboardInteractionTechniques implements KeyListener {
                 paletteCycleAction.accept(event.keycode == KeyEvent.KEY_3 ? -1 : 1);
                 repaintAction.run();
             }
+            return;
+        }
+        if (event.keycode == KeyEvent.KEY_5 || event.keycode == KeyEvent.KEY_6) {
+            if (event.keycode == KeyEvent.KEY_5) {
+                model.decreaseHeightExagerationFactor();
+            }
+            else {
+                model.increaseHeightExagerationFactor();
+            }
+            repaintAction.run();
             return;
         }
         if (event.keycode == KeyEvent.KEY_o || event.keycode == KeyEvent.KEY_O) {

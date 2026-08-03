@@ -76,14 +76,20 @@ recolorean bajo demanda con la nueva paleta.
 
 Conserva los controles de `41_planetViewer`: flechas/ratón, rueda y `z`/`Z`, `r`/`R`,
 `l`, selección `1`/`2`, opacidad `o`/`O`, orden con PageUp/PageDown, vistas con
-`.`/`,`/`w`/`v`/`V`, F1..F9 y Escape. Se añaden `3`/`4` para las paletas.
+`.`/`,`/`w`/`v`/`V`, F1..F9 y Escape. Se añaden `3`/`4` para las paletas,
+`SPACE` para ciclar el modo de operación y `5`/`6` para dividir/multiplicar por dos
+la exageración vertical.
 
 ## Arquitectura para terreno
 
 `model.DemTile` es la representación canónica con halo. `io.TileImageLoader` separa la
-caché de elevaciones de las imágenes derivadas. `terrain.TerrainMeshGenerator<T>` es el
-punto de extensión preparado para una triangulación DTM posterior; no se generan ni se
-dibujan mallas todavía.
+caché de elevaciones de las imágenes derivadas. `PALETTE_BASED_IMAGE` conserva el dibujo
+2D sin iluminación. `BASIC_TRIANGULATION` genera los 256×256 vértices centrales y dos
+triángulos por celda; el halo completo participa en las normales de vértice ponderadas
+por ángulo. La elevación en metros se lleva al dominio mundial normalizado usando la
+circunferencia ecuatorial y después se multiplica por `heightExagerationFactor`.
+`terrain.TerrainMeshGenerator<T>` permanece como punto de extensión para las futuras
+triangulaciones adaptativas.
 
 ## Verificación
 

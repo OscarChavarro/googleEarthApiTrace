@@ -22,6 +22,7 @@ import java.util.List;
 import planetdemviewer.io.TileImageLoader;
 import planetdemviewer.io.TileTreeDiscoveryService;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.PscUpdater;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
@@ -47,6 +48,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
     private final PlanetViewerModel model;
     private final CameraControllerAquynza cameraController;
     private final Jogl4QuadtreeRenderer quadtreeRenderer = new Jogl4QuadtreeRenderer();
+    private final Jogl4TerrainRenderer terrainRenderer = new Jogl4TerrainRenderer();
     private final TileImageLoader tileImageLoader;
     private final TileTreeDiscoveryService treeDiscoveryService;
     private final List<View> views = new ArrayList<>();
@@ -90,7 +92,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
     }
 
     public long getGpuBytesAssigned() {
-        return quadtreeRenderer.getGpuBytesAssigned();
+        return quadtreeRenderer.getGpuBytesAssigned() + terrainRenderer.getGpuBytesAssigned();
     }
 
     public int getResidentTextureCount() {
@@ -243,6 +245,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             hudTextRenderer = null;
         }
         quadtreeRenderer.dispose(drawable.getGL().getGL2());
+        terrainRenderer.dispose(drawable.getGL().getGL4());
         Jogl4CameraRenderer.dispose(drawable.getGL().getGL4());
         tileImageLoader.shutdown();
         treeDiscoveryService.shutdown();
@@ -310,15 +313,37 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         boolean wires = view.getRenderingConfiguration().isWiresSet();
         for (PyramidalImageInstance instance : orderedByStackHeight()) {
             double relativeScale = model.relativeScale(instance.getPsc());
-            quadtreeRenderer.draw(
-                gl2,
-                instance,
-                cullingCamera,
-                relativeScale,
-                wires,
-                tileImageLoader,
-                treeDiscoveryService
-            );
+            if (model.getOperationMode() == OperationModes.BASIC_TRIANGULATION) {
+                model.positionTerrainLightBehind(view.getCamera());
+                terrainRenderer.draw(
+                    gl,
+                    instance,
+                    cullingCamera,
+                    view.getCamera(),
+                    relativeScale,
+                    model.getHeightExagerationFactor(),
+                    view.getRenderingConfiguration(),
+                    model.getTerrainLight(),
+                    model.getTerrainMaterial(),
+                    tileImageLoader,
+                    treeDiscoveryService
+                );
+            }
+            else {
+                // The palette path is intentionally unlit and retains the
+                // compatibility texture renderer used before terrain modes.
+                gl.glUseProgram(0);
+                gl2.glDisable(GL2.GL_LIGHTING);
+                quadtreeRenderer.draw(
+                    gl2,
+                    instance,
+                    cullingCamera,
+                    relativeScale,
+                    wires,
+                    tileImageLoader,
+                    treeDiscoveryService
+                );
+            }
         }
 
         drawOtherCameraFrustums(gl, view);
@@ -440,15 +465,23 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             16, canvasHeight - 46
         );
         hudTextRenderer.draw(
+            "Mode: " + model.getOperationMode()
+                + " | height exaggeration: " + String.format("%.4gx", model.getHeightExagerationFactor())
+                + " | terrain meshes: " + terrainRenderer.getResidentMeshCount()
+                + " (" + (terrainRenderer.getGpuBytesAssigned() / (1024 * 1024)) + " MB)"
+                + " | SPACE: next mode | height: 5/6",
+            16, canvasHeight - 68
+        );
+        hudTextRenderer.draw(
             "Palette: " + model.getPalettes().selectedName()
                 + " (" + model.getPalettes().minimumElevation() + ".." + model.getPalettes().maximumElevation() + " m)"
                 + " | Previous/next palette: 3/4",
-            16, canvasHeight - 68
+            16, canvasHeight - 90
         );
         hudTextRenderer.draw(
             "Zoom: wheel/z/Z | Reset: r/R | Load: l | Image: 1/2 | Opacity: o/O | Stack z: PgUp/PgDn"
                 + " | View: ./,/w/v/V | ESC: exit",
-            16, canvasHeight - 90
+            16, canvasHeight - 112
         );
         hudTextRenderer.endRendering();
     }

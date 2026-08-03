@@ -20,6 +20,8 @@ public final class Configuration {
     public static final Path PALETTE_DIRECTORY = Path.of("../etc/palettes");
     public static final int MINIMUM_ELEVATION_METRES = 0;
     public static final int MAXIMUM_ELEVATION_METRES = 12_000;
+    /** The normalized world domain is 360 degrees wide, i.e. one equatorial circumference. */
+    public static final double WORLD_WIDTH_METRES = 40_075_016.686;
 
     /**
      * Keeps most of a large JVM heap available for DEM data while preserving

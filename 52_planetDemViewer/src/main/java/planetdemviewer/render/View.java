@@ -23,6 +23,9 @@ public final class View {
     public View(String title, Camera camera) {
         this.title = title;
         this.camera = camera;
+        renderingConfiguration.setTexture(false);
+        renderingConfiguration.setBumpMap(false);
+        renderingConfiguration.setShadingType(RendererConfiguration.SHADING_TYPE_PHONG);
     }
 
     public Camera getCamera() {

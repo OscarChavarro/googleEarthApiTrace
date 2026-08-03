@@ -20,7 +20,8 @@ import planetdemviewer.palette.PaletteCatalog;
 public final class TileImageLoader {
     private final ExecutorService pool;
     private final PaletteCatalog palettes;
-    private final Set<String> pending = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingImages = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingElevations = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, DemTile> elevations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, BufferedImage> readyImages = new ConcurrentHashMap<>();
     private final Object cacheLock = new Object();
@@ -53,7 +54,7 @@ public final class TileImageLoader {
 
     public void requestLoad(File tileFile) {
         String path = tileFile.getAbsolutePath();
-        if (readyImages.containsKey(path) || !pending.add(path)) {
+        if (readyImages.containsKey(path) || !pendingImages.add(path)) {
             return;
         }
         long requestedGeneration = paletteGeneration;
@@ -73,9 +74,36 @@ public final class TileImageLoader {
                 // The renderer continues with the nearest available ancestor.
             }
             finally {
-                pending.remove(path);
+                pendingImages.remove(path);
             }
         });
+    }
+
+    /** Requests only the halo-preserving DEM data needed by terrain modes. */
+    public void requestElevation(File tileFile) {
+        String path = tileFile.getAbsolutePath();
+        if (elevations.containsKey(path) || !pendingElevations.add(path)) {
+            return;
+        }
+        pool.submit(() -> {
+            try {
+                getOrRead(tileFile);
+                Runnable callback = onTileReady;
+                if (callback != null) {
+                    callback.run();
+                }
+            }
+            catch (IOException ignored) {
+                // A sparse or damaged tile is simply unavailable to the renderer.
+            }
+            finally {
+                pendingElevations.remove(path);
+            }
+        });
+    }
+
+    public DemTile peekElevation(File tileFile) {
+        return elevations.get(tileFile.getAbsolutePath());
     }
 
     public BufferedImage loadSynchronously(File tileFile) throws IOException {
