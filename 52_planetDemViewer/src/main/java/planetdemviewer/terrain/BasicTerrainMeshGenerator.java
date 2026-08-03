@@ -1,5 +1,6 @@
 package planetdemviewer.terrain;
 
+import java.util.List;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.model.DemTile;
 import planetdemviewer.model.QuadtreeNode;
@@ -15,9 +16,15 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
 
     @Override
     public TriangleMesh generate(QuadtreeNode node, DemTile elevationsWithHalo) {
+        return generate(node, elevationsWithHalo, List.of());
+    }
+
+    public TriangleMesh generate(QuadtreeNode node, DemTile elevationsWithHalo,
+                                 List<TerrainSeamConstraint> seamConstraints) {
         if (node == null || elevationsWithHalo == null) {
             throw new IllegalArgumentException("A quadtree node and DEM tile are required");
         }
+        HeightField heightField = new HeightField(node, elevationsWithHalo, seamConstraints);
 
         TriangleMesh mesh = new TriangleMesh();
         mesh.setName("DEM " + node.getId());
@@ -35,10 +42,10 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
                 int p = vertex * 3;
                 positions[p] = node.getX0() - 0.5 + column * stepX;
                 positions[p + 1] = node.getY1() - 0.5 - row * stepY;
-                positions[p + 2] = normalizedElevation(elevationsWithHalo.elevation(row + 1, column + 1));
+                positions[p + 2] = heightField.elevation(row + 1, column + 1);
 
                 double[] normal = angleWeightedNormal(
-                    elevationsWithHalo, row + 1, column + 1, stepX, stepY);
+                    heightField, row + 1, column + 1, stepX, stepY);
                 normals[p] = normal[0];
                 normals[p + 1] = normal[1];
                 normals[p + 2] = normal[2];
@@ -93,17 +100,17 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
         return count;
     }
 
-    private static double[] angleWeightedNormal(DemTile tile, int storedRow, int storedColumn,
+    private static double[] angleWeightedNormal(HeightField field, int storedRow, int storedColumn,
                                                  double stepX, double stepY) {
-        if (!valid(tile, storedRow, storedColumn)) {
+        if (!field.valid(storedRow, storedColumn)) {
             return new double[] {0.0, 0.0, 1.0};
         }
         double[] sum = new double[3];
         for (int cellRow = storedRow - 1; cellRow <= storedRow; cellRow++) {
             for (int cellColumn = storedColumn - 1; cellColumn <= storedColumn; cellColumn++) {
-                accumulateTriangle(tile, storedRow, storedColumn, stepX, stepY, sum,
+                accumulateTriangle(field, storedRow, storedColumn, stepX, stepY, sum,
                     cellRow, cellColumn, cellRow + 1, cellColumn, cellRow, cellColumn + 1);
-                accumulateTriangle(tile, storedRow, storedColumn, stepX, stepY, sum,
+                accumulateTriangle(field, storedRow, storedColumn, stepX, stepY, sum,
                     cellRow, cellColumn + 1, cellRow + 1, cellColumn,
                     cellRow + 1, cellColumn + 1);
             }
@@ -115,17 +122,17 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
         return new double[] {sum[0] / length, sum[1] / length, sum[2] / length};
     }
 
-    private static void accumulateTriangle(DemTile tile, int targetRow, int targetColumn,
+    private static void accumulateTriangle(HeightField field, int targetRow, int targetColumn,
                                            double stepX, double stepY, double[] sum,
                                            int r0, int c0, int r1, int c1, int r2, int c2) {
         if (!contains(targetRow, targetColumn, r0, c0, r1, c1, r2, c2)
             || !insideStored(r0, c0) || !insideStored(r1, c1) || !insideStored(r2, c2)
-            || !valid(tile, r0, c0) || !valid(tile, r1, c1) || !valid(tile, r2, c2)) {
+            || !field.valid(r0, c0) || !field.valid(r1, c1) || !field.valid(r2, c2)) {
             return;
         }
-        double[] p0 = point(tile, r0, c0, stepX, stepY);
-        double[] p1 = point(tile, r1, c1, stepX, stepY);
-        double[] p2 = point(tile, r2, c2, stepX, stepY);
+        double[] p0 = point(field, r0, c0, stepX, stepY);
+        double[] p1 = point(field, r1, c1, stepX, stepY);
+        double[] p2 = point(field, r2, c2, stepX, stepY);
         double[] target;
         double[] other1;
         double[] other2;
@@ -154,11 +161,11 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
         sum[2] += face[2] / faceLength * angle;
     }
 
-    private static double[] point(DemTile tile, int row, int column, double stepX, double stepY) {
+    private static double[] point(HeightField field, int row, int column, double stepX, double stepY) {
         return new double[] {
             (column - 1) * stepX,
             -(row - 1) * stepY,
-            normalizedElevation(tile.elevation(row, column))
+            field.elevation(row, column)
         };
     }
 
@@ -204,5 +211,113 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
 
     private static double length(double[] a) {
         return Math.sqrt(dot(a, a));
+    }
+
+    /** Normalized elevations after snapping stitched edges and their outside halo. */
+    private static final class HeightField {
+        private static final double WEIGHT_EPSILON = 1e-12;
+        private final double[] values = new double[DemTile.SAMPLE_COUNT];
+        private final boolean[] valid = new boolean[DemTile.SAMPLE_COUNT];
+
+        HeightField(QuadtreeNode fineNode, DemTile fineTile,
+                    List<TerrainSeamConstraint> constraints) {
+            for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+                for (int column = 0; column < DemTile.STORED_SIZE; column++) {
+                    int index = index(row, column);
+                    short elevation = fineTile.elevation(row, column);
+                    valid[index] = elevation != DemTile.NO_DATA;
+                    values[index] = normalizedElevation(elevation);
+                }
+            }
+            if (constraints == null || constraints.isEmpty()) {
+                return;
+            }
+
+            double[] stitchedSums = new double[DemTile.SAMPLE_COUNT];
+            int[] stitchedCounts = new int[DemTile.SAMPLE_COUNT];
+            double stepX = (fineNode.getX1() - fineNode.getX0()) / (CORE - 1.0);
+            double stepY = (fineNode.getY1() - fineNode.getY0()) / (CORE - 1.0);
+            for (TerrainSeamConstraint constraint : constraints) {
+                for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+                    for (int column = 0; column < DemTile.STORED_SIZE; column++) {
+                        if (!affected(constraint.fineEdge(), row, column)) {
+                            continue;
+                        }
+                        double x = fineNode.getX0() + (column - 1) * stepX;
+                        double y = fineNode.getY1() - (row - 1) * stepY;
+                        Sample sample = sampleCoarse(constraint, x, y);
+                        if (sample.valid) {
+                            int index = index(row, column);
+                            stitchedSums[index] += sample.elevation;
+                            stitchedCounts[index]++;
+                        }
+                    }
+                }
+            }
+            for (int i = 0; i < values.length; i++) {
+                if (stitchedCounts[i] > 0) {
+                    values[i] = stitchedSums[i] / stitchedCounts[i];
+                    valid[i] = true;
+                }
+            }
+        }
+
+        double elevation(int row, int column) {
+            return values[index(row, column)];
+        }
+
+        boolean valid(int row, int column) {
+            return insideStored(row, column) && valid[index(row, column)];
+        }
+
+        private static boolean affected(TerrainEdge edge, int row, int column) {
+            return switch (edge) {
+                case NORTH -> row <= 1;
+                case SOUTH -> row >= CORE;
+                case WEST -> column <= 1;
+                case EAST -> column >= CORE;
+            };
+        }
+
+        private static Sample sampleCoarse(TerrainSeamConstraint constraint, double x, double y) {
+            QuadtreeNode coarse = constraint.coarseNode();
+            double columnPosition = (x - coarse.getX0()) / (coarse.getX1() - coarse.getX0()) * (CORE - 1.0);
+            double rowPosition = (coarse.getY1() - y) / (coarse.getY1() - coarse.getY0()) * (CORE - 1.0);
+            if (columnPosition < -WEIGHT_EPSILON || columnPosition > CORE - 1 + WEIGHT_EPSILON
+                || rowPosition < -WEIGHT_EPSILON || rowPosition > CORE - 1 + WEIGHT_EPSILON) {
+                return Sample.INVALID;
+            }
+            columnPosition = Math.max(0.0, Math.min(CORE - 1.0, columnPosition));
+            rowPosition = Math.max(0.0, Math.min(CORE - 1.0, rowPosition));
+            int c0 = (int) Math.floor(columnPosition);
+            int r0 = (int) Math.floor(rowPosition);
+            int c1 = Math.min(CORE - 1, c0 + 1);
+            int r1 = Math.min(CORE - 1, r0 + 1);
+            double tx = columnPosition - c0;
+            double ty = rowPosition - r0;
+            int[] rows = {r0, r0, r1, r1};
+            int[] columns = {c0, c1, c0, c1};
+            double[] weights = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
+            double result = 0.0;
+            for (int i = 0; i < weights.length; i++) {
+                if (weights[i] <= WEIGHT_EPSILON) {
+                    continue;
+                }
+                short elevation = constraint.coarseElevations().elevation(rows[i] + 1, columns[i] + 1);
+                if (elevation == DemTile.NO_DATA) {
+                    return Sample.INVALID;
+                }
+                result += weights[i] * normalizedElevation(elevation);
+            }
+            return new Sample(true, result);
+        }
+
+        private static int index(int row, int column) {
+            return row * DemTile.STORED_SIZE + column;
+        }
+
+        private record Sample(boolean valid, double elevation) {
+            private static final Sample INVALID = new Sample(false, 0.0);
+        }
     }
 }

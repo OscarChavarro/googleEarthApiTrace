@@ -91,6 +91,15 @@ circunferencia ecuatorial y después se multiplica por `heightExagerationFactor`
 `terrain.TerrainMeshGenerator<T>` permanece como punto de extensión para las futuras
 triangulaciones adaptativas.
 
+Después del culling, `TerrainSeamStitcher` analiza la frontera de quadtree que se va a
+dibujar. Cuando un borde fino toca un tile de menor nivel, sus alturas se sustituyen por
+la interpolación lineal del borde grueso. El halo exterior usado para las normales se
+muestrea bilinealmente sobre ese mismo DEM grueso, evitando una discontinuidad de luz
+en la costura. El análisis y la generación de variantes se ejecutan en un pool de hasta
+ocho hilos. Un LRU conserva tanto fronteras completas como relaciones individuales de
+pares, por lo que también se reutiliza la parte estable cuando cambia solo una zona del
+frame. Las variantes ya subidas se conservan en la caché GPU hasta alcanzar su presupuesto.
+
 ## Verificación
 
 ```bash

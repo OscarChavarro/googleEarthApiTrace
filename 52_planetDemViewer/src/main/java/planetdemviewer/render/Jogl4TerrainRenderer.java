@@ -9,15 +9,15 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.io.TileImageLoader;
 import planetdemviewer.io.TileTreeDiscoveryService;
-import planetdemviewer.model.DemTile;
 import planetdemviewer.model.PyramidalImageInstance;
-import planetdemviewer.model.QuadtreeNode;
 import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.processing.QuadtreeDrawPlanner;
-import planetdemviewer.terrain.BasicTerrainMeshGenerator;
+import planetdemviewer.terrain.TerrainSeamStitcher;
+import planetdemviewer.terrain.TerrainTilePlan;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
@@ -36,7 +36,7 @@ public final class Jogl4TerrainRenderer {
     private static final float LINE_OFFSET_FACTOR = -1.0f;
     private static final float LINE_OFFSET_UNITS = -1.0f;
 
-    private final BasicTerrainMeshGenerator meshGenerator = new BasicTerrainMeshGenerator();
+    private final TerrainSeamStitcher seamStitcher = new TerrainSeamStitcher();
     private final Map<String, GpuMesh> meshes = new LinkedHashMap<>(64, 0.75f, true);
     private long gpuBytes;
 
@@ -55,21 +55,38 @@ public final class Jogl4TerrainRenderer {
     ) {
         List<DrawCommand> commands = QuadtreeDrawPlanner.select(instance, cullingCamera, relativeScale);
         for (DrawCommand command : commands) {
-            QuadtreeNode node = command.node();
             if (discoveryService != null) {
-                discoveryService.requestVisible(instance.getImage(), node);
+                discoveryService.requestVisible(instance.getImage(), command.node());
             }
-            if (node.getTileFile() == null) {
-                continue;
+        }
+
+        List<TerrainTilePlan> plans = seamStitcher.plan(commands);
+        Map<String, CompletableFuture<TriangleMesh>> preparations = new LinkedHashMap<>();
+        for (TerrainTilePlan plan : plans) {
+            if (!meshes.containsKey(plan.variantKey())) {
+                CompletableFuture<TriangleMesh> preparation = seamStitcher.prepare(plan, loader);
+                if (preparation != null) {
+                    preparations.put(plan.variantKey(), preparation);
+                }
             }
-            GpuMesh mesh = meshes.get(node.getTileFile().getAbsolutePath());
+        }
+
+        for (TerrainTilePlan plan : plans) {
+            GpuMesh mesh = meshes.get(plan.variantKey());
             if (mesh == null) {
-                DemTile tile = loader.peekElevation(node.getTileFile());
-                if (tile == null) {
-                    loader.requestElevation(node.getTileFile());
+                CompletableFuture<TriangleMesh> preparation = preparations.get(plan.variantKey());
+                if (preparation == null) {
                     continue;
                 }
-                mesh = acquire(gl, node, tile);
+                try {
+                    mesh = acquire(gl, plan.variantKey(), preparation.join());
+                }
+                catch (RuntimeException ignored) {
+                    // Keep rendering other tiles; a later frame may retry after cache eviction.
+                    seamStitcher.releasePreparedMesh(plan.variantKey());
+                    continue;
+                }
+                seamStitcher.releasePreparedMesh(plan.variantKey());
             }
             Matrix4x4d modelMatrix = new Matrix4x4d()
                 .translation(instance.getOffsetX(), instance.getOffsetY(), instance.getZOffset() * 1e-4)
@@ -170,13 +187,11 @@ public final class Jogl4TerrainRenderer {
         setInt(gl, program, "withBumpMap", 0);
     }
 
-    private GpuMesh acquire(GL4 gl, QuadtreeNode node, DemTile tile) {
-        String key = node.getTileFile().getAbsolutePath();
+    private GpuMesh acquire(GL4 gl, String key, TriangleMesh generated) {
         GpuMesh cached = meshes.get(key);
         if (cached != null) {
             return cached;
         }
-        TriangleMesh generated = meshGenerator.generate(node, tile);
         GpuMesh uploaded = upload(gl, generated);
         meshes.put(key, uploaded);
         gpuBytes += uploaded.byteCount;
@@ -237,6 +252,7 @@ public final class Jogl4TerrainRenderer {
         }
         meshes.clear();
         gpuBytes = 0L;
+        seamStitcher.shutdown();
         Jogl4RendererConfigurationShaderSelector.dispose(gl);
     }
 
