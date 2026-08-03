@@ -37,6 +37,9 @@ The extraction workflow is split into stages. Each stage has separate codebases,
   - `51_demResampler` converts the global FABDEM V1.2 GeoTIFF elevation collection into
     the same quadtree address/folder topology, using raw little-endian Int16 DEM tiles
     instead of PNG imagery.
+  - `52_planetDemViewer` visualizes those raw DEM pyramids with JOGL, converting the
+    256x256 tile cores to textures through selectable Vitral color palettes while retaining
+    each 258x258 elevation tile (including its halo) for future terrain triangulation.
 
 ## Projects
 
@@ -51,6 +54,7 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 - [32_pyramidalImageExporter/README.md](32_pyramidalImageExporter/README.md): Imports consolidated layer matrices from `31_matrixMerger` plus global top-level tile data from `22_dumpAnalyzer`, visualizes the quadtree layers, and exports the session's pyramidal image into the input folder itself (`<inputFolder>/pyramidalImage`); it never reads or writes any other pyramidal image — cross-session merging belongs to a separate, future program.
 - [41_planetViewer/README.md](41_planetViewer/README.md): Loads one or more exported pyramidal images and visualizes them interactively or offline, including stacked overlays and multi-view inspection.
 - [51_demResampler/README.md](51_demResampler/README.md): Uses GDAL from a Java 17 CLI to resample FABDEM at quadtree level 12 and recursively build raw `256x256` Int16 little-endian elevation tiles through level 0.
+- [52_planetDemViewer/README.md](52_planetDemViewer/README.md): Interactive Java 17 + JOGL/Vitral viewer for raw `258x258` Int16 DEM pyramids with selectable elevation color palettes.
 
 ## Notes
 
