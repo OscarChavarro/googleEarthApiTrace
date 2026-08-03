@@ -507,7 +507,7 @@ while true; do
 
     module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
     run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
-        "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix"
+        "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix" "$destination"
     run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
         validate_export_log_and_pyramid "$module_32_log"
 

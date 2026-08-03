@@ -817,7 +817,7 @@ public final class MatrixMergerState {
                             relationshipClueMerges++;
                         }
                     }
-                    if (!merged) {
+                    if (!merged && haveSameDeclaredGrid(currentMatrix, nextMatrix)) {
                         merged = matrixMerger.mergeWithOffset(currentMatrix, nextMatrix, 0, 0);
                         if (merged) {
                             compatibleGridMerges++;
@@ -847,6 +847,19 @@ public final class MatrixMergerState {
             relationshipClueMerges,
             compatibleGridMerges
         );
+    }
+
+    /**
+     * A zero-offset merge has no positional evidence of its own. It is only
+     * meaningful for two partial observations of the same declared grid. In
+     * particular, do not place a small disconnected matrix at the origin of a
+     * larger matrix merely because their occupied cells happen not to clash.
+     */
+    private static boolean haveSameDeclaredGrid(FrameTileMatrix a, FrameTileMatrix b) {
+        return a != null
+            && b != null
+            && a.getRows() == b.getRows()
+            && a.getCols() == b.getCols();
     }
 
     private ParentSpaceAnchor observedParentSpaceAnchor(FrameMatrixSet child, int childLevel) {

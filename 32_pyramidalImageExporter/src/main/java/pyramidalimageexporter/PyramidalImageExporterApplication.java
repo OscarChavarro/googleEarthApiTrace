@@ -3,10 +3,12 @@ package pyramidalimageexporter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.io.MatrixLayerJsonReader;
+import pyramidalimageexporter.io.PyramidalImageReferenceCatalog;
 import pyramidalimageexporter.io.TopLevelTilesJsonReader;
 import pyramidalimageexporter.logger.AppLogger;
 import pyramidalimageexporter.model.MatrixLayer;
@@ -25,7 +27,9 @@ public final class PyramidalImageExporterApplication {
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
     private static final String DEFAULT_OFFLINE_OUTPUT = "/tmp/pyramidalImageExporter_offline.png";
     private static final String SESSION_PYRAMID_SUBFOLDER = "pyramidalImage";
-    private static final String[] VALUE_FLAGS = {"--layer", "--width", "--height", "--output"};
+    private static final String[] VALUE_FLAGS = {
+        "--layer", "--width", "--height", "--output", "--reference-pyramid"
+    };
 
     public void run(String[] args) {
         boolean offline = hasArg(args, "-offline") || hasArg(args, "--ofline") || hasArg(args, "--offline");
@@ -54,7 +58,8 @@ public final class PyramidalImageExporterApplication {
             System.exit(1);
         }
 
-        PyramidalImageExporterState model = createState(inputPath);
+        Path referencePyramid = referencePyramid(args);
+        PyramidalImageExporterState model = createState(inputPath, referencePyramid);
         model.setSessionPyramidalImageExportPath(inputPath.resolve(SESSION_PYRAMID_SUBFOLDER).toString());
         model.setRmsHeatMapEnabled(hasArg(args, "--rms-map"));
 
@@ -85,7 +90,7 @@ public final class PyramidalImageExporterApplication {
         }
     }
 
-    private static PyramidalImageExporterState createState(Path inputPath) {
+    private static PyramidalImageExporterState createState(Path inputPath, Path referencePyramid) {
         PyramidalImageExporterState model = new PyramidalImageExporterState();
         model.setInputFolder(inputPath.toString());
         List<MatrixLayer> importedLayers = new MatrixLayerJsonReader().readAllFromInput(inputPath);
@@ -94,19 +99,27 @@ public final class PyramidalImageExporterApplication {
         TopLevelMatrixRebuilder topLevelMatrixRebuilder = new TopLevelMatrixRebuilder();
         TopLevelTilesCatalog topLevelTiles = topLevelTilesReader.read(outputDirectory).orElse(null);
         Map<String, String> cataloguedPaths = topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles);
+        Map<String, String> referencePaths = referencePyramid == null
+            ? Map.of()
+            : new PyramidalImageReferenceCatalog().readDeepestLevel(referencePyramid);
+        Map<String, String> anchorPaths = new LinkedHashMap<>(cataloguedPaths);
+        if (referencePyramid != null) {
+            anchorPaths.putAll(referencePaths);
+        }
         TopLevelLayerMerger.MergeResult mergeResult = new TopLevelLayerMerger().merge(
             topLevelMatrixRebuilder.importLayers(topLevelTiles),
             importedLayers,
-            cataloguedPaths,
+            anchorPaths,
             outputDirectory
         );
 
         model.setMatrixLayers(mergeResult.layers());
         model.setMergedFullPathByOriginalId(mergeResult.mergedFullPathByOriginalId());
         model.setCataloguedQuadPathsByImagePath(cataloguedPaths);
+        model.setReferenceQuadPathsByImagePath(referencePaths);
         ExternalUncleBridgeBuilder.Bridge diagnosticBridge = new ExternalUncleBridgeBuilder().build(
             mergeResult.layers(),
-            cataloguedPaths,
+            anchorPaths,
             outputDirectory
         );
         UncleRmsAnalyzer.Analysis rmsAnalysis =
@@ -121,6 +134,19 @@ public final class PyramidalImageExporterApplication {
                 + " declared quadrant(s) were not the minimum RMS."
         );
         return model;
+    }
+
+    private static Path referencePyramid(String[] args) {
+        String rawPath = stringArgValue(args, "--reference-pyramid", null);
+        if (rawPath == null || rawPath.isBlank()) {
+            return null;
+        }
+        Path path = Path.of(rawPath).toAbsolutePath().normalize();
+        if (!Files.isDirectory(path) || !Files.isReadable(path) || !Files.isRegularFile(path.resolve("0.png"))) {
+            AppLogger.error("Reference pyramid is not accessible or has no 0.png: " + path);
+            System.exit(1);
+        }
+        return path;
     }
 
     private static boolean hasArg(String[] args, String flag) {
@@ -197,7 +223,8 @@ public final class PyramidalImageExporterApplication {
     private static void printUsage() {
         System.err.println(
             "Usage: gradle run --args=\"<inputFolder> "
-                + "[--export] [--offline] [--layer <i>] [--width <px>] [--height <px>] [--output <path>] [--wires] [--rms-map]\""
+                + "[--export] [--offline] [--reference-pyramid <folder>] [--layer <i>] "
+                + "[--width <px>] [--height <px>] [--output <path>] [--wires] [--rms-map]\""
         );
     }
 

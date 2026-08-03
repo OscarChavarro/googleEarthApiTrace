@@ -187,11 +187,12 @@ correctness no longer depends on layer iteration order.
 
 ### Session-local export
 
-The export is strictly session-local: `<inputFolder>/pyramidalImage` is created if
-missing, and every placed tile is simply written there from this session's data. No
-existing pyramidal image is ever read — not the tiles of a shared/consolidated pyramid
-(the tool has no access to one), and not even the PNGs left by a previous export of the
-same session (a re-export regenerates them without reading them back). Two counters are
+`<inputFolder>/pyramidalImage` is created if missing, and every placed tile is written
+there from this session's data. With `--reference-pyramid <folder>`, the deepest level
+of an existing pyramid is indexed read-only so external parent textures can anchor a
+sparse child layer by exact content hash. Reference tiles are never copied into the
+session pyramid. Without that option no existing pyramid is read. A re-export also
+regenerates the session output without reading its old PNGs back. Two counters are
 accumulated in `pyramidalimageexporter.model.PyramidalImageWriteStatistics`
 and printed to the console (via its `toString()`) once the export finishes:
 
@@ -201,9 +202,10 @@ and printed to the console (via its `toString()`) once the export finishes:
 
 Before root-path resolution runs, the exporter also performs a content-hash anchoring
 pass: if a `matrix_<n>/matrixLayer.json` tile uses a texture that is byte-for-byte
-identical to an already catalogued top-level image, its `id` is rewritten in memory and
-persisted back to that `matrixLayer.json` as the resolved quadtree path. This is a real
-source-data side effect of exporting, not just an in-memory optimization.
+identical to an already catalogued image, its `id` is rewritten in memory and persisted
+back to that `matrixLayer.json` as the resolved quadtree path. Hashes that occur at more
+than one quadtree path are rejected as ambiguous. This is a real source-data side effect
+of exporting, not just an in-memory optimization.
 
 Combining this session pyramid with the pyramids of other capture sessions into one
 consolidated pyramidal image — including any cross-session verification, conflict
@@ -222,6 +224,9 @@ texture source:
 ## Command-line options
 
 - `<inputFolder>` (positional, required, the only positional argument): see Inputs.
+- `--reference-pyramid <folder>`: read the deepest level of an existing pyramid as an
+  anchoring catalogue. This is useful when a sparse higher-resolution capture has no
+  in-session overlap with its parent level. The reference is never exported or modified.
 - `--export`: writes the pyramidal image quadtree to `<inputFolder>/pyramidalImage` and
   exits, with no GUI and no OpenGL/JOGL required (same operation as pressing `e`
   interactively).

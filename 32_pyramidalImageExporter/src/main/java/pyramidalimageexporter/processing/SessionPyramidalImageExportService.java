@@ -88,12 +88,12 @@ public final class SessionPyramidalImageExportService {
         Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
         new FrameJsonUncleMetadataRestorer().enrich(model.getMatrixLayers(), outputDirectory);
 
-        Map<String, String> externalFullPaths =
-            buildExternalUncleFullPaths(model.getCataloguedQuadPathsByImagePath());
+        Map<String, String> anchorCatalog = anchorCatalog(model);
+        Map<String, String> externalFullPaths = buildExternalUncleFullPaths(anchorCatalog);
         externalFullPaths.putAll(model.getMergedFullPathByOriginalId());
         ExternalUncleBridgeBuilder.Bridge bridge = new ExternalUncleBridgeBuilder().build(
             model.getMatrixLayers(),
-            model.getCataloguedQuadPathsByImagePath(),
+            anchorCatalog,
             outputDirectory
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
@@ -269,7 +269,7 @@ public final class SessionPyramidalImageExportService {
             return;
         }
         ContentHashRootPathResolver resolver = new ContentHashRootPathResolver();
-        resolver.indexCataloguedImages(model.getCataloguedQuadPathsByImagePath());
+        resolver.indexCataloguedImages(anchorCatalog(model));
 
         MatrixLayerIdRewriteWriter rewriter = new MatrixLayerIdRewriteWriter();
         for (MatrixLayer layer : model.getMatrixLayers()) {
@@ -304,6 +304,12 @@ public final class SessionPyramidalImageExportService {
 
     private static boolean isQuadPath(String id) {
         return id != null && id.matches("0[0-3]*");
+    }
+
+    private static Map<String, String> anchorCatalog(PyramidalImageExporterState model) {
+        Map<String, String> catalog = new LinkedHashMap<>(model.getCataloguedQuadPathsByImagePath());
+        catalog.putAll(model.getReferenceQuadPathsByImagePath());
+        return catalog;
     }
 
     /**

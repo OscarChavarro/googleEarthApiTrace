@@ -25,6 +25,7 @@ public final class PyramidalImageExporterState {
     private long gpuTextureBytesAssigned = 0L;
     private int selectedLayerIndex = 0;
     private Map<String, String> cataloguedQuadPathsByImagePath = Map.of();
+    private Map<String, String> referenceQuadPathsByImagePath = Map.of();
     private Map<String, String> mergedFullPathByOriginalId = Map.of();
     private UncleRmsAnalyzer.Analysis uncleRmsAnalysis = UncleRmsAnalyzer.Analysis.empty();
     private boolean rmsHeatMapEnabled;
@@ -58,6 +59,16 @@ public final class PyramidalImageExporterState {
         this.cataloguedQuadPathsByImagePath = cataloguedQuadPathsByImagePath == null
             ? Map.of()
             : Map.copyOf(cataloguedQuadPathsByImagePath);
+    }
+
+    public Map<String, String> getReferenceQuadPathsByImagePath() {
+        return referenceQuadPathsByImagePath;
+    }
+
+    public void setReferenceQuadPathsByImagePath(Map<String, String> referenceQuadPathsByImagePath) {
+        this.referenceQuadPathsByImagePath = referenceQuadPathsByImagePath == null
+            ? Map.of()
+            : Map.copyOf(referenceQuadPathsByImagePath);
     }
 
     public Map<String, String> getMergedFullPathByOriginalId() {

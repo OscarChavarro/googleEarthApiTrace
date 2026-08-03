@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
 
 /**
  * Repairs uncle references that dangle because their target tile did not
@@ -49,6 +50,8 @@ public final class ExternalUncleBridgeBuilder {
             return new Bridge(fullPathByExternalId, aliasById, texturePathByExternalId);
         }
         Map<String, String> catalogued = quadLabelByImagePath == null ? Map.of() : quadLabelByImagePath;
+        ContentHashRootPathResolver contentResolver = new ContentHashRootPathResolver();
+        contentResolver.indexCataloguedImages(catalogued);
 
         Set<String> loadedIds = new HashSet<>();
         Map<String, String> tileIdByTexture = new HashMap<>();
@@ -80,6 +83,9 @@ public final class ExternalUncleBridgeBuilder {
                 }
                 tileIdByTexture.putIfAbsent(canonicalTexture, tile.getId());
                 String label = catalogued.get(canonicalTexture);
+                if (label == null) {
+                    label = contentResolver.resolveQuadPath(canonicalTexture).orElse(null);
+                }
                 if (label != null) {
                     fullPathByExternalId.putIfAbsent(tile.getId(), requireFullPath(label));
                 }
@@ -100,12 +106,18 @@ public final class ExternalUncleBridgeBuilder {
                         || fullPathByExternalId.containsKey(uncleId) || aliasById.containsKey(uncleId)) {
                         continue;
                     }
-                    String textureFile = danglingUncleTexture(uncleId, outputDirectory);
+                    String textureFile = texturePathByExternalId.get(uncleId);
+                    if (textureFile == null) {
+                        textureFile = danglingUncleTexture(uncleId, outputDirectory);
+                    }
                     if (textureFile == null) {
                         continue;
                     }
                     texturePathByExternalId.putIfAbsent(uncleId, textureFile);
                     String label = catalogued.get(textureFile);
+                    if (label == null) {
+                        label = contentResolver.resolveQuadPath(textureFile).orElse(null);
+                    }
                     if (label != null) {
                         fullPathByExternalId.put(uncleId, requireFullPath(label));
                         continue;

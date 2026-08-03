@@ -364,6 +364,27 @@ final class MatrixMergerStateTest {
     }
 
     @Test
+    void doesNotPlaceAStandaloneSmallGridAtTheOriginOfALargerGrid() {
+        FrameMatrixSet large = frameWithTiles(10, List.of(
+            tile("10_1", 0, 1),
+            tile("10_2", 1, 1)
+        ), 4, 4);
+        FrameMatrixSet isolated = frameWithTiles(20, List.of(
+            tile("20_1", 0, 0),
+            tile("20_2", 1, 0),
+            tile("20_3", 2, 0)
+        ), 3, 1);
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(large, isolated));
+
+        MatrixMergerState.SameLevelCollapseReport report =
+            state.collapseAdjacentMatricesAtSameHierarchyLevel();
+
+        assertEquals(0, report.compatibleGridMergeCount());
+        assertEquals(2, state.getMatrixCount());
+    }
+
+    @Test
     void neverCollapsesAdjacentMatricesFromDifferentLevels() {
         FrameMatrixSet parent = frame(10, "10_1", null, "10_2");
         FrameMatrixSet child = frame(20, "10_1", "10_2", "20_1");
