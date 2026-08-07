@@ -15,6 +15,29 @@ import org.junit.jupiter.api.Test;
 
 final class MatrixMergerStateTest {
     @Test
+    void preservesMissingHierarchyLevelsFromAGenericAncestorRelationship() {
+        FrameMatrixSet ancestor = frame(10, "10_1", null);
+        FrameMatrixSet island = frame(30, "30_1", null);
+        island.getMatrices().get(0).getTiles().get(0).setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.EAST_SOUTH,
+            "10_1",
+            matrixmerger.processing.uncles.UncleRelationshipKind.ADJACENT_BORDER,
+            2,
+            2,
+            4
+        )));
+        MatrixMergerState state = new MatrixMergerState();
+
+        state.setFrameMatrices(List.of(island, ancestor));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(List.of(0, 2), state.getHierarchyOrderDiagnostics().stream()
+            .map(MatrixMergerState.HierarchyOrderDiagnostic::level)
+            .toList());
+        assertEquals(2, state.getFrameMatrices().get(1).getParentLevelDelta());
+    }
+
+    @Test
     void sortsMatricesFromTopToBottomUsingUncleRelationships() {
         FrameMatrixSet deepest = frame(-1, "30_1", "20_1");
         FrameMatrixSet top = frame(-1, "10_1", null);

@@ -73,13 +73,11 @@ public final class TopLevelTileIdentity implements Comparable<TopLevelTileIdenti
         }
     }
 
-    public Vector3Dd[] getDeDuplicatedVertices() {
-        Vector3Dd[] copy = new Vector3Dd[deDuplicatedVertices.length];
-        for (int i = 0; i < deDuplicatedVertices.length; i++) {
-            Vector3Dd v = deDuplicatedVertices[i];
-            copy[i] = v == null ? null : Vector3Dd.copyOf(v);
-        }
-        return copy;
+    public List<DeDuplicatedVertex> getDeDuplicatedVertices() {
+        return Arrays.stream(deDuplicatedVertices)
+            .filter(Objects::nonNull)
+            .map(vertex -> new DeDuplicatedVertex(vertex.x(), vertex.y(), vertex.z()))
+            .toList();
     }
 
     @Override
@@ -228,4 +226,5 @@ public final class TopLevelTileIdentity implements Comparable<TopLevelTileIdenti
 
     public record TexCoordRange(double u0, double v0, double u1, double v1) {}
     public record FrameAppearance(int frameId, String imageId, String imagePath, TexCoordRange texCoord) {}
+    public record DeDuplicatedVertex(double x, double y, double z) {}
 }

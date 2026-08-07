@@ -42,4 +42,38 @@ final class FrameTileJsonReaderTest {
         );
         assertNull(tiles.get(0).getUncles().get(1).relationshipKind());
     }
+
+    @Test
+    void readsGenericAncestorOffsetsAndCompactReferenceGeometry() throws Exception {
+        List<TileInstance> tiles = new FrameTileJsonReader().read(JSON.readTree("""
+            {
+              "id": 40,
+              "tiles": [{
+                "contentId": "40_1",
+                "textureFile": "/tmp/reference.png",
+                "relationshipGeometries": [{
+                  "vertexCount": 4,
+                  "vertices": [
+                    {"x":0,"y":0,"z":0,"u":0.25,"v":0.25},
+                    {"x":0,"y":1,"z":0,"u":0.25,"v":0.5},
+                    {"x":1,"y":0,"z":0,"u":0.5,"v":0.25},
+                    {"x":1,"y":1,"z":0,"u":0.5,"v":0.5}
+                  ]
+                }],
+                "uncles": [{
+                  "referenceContentId": "30_1",
+                  "relationshipKind": "ADJACENT_BORDER",
+                  "levelDelta": 2,
+                  "rowOffset": 2,
+                  "columnOffset": 4
+                }]
+              }]
+            }
+            """));
+
+        assertEquals(1, tiles.get(0).getRelationshipGeometries().size());
+        assertEquals("00030_1", tiles.get(0).getUncles().get(0).referenceContentId());
+        assertEquals(2, tiles.get(0).getUncles().get(0).levelDelta());
+        assertEquals(4, tiles.get(0).getUncles().get(0).columnOffset());
+    }
 }

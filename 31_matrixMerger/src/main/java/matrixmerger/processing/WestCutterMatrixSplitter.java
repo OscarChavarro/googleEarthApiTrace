@@ -128,6 +128,7 @@ public final class WestCutterMatrixSplitter {
                     inheritedTransform.colOffset() + splitColumn
                 )
         );
+        mainFrame.setParentLevelDelta(frame.getParentLevelDelta());
         mainFrame.setInferredParent(frame.getInferredParent());
 
         int leftMaxJ = Integer.MIN_VALUE;
@@ -146,6 +147,7 @@ public final class WestCutterMatrixSplitter {
         transientFrame.setHierarchyUnclesByTileId(filterHierarchyUncles(frame, leftTiles));
         transientFrame.setHierarchyRelationshipsByTileId(filterHierarchyRelationships(frame, leftTiles));
         transientFrame.setParentGridTransform(inheritedTransform);
+        transientFrame.setParentLevelDelta(frame.getParentLevelDelta());
         transientFrame.setInferredParent(frame.getInferredParent());
         return new SplitResult(mainFrame, transientFrame);
     }
@@ -208,6 +210,7 @@ public final class WestCutterMatrixSplitter {
         out.setHierarchyUnclesByTileId(frame.getHierarchyUnclesByTileId());
         out.setHierarchyRelationshipsByTileId(frame.getHierarchyRelationshipsByTileId());
         out.setParentGridTransform(frame.getParentGridTransform());
+        out.setParentLevelDelta(frame.getParentLevelDelta());
         out.setInferredParent(frame.getInferredParent());
         return out;
     }

@@ -39,9 +39,19 @@ westernmost quadtree column for a partial matrix. A matrix spanning the complete
 antimeridian and therefore has absolute `colOffset = 0`. At level `L`, absolute longitude
 columns are cyclic modulo `2^L`, while latitude rows never wrap.
 
-An uncle relationship is
-`ToUncleRelationship(direction, uncleContentId, relationshipKind)`. The kind is required
-because the producer has two geometrically different detectors:
+A contract-v6 cross-level relationship is
+`(referenceContentId, levelDelta, rowOffset, columnOffset)`. For a reference cell
+`(r,c)` and `s = 2^levelDelta`, the fine cell is:
+
+```
+fineRow = s*r + rowOffset
+fineCol = floorMod(s*c + columnOffset, 2^(referenceLevel + levelDelta))
+```
+
+Offsets inside `[0,s)` describe a descendant; offsets outside that range describe a
+cousin across the reference border. The same edge therefore survives missing intermediate
+levels. Contract v6 retains the legacy
+`ToUncleRelationship(direction, uncleContentId, relationshipKind)` fields:
 
 - `CONTAINING_QUADRANT`: `uncleContentId` is the containing coarse texture and
   `direction` selects its child quadrant.
@@ -462,7 +472,8 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Invariant**: `23_frameTextureNormalizer` relies on the same `contentId`,
   `textureFile`, and same-level neighbor fields (`southNeighbor`/etc.) described in
   Contract 3 — it does not re-derive neighborhood, only filters and regroups it.
-- `uncles[]` additionally carries `relationshipKind`: `ADJACENT_BORDER` is emitted by
+- `uncles[]` additionally carries `referenceContentId`, `levelDelta`, `rowOffset` and
+  `columnOffset`. `relationshipKind`: `ADJACENT_BORDER` is emitted by
   the direct neighboring-geometry detector and `CONTAINING_QUADRANT` by the
   L-shaped/missing-quadrant detector. Legacy `frame.json` files omit this field.
 
@@ -471,7 +482,7 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Producer**: `23_frameTextureNormalizer`.
 - **Consumer**: `31_matrixMerger`.
 - **Outputs** (per frame folder):
-  - `matrix.json` (current envelope `contractVersion: 3`; fallback read: legacy
+  - `matrix.json` (current envelope `contractVersion: 6`; fallback read: legacy
     `matrix.txt`): `{ rows, cols, tiles[] }`, `tiles[]`
     entries `{ id, i, j, textureFile, uncles[] }`. `id` is the surviving tile's `contentId`
     string from Contract 3 (`"00328_163"` in the real sample — note this occurrence uses
@@ -483,8 +494,9 @@ model with quadtree neighborhood information — everything downstream depends o
     `rows`/`cols`). `textureFile` is still the Contract-1 texture path (frame folders are
     not renamed by this stage — legacy numeric `tileId` is also accepted on read for
     backward compatibility).
-  - `uncles[]` per tile: `{ direction, uncleContentId, relationshipKind }`, propagated
-    from `frame.json`. `relationshipKind` is absent only in legacy captures.
+  - `uncles[]` per tile: v6
+    `{ referenceContentId, levelDelta, rowOffset, columnOffset, direction, relationshipKind }`,
+    propagated from `frame.json`. Legacy `uncleContentId` records remain readable.
   - `<output.directory>/westCutters.json` (root, session-wide): the set of tiles marked as
     "west cutters" (tiles that straddle the `-180°` meridian and must be split before
     merging matrices spatially). Written by `23_frameTextureNormalizer` (interactive `c`
@@ -514,14 +526,16 @@ model with quadtree neighborhood information — everything downstream depends o
 - **Consumer**: `32_pyramidalImageExporter`, via `MatrixLayerJsonReader`.
 - **Location**: `<exportFolder>/matrix_<n>/`, one folder per surviving merged matrix
   (`n` = 0-based export order), containing:
-  - `matrixLayer.json`: versioned envelope (current `contractVersion: 4`) with:
+  - `matrixLayer.json`: versioned envelope (current `contractVersion: 6`) with:
     - `frameId`: representative frame of the merged matrix.
     - `hierarchyLevel`: relative depth in the matrix hierarchy (`0` for a known hierarchy
-      root, increasing by one through each parent edge; it is not inferred from `<n>`), or
+      root, increasing by each edge's `levelDelta`; it is not inferred from `<n>`), or
       `-1` when legacy/global grouping did not establish it. It is not the absolute
       quadtree level.
-    - `parentMatrixIndex`: index `<n>` of the immediate parent, or `null` for a hierarchy
+    - `parentMatrixIndex`: index `<n>` of the reference parent, or `null` for a hierarchy
       root, a disconnected matrix, or unknown legacy hierarchy.
+    - `parentLevelDelta`: quadtree level distance to `parentMatrixIndex` (default `1` for
+      legacy contracts).
     - `parentGridTransform`: optional `{rowOffset,colOffset}` rigid transform for a
       visually inferred **containing** parent. For child local cell `(i,j)`,
       `(i+rowOffset,j+colOffset)` is its coordinate in the parent-local grid refined by
@@ -530,8 +544,8 @@ model with quadtree neighborhood information — everything downstream depends o
     - `hierarchyUnclesByTileId`: compatibility map `tileId -> [uncleId]` used for graph
       ordering and diagnostics.
     - `hierarchyRelationshipsByTileId`: lossless map
-      `tileId -> [{direction, uncleContentId, relationshipKind}]`. It preserves both the
-      direction and whether the producer observed a containing quadrant or an adjacent
+      `tileId -> [{referenceContentId,levelDelta,rowOffset,columnOffset,direction,relationshipKind}]`.
+      It preserves both the generic offset, the direction and whether the producer observed a containing quadrant or an adjacent
       coarse-cell border, even when a merge keeps a duplicate tile record that originally
       had no `uncles`.
     - `matrices`: one or more `{frameId, rows, cols, tiles[]}` matrix records with
@@ -558,7 +572,7 @@ model with quadtree neighborhood information — everything downstream depends o
     uncle relationship. A non-confident root stays disconnected; ordering alone is never
     an anchor.
   - When hierarchy metadata is known, `parentMatrixIndex` refers to an earlier exported
-    matrix and `hierarchyLevel == parent.hierarchyLevel + 1`. Legacy/global grouping can
+    matrix and `hierarchyLevel == parent.hierarchyLevel + parentLevelDelta`. Legacy/global grouping can
     emit unknown `hierarchyLevel: -1` and `parentMatrixIndex: null`; consumers must then
     rely on explicit tile relationships and absolute seeds, never directory order.
   - Folder naming `matrix_<n>` (not zero-padded) and file naming `matrixLayer.json` (not
@@ -596,8 +610,8 @@ make it into the final pyramidal image, so it is worth stating explicitly:
     top-level tile synthesized from `topLevelTiles.json`).
   - Transitively, if one of its `uncles[]` resolves (directly, through Contract 6b's
     bridge, or through a chain of several uncle hops resolved one hop per fixpoint pass)
-    to an already-anchored coarse texture. Resolution appends the child quadrant specified
-    by the direction table above to the uncle path.
+    to an already-anchored coarse texture. V6 applies its weighted row/column formula;
+    legacy records append or cross the child quadrant specified by the direction table.
   - `hierarchyRelationshipsByTileId` is merged into `tiles[].uncles` before resolution.
   - A contract-v3 `parentGridTransform` is propagated only after its referenced parent
     grid has an absolute anchor. Rigid matrix transforms and observed per-tile uncle
@@ -616,6 +630,12 @@ make it into the final pyramidal image, so it is worth stating explicitly:
   - Before writing, the exporter builds a unique `fullPath -> tile` manifest. A local
     native tile deliberately replaces a derived TOP cell at the same path; any duplicate
     between incompatible peers aborts the export before the first PNG is written.
+  - With a reference pyramid, an ambiguous hierarchy root may be anchored from the traced
+    frame cameras. Camera longitude/latitude is converted with the repository's square
+    360-degree quadtree model (`southRow = floor((lat + 180) * 2^L / 360)`), not Web
+    Mercator. Nearby offset votes are clustered and require a strict majority. The accepted
+    root owns the component reached through `parentMatrixIndex` and v6 ancestor references;
+    stale visual seeds in that component cannot override its geographic placement.
   - A tile with no resolvable path (directly or transitively) is skipped.
 - **Invariant**: `32_pyramidalImageExporter` resolves paths from ids, relationships and
   the Contract-6b bridge. It may also infer an anchor inside `TopLevelLayerMerger`, by
@@ -633,8 +653,9 @@ make it into the final pyramidal image, so it is worth stating explicitly:
 This is the final contract: the actual deliverable of the whole pipeline.
 
 - **Producer**: `32_pyramidalImageExporter`, via the `e` key or `--export`, writing to
-  `<inputFolder>/pyramidalImage` (created on first export; always inside the input folder,
-  session-local — the tool never reads or writes any other pyramidal image).
+  `<inputFolder>/pyramidalImage` (created on first export and always session-local). An
+  optional reference pyramid is read-only placement evidence; its files are never copied
+  into or modified by 32.
 - **Consumer**: `41_planetViewer`, and, potentially, any future cross-session merging tool
   (not implemented yet — explicitly out of scope for `32_pyramidalImageExporter`).
 - **Format** (the "folder-based pyramidal image" format, shared by both programs):

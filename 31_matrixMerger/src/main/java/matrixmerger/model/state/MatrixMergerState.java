@@ -523,6 +523,7 @@ public final class MatrixMergerState {
         out.setContractVersion(source.getContractVersion());
         out.setHierarchyLevel(source.getHierarchyLevel());
         out.setParentMatrixIndex(source.getParentMatrixIndex());
+        out.setParentLevelDelta(source.getParentLevelDelta());
         out.setParentGridTransform(source.getParentGridTransform());
         out.setInferredParent(source.getInferredParent());
         out.setFrameId(source.getFrameId());
@@ -869,7 +870,7 @@ public final class MatrixMergerState {
         Map<String, ParentTileRef> parentTileById = new LinkedHashMap<>();
         for (FrameMatrixSet candidateParent : frameMatrices) {
             if (candidateParent == null
-                || hierarchyLevelByFrame.getOrDefault(candidateParent, -1) != childLevel - 1) {
+                || hierarchyLevelByFrame.getOrDefault(candidateParent, -1) >= childLevel) {
                 continue;
             }
             FrameTileMatrix parentMatrix = firstMatrix(candidateParent);
@@ -902,6 +903,11 @@ public final class MatrixMergerState {
                 }
                 String uncleId = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
                 ParentTileRef parent = parentTileById.get(uncleId);
+                int levelDelta = relationship.effectiveLevelDelta();
+                if (parent == null
+                    || hierarchyLevelByFrame.getOrDefault(parent.frame(), -1) + levelDelta != childLevel) {
+                    continue;
+                }
                 int[] childPosition = childPositionInRefinedParentGrid(parent, relationship);
                 if (parent == null || childPosition == null) {
                     continue;
@@ -935,6 +941,16 @@ public final class MatrixMergerState {
         }
         int parentI = parent.tile().getI();
         int parentJ = parent.tile().getJ();
+        if (relationship.hasGridOffset()) {
+            if (relationship.levelDelta() >= 30) {
+                return null;
+            }
+            int scale = 1 << relationship.levelDelta();
+            return new int[]{
+                scale * parentI + relationship.rowOffset(),
+                scale * parentJ + relationship.columnOffset()
+            };
+        }
         boolean south;
         boolean east;
         UncleDirections direction = relationship.direction();
@@ -1116,6 +1132,7 @@ public final class MatrixMergerState {
             normalizedFrame.setContractVersion(frame.getContractVersion());
             normalizedFrame.setHierarchyLevel(frame.getHierarchyLevel());
             normalizedFrame.setParentMatrixIndex(frame.getParentMatrixIndex());
+            normalizedFrame.setParentLevelDelta(frame.getParentLevelDelta());
             normalizedFrame.setParentGridTransform(frame.getParentGridTransform());
             normalizedFrame.setInferredParent(frame.getInferredParent());
             normalizedFrame.setFrameId(frame.getFrameId());
@@ -1250,12 +1267,14 @@ public final class MatrixMergerState {
 
             LinkedHashSet<String> hierarchyUncleIds = collectHierarchyUncleIds(frame);
             LinkedHashSet<Integer> resolvedUncleFrameIndexes = new LinkedHashSet<>();
+            Map<Integer, Integer> levelDeltaByParentIndex = new LinkedHashMap<>();
             for (String normalizedUncleId : hierarchyUncleIds) {
                 Integer uncleFrameIndex = frameIndexByTileId.get(normalizedUncleId);
                 if (uncleFrameIndex != null && uncleFrameIndex != frameIndex) {
                     resolvedUncleFrameIndexes.add(uncleFrameIndex);
                 }
             }
+            collectParentLevelDeltas(frame, frameIndexByTileId, frameIndex, levelDeltaByParentIndex);
 
             Integer explicitParentFrameIndex = indexOfFrameIdentity(frame.getInferredParent());
 
@@ -1264,6 +1283,8 @@ public final class MatrixMergerState {
                 state = UncleHudState.NORMAL;
                 resolvedUncleFrameIndexes.clear();
                 resolvedUncleFrameIndexes.add(explicitParentFrameIndex);
+                levelDeltaByParentIndex.clear();
+                levelDeltaByParentIndex.put(explicitParentFrameIndex, 1);
             }
             else if (resolvedUncleFrameIndexes.isEmpty()) {
                 state = UncleHudState.TOPLEVEL;
@@ -1282,6 +1303,7 @@ public final class MatrixMergerState {
                 frameIndex,
                 state,
                 List.copyOf(resolvedUncleFrameIndexes),
+                Map.copyOf(levelDeltaByParentIndex),
                 findLastCaptureFrameId(frame),
                 hierarchyUncleIds.size()
             ));
@@ -1309,6 +1331,11 @@ public final class MatrixMergerState {
 
         for (FrameHierarchyNode node : ordered) {
             hierarchyLevelByFrame.put(node.frame(), node.level());
+            node.frame().setParentLevelDelta(
+                node.parentFrameIndexes().size() == 1
+                    ? node.levelDeltaByParentIndex().getOrDefault(node.parentFrameIndexes().get(0), 1)
+                    : null
+            );
         }
 
         if (selectedFrame != null) {
@@ -1369,7 +1396,10 @@ public final class MatrixMergerState {
                 if (parentLevel == null) {
                     return null;
                 }
-                level = Math.max(level, parentLevel + 1);
+                level = Math.max(
+                    level,
+                    parentLevel + next.levelDeltaByParentIndex().getOrDefault(parentFrameIndex, 1)
+                );
             }
             resolved.add(next.withLevel(level));
             levelByOriginalIndex.put(next.originalIndex(), level);
@@ -1398,6 +1428,43 @@ public final class MatrixMergerState {
 
     private static int topLevelEvidenceRank(FrameHierarchyNode node) {
         return node.state() == UncleHudState.TOPLEVEL && node.hierarchyUncleCount() > 0 ? 0 : 1;
+    }
+
+    private static void collectParentLevelDeltas(
+        FrameMatrixSet frame,
+        Map<String, Integer> frameIndexByTileId,
+        int childFrameIndex,
+        Map<Integer, Integer> out
+    ) {
+        if (frame == null || out == null) {
+            return;
+        }
+        List<ToUncleRelationship> relationships = new ArrayList<>();
+        if (frame.getHierarchyRelationshipsByTileId() != null) {
+            frame.getHierarchyRelationshipsByTileId().values().forEach(relationships::addAll);
+        }
+        if (relationships.isEmpty() && frame.getMatrices() != null) {
+            for (FrameTileMatrix matrix : frame.getMatrices()) {
+                if (matrix == null || matrix.getTiles() == null) {
+                    continue;
+                }
+                for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                    if (tile != null && tile.getUncles() != null) {
+                        relationships.addAll(tile.getUncles());
+                    }
+                }
+            }
+        }
+        for (ToUncleRelationship relationship : relationships) {
+            if (relationship == null || relationship.referenceContentId() == null) {
+                continue;
+            }
+            String referenceId = WestCuttersJsonReader.normalizeScopedTileId(relationship.referenceContentId());
+            Integer parentIndex = frameIndexByTileId.get(referenceId);
+            if (parentIndex != null && parentIndex != childFrameIndex) {
+                out.merge(parentIndex, relationship.effectiveLevelDelta(), Math::max);
+            }
+        }
     }
 
     private static int findLastCaptureFrameId(FrameMatrixSet frame) {
@@ -1750,6 +1817,7 @@ public final class MatrixMergerState {
         int originalIndex,
         UncleHudState state,
         List<Integer> parentFrameIndexes,
+        Map<Integer, Integer> levelDeltaByParentIndex,
         int lastCaptureFrameId,
         int hierarchyUncleCount,
         int level
@@ -1759,10 +1827,20 @@ public final class MatrixMergerState {
             int originalIndex,
             UncleHudState state,
             List<Integer> parentFrameIndexes,
+            Map<Integer, Integer> levelDeltaByParentIndex,
             int lastCaptureFrameId,
             int hierarchyUncleCount
         ) {
-            this(frame, originalIndex, state, parentFrameIndexes, lastCaptureFrameId, hierarchyUncleCount, -1);
+            this(
+                frame,
+                originalIndex,
+                state,
+                parentFrameIndexes,
+                levelDeltaByParentIndex,
+                lastCaptureFrameId,
+                hierarchyUncleCount,
+                -1
+            );
         }
 
         private FrameHierarchyNode withLevel(int newLevel) {
@@ -1771,6 +1849,7 @@ public final class MatrixMergerState {
                 originalIndex,
                 state,
                 parentFrameIndexes,
+                levelDeltaByParentIndex,
                 lastCaptureFrameId,
                 hierarchyUncleCount,
                 newLevel

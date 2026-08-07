@@ -132,15 +132,25 @@ public final class FrameJsonUncleMetadataRestorer {
         List<ToUncleRelationship> out = new ArrayList<>();
         for (JsonNode uncleNode : uncles) {
             String direction = textOf(uncleNode, "direction");
-            String uncleContentId = textOf(uncleNode, "uncleContentId");
-            if (direction == null || uncleContentId == null) {
+            String uncleContentId = textOf(uncleNode, "referenceContentId");
+            if (uncleContentId == null) {
+                uncleContentId = textOf(uncleNode, "uncleContentId");
+            }
+            Integer levelDelta = integerOf(uncleNode, "levelDelta");
+            Integer rowOffset = integerOf(uncleNode, "rowOffset");
+            Integer columnOffset = integerOf(uncleNode, "columnOffset");
+            boolean generic = levelDelta != null && levelDelta > 0 && rowOffset != null && columnOffset != null;
+            if (uncleContentId == null || (!generic && direction == null)) {
                 continue;
             }
             try {
                 out.add(new ToUncleRelationship(
-                    UncleDirections.valueOf(direction),
+                    direction == null ? null : UncleDirections.valueOf(direction),
                     uncleContentId,
-                    relationshipKindOf(uncleNode)
+                    relationshipKindOf(uncleNode),
+                    levelDelta,
+                    rowOffset,
+                    columnOffset
                 ));
             }
             catch (IllegalArgumentException ignored) {
@@ -148,6 +158,11 @@ public final class FrameJsonUncleMetadataRestorer {
             }
         }
         return out;
+    }
+
+    private static Integer integerOf(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || !value.isIntegralNumber() ? null : value.intValue();
     }
 
     private static UncleRelationshipKind relationshipKindOf(JsonNode uncleNode) {

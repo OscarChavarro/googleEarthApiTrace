@@ -14,14 +14,35 @@ import frametexturenormalizer.model.TileMatrix;
 
 public final class FrameMatrixJsonExporter {
     public void export(List<TileMatrix> matrices) {
+        export(matrices, Map.of());
+    }
+
+    public void export(List<TileMatrix> matrices, Map<String, String> canonicalReferenceIdByOccurrence) {
         Map<Integer, List<TileMatrix>> matricesByFrame = groupByFrame(matrices);
         cleanupObsoleteMatrices(matricesByFrame.keySet());
         if (matricesByFrame.isEmpty()) {
             return;
         }
-        for (Map.Entry<Integer, List<TileMatrix>> entry : matricesByFrame.entrySet()) {
-            MatrixJsonWriter.writeMatricesJson(entry.getKey(), entry.getValue());
+        Set<String> exportedTileIds = collectExportedTileIds(matricesByFrame);
+        Map<String, String> usableReferenceIds = new LinkedHashMap<>();
+        if (canonicalReferenceIdByOccurrence != null) {
+            canonicalReferenceIdByOccurrence.forEach((occurrenceId, canonicalId) -> {
+                if (occurrenceId != null && canonicalId != null && exportedTileIds.contains(canonicalId)) {
+                    usableReferenceIds.put(occurrenceId, canonicalId);
+                }
+            });
         }
+        for (Map.Entry<Integer, List<TileMatrix>> entry : matricesByFrame.entrySet()) {
+            MatrixJsonWriter.writeMatricesJson(entry.getKey(), entry.getValue(), usableReferenceIds);
+        }
+    }
+
+    private static Set<String> collectExportedTileIds(Map<Integer, List<TileMatrix>> matricesByFrame) {
+        Set<String> out = new LinkedHashSet<>();
+        matricesByFrame.forEach((frameId, frameMatrices) ->
+            out.addAll(MatrixJsonWriter.buildExportIds(frameId, frameMatrices).values())
+        );
+        return out;
     }
 
     private static Map<Integer, List<TileMatrix>> groupByFrame(List<TileMatrix> matrices) {

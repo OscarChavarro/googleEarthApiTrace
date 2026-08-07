@@ -223,10 +223,15 @@ public final class TileRootPathResolver {
             if (parentAnchor == null || parentAnchor[0] < 0) {
                 continue;
             }
-            int childLevel = parentAnchor[0] + 1;
+            int levelDelta = child.getParentLevelDelta() == null ? 1 : child.getParentLevelDelta();
+            if (levelDelta <= 0 || levelDelta >= 30) {
+                continue;
+            }
+            int childLevel = parentAnchor[0] + levelDelta;
             int side = 1 << childLevel;
-            int rowOffset = 2 * parentAnchor[1] + transform.rowOffset();
-            int colOffset = Math.floorMod(2 * parentAnchor[2] + transform.colOffset(), side);
+            int scale = 1 << levelDelta;
+            int rowOffset = scale * parentAnchor[1] + transform.rowOffset();
+            int colOffset = Math.floorMod(scale * parentAnchor[2] + transform.colOffset(), side);
             for (MatrixLayerTile tile : child.getTiles()) {
                 if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
                     continue;
@@ -645,7 +650,8 @@ public final class TileRootPathResolver {
             return candidates;
         }
         for (ToUncleRelationship relation : uncles) {
-            if (relation == null || relation.direction() == null || relation.uncleContentId() == null) {
+            if (relation == null || relation.referenceContentId() == null
+                || (!relation.hasGridOffset() && relation.direction() == null)) {
                 continue;
             }
             UncleRelationshipKind relationshipKind = relation.relationshipKind();
@@ -655,6 +661,7 @@ public final class TileRootPathResolver {
                 continue;
             }
             if (relationshipKind == UncleRelationshipKind.CONTAINING_QUADRANT
+                && !relation.hasGridOffset()
                 && rmsAnalysis != null
                 && !rmsAnalysis.accepts(occurrence.layer(), tile, relation)) {
                 continue;
@@ -667,7 +674,7 @@ public final class TileRootPathResolver {
                     foundLoadedUnclePath = true;
                     String candidate = childPathForRelationship(
                         unclePath,
-                        relation.direction(),
+                        relation,
                         relationshipKind
                     );
                     if (candidate != null) {
@@ -684,7 +691,7 @@ public final class TileRootPathResolver {
             }
             String candidate = childPathForRelationship(
                 unclePath,
-                relation.direction(),
+                relation,
                 relationshipKind
             );
             if (candidate != null) {
@@ -860,13 +867,43 @@ public final class TileRootPathResolver {
 
     private static String childPathForRelationship(
         String unclePath,
-        UncleDirections direction,
+        ToUncleRelationship relationship,
         UncleRelationshipKind relationshipKind
     ) {
+        if (relationship != null && relationship.hasGridOffset()) {
+            return pathAtRelativeGridOffset(
+                unclePath,
+                relationship.levelDelta(),
+                relationship.rowOffset(),
+                relationship.columnOffset()
+            );
+        }
+        UncleDirections direction = relationship == null ? null : relationship.direction();
         return switch (relationshipKind) {
             case CONTAINING_QUADRANT -> unclePath + quadrantDigit(direction);
             case ADJACENT_BORDER -> childPathAcrossUncleBorder(unclePath, direction);
         };
+    }
+
+    private static String pathAtRelativeGridOffset(
+        String referencePath,
+        int levelDelta,
+        int rowOffset,
+        int columnOffset
+    ) {
+        int[] reference = decodeFullPath(referencePath);
+        if (reference == null || levelDelta <= 0 || reference[0] + levelDelta >= 30) {
+            return null;
+        }
+        int scale = 1 << levelDelta;
+        int targetLevel = reference[0] + levelDelta;
+        int side = 1 << targetLevel;
+        int row = scale * reference[1] + rowOffset;
+        if (row < 0 || row >= side) {
+            return null;
+        }
+        int column = Math.floorMod(scale * reference[2] + columnOffset, side);
+        return "0" + encodeQuadtreeLabel(targetLevel, row, column);
     }
 
     private static String childPathAcrossUncleBorder(

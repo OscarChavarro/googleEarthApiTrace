@@ -22,7 +22,8 @@ Expected layout example:
 On every run (interactive or offline) the program executes this pipeline:
 
 1. Loads traced frames, filtering tiles by connected components and geometric null
-   neighbors, and dropping frames with too few tiles.
+   neighbors. A singleton referenced by a v6 cross-level relationship is retained as a
+   visualization anchor even though it is not inserted into the same-level matrix.
 2. Verifies/creates SHA-256 signature files for tile textures.
 3. Builds (or loads a cached) duplicated-texture filename mapping, grouping repeated
    texture contents across frames.
@@ -35,11 +36,24 @@ On every run (interactive or offline) the program executes this pipeline:
 
 The exported `matrix.json` files and `westCutters.json` are the input of `31_matrixMerger`.
 
-Texture normalization changes only the image path. Native tile IDs and the neighbor/uncle
-relationships read from `frame.json` are preserved. A canonical texture-derived export ID
+Texture normalization changes only the image path. Native tile IDs and cross-level
+relationships read from `frame.json` are preserved. Compact `relationshipGeometries` let
+the viewer paint isolated coarser references, such as level 11 beside a level-13 island.
+A canonical texture-derived export ID
 is used only when that texture identifies a single tile occurrence in the frame; repeated
 pixel-identical images (for example, blank ocean tiles) retain their native scoped IDs.
 Matrix layout never fills a missing neighbor relationship.
+
+Frame deduplication merges relationship metadata from every duplicate occurrence into the
+retained representative. Before writing, an external `referenceContentId` is changed to a
+texture-derived canonical id only when that exact id is present in the exported tile set;
+relationships that become equal after this canonicalization are collapsed. This prevents a
+later island frame from losing its ancestor edge merely because an earlier frame supplied the
+same matrix tile ids.
+
+`matrix.json` uses contract version 6. New relationship entries contain
+`referenceContentId`, `levelDelta`, `rowOffset` and `columnOffset`; v3-v5 entries using
+`uncleContentId`, `direction` and `relationshipKind` remain readable.
 
 ## Requirements
 

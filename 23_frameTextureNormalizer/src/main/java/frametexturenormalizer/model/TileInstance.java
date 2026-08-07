@@ -20,6 +20,7 @@ public final class TileInstance {
     private final Integer matrixJ;
     private final boolean incorrectMatrixMapping;
     private final List<ToUncleRelationship> uncles;
+    private List<TriangleStripGeometry> relationshipGeometries = List.of();
     private boolean westCuttingCell;
     private boolean selected;
 
@@ -280,6 +281,21 @@ public final class TileInstance {
 
     public List<ToUncleRelationship> getUncles() {
         return uncles;
+    }
+
+    public List<TriangleStripGeometry> getRelationshipGeometries() {
+        return relationshipGeometries;
+    }
+
+    public void setRelationshipGeometries(List<TriangleStripGeometry> geometries) {
+        relationshipGeometries = geometries == null ? List.of() : List.copyOf(geometries);
+    }
+
+    public List<TriangleStripGeometry> getDrawableGeometries() {
+        if (triangleStrip != null) {
+            return List.of(triangleStrip);
+        }
+        return relationshipGeometries;
     }
 
     public boolean isWestCuttingCell() {

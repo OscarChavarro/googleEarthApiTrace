@@ -19,7 +19,10 @@ public final class Configuration {
 
     private static Path loadOutputRoot() {
         Properties properties = loadProperties();
-        return Paths.get(properties.getProperty("output.directory", "/media/ramdisk/output"));
+        return Paths.get(System.getProperty(
+            "output.directory",
+            properties.getProperty("output.directory", "/media/ramdisk/output")
+        ));
     }
 
     private static int loadPositiveInt(String key, int defaultValue) {

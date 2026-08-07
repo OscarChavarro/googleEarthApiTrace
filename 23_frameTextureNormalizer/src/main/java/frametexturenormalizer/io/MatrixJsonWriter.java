@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -23,7 +24,12 @@ public final class MatrixJsonWriter {
     private MatrixJsonWriter() {
     }
 
-    private static MatrixJson toJsonMatrix(int frameId, TileMatrix matrix, Map<Integer, String> exportIdByTileId) {
+    private static MatrixJson toJsonMatrix(
+        int frameId,
+        TileMatrix matrix,
+        Map<Integer, String> exportIdByTileId,
+        Map<String, String> canonicalReferenceIdByOccurrence
+    ) {
         if (matrix == null) {
             return null;
         }
@@ -38,13 +44,21 @@ public final class MatrixJsonWriter {
                 tile.i(),
                 tile.j(),
                 tile.textureFile(),
-                toJsonUncles(frameId, tile.uncles(), exportIdByTileId)
+                toJsonUncles(frameId, tile.uncles(), exportIdByTileId, canonicalReferenceIdByOccurrence)
             ));
         }
         return new MatrixJson(matrix.getRows(), matrix.getCols(), tiles);
     }
 
     public static void writeMatricesJson(int frameId, List<TileMatrix> matrices) {
+        writeMatricesJson(frameId, matrices, Map.of());
+    }
+
+    public static void writeMatricesJson(
+        int frameId,
+        List<TileMatrix> matrices,
+        Map<String, String> canonicalReferenceIdByOccurrence
+    ) {
         if (frameId < 0 || matrices == null || matrices.isEmpty()) {
             return;
         }
@@ -54,7 +68,12 @@ public final class MatrixJsonWriter {
             if (matrix == null || matrix.getTiles() == null || matrix.getTiles().size() < 2) {
                 continue;
             }
-            MatrixJson json = toJsonMatrix(frameId, matrix, exportIdByTileId);
+            MatrixJson json = toJsonMatrix(
+                frameId,
+                matrix,
+                exportIdByTileId,
+                canonicalReferenceIdByOccurrence
+            );
             if (json != null && json.tiles() != null && json.tiles().size() >= 2) {
                 matrixJsons.add(json);
             }
@@ -66,7 +85,7 @@ public final class MatrixJsonWriter {
         Path matrixJson = frameDir.resolve("matrix.json");
         try {
             Files.createDirectories(frameDir);
-            JSON.writerWithDefaultPrettyPrinter().writeValue(matrixJson.toFile(), new FrameMatricesJson(3, frameId, matrixJsons));
+            JSON.writerWithDefaultPrettyPrinter().writeValue(matrixJson.toFile(), new FrameMatricesJson(6, frameId, matrixJsons));
         }
         catch (IOException ex) {
             System.out.println("Unable to write " + matrixJson + ": " + ex.getMessage());
@@ -76,41 +95,60 @@ public final class MatrixJsonWriter {
     private static List<ToUncleRelationshipJson> toJsonUncles(
         int frameId,
         List<ToUncleRelationship> uncles,
-        Map<Integer, String> exportIdByTileId
+        Map<Integer, String> exportIdByTileId,
+        Map<String, String> canonicalReferenceIdByOccurrence
     ) {
         if (uncles == null || uncles.isEmpty()) {
             return List.of();
         }
-        List<ToUncleRelationshipJson> out = new ArrayList<>(uncles.size());
+        LinkedHashSet<ToUncleRelationshipJson> out = new LinkedHashSet<>(uncles.size());
         for (ToUncleRelationship relationship : uncles) {
-            if (relationship == null || relationship.direction() == null || relationship.uncleContentId() == null) {
+            if (relationship == null || relationship.referenceContentId() == null
+                || (!relationship.hasGridOffset() && relationship.direction() == null)) {
                 continue;
             }
-            String normalizedScopedId = ScopedTileIds.normalize(relationship.uncleContentId());
-            String scopedUncleId;
-            if (normalizedScopedId != null && normalizedScopedId.contains("_")) {
-                Integer localUncleId = localTileId(normalizedScopedId, frameId);
-                scopedUncleId = localUncleId == null
-                    ? normalizedScopedId
-                    : exportIdByTileId.getOrDefault(localUncleId, normalizedScopedId);
-            }
-            else {
-                Integer numericUncleId = extractLastNumber(relationship.uncleContentId(), -1);
-                if (numericUncleId < 0) {
-                    continue;
-                }
-                scopedUncleId = exportIdByTileId.get(numericUncleId);
-                if (scopedUncleId == null) {
-                    scopedUncleId = relationship.uncleContentId();
-                }
+            String scopedUncleId = resolveReferenceId(
+                frameId,
+                relationship.referenceContentId(),
+                exportIdByTileId,
+                canonicalReferenceIdByOccurrence
+            );
+            if (scopedUncleId == null) {
+                continue;
             }
             out.add(new ToUncleRelationshipJson(
-                relationship.direction().name(),
+                relationship.direction() == null ? null : relationship.direction().name(),
                 scopedUncleId,
-                relationship.relationshipKind() == null ? null : relationship.relationshipKind().name()
+                relationship.relationshipKind() == null ? null : relationship.relationshipKind().name(),
+                relationship.levelDelta(),
+                relationship.rowOffset(),
+                relationship.columnOffset()
             ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    static String resolveReferenceId(
+        int frameId,
+        String referenceContentId,
+        Map<Integer, String> exportIdByTileId,
+        Map<String, String> canonicalReferenceIdByOccurrence
+    ) {
+        String normalizedScopedId = ScopedTileIds.normalize(referenceContentId);
+        if (normalizedScopedId != null && normalizedScopedId.contains("_")) {
+            Integer localUncleId = localTileId(normalizedScopedId, frameId);
+            if (localUncleId != null) {
+                return exportIdByTileId.getOrDefault(localUncleId, normalizedScopedId);
+            }
+            return canonicalReferenceIdByOccurrence == null
+                ? normalizedScopedId
+                : canonicalReferenceIdByOccurrence.getOrDefault(normalizedScopedId, normalizedScopedId);
+        }
+        Integer numericUncleId = extractLastNumber(referenceContentId, -1);
+        if (numericUncleId < 0) {
+            return null;
+        }
+        return exportIdByTileId.getOrDefault(numericUncleId, referenceContentId);
     }
 
     /**
@@ -197,8 +235,11 @@ public final class MatrixJsonWriter {
 
     private record ToUncleRelationshipJson(
         String direction,
-        String uncleContentId,
-        String relationshipKind
+        String referenceContentId,
+        String relationshipKind,
+        Integer levelDelta,
+        Integer rowOffset,
+        Integer columnOffset
     ) {
     }
 }

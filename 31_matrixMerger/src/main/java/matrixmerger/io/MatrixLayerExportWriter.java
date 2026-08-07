@@ -117,7 +117,7 @@ public final class MatrixLayerExportWriter {
             exportedFrame.setMatrices(List.of());
             return exportedFrame;
         }
-        exportedFrame.setContractVersion(5);
+        exportedFrame.setContractVersion(6);
         exportedFrame.setFrameId(frame.getFrameId());
         exportedFrame.setHierarchyLevel(hierarchy == null ? null : hierarchy.level());
         exportedFrame.setParentMatrixIndex(
@@ -126,6 +126,7 @@ public final class MatrixLayerExportWriter {
                 : hierarchy.resolvedParentIndexes().get(0)
         );
         exportedFrame.setParentGridTransform(frame.getParentGridTransform());
+        exportedFrame.setParentLevelDelta(frame.getParentLevelDelta());
         exportedFrame.setHierarchyUnclesByTileId(frame.getHierarchyUnclesByTileId());
         exportedFrame.setHierarchyRelationshipsByTileId(frame.getHierarchyRelationshipsByTileId());
         List<FrameTileMatrix> exportedMatrices = new ArrayList<>();

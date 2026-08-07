@@ -140,4 +140,41 @@ final class MatrixLayerJsonReaderTest {
             layer.getExternalUncleTextureFilesById().get("00167_99")
         );
     }
+
+    @Test
+    void importsVersionSixGenericAncestorRelationship() throws Exception {
+        Path layerDirectory = Files.createDirectory(tempDir.resolve("matrix_6"));
+        Files.writeString(layerDirectory.resolve("matrixLayer.json"), """
+            {
+              "contractVersion": 6,
+              "parentMatrixIndex": 0,
+              "parentLevelDelta": 2,
+              "frameId": 60,
+              "matrices": [{
+                "rows": 1,
+                "cols": 1,
+                "tiles": [{
+                  "id": "00060_1",
+                  "i": 0,
+                  "j": 0,
+                  "textureFile": "/tmp/island.png",
+                  "uncles": [{
+                    "referenceContentId": "00040_1",
+                    "relationshipKind": "ADJACENT_BORDER",
+                    "levelDelta": 2,
+                    "rowOffset": 2,
+                    "columnOffset": 4
+                  }]
+                }]
+              }]
+            }
+            """);
+
+        MatrixLayer layer = new MatrixLayerJsonReader().readAllFromInput(tempDir).get(0);
+
+        assertEquals(6, layer.getContractVersion());
+        assertEquals(2, layer.getParentLevelDelta());
+        assertEquals("00040_1", layer.getTiles().get(0).getUncles().get(0).referenceContentId());
+        assertEquals(2, layer.getTiles().get(0).getUncles().get(0).levelDelta());
+    }
 }

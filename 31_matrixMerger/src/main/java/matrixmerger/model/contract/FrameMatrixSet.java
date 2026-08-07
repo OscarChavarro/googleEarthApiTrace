@@ -11,6 +11,7 @@ public final class FrameMatrixSet {
     private Integer contractVersion;
     private Integer hierarchyLevel;
     private Integer parentMatrixIndex;
+    private Integer parentLevelDelta;
     private ParentGridTransform parentGridTransform;
     private FrameMatrixSet inferredParent;
     private int frameId;
@@ -41,6 +42,14 @@ public final class FrameMatrixSet {
 
     public void setParentMatrixIndex(Integer parentMatrixIndex) {
         this.parentMatrixIndex = parentMatrixIndex;
+    }
+
+    public Integer getParentLevelDelta() {
+        return parentLevelDelta;
+    }
+
+    public void setParentLevelDelta(Integer parentLevelDelta) {
+        this.parentLevelDelta = parentLevelDelta;
     }
 
     public ParentGridTransform getParentGridTransform() {

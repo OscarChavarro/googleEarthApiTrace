@@ -85,6 +85,7 @@ public final class MatrixLayerJsonReader {
         layer.setContractVersion(nullableInt(root.get("contractVersion")));
         layer.setHierarchyLevel(nullableInt(root.get("hierarchyLevel")));
         layer.setParentMatrixIndex(nullableInt(root.get("parentMatrixIndex")));
+        layer.setParentLevelDelta(nullableInt(root.get("parentLevelDelta")));
         JsonNode externalUncleTextures = root.get("externalUncleTextureFilesById");
         if (externalUncleTextures != null && externalUncleTextures.isObject()) {
             layer.setExternalUncleTextureFilesById(

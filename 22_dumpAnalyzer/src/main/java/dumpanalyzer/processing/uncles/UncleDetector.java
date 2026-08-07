@@ -16,6 +16,8 @@ public final class UncleDetector {
     private static final TriangleMeshVertexComparator COMPARATOR = new TriangleMeshVertexComparator();
     private static final double HALF_SPAN = 0.5;
     private static final double UV_TOLERANCE = 0.05;
+    private static final double GRID_UV_TOLERANCE = 1.0e-3;
+    private static final int MAX_ANCESTOR_LEVEL_DELTA = 8;
     private static final int DEBUG_FRAME_ID = 50;
     private static final Set<String> DEBUG_TILE_IDS = Set.of("50_97", "50_53");
 
@@ -26,8 +28,9 @@ public final class UncleDetector {
         List<PreparedCandidate> preparedCandidates = new ArrayList<>();
         for (TileInstance candidate : frame.getTiles()) {
             CandidateProfile profile = classifyCandidate(candidate);
-            if (profile != null) {
-                preparedCandidates.add(new PreparedCandidate(candidate, profile));
+            List<CandidateCell> cells = classifyCandidateCells(candidate);
+            if (profile != null || !cells.isEmpty()) {
+                preparedCandidates.add(new PreparedCandidate(candidate, profile, cells));
             }
         }
         return List.copyOf(preparedCandidates);
@@ -48,7 +51,35 @@ public final class UncleDetector {
         for (PreparedCandidate preparedCandidate : preparedCandidates) {
             TileInstance candidate = preparedCandidate.tile();
             CandidateProfile profile = preparedCandidate.profile();
-            debug(frame, tile, candidate, "candidate profile: " + profile.debugSummary());
+            if (candidate == tile) {
+                continue;
+            }
+            if (profile != null) {
+                debug(frame, tile, candidate, "candidate profile: " + profile.debugSummary());
+            }
+
+            List<DetectedRelationship> gridRelationships = detectGridRelationships(tile, preparedCandidate.cells());
+            for (DetectedRelationship detected : gridRelationships) {
+                String key = candidate.getContentId()
+                    + "|" + detected.levelDelta()
+                    + "|" + detected.rowOffset()
+                    + "|" + detected.columnOffset();
+                if (seen.add(key)) {
+                    candidate.addRelationshipGeometry(detected.referenceGeometry());
+                    relationships.add(new ToUncleRelationship(
+                        detected.direction(),
+                        candidate.getContentId(),
+                        detected.kind(),
+                        detected.levelDelta(),
+                        detected.rowOffset(),
+                        detected.columnOffset()
+                    ));
+                }
+            }
+
+            if (!gridRelationships.isEmpty()) {
+                continue;
+            }
 
             for (DetectedRelationship detected : detectRelationshipsAgainstCandidate(tile, candidate, profile)) {
                 String key = detected.direction() + "|" + candidate.getContentId();
@@ -69,6 +100,9 @@ public final class UncleDetector {
         TileInstance candidate,
         CandidateProfile profile
     ) {
+        if (profile == null) {
+            return List.of();
+        }
         if (profile.simpleBounds() != null) {
             TriangleMeshVertexComparator.ComparisonResult comparison =
                 COMPARATOR.compare(tile.getTriangleStrip(), profile.geometry());
@@ -78,7 +112,7 @@ public final class UncleDetector {
             UncleDirections direction = mapUncleDirection(comparison.directionFromAtoB(), profile.simpleBounds());
             return direction == null
                 ? List.of()
-                : List.of(new DetectedRelationship(direction, UncleRelationshipKind.ADJACENT_BORDER));
+                : List.of(DetectedRelationship.legacy(direction, UncleRelationshipKind.ADJACENT_BORDER));
         }
 
         if (profile.missingQuadrant() == null || profile.stripsByQuadrant() == null) {
@@ -87,7 +121,127 @@ public final class UncleDetector {
         UncleDirections direction = detectLShapedRelationship(tile, profile);
         return direction == null
             ? List.of()
-            : List.of(new DetectedRelationship(direction, UncleRelationshipKind.CONTAINING_QUADRANT));
+            : List.of(DetectedRelationship.legacy(direction, UncleRelationshipKind.CONTAINING_QUADRANT));
+    }
+
+    private static List<DetectedRelationship> detectGridRelationships(
+        TileInstance tile,
+        List<CandidateCell> cells
+    ) {
+        if (tile == null || tile.getTriangleStrip() == null || cells == null || cells.isEmpty()) {
+            return List.of();
+        }
+        List<DetectedRelationship> out = new ArrayList<>();
+        for (CandidateCell cell : cells) {
+            TriangleMeshVertexComparator.ComparisonResult comparison =
+                COMPARATOR.compare(tile.getTriangleStrip(), cell.geometry());
+            if (!comparison.areNeighbors() || comparison.directionFromAtoB() == null) {
+                continue;
+            }
+            int row = cell.rowOffset();
+            int column = cell.columnOffset();
+            switch (comparison.directionFromAtoB()) {
+                case EAST -> column--;
+                case WEST -> column++;
+                case NORTH -> row++;
+                case SOUTH -> row--;
+            }
+            int scale = 1 << cell.levelDelta();
+            UncleDirections direction = relationshipDirection(
+                comparison.directionFromAtoB(),
+                row,
+                column,
+                scale
+            );
+            boolean contained = row >= 0 && row < scale && column >= 0 && column < scale;
+            out.add(new DetectedRelationship(
+                direction,
+                contained ? UncleRelationshipKind.CONTAINING_QUADRANT : UncleRelationshipKind.ADJACENT_BORDER,
+                cell.levelDelta(),
+                row,
+                column,
+                cell.geometry()
+            ));
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static List<CandidateCell> classifyCandidateCells(TileInstance candidate) {
+        if (candidate == null || candidate.getContentId() == null || candidate.isFullResolutionWithRespectToTexture()) {
+            return List.of();
+        }
+        List<CandidateCell> out = new ArrayList<>();
+        for (TileInstance.TriangleStripGeometry geometry : candidate.getTriangleStripGeometries()) {
+            UvBounds bounds = computeUvBounds(geometry);
+            CandidateCell cell = gridCell(geometry, bounds);
+            if (cell != null) {
+                out.add(cell);
+            }
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static CandidateCell gridCell(TileInstance.TriangleStripGeometry geometry, UvBounds bounds) {
+        if (geometry == null || bounds == null) {
+            return null;
+        }
+        double spanU = bounds.maxU() - bounds.minU();
+        double spanV = bounds.maxV() - bounds.minV();
+        for (int levelDelta = 1; levelDelta <= MAX_ANCESTOR_LEVEL_DELTA; levelDelta++) {
+            int scale = 1 << levelDelta;
+            double step = 1.0 / scale;
+            if (Math.abs(spanU - step) > GRID_UV_TOLERANCE
+                || Math.abs(spanV - step) > GRID_UV_TOLERANCE) {
+                continue;
+            }
+            int column = (int)Math.round(bounds.minU() * scale);
+            int southIndex = (int)Math.round(bounds.minV() * scale);
+            if (column < 0 || column >= scale || southIndex < 0 || southIndex >= scale
+                || Math.abs(bounds.minU() - column * step) > GRID_UV_TOLERANCE
+                || Math.abs(bounds.maxU() - (column + 1) * step) > GRID_UV_TOLERANCE
+                || Math.abs(bounds.minV() - southIndex * step) > GRID_UV_TOLERANCE
+                || Math.abs(bounds.maxV() - (southIndex + 1) * step) > GRID_UV_TOLERANCE) {
+                return null;
+            }
+            return new CandidateCell(geometry, levelDelta, scale - 1 - southIndex, column);
+        }
+        return null;
+    }
+
+    private static UvBounds computeUvBounds(TileInstance.TriangleStripGeometry geometry) {
+        if (geometry == null || geometry.vertices() == null || geometry.vertices().isEmpty()) {
+            return null;
+        }
+        double minU = Double.POSITIVE_INFINITY;
+        double maxU = Double.NEGATIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        double maxV = Double.NEGATIVE_INFINITY;
+        for (TileInstance.TriangleStripVertex vertex : geometry.vertices()) {
+            if (vertex == null || !Double.isFinite(vertex.u()) || !Double.isFinite(vertex.v())) {
+                continue;
+            }
+            minU = Math.min(minU, vertex.u());
+            maxU = Math.max(maxU, vertex.u());
+            minV = Math.min(minV, vertex.v());
+            maxV = Math.max(maxV, vertex.v());
+        }
+        return Double.isFinite(minU) ? new UvBounds(minU, maxU, minV, maxV) : null;
+    }
+
+    private static UncleDirections relationshipDirection(
+        TriangleMeshVertexComparator.Direction border,
+        int row,
+        int column,
+        int scale
+    ) {
+        boolean north = row < scale / 2;
+        boolean west = column < scale / 2;
+        return switch (border) {
+            case EAST -> north ? UncleDirections.WEST_NORTH : UncleDirections.WEST_SOUTH;
+            case WEST -> north ? UncleDirections.EAST_NORTH : UncleDirections.EAST_SOUTH;
+            case NORTH -> west ? UncleDirections.SOUTH_WEST : UncleDirections.SOUTH_EAST;
+            case SOUTH -> west ? UncleDirections.NORTH_WEST : UncleDirections.NORTH_EAST;
+        };
     }
 
     private static CandidateProfile classifyCandidate(TileInstance candidate) {
@@ -291,7 +445,22 @@ public final class UncleDetector {
 
     private record DetectedRelationship(
         UncleDirections direction,
-        UncleRelationshipKind kind
+        UncleRelationshipKind kind,
+        Integer levelDelta,
+        Integer rowOffset,
+        Integer columnOffset,
+        TileInstance.TriangleStripGeometry referenceGeometry
+    ) {
+        private static DetectedRelationship legacy(UncleDirections direction, UncleRelationshipKind kind) {
+            return new DetectedRelationship(direction, kind, null, null, null, null);
+        }
+    }
+
+    private record CandidateCell(
+        TileInstance.TriangleStripGeometry geometry,
+        int levelDelta,
+        int rowOffset,
+        int columnOffset
     ) {}
 
     private record UvBounds(double minU, double maxU, double minV, double maxV) {
@@ -367,6 +536,7 @@ public final class UncleDetector {
 
     private record PreparedCandidate(
         TileInstance tile,
-        CandidateProfile profile
+        CandidateProfile profile,
+        List<CandidateCell> cells
     ) {}
 }

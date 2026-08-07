@@ -10,6 +10,7 @@ public final class MatrixLayer {
     private Integer contractVersion;
     private Integer hierarchyLevel;
     private Integer parentMatrixIndex;
+    private Integer parentLevelDelta;
     private ParentGridTransform parentGridTransform;
     private int frameId;
     private int rows;
@@ -42,6 +43,14 @@ public final class MatrixLayer {
 
     public void setParentMatrixIndex(Integer parentMatrixIndex) {
         this.parentMatrixIndex = parentMatrixIndex;
+    }
+
+    public Integer getParentLevelDelta() {
+        return parentLevelDelta;
+    }
+
+    public void setParentLevelDelta(Integer parentLevelDelta) {
+        this.parentLevelDelta = parentLevelDelta;
     }
 
     public ParentGridTransform getParentGridTransform() {

@@ -199,6 +199,14 @@ public final class TileMatrixProcessor {
             displayTiles.addAll(applyMatrixCoordinates(component, matrix));
         }
 
+        // Relationship anchors provide the coarser geometry needed to see and
+        // position disconnected fine-level components, but are not matrix cells.
+        for (TileInstance tile : normalized.getTiles()) {
+            if (tile != null && !tile.getRelationshipGeometries().isEmpty()) {
+                displayTiles.add(tile);
+            }
+        }
+
         FrameData frameWithMatrices = copyFrameWithTiles(normalized, displayTiles, hadErrors && matrices.isEmpty());
         return new IndexedFrameResult(request.index(), frameWithMatrices, List.copyOf(matrices));
     }

@@ -21,6 +21,9 @@ public final class Configuration {
         catch (Exception e) {
             throw new IllegalStateException("Could not load application.properties", e);
         }
-        return properties.getProperty("output.directory", "/media/ramdisk/output");
+        return System.getProperty(
+            "output.directory",
+            properties.getProperty("output.directory", "/media/ramdisk/output")
+        );
     }
 }

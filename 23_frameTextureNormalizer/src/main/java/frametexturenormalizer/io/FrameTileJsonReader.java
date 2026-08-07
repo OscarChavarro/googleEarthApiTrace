@@ -38,7 +38,7 @@ public final class FrameTileJsonReader {
             Integer west = nullableNeighbor(tile.get("westNeighbor"));
             TriangleStripGeometry triangleStrip = parseTriangleStrip(tile.get("triangleStrip"));
             double[] modelViewMatrix = readArray16(tile.get("modelViewMatrix"));
-            result.add(new TileInstance(
+            TileInstance parsed = new TileInstance(
                 tileId,
                 frameId,
                 textureFile,
@@ -52,7 +52,9 @@ public final class FrameTileJsonReader {
                 null,
                 false,
                 parseUncles(tile.get("uncles"))
-            ));
+            );
+            parsed.setRelationshipGeometries(parseTriangleStrips(tile.get("relationshipGeometries")));
+            result.add(parsed);
         }
         return result;
     }
@@ -134,17 +136,49 @@ public final class FrameTileJsonReader {
                 continue;
             }
             UncleDirections direction = parseDirection(item.get("direction"));
-            String uncleContentId = nullableScopedTileId(item.get("uncleContentId"));
-            if (direction == null || uncleContentId == null) {
+            String uncleContentId = nullableScopedTileId(
+                item.hasNonNull("referenceContentId") ? item.get("referenceContentId") : item.get("uncleContentId")
+            );
+            Integer levelDelta = nullablePositiveInt(item.get("levelDelta"));
+            Integer rowOffset = nullableInt(item.get("rowOffset"));
+            Integer columnOffset = nullableInt(item.get("columnOffset"));
+            boolean hasGridOffset = levelDelta != null && rowOffset != null && columnOffset != null;
+            if (uncleContentId == null || (!hasGridOffset && direction == null)) {
                 continue;
             }
             out.add(new ToUncleRelationship(
                 direction,
                 uncleContentId,
-                parseRelationshipKind(item.get("relationshipKind"))
+                parseRelationshipKind(item.get("relationshipKind")),
+                levelDelta,
+                rowOffset,
+                columnOffset
             ));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static List<TriangleStripGeometry> parseTriangleStrips(JsonNode node) {
+        if (node == null || !node.isArray() || node.isEmpty()) {
+            return List.of();
+        }
+        List<TriangleStripGeometry> out = new ArrayList<>(node.size());
+        for (JsonNode geometry : node) {
+            TriangleStripGeometry parsed = parseTriangleStrip(geometry);
+            if (parsed != null) {
+                out.add(parsed);
+            }
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static Integer nullablePositiveInt(JsonNode node) {
+        Integer value = nullableInt(node);
+        return value != null && value > 0 ? value : null;
+    }
+
+    private static Integer nullableInt(JsonNode node) {
+        return node == null || node.isNull() || !node.isIntegralNumber() ? null : node.intValue();
     }
 
     private static String nullableScopedTileId(JsonNode node) {

@@ -67,6 +67,7 @@ public final class TileTextureNormalizer {
             tile.isWestCuttingCell(),
             tile.isSelected()
         );
+        normalizedTile.setRelationshipGeometries(tile.getRelationshipGeometries());
         return normalizedTile;
     }
 

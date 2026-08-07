@@ -275,6 +275,7 @@ public final class FrameJsonWriter {
         }
         updateNeighbors(node, tile);
         writeTriangleStrip(node, tile.getTriangleStrip());
+        writeRelationshipGeometries(node, tile.getRelationshipGeometries());
         writeArray16(node, "modelViewMatrix", tile.getModelViewMatrix());
         writeUncles(node, tile.getUncles());
         return node;
@@ -312,6 +313,20 @@ public final class FrameJsonWriter {
         node.set("triangleStrip", stripNode);
     }
 
+    private static void writeRelationshipGeometries(ObjectNode node, List<TriangleStripGeometry> geometries) {
+        ArrayNode array = JSON.createArrayNode();
+        if (geometries != null) {
+            for (TriangleStripGeometry geometry : geometries) {
+                ObjectNode wrapper = JSON.createObjectNode();
+                writeTriangleStrip(wrapper, geometry);
+                if (wrapper.get("triangleStrip") != null && !wrapper.get("triangleStrip").isNull()) {
+                    array.add(wrapper.get("triangleStrip"));
+                }
+            }
+        }
+        node.set("relationshipGeometries", array);
+    }
+
     private static void writeArray16(ObjectNode node, String field, double[] values) {
         if (values == null || values.length != 16) {
             node.putNull(field);
@@ -332,10 +347,17 @@ public final class FrameJsonWriter {
                     continue;
                 }
                 ObjectNode uncleNode = JSON.createObjectNode();
-                uncleNode.put("direction", uncle.direction().name());
-                uncleNode.put("uncleContentId", uncle.uncleContentId());
+                if (uncle.direction() != null) {
+                    uncleNode.put("direction", uncle.direction().name());
+                }
+                uncleNode.put("referenceContentId", uncle.referenceContentId());
                 if (uncle.relationshipKind() != null) {
                     uncleNode.put("relationshipKind", uncle.relationshipKind().name());
+                }
+                if (uncle.hasGridOffset()) {
+                    uncleNode.put("levelDelta", uncle.levelDelta());
+                    uncleNode.put("rowOffset", uncle.rowOffset());
+                    uncleNode.put("columnOffset", uncle.columnOffset());
                 }
                 arr.add(uncleNode);
             }

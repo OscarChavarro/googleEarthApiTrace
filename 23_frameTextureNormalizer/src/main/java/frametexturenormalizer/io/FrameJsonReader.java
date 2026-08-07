@@ -4,13 +4,16 @@ package frametexturenormalizer.io;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 // App classes
 import frametexturenormalizer.config.Configuration;
 import frametexturenormalizer.model.FrameData;
+import frametexturenormalizer.model.contract.ScopedTileIds;
 import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 import frametexturenormalizer.model.TileInstance;
 import frametexturenormalizer.processing.filtering.TileFiltererByConnectedComponents;
@@ -135,6 +138,7 @@ public final class FrameJsonReader {
             }
             List<TileInstance> ccFilteredTiles = connectedComponentsFilterer.filter(frame.getTiles());
             List<TileInstance> filteredTiles = tileFilterer.filter(ccFilteredTiles);
+            filteredTiles = appendRelationshipAnchors(frame.getTiles(), filteredTiles);
             out.add(new FrameData(
                 frame.getId(),
                 filteredTiles,
@@ -146,6 +150,49 @@ public final class FrameJsonReader {
             ));
         }
         return out;
+    }
+
+    private static List<TileInstance> appendRelationshipAnchors(
+        List<TileInstance> sourceTiles,
+        List<TileInstance> filteredTiles
+    ) {
+        if (sourceTiles == null || sourceTiles.isEmpty()) {
+            return filteredTiles == null ? List.of() : filteredTiles;
+        }
+        Set<String> referencedIds = new LinkedHashSet<>();
+        for (TileInstance tile : sourceTiles) {
+            if (tile == null || tile.getUncles() == null) {
+                continue;
+            }
+            tile.getUncles().stream()
+                .filter(java.util.Objects::nonNull)
+                .map(relationship -> ScopedTileIds.normalize(relationship.referenceContentId()))
+                .filter(java.util.Objects::nonNull)
+                .forEach(referencedIds::add);
+        }
+        if (referencedIds.isEmpty()) {
+            return filteredTiles == null ? List.of() : filteredTiles;
+        }
+
+        List<TileInstance> out = new ArrayList<>();
+        Set<String> included = new LinkedHashSet<>();
+        if (filteredTiles != null) {
+            for (TileInstance tile : filteredTiles) {
+                if (tile != null && included.add(tile.getScopedId())) {
+                    out.add(tile);
+                }
+            }
+        }
+        for (TileInstance tile : sourceTiles) {
+            if (tile == null || tile.getRelationshipGeometries().isEmpty()) {
+                continue;
+            }
+            String scopedId = ScopedTileIds.normalize(tile.getScopedId());
+            if (referencedIds.contains(scopedId) && included.add(tile.getScopedId())) {
+                out.add(tile);
+            }
+        }
+        return List.copyOf(out);
     }
 
     private static void join(Thread thread) {

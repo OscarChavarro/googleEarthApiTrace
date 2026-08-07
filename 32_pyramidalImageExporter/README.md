@@ -10,7 +10,7 @@ Image".
 The top quadtree levels (`0..5`) are now fully reconstructed: every cell of every
 top-level layer is textured and the layer visualization corresponds to the map of planet
 Earth. Deeper `matrix_<n>` tiles are exported too whenever they can be anchored to an
-absolute quadtree path: directly, through true `uncles`, through a contract-v3
+absolute quadtree path: directly, through cross-level references, through a contract-v3
 `parentGridTransform`, or through accepted visual anchors (see "Exporting the pyramidal
 image" below). The pyramid can be exported to disk as a quadtree of PNG files with the
 `e` key.
@@ -152,6 +152,23 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   neutral for legacy datasets. This propagates as a fixpoint, one newly canonicalized
   matrix per pass, so all relationships made available by a parent grid vote before its
   child grid can propagate.
+- Contract v6 generalizes that edge as
+  `(referenceContentId, levelDelta, rowOffset, columnOffset)`. If the reference cell is
+  `(r,c)` and `s = 2^levelDelta`, the target is `(s*r + rowOffset,
+  s*c + columnOffset)` at the deeper level. Offsets may lie outside `[0,s)`, which
+  represents cousins across a border and lets level-13 islands link directly to a
+  level-11 reference when level-12 sea tiles are absent.
+- When a reference pyramid establishes the deepest absolute level but a hierarchy root has
+  only an ambiguous visual placement, frame camera vectors provide a geographic rigid-grid
+  anchor. The quadtree uses the project's square 360-degree latitude model, not Web Mercator:
+  longitude maps to columns, latitude maps to south-origin rows over `[-180,180]`, and only
+  the middle half represents valid Earth latitudes. Camera offsets within four cells are
+  clustered, but the winning cluster must still have a strict majority.
+- A camera-anchored root owns its complete hierarchy component. `parentMatrixIndex` and v6
+  `referenceContentId` edges discover all descendants; stale visual seeds for those layers
+  are suppressed and every descendant with sufficient camera evidence receives its own
+  rigid-grid anchor. This prevents unrelated continental imagery from outvoting an island
+  across missing level-11/12 sea tiles.
 - A contract-v3+ `parentGridTransform` propagates a containing-parent placement after,
   and only after, the referenced parent matrix has an accepted absolute grid anchor. It
   is a matrix-to-matrix transform, not a substitute for an observed per-tile uncle
@@ -175,7 +192,8 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
 - A tile with no way to reach an anchored path (directly or through `uncles`) is skipped.
 
 Contract-v3+ hierarchy roots repaired by `31_matrixMerger` carry an explicit rigid parent
-grid transform. Contract-v4 adds explicit uncle relationship kinds; older relationships
+grid transform. Contract-v4 adds explicit uncle relationship kinds; contract-v6 adds
+weighted grid offsets and `parentLevelDelta`. Older relationships
 remain supported through legacy rigid-grid consensus. The exporter never
 assumes that `matrix_<n+1>` is the child of
 `matrix_<n>` merely because of folder order.

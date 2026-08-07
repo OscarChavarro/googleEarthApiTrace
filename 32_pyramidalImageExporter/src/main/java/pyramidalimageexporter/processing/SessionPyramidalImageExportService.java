@@ -9,6 +9,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,6 +28,7 @@ import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
+import pyramidalimageexporter.processing.geography.FrameCameraGeoAnchorResolver;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
 import pyramidalimageexporter.processing.uncles.FrameJsonUncleMetadataRestorer;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
@@ -83,12 +85,37 @@ public final class SessionPyramidalImageExportService {
             return;
         }
 
-        applyContentHashAnchors(model);
-
         Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
         new FrameJsonUncleMetadataRestorer().enrich(model.getMatrixLayers(), outputDirectory);
 
         Map<String, String> anchorCatalog = anchorCatalog(model);
+        Map<String, String> preliminaryExternalPaths = buildExternalUncleFullPaths(anchorCatalog);
+        preliminaryExternalPaths.putAll(model.getMergedFullPathByOriginalId());
+        ExternalUncleBridgeBuilder.Bridge preliminaryBridge = new ExternalUncleBridgeBuilder().build(
+            model.getMatrixLayers(),
+            anchorCatalog,
+            outputDirectory
+        );
+        preliminaryExternalPaths.putAll(preliminaryBridge.fullPathByExternalId());
+        TileRootPathResolver.Resolution preliminaryResolution = rootPathResolver.resolve(
+            model.getMatrixLayers(),
+            preliminaryExternalPaths,
+            preliminaryBridge.aliasById()
+        );
+        Set<String> structurallyAnchoredLayers = resolvedLayerNames(
+            model.getMatrixLayers(),
+            preliminaryResolution
+        );
+        FrameCameraGeoAnchorResolver.Anchors geographicAnchors = new FrameCameraGeoAnchorResolver().resolve(
+            model.getMatrixLayers(),
+            outputDirectory,
+            model.getReferenceQuadPathsByImagePath(),
+            preliminaryResolution
+        );
+        Set<String> protectedLayers = new HashSet<>(structurallyAnchoredLayers);
+        protectedLayers.addAll(geographicAnchors.anchoredLayerNames());
+        applyContentHashAnchors(model, protectedLayers);
+
         Map<String, String> externalFullPaths = buildExternalUncleFullPaths(anchorCatalog);
         externalFullPaths.putAll(model.getMergedFullPathByOriginalId());
         ExternalUncleBridgeBuilder.Bridge bridge = new ExternalUncleBridgeBuilder().build(
@@ -97,6 +124,12 @@ public final class SessionPyramidalImageExportService {
             outputDirectory
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
+        Set<String> geographicallyPlacedTileIds = tileIdsInLayers(
+            model.getMatrixLayers(),
+            geographicAnchors.anchoredLayerNames()
+        );
+        geographicallyPlacedTileIds.forEach(externalFullPaths::remove);
+        externalFullPaths.putAll(geographicAnchors.fullPathByTileId());
         System.out.println(
             "SessionPyramidalImageExportService: " + externalFullPaths.size()
                 + " externally anchored id(s) and " + bridge.aliasById().size()
@@ -158,6 +191,43 @@ public final class SessionPyramidalImageExportService {
             "Export complete: " + processed + " tiles processed to " + rootDirectory
                 + (failed > 0 ? " (" + failed + " failed)" : "")
         );
+    }
+
+    private static Set<String> resolvedLayerNames(
+        List<MatrixLayer> layers,
+        TileRootPathResolver.Resolution resolution
+    ) {
+        Set<String> out = new HashSet<>();
+        for (MatrixLayer layer : layers) {
+            if (layer == null || layer.getSourceFolderName() == null || layer.getTiles() == null) {
+                continue;
+            }
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                if (tile != null && resolution.pathFor(layer, tile) != null) {
+                    out.add(layer.getSourceFolderName());
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    private static Set<String> tileIdsInLayers(
+        List<MatrixLayer> layers,
+        Set<String> layerNames
+    ) {
+        Set<String> ids = new HashSet<>();
+        for (MatrixLayer layer : layers) {
+            if (layer == null || !layerNames.contains(layer.getSourceFolderName())) {
+                continue;
+            }
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                if (tile != null && tile.getId() != null) {
+                    ids.add(tile.getId());
+                }
+            }
+        }
+        return ids;
     }
 
     private static void reportMissingAbsoluteSeed(
@@ -263,7 +333,10 @@ public final class SessionPyramidalImageExportService {
         }
     }
 
-    private static void applyContentHashAnchors(PyramidalImageExporterState model) {
+    private static void applyContentHashAnchors(
+        PyramidalImageExporterState model,
+        Set<String> geographicallyAnchoredLayerNames
+    ) {
         String inputFolder = model.getInputFolder();
         if (inputFolder == null) {
             return;
@@ -274,6 +347,10 @@ public final class SessionPyramidalImageExportService {
         MatrixLayerIdRewriteWriter rewriter = new MatrixLayerIdRewriteWriter();
         for (MatrixLayer layer : model.getMatrixLayers()) {
             if (layer == null || layer.getTiles() == null || layer.getSourceFolderName() == null) {
+                continue;
+            }
+            if (geographicallyAnchoredLayerNames != null
+                && geographicallyAnchoredLayerNames.contains(layer.getSourceFolderName())) {
                 continue;
             }
             Map<String, String> newIdByOldId = new HashMap<>();

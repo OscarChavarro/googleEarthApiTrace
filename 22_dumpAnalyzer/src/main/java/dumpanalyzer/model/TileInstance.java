@@ -41,6 +41,7 @@ public final class TileInstance {
     private final double[] projectionMatrix;
     private final double[] modelViewMatrix;
     private volatile List<TriangleStripGeometry> cachedTriangleStripGeometries;
+    private volatile List<TriangleStripGeometry> relationshipGeometries;
     private volatile TriangleStripGeometry cachedTriangleStrip;
     private volatile List<TriangleStripVertex> cachedTriangleStripDeduplicatedVertices;
     private volatile TriangleStripTileTopology cachedTriangleStripTopology;
@@ -104,6 +105,7 @@ public final class TileInstance {
         this.projectionMatrix = projectionMatrix == null ? null : projectionMatrix.clone();
         this.modelViewMatrix = modelViewMatrix == null ? null : modelViewMatrix.clone();
         this.uncles = List.of();
+        this.relationshipGeometries = List.of();
     }
 
     public String getContentId() {
@@ -244,6 +246,20 @@ public final class TileInstance {
 
     public void setUncles(List<ToUncleRelationship> uncles) {
         this.uncles = uncles == null ? List.of() : List.copyOf(uncles);
+    }
+
+    public synchronized void addRelationshipGeometry(TriangleStripGeometry geometry) {
+        if (geometry == null || relationshipGeometries.contains(geometry)) {
+            return;
+        }
+        java.util.ArrayList<TriangleStripGeometry> updated = new java.util.ArrayList<>(relationshipGeometries);
+        updated.add(geometry);
+        relationshipGeometries = List.copyOf(updated);
+    }
+
+    @JsonProperty("relationshipGeometries")
+    public List<TriangleStripGeometry> getRelationshipGeometries() {
+        return relationshipGeometries;
     }
 
     @JsonIgnore

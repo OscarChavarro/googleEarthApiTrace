@@ -24,6 +24,18 @@ final class MatrixJsonWriterTest {
         assertEquals("00754_920", ids.get(30));
     }
 
+    @Test
+    void externalOccurrenceUsesCanonicalIdOfAnExportedTextureCell() {
+        String resolved = MatrixJsonWriter.resolveReferenceId(
+            1471,
+            "01693_1060",
+            Map.of(1109, "01058_1109"),
+            Map.of("01693_1060", "00930_1060")
+        );
+
+        assertEquals("00930_1060", resolved);
+    }
+
     private static TileMatrix.TileCoord tile(int id, int col, String texture) {
         return new TileMatrix.TileCoord(id, 0, col, texture, List.of());
     }

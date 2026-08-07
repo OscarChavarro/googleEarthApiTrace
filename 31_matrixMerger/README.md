@@ -15,8 +15,8 @@ consolidated layer matrices and exporting them for `32_pyramidalImageExporter`.
 - Displays one active matrix at a time as quads on plane `Z=0`.
 - Supports matrix navigation, interactive merges, west-cutter splitting and an automatic
   grouping mode.
-- Tracks "uncle" relationships between quadtree levels, reports the relative hierarchy
-  level of each matrix, and preserves the full directional relationship metadata needed by
+- Tracks weighted cross-level relationships, reports relative hierarchy levels including
+  absent intermediate levels, and preserves the placement metadata needed by
   `32_pyramidalImageExporter`.
 - Repairs disconnected hierarchy roots by visual parent inference when enough sampled
   child textures match quadrants of an earlier matrix. Accepted repairs are persisted as a
@@ -187,24 +187,24 @@ remaining frame is written as:
 - `<exportFolder>/matrix_<n>/matrixLayer.json`
 - `<exportFolder>/matrix_<n>/<tileId>.png` (tile textures copied from the source data)
 
-`matrixLayer.json` uses contract version 4. Besides the matrix and its tiles, it exports:
+`matrixLayer.json` uses contract version 6. Besides the matrix and its tiles, it exports:
 
 - `hierarchyLevel`: relative matrix hierarchy depth, not an absolute quadtree level.
-- `parentMatrixIndex`: the exported `matrix_<n>` index of the immediate parent when known.
+- `parentMatrixIndex`: the exported `matrix_<n>` index of the reference parent when known.
+- `parentLevelDelta`: number of quadtree levels between that parent and this matrix.
 - `parentGridTransform`: optional rigid containing-parent placement supplied by observed metadata.
 - `hierarchyUnclesByTileId`: compatibility `tileId -> [uncleId]` map.
-- `hierarchyRelationshipsByTileId`: lossless
-  `tileId -> [{direction, uncleContentId, relationshipKind}]` map. The kind distinguishes
-  a containing-texture quadrant from a fine tile reached across an adjacent coarse-cell
-  border. Older inputs without the field remain readable and are exported as legacy
-  unknown relationships.
+- `hierarchyRelationshipsByTileId`: lossless relationship map. Contract-v6 entries are
+  `{referenceContentId, levelDelta, rowOffset, columnOffset, direction, relationshipKind}`.
+  The first four fields are authoritative; the last two preserve v4/v5 diagnostics.
+  Older `uncleContentId` records remain readable.
 
 This metadata is required by `32_pyramidalImageExporter`; directory order alone is not
 treated as a hierarchy edge.
 
-For a child cell `(i,j)`, `parentGridTransform` means that
-`(i + rowOffset, j + colOffset)` is its coordinate in the parent grid refined by one
-quadtree level. It remains relative until the parent receives an absolute quadkey anchor.
+For a child cell `(i,j)` and `d = parentLevelDelta`, `parentGridTransform` means that
+`(i + rowOffset, j + colOffset)` is its coordinate in the parent grid refined by `2^d`.
+It remains relative until the parent receives an absolute quadkey anchor.
 
 These folders are the input of `32_pyramidalImageExporter`.
 

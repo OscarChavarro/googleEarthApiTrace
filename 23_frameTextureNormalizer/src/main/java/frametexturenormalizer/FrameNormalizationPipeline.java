@@ -1,15 +1,17 @@
 package frametexturenormalizer;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.stream.Collectors;
 import frametexturenormalizer.io.FrameJsonReader;
 import frametexturenormalizer.io.FrameMatrixJsonExporter;
 import frametexturenormalizer.io.FrameJsonSessionReader;
 import frametexturenormalizer.io.WestCuttersJsonReader;
 import frametexturenormalizer.model.FrameData;
+import frametexturenormalizer.model.TileInstance;
+import frametexturenormalizer.model.contract.ScopedTileIds;
 import frametexturenormalizer.model.state.FrameTextureNormalizerState;
 import frametexturenormalizer.model.TileMatrix;
 import frametexturenormalizer.processing.filtering.FrameFiltererByTileCount;
@@ -20,6 +22,7 @@ import frametexturenormalizer.processing.preparation.DuplicatedTextureFilenameMa
 import frametexturenormalizer.processing.preparation.Sha256SignatureGenerator;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessingResult;
 import frametexturenormalizer.processing.matrix.TileMatrixProcessor;
+import frametexturenormalizer.processing.uncles.ToUncleRelationship;
 
 public final class FrameNormalizationPipeline {
     private final FrameJsonSessionReader traceSessionReader = new FrameJsonSessionReader();
@@ -48,6 +51,7 @@ public final class FrameNormalizationPipeline {
         applyFrameRange(model, startFrame, endFrame);
         int minTilesExclusive = offline ? 0 : 1;
         model.setFrames(frameFiltererByTileCount.keepFramesWithMoreThanTiles(model.getFrames(), minTilesExclusive));
+        Map<String, String> canonicalReferenceIdByOccurrence = canonicalReferenceIds(model.getFrames());
         System.out.println("OK");
 
         System.out.print("SHA signature validation... ");
@@ -69,7 +73,7 @@ public final class FrameNormalizationPipeline {
 
         System.out.print("Exporting matrices... ");
         List<TileMatrix> matrices = deduplicateMatricesByTileIds(matrixResult.matrices());
-        tileMatrixExporter.export(matrices);
+        tileMatrixExporter.export(matrices, canonicalReferenceIdByOccurrence);
         model.setFrames(cleanFrames);
         System.out.println("OK");
 
@@ -92,23 +96,55 @@ public final class FrameNormalizationPipeline {
         );
     }
 
-    private static List<TileMatrix> deduplicateMatricesByTileIds(List<TileMatrix> matrices) {
+    static List<TileMatrix> deduplicateMatricesByTileIds(List<TileMatrix> matrices) {
         if (matrices == null || matrices.isEmpty()) {
             return List.of();
         }
-        List<TileMatrix> out = new ArrayList<>(matrices.size());
-        Set<String> seenSignatures = new LinkedHashSet<>();
+        Map<String, TileMatrix> bySignature = new LinkedHashMap<>();
         for (TileMatrix matrix : matrices) {
             if (matrix == null) {
                 continue;
             }
             String signature = tileIdSignature(matrix);
-            if (!seenSignatures.add(signature)) {
-                continue;
-            }
-            out.add(matrix);
+            bySignature.merge(signature, matrix, FrameNormalizationPipeline::mergeRelationshipMetadata);
         }
-        return out;
+        return List.copyOf(bySignature.values());
+    }
+
+    private static TileMatrix mergeRelationshipMetadata(TileMatrix representative, TileMatrix duplicate) {
+        Map<Integer, List<ToUncleRelationship>> duplicateRelationships = new LinkedHashMap<>();
+        for (TileMatrix.TileCoord tile : duplicate.getTiles()) {
+            duplicateRelationships.put(tile.tileId(), tile.uncles());
+        }
+
+        List<TileMatrix.TileCoord> mergedTiles = new ArrayList<>(representative.getTiles().size());
+        for (TileMatrix.TileCoord tile : representative.getTiles()) {
+            List<ToUncleRelationship> mergedRelationships = new ArrayList<>();
+            if (tile.uncles() != null) {
+                mergedRelationships.addAll(tile.uncles());
+            }
+            List<ToUncleRelationship> additional = duplicateRelationships.get(tile.tileId());
+            if (additional != null) {
+                for (ToUncleRelationship relationship : additional) {
+                    if (relationship != null && !mergedRelationships.contains(relationship)) {
+                        mergedRelationships.add(relationship);
+                    }
+                }
+            }
+            mergedTiles.add(new TileMatrix.TileCoord(
+                tile.tileId(),
+                tile.i(),
+                tile.j(),
+                tile.textureFile(),
+                List.copyOf(mergedRelationships)
+            ));
+        }
+        return new TileMatrix(
+            representative.getFrameId(),
+            representative.getRows(),
+            representative.getCols(),
+            mergedTiles
+        );
     }
 
     private static String tileIdSignature(TileMatrix matrix) {
@@ -125,5 +161,32 @@ public final class FrameNormalizationPipeline {
             }
         }
         return sb.toString();
+    }
+
+    private static Map<String, String> canonicalReferenceIds(List<FrameData> frames) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (frames == null) {
+            return out;
+        }
+        for (FrameData frame : frames) {
+            if (frame == null || frame.getTiles() == null) {
+                continue;
+            }
+            for (TileInstance tile : frame.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                String occurrenceId = ScopedTileIds.normalize(tile.getScopedId());
+                String canonicalId = ScopedTileIds.formatFromTextureFile(
+                    tile.getTextureFile(),
+                    tile.getFrameId(),
+                    tile.getTileId()
+                );
+                if (occurrenceId != null && canonicalId != null && !occurrenceId.equals(canonicalId)) {
+                    out.put(occurrenceId, canonicalId);
+                }
+            }
+        }
+        return out;
     }
 }

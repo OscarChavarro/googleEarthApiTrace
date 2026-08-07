@@ -17,7 +17,7 @@ The input/output directory is read from `output.directory` in
 - Normalizes multiline logical calls (for example long `glShaderSource` payloads split across multiple physical lines).
 - Parses content with ANTLR grammar (`GlTrace.g4`) tailored to the current trace format.
 - Computes per-frame tile sets, axis-aligned bounding boxes, and tile neighborhood
-  relationships (including "uncle" relationships between quadtree levels), exporting the
+  relationships (including generic cross-level references), exporting the
   result as `frame.json` inside each frame folder.
 - Processes globe-level tile sets covering quadtree levels 0-5 and writes a global
   `topLevelTiles.json` file at the root of the output directory (consumed later by
@@ -46,12 +46,15 @@ GC pressure or an operating-system `SIGKILL` (commonly reported by Gradle as exi
 137). The required lifecycle and phase order are:
 
 1. Parse frames while retaining multipatch source geometry, including skipped tiles.
-2. Assign texture paths and compute ordinary neighbor/uncle relationships. Each uncle
-   records `relationshipKind`: `ADJACENT_BORDER` for direct neighboring geometry and
-   `CONTAINING_QUADRANT` for the L-shaped/missing-quadrant detector.
+2. Assign texture paths and compute ordinary neighbor/cross-level relationships. Contract
+   v6 records `referenceContentId`, `levelDelta`, `rowOffset` and `columnOffset`. The last
+   three fields locate the fine cell in the reference tile refined by `2^levelDelta`, so
+   skipped intermediate sea levels are not required. Legacy direction/kind fields remain.
 3. Build `topLevelTiles.json` and `globalPatches.json` while the multipatches are still
    available.
-4. Release skipped source geometry with `TileInstance.releaseSkippedSourceGeometry()`.
+4. Preserve only strips that support a detected cross-level relationship as compact
+   `relationshipGeometries`, then release the remaining skipped source geometry with
+   `TileInstance.releaseSkippedSourceGeometry()`.
 5. Serialize the compact per-frame models to `frame.json`.
 
 Do not move frame serialization ahead of TOP construction, and do not move skipped

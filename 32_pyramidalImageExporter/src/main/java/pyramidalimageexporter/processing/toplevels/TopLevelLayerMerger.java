@@ -415,6 +415,17 @@ public final class TopLevelLayerMerger {
                     // reference a canonical texture from the neighboring LOD.
                     // Search both legal uncle levels locally; TileRootPathResolver
                     // still applies the declared relationship kind afterwards.
+                    if (relation.hasGridOffset()) {
+                        int scale = 1 << relation.levelDelta();
+                        addNearbyPaths(
+                            out,
+                            relation.uncleContentId(),
+                            child[0] - relation.levelDelta(),
+                            Math.floorDiv(child[1] - relation.rowOffset(), scale),
+                            Math.floorDiv(child[2] - relation.columnOffset(), scale)
+                        );
+                        continue;
+                    }
                     addNearbyPaths(out, relation.uncleContentId(), child[0] - 1, child[1] / 2, child[2] / 2);
                     addNearbyPaths(out, relation.uncleContentId(), child[0], child[1], child[2]);
                 }

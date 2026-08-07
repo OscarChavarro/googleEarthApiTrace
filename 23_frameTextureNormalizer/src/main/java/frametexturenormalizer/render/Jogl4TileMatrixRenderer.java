@@ -245,17 +245,22 @@ public final class Jogl4TileMatrixRenderer {
     }
 
     private static void drawFlatGeometry(GL2 gl2, TileInstance tile, double[] defaultModelViewMatrix) {
-        TriangleStripGeometry strip = tile == null ? null : tile.getTriangleStrip();
-        if (strip == null || strip.vertices() == null || strip.vertices().size() < 3) {
+        List<TriangleStripGeometry> strips = tile == null ? List.of() : tile.getDrawableGeometries();
+        if (strips.isEmpty()) {
             return;
         }
         gl2.glPushMatrix();
         applyModelView(gl2, tile, defaultModelViewMatrix);
-        gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
-        for (TriangleStripVertex v : strip.vertices()) {
-            gl2.glVertex3d(v.x(), v.y(), v.z());
+        for (TriangleStripGeometry strip : strips) {
+            if (strip == null || strip.vertices() == null || strip.vertices().size() < 3) {
+                continue;
+            }
+            gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
+            for (TriangleStripVertex v : strip.vertices()) {
+                gl2.glVertex3d(v.x(), v.y(), v.z());
+            }
+            gl2.glEnd();
         }
-        gl2.glEnd();
         gl2.glPopMatrix();
     }
 
@@ -265,8 +270,8 @@ public final class Jogl4TileMatrixRenderer {
         TextureCoords tc,
         double[] defaultModelViewMatrix
     ) {
-        TriangleStripGeometry strip = tile == null ? null : tile.getTriangleStrip();
-        if (strip == null || strip.vertices() == null || strip.vertices().size() < 3 || tc == null) {
+        List<TriangleStripGeometry> strips = tile == null ? List.of() : tile.getDrawableGeometries();
+        if (strips.isEmpty() || tc == null) {
             return;
         }
         float s0 = tc.left();
@@ -277,42 +282,57 @@ public final class Jogl4TileMatrixRenderer {
         float v1 = 1.0f - t1;
         gl2.glPushMatrix();
         applyModelView(gl2, tile, defaultModelViewMatrix);
-        gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
-        for (TriangleStripVertex v : strip.vertices()) {
-            float s = (float)(s0 + v.u() * (s1 - s0));
-            float t = (float)(v0 + (1.0 - v.v()) * (v1 - v0));
-            gl2.glTexCoord2f(s, t);
-            gl2.glVertex3d(v.x(), v.y(), v.z());
+        for (TriangleStripGeometry strip : strips) {
+            if (strip == null || strip.vertices() == null || strip.vertices().size() < 3) {
+                continue;
+            }
+            gl2.glBegin(GL2.GL_TRIANGLE_STRIP);
+            for (TriangleStripVertex v : strip.vertices()) {
+                float s = (float)(s0 + v.u() * (s1 - s0));
+                float t = (float)(v0 + (1.0 - v.v()) * (v1 - v0));
+                gl2.glTexCoord2f(s, t);
+                gl2.glVertex3d(v.x(), v.y(), v.z());
+            }
+            gl2.glEnd();
         }
-        gl2.glEnd();
         gl2.glPopMatrix();
     }
 
     private static void drawWire(GL2 gl2, TileInstance tile, double[] defaultModelViewMatrix) {
-        TriangleStripGeometry strip = tile == null ? null : tile.getTriangleStrip();
-        if (strip == null || strip.vertices() == null || strip.vertices().size() < 3) {
+        List<TriangleStripGeometry> strips = tile == null ? List.of() : tile.getDrawableGeometries();
+        if (strips.isEmpty()) {
             return;
         }
         gl2.glPushMatrix();
         applyModelView(gl2, tile, defaultModelViewMatrix);
-        gl2.glBegin(GL2.GL_LINE_STRIP);
-        for (TriangleStripVertex v : strip.vertices()) {
-            gl2.glVertex3d(v.x(), v.y(), v.z());
+        for (TriangleStripGeometry strip : strips) {
+            if (strip == null || strip.vertices() == null || strip.vertices().size() < 3) {
+                continue;
+            }
+            gl2.glBegin(GL2.GL_LINE_STRIP);
+            for (TriangleStripVertex v : strip.vertices()) {
+                gl2.glVertex3d(v.x(), v.y(), v.z());
+            }
+            gl2.glEnd();
         }
-        gl2.glEnd();
         gl2.glPopMatrix();
     }
 
     private static void drawPoints(GL2 gl2, TileInstance tile, double[] defaultModelViewMatrix) {
-        TriangleStripGeometry strip = tile == null ? null : tile.getTriangleStrip();
-        if (strip == null || strip.vertices() == null || strip.vertices().isEmpty()) {
+        List<TriangleStripGeometry> strips = tile == null ? List.of() : tile.getDrawableGeometries();
+        if (strips.isEmpty()) {
             return;
         }
         gl2.glPushMatrix();
         applyModelView(gl2, tile, defaultModelViewMatrix);
         gl2.glBegin(GL2.GL_POINTS);
-        for (TriangleStripVertex v : strip.vertices()) {
-            gl2.glVertex3d(v.x(), v.y(), v.z());
+        for (TriangleStripGeometry strip : strips) {
+            if (strip == null || strip.vertices() == null) {
+                continue;
+            }
+            for (TriangleStripVertex v : strip.vertices()) {
+                gl2.glVertex3d(v.x(), v.y(), v.z());
+            }
         }
         gl2.glEnd();
         gl2.glPopMatrix();

@@ -108,6 +108,47 @@ final class TileRootPathResolverTest {
     }
 
     @Test
+    void resolvesAGrandparentCousinWithAnExplicitTwoLevelGridOffset() {
+        MatrixLayerTile island = tile("island", 0, 0);
+        island.setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.EAST_SOUTH,
+            "level-11-reference",
+            UncleRelationshipKind.ADJACENT_BORDER,
+            2,
+            2,
+            4
+        )));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer(island)),
+            Map.of("level-11-reference", "03"),
+            Map.of()
+        );
+
+        assertEquals("0203", resolution.pathById().get("island"));
+        assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("island"));
+    }
+
+    @Test
+    void appliesAParentGridTransformAcrossTwoMissingLevels() {
+        MatrixLayer parent = layer(tile("parent", 0, 0));
+        parent.setSourceFolderName("matrix_0");
+        MatrixLayer child = layer(tile("child", 0, 0));
+        child.setSourceFolderName("matrix_1");
+        child.setParentMatrixIndex(0);
+        child.setParentLevelDelta(2);
+        child.setParentGridTransform(new ParentGridTransform(0, 0));
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(parent, child),
+            Map.of("parent", "03"),
+            Map.of()
+        );
+
+        assertEquals("0333", resolution.pathById().get("child"));
+    }
+
+    @Test
     void resolvesTheObservedMixedLegacyRelationshipsByRigidGridConsensus() {
         MatrixLayerTile containing = tile("00381_476", 2, 2);
         containing.setUncles(List.of(new ToUncleRelationship(
