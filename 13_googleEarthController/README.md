@@ -74,7 +74,7 @@ advances reaches that total, requests `File -> Quit` in Google Earth, and the bu
   `DOWN` + `ENTER` key presses into the focused application (Google Earth), so it cannot
   run under a headless display and will interfere with any other focused window.
 - It spawns and consumes `12_fileSystemChangesDetector` output to decide when to advance.
-- Before each `DOWN` + `ENTER` sequence it waits the built-in key timing windows
-  (`430 ms` hold, `1000 ms` between keys). It does not run the system-wide `sync`
+- Before each `DOWN` + `ENTER` sequence it keeps the built-in key timing windows
+  (`430 ms` hold, `400 ms` between keys). It does not run the system-wide `sync`
   command: capture output lives on `tmpfs`, and a global flush can block on unrelated
   filesystems.

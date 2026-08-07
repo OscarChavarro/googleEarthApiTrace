@@ -14,7 +14,7 @@ public class GoogleEarthController {
     private static final String OUTPUT_DIRECTORY = loadOutputDirectory();
     private static final long CONTINUE_DELAY_SECONDS = 2;
     private static final long KEY_HOLD_MILLIS = 430;
-    private static final long BETWEEN_KEYS_MILLIS = 1000;
+    private static final long BETWEEN_KEYS_MILLIS = 400;
     private static final long AFTER_TURTLE_DISABLE_MILLIS = 2000;
     private static final long BETWEEN_CHILD_ENABLE_ACTIONS_MILLIS = 1000;
     private static final long AFTER_CRASH_DIALOG_CLICK_MILLIS = 1500;
