@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -55,13 +58,16 @@ public final class ExternalUncleBridgeBuilder {
 
         Set<String> loadedIds = new HashSet<>();
         Map<String, String> tileIdByTexture = new HashMap<>();
+        Map<String, String> tileIdByTextureHash = new HashMap<>();
+        Set<String> ambiguousTextureHashes = new HashSet<>();
         for (MatrixLayer layer : layers) {
             if (layer == null || layer.getTiles() == null) {
                 continue;
             }
             for (Map.Entry<String, String> entry : layer.getExternalUncleTextureFilesById().entrySet()) {
-                if (isReadableTexture(entry.getValue())) {
-                    texturePathByExternalId.putIfAbsent(entry.getKey(), entry.getValue());
+                String canonicalTexture = canonicalTexturePath(entry.getKey(), entry.getValue(), outputDirectory);
+                if (isReadableTexture(canonicalTexture)) {
+                    texturePathByExternalId.putIfAbsent(entry.getKey(), canonicalTexture);
                 }
             }
             for (MatrixLayerTile tile : layer.getTiles()) {
@@ -82,6 +88,7 @@ public final class ExternalUncleBridgeBuilder {
                     continue;
                 }
                 tileIdByTexture.putIfAbsent(canonicalTexture, tile.getId());
+                indexByContentHash(tileIdByTextureHash, ambiguousTextureHashes, canonicalTexture, tile.getId());
                 String label = catalogued.get(canonicalTexture);
                 if (label == null) {
                     label = contentResolver.resolveQuadPath(canonicalTexture).orElse(null);
@@ -123,6 +130,9 @@ public final class ExternalUncleBridgeBuilder {
                         continue;
                     }
                     String survivingTileId = tileIdByTexture.get(textureFile);
+                    if (survivingTileId == null) {
+                        survivingTileId = tileIdByContentHash(textureFile, tileIdByTextureHash, ambiguousTextureHashes);
+                    }
                     if (survivingTileId != null) {
                         aliasById.put(uncleId, survivingTileId);
                     }
@@ -130,6 +140,14 @@ public final class ExternalUncleBridgeBuilder {
             }
         }
         return new Bridge(fullPathByExternalId, aliasById, texturePathByExternalId);
+    }
+
+    private static String canonicalTexturePath(String tileId, String textureFile, Path outputDirectory) {
+        String canonicalTexture = originalTexturePathOf(tileId, outputDirectory);
+        if (isReadableTexture(canonicalTexture)) {
+            return canonicalTexture;
+        }
+        return textureFile;
     }
 
     private static boolean isReadableTexture(String textureFile) {
@@ -142,6 +160,49 @@ public final class ExternalUncleBridgeBuilder {
         }
         catch (RuntimeException ex) {
             return false;
+        }
+    }
+
+    private static void indexByContentHash(
+        Map<String, String> tileIdByTextureHash,
+        Set<String> ambiguousTextureHashes,
+        String textureFile,
+        String tileId
+    ) {
+        String hash = hashTexture(textureFile);
+        if (hash == null || ambiguousTextureHashes.contains(hash)) {
+            return;
+        }
+        String previous = tileIdByTextureHash.putIfAbsent(hash, tileId);
+        if (previous != null && !previous.equals(tileId)) {
+            tileIdByTextureHash.remove(hash);
+            ambiguousTextureHashes.add(hash);
+        }
+    }
+
+    private static String tileIdByContentHash(
+        String textureFile,
+        Map<String, String> tileIdByTextureHash,
+        Set<String> ambiguousTextureHashes
+    ) {
+        String hash = hashTexture(textureFile);
+        if (hash == null || ambiguousTextureHashes.contains(hash)) {
+            return null;
+        }
+        return tileIdByTextureHash.get(hash);
+    }
+
+    private static String hashTexture(String textureFile) {
+        if (!isReadableTexture(textureFile)) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(Files.readAllBytes(Path.of(textureFile)));
+            return HexFormat.of().formatHex(digest.digest());
+        }
+        catch (IOException | NoSuchAlgorithmException | RuntimeException ex) {
+            return null;
         }
     }
 

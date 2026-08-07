@@ -14,6 +14,7 @@ public final class MergeAnalysis {
     private final List<String> copiedNodeIds;
     private final Set<String> resolutionEquivalentNodeIds;
     private final Set<String> higherResolutionDeltaNodeIds;
+    private final Set<String> retainedRefinementAncestorNodeIds;
     private final int replacedTiles;
     private final Map<String, String> conflictDetails;
     private final Map<String, Double> imageDistances;
@@ -27,6 +28,7 @@ public final class MergeAnalysis {
         List<String> copiedNodeIds,
         Set<String> resolutionEquivalentNodeIds,
         Set<String> higherResolutionDeltaNodeIds,
+        Set<String> retainedRefinementAncestorNodeIds,
         int replacedTiles,
         Map<String, String> conflictDetails,
         Map<String, Double> imageDistances
@@ -39,6 +41,7 @@ public final class MergeAnalysis {
         this.copiedNodeIds = Collections.unmodifiableList(copiedNodeIds);
         this.resolutionEquivalentNodeIds = Collections.unmodifiableSet(resolutionEquivalentNodeIds);
         this.higherResolutionDeltaNodeIds = Collections.unmodifiableSet(higherResolutionDeltaNodeIds);
+        this.retainedRefinementAncestorNodeIds = Collections.unmodifiableSet(retainedRefinementAncestorNodeIds);
         this.replacedTiles = replacedTiles;
         this.conflictDetails = Collections.unmodifiableMap(conflictDetails);
         this.imageDistances = Collections.unmodifiableMap(imageDistances);
@@ -80,6 +83,10 @@ public final class MergeAnalysis {
         return higherResolutionDeltaNodeIds;
     }
 
+    public Set<String> getRetainedRefinementAncestorNodeIds() {
+        return retainedRefinementAncestorNodeIds;
+    }
+
     public int getReplacedTiles() {
         return replacedTiles;
     }
@@ -100,7 +107,8 @@ public final class MergeAnalysis {
         if (isMergePossible()) {
             return "Merge ready: green. Compared " + comparedTiles + " overlapping tile(s), delta contributes "
                 + mergeableTiles + " mergeable tile(s), resolution matches: "
-                + resolutionEquivalentNodeIds.size() + ", conflicts: 0.";
+                + resolutionEquivalentNodeIds.size() + ", retained refinement ancestors: "
+                + retainedRefinementAncestorNodeIds.size() + ", conflicts: 0.";
         }
         return "Merge blocked: red. Conflict levels " + conflictingLevels + ", conflict tile(s) "
             + conflictingNodeIds + ".";

@@ -18,6 +18,8 @@ import pyramidalimageexporter.processing.uncles.ToUncleRelationship;
 
 public final class FrameCameraGeoAnchorResolver {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final int MIN_EXACT_VOTES_FOR_LOW_LEVEL_ANCHOR = 3;
+    private static final int LOW_LEVEL_CAMERA_LIMIT = 11;
 
     public record Anchors(Map<String, String> fullPathByTileId, Set<String> anchoredLayerNames) {}
 
@@ -37,8 +39,7 @@ public final class FrameCameraGeoAnchorResolver {
         Map<String, String> paths = new LinkedHashMap<>();
         Set<String> anchoredLayers = new LinkedHashSet<>();
         for (MatrixLayer layer : layers) {
-            if (!isImportedLayer(layer) || layer.getHierarchyLevel() == null
-                || layer.getHierarchyLevel() != 0) {
+            if (!isCameraAnchorRoot(layer)) {
                 continue;
             }
             int absoluteLevel = deepestReferenceLevel
@@ -94,13 +95,24 @@ public final class FrameCameraGeoAnchorResolver {
     ) {
         Set<String> ids = new LinkedHashSet<>();
         Map<String, MatrixLayerTile> tilesById = new LinkedHashMap<>();
+        Map<Integer, MatrixLayerTile> fallbackTileByFrameId = new HashMap<>();
+        double centerI = layer.getRows() > 0 ? (layer.getRows() - 1) / 2.0 : 0.0;
+        double centerJ = layer.getCols() > 0 ? (layer.getCols() - 1) / 2.0 : 0.0;
         for (MatrixLayerTile tile : layer.getTiles()) {
             if (tile != null && tile.getId() != null) {
                 ids.add(tile.getId());
                 tilesById.put(tile.getId(), tile);
+                Integer frameId = frameIdOf(tile.getId());
+                if (frameId != null) {
+                    MatrixLayerTile previous = fallbackTileByFrameId.get(frameId);
+                    if (isCloserTo(centerI, centerJ, tile, previous)) {
+                        fallbackTileByFrameId.put(frameId, tile);
+                    }
+                }
             }
         }
         Map<GridOffset, Integer> offsetVotes = new LinkedHashMap<>();
+        Map<GridOffset, Integer> exactOffsetVotes = new LinkedHashMap<>();
         for (String id : ids) {
             Integer frameId = frameIdOf(id);
             if (frameId == null) {
@@ -110,22 +122,56 @@ public final class FrameCameraGeoAnchorResolver {
                 frameId,
                 ignored -> readAnchor(frameRoot, frameId)
             );
-            if (anchor != null && ids.contains(anchor.tileId())) {
+            if (anchor != null) {
                 String anchorPath = quadPath(anchor.longitude(), anchor.latitude(), absoluteLevel);
                 int[] cell = decode(anchorPath);
                 MatrixLayerTile anchorTile = tilesById.get(anchor.tileId());
+                boolean exactTile = anchorTile != null;
+                if (anchorTile == null) {
+                    anchorTile = fallbackTileByFrameId.get(frameId);
+                }
                 if (cell != null && anchorTile != null) {
-                    offsetVotes.merge(
-                        new GridOffset(cell[0] - anchorTile.getI(), cell[1] - anchorTile.getJ()),
-                        1,
-                        Integer::sum
-                    );
+                    GridOffset vote = new GridOffset(cell[0] - anchorTile.getI(), cell[1] - anchorTile.getJ());
+                    offsetVotes.merge(vote, 1, Integer::sum);
+                    if (exactTile) {
+                        exactOffsetVotes.merge(vote, 1, Integer::sum);
+                    }
                 }
             }
         }
         GridOffset offset = bestOffset(offsetVotes);
+        if (offset != null && !hasSufficientExactCameraEvidence(
+            absoluteLevel,
+            clusterSupport(offset, exactOffsetVotes)
+        )) {
+            offset = null;
+        }
+        if (offset == null) {
+            CameraAnchor representativeAnchor = byFrameId.computeIfAbsent(
+                layer.getFrameId(),
+                ignored -> readAnchor(frameRoot, layer.getFrameId())
+            );
+            MatrixLayerTile representativeTile = fallbackTileByFrameId.get(layer.getFrameId());
+            if (absoluteLevel >= LOW_LEVEL_CAMERA_LIMIT
+                && representativeAnchor != null && representativeTile != null) {
+                String anchorPath = quadPath(representativeAnchor.longitude(), representativeAnchor.latitude(), absoluteLevel);
+                int[] cell = decode(anchorPath);
+                if (cell != null) {
+                    offset = new GridOffset(
+                        cell[0] - representativeTile.getI(),
+                        cell[1] - representativeTile.getJ()
+                    );
+                    System.out.println(
+                        "FrameCameraGeoAnchorResolver: layer " + layer.getSourceFolderName()
+                            + " fell back to representative frame " + layer.getFrameId()
+                            + " for geographic anchoring at [" + absoluteLevel + ", "
+                            + offset.row() + ", " + offset.col() + "]."
+                    );
+                }
+            }
+        }
         if (offset != null) {
-            int exactVotes = offsetVotes.get(offset);
+            int exactVotes = clusterSupport(offset, exactOffsetVotes);
             int clusterVotes = clusterSupport(offset, offsetVotes);
             int totalVotes = offsetVotes.values().stream().mapToInt(Integer::intValue).sum();
             System.out.println(
@@ -136,6 +182,28 @@ public final class FrameCameraGeoAnchorResolver {
             );
         }
         return offset;
+    }
+
+    private static boolean isCloserTo(
+        double centerI,
+        double centerJ,
+        MatrixLayerTile candidate,
+        MatrixLayerTile current
+    ) {
+        if (candidate == null) {
+            return false;
+        }
+        if (current == null) {
+            return true;
+        }
+        return squaredDistance(centerI, centerJ, candidate)
+            < squaredDistance(centerI, centerJ, current);
+    }
+
+    private static double squaredDistance(double centerI, double centerJ, MatrixLayerTile tile) {
+        double di = tile.getI() - centerI;
+        double dj = tile.getJ() - centerJ;
+        return di * di + dj * dj;
     }
 
     private static Set<String> descendantLayerNames(
@@ -261,6 +329,11 @@ public final class FrameCameraGeoAnchorResolver {
         return support;
     }
 
+    static boolean hasSufficientExactCameraEvidence(int absoluteLevel, int exactVotes) {
+        return absoluteLevel >= LOW_LEVEL_CAMERA_LIMIT
+            || exactVotes >= MIN_EXACT_VOTES_FOR_LOW_LEVEL_ANCHOR;
+    }
+
     private static Integer firstResolvedLevel(
         MatrixLayer layer,
         TileRootPathResolver.Resolution resolution
@@ -306,6 +379,12 @@ public final class FrameCameraGeoAnchorResolver {
             && layer.getSourceFolderName().matches("matrix_\\d+");
     }
 
+    private static boolean isCameraAnchorRoot(MatrixLayer layer) {
+        return isImportedLayer(layer)
+            && layer.getHierarchyLevel() != null
+            && layer.getParentMatrixIndex() == null;
+    }
+
     private static Integer frameIdOf(String id) {
         if (id == null || !id.matches("\\d{5}_\\d+")) {
             return null;
@@ -331,8 +410,7 @@ public final class FrameCameraGeoAnchorResolver {
             double frontY = googleCamera.path("frontY").asDouble(Double.NaN);
             double frontZ = googleCamera.path("frontZ").asDouble(Double.NaN);
             String centerTileId = centerTileId(root.path("tiles"), camera.path("projectionMatrix"));
-            if (centerTileId == null || !Double.isFinite(frontX)
-                || !Double.isFinite(frontY) || !Double.isFinite(frontZ)) {
+            if (!Double.isFinite(frontX) || !Double.isFinite(frontY) || !Double.isFinite(frontZ)) {
                 return null;
             }
             double longitude = Math.toDegrees(Math.atan2(-frontX, -frontZ));

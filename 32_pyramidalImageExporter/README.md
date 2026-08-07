@@ -169,6 +169,9 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   are suppressed and every descendant with sufficient camera evidence receives its own
   rigid-grid anchor. This prevents unrelated continental imagery from outvoting an island
   across missing level-11/12 sea tiles.
+- Camera anchors below level 11 require at least three exact center-tile votes. Approximate
+  per-frame fallback votes remain available for deep isolated components, but cannot move
+  coarse continental layers when only weak geographic evidence is available.
 - A contract-v3+ `parentGridTransform` propagates a containing-parent placement after,
   and only after, the referenced parent matrix has an accepted absolute grid anchor. It
   is a matrix-to-matrix transform, not a substitute for an observed per-tile uncle

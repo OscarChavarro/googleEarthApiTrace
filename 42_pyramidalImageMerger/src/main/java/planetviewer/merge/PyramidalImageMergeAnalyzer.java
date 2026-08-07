@@ -20,9 +20,11 @@ public final class PyramidalImageMergeAnalyzer {
     private final List<String> missingDestinationNodeIds = new ArrayList<>();
     private final Set<String> resolutionEquivalentNodeIds = new LinkedHashSet<>();
     private final Set<String> higherResolutionDeltaNodeIds = new LinkedHashSet<>();
+    private final Set<String> retainedRefinementAncestorNodeIds = new LinkedHashSet<>();
     private final Map<String, String> conflictDetails = new LinkedHashMap<>();
     private final Map<String, Double> imageDistances = new LinkedHashMap<>();
     private final ImageMagickImageComparator imageComparator = new ImageMagickImageComparator();
+    private int deepestDeltaTileDepth;
 
     public MergeAnalysis analyze(PyramidalImage destination, PyramidalImage delta) {
         comparedTiles = 0;
@@ -33,9 +35,12 @@ public final class PyramidalImageMergeAnalyzer {
         missingDestinationNodeIds.clear();
         resolutionEquivalentNodeIds.clear();
         higherResolutionDeltaNodeIds.clear();
+        retainedRefinementAncestorNodeIds.clear();
         conflictDetails.clear();
         imageDistances.clear();
-        visit(destination == null ? null : destination.getRoot(), delta == null ? null : delta.getRoot());
+        QuadtreeNode deltaRoot = delta == null ? null : delta.getRoot();
+        deepestDeltaTileDepth = deepestTileDepth(deltaRoot);
+        visit(destination == null ? null : destination.getRoot(), deltaRoot);
         return new MergeAnalysis(
             comparedTiles,
             mergeableTiles,
@@ -45,6 +50,7 @@ public final class PyramidalImageMergeAnalyzer {
             List.copyOf(missingDestinationNodeIds),
             new LinkedHashSet<>(resolutionEquivalentNodeIds),
             new LinkedHashSet<>(higherResolutionDeltaNodeIds),
+            new LinkedHashSet<>(retainedRefinementAncestorNodeIds),
             0,
             new LinkedHashMap<>(conflictDetails),
             new LinkedHashMap<>(imageDistances)
@@ -71,6 +77,11 @@ public final class PyramidalImageMergeAnalyzer {
                     mergeableTiles++;
                     resolutionEquivalentNodeIds.add(deltaNode.getId());
                 }
+                else if (isRefinementSupportAncestor(destinationNode, deltaNode)) {
+                    mergeableTiles++;
+                    retainedRefinementAncestorNodeIds.add(deltaNode.getId());
+                    conflictDetails.remove(deltaNode.getId());
+                }
                 else {
                     conflictingNodeIds.add(deltaNode.getId());
                     conflictingLevels.add(deltaNode.getDepth());
@@ -87,6 +98,52 @@ public final class PyramidalImageMergeAnalyzer {
             QuadtreeNode destinationChild = destinationChildren == null ? null : destinationChildren[digit];
             visit(destinationChild, deltaChildren[digit]);
         }
+    }
+
+    private boolean isRefinementSupportAncestor(QuadtreeNode destinationNode, QuadtreeNode deltaNode) {
+        int depth = deltaNode.getDepth();
+        return depth < deepestDeltaTileDepth
+            && depth >= deepestDeltaTileDepth - 2
+            && hasMissingTileAtDepth(destinationNode, deltaNode, deepestDeltaTileDepth);
+    }
+
+    private static boolean hasMissingTileAtDepth(
+        QuadtreeNode destinationNode,
+        QuadtreeNode deltaNode,
+        int targetDepth
+    ) {
+        if (deltaNode == null) {
+            return false;
+        }
+        if (deltaNode.getDepth() == targetDepth) {
+            return deltaNode.getTileFile() != null
+                && (destinationNode == null || destinationNode.getTileFile() == null);
+        }
+        if (!deltaNode.hasChildren()) {
+            return false;
+        }
+        QuadtreeNode[] deltaChildren = deltaNode.getChildren();
+        QuadtreeNode[] destinationChildren = destinationNode == null ? null : destinationNode.getChildren();
+        for (int digit = 0; digit < 4; digit++) {
+            QuadtreeNode destinationChild = destinationChildren == null ? null : destinationChildren[digit];
+            if (hasMissingTileAtDepth(destinationChild, deltaChildren[digit], targetDepth)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int deepestTileDepth(QuadtreeNode node) {
+        if (node == null) {
+            return -1;
+        }
+        int deepest = node.getTileFile() == null ? -1 : node.getDepth();
+        if (node.hasChildren()) {
+            for (QuadtreeNode child : node.getChildren()) {
+                deepest = Math.max(deepest, deepestTileDepth(child));
+            }
+        }
+        return deepest;
     }
 
     private boolean imagesAreEquivalentAtDifferentResolution(QuadtreeNode destinationNode, QuadtreeNode deltaNode) {
@@ -142,6 +199,7 @@ public final class PyramidalImageMergeAnalyzer {
             baseAnalysis.getCopiedNodeIds(),
             baseAnalysis.getResolutionEquivalentNodeIds(),
             baseAnalysis.getHigherResolutionDeltaNodeIds(),
+            baseAnalysis.getRetainedRefinementAncestorNodeIds(),
             replacedTiles,
             baseAnalysis.getConflictDetails(),
             baseAnalysis.getImageDistances()

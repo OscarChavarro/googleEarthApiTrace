@@ -45,6 +45,7 @@ readonly DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
 readonly TRACE_DIRECTORY="/opt/google/earth/pro"
 readonly TRACE_PATTERN="googleearth-bin*trace"
 readonly SESSION_LOG="/tmp/googleEarthSession.log"
+readonly ERRORS_LOG="$SCRIPT_DIR/errors.log"
 
 destination="$DEFAULT_DESTINATION"
 reuse_capture=0
@@ -399,6 +400,28 @@ validate_merge_completed() {
         die "Module 42 did not report a completed merge."
 }
 
+extract_route_coordinates() {
+    if [[ "$route_command" =~ zigzag[[:space:]]+(-?[0-9]+([.][0-9]+)?)[[:space:]]+(-?[0-9]+([.][0-9]+)?) ]]; then
+        printf 'lat=%s lon=%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}"
+        return 0
+    fi
+    return 1
+}
+
+append_merge_error() {
+    local reason="$1"
+    local coordinates="coordinates=unknown"
+    if extracted_coordinates="$(extract_route_coordinates)"; then
+        coordinates="$extracted_coordinates"
+    fi
+    printf '%s | %s | route=%s | reason=%s\n' \
+        "$(date --iso-8601=seconds)" \
+        "$coordinates" \
+        "${route_command:-unspecified}" \
+        "$reason" >> "$ERRORS_LOG"
+    log "Recorded skipped merge in $ERRORS_LOG ($coordinates, reason=$reason)."
+}
+
 preflight_started="$(date +%s)"
 log "Starting preflight started_at=$(date --iso-8601=seconds)"
 for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum compare identify mktemp mkdir basename dirname stat df sleep cp mv; do
@@ -482,65 +505,64 @@ run_logged 23_frameTextureNormalizer \
     "$SCRIPT_DIR/gradlew" :23_frameTextureNormalizer:run \
     "--args=--offline"
 
-matrix_attempt=1
-while true; do
-    matrix_attempt_started="$(date +%s)"
-    if ((matrix_attempt == 1)); then
-        attempt_suffix="$(printf 'attempt_%02d_offline_auto' "$matrix_attempt")"
-        matrix_mode="offline automatic"
-    else
-        attempt_suffix="$(printf 'attempt_%02d_interactive' "$matrix_attempt")"
-        matrix_mode="interactive"
-    fi
-    log "Starting matrix/delta_attempt_$matrix_attempt started_at=$(date --iso-8601=seconds) with $matrix_mode module 31"
-    run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_staging
+attempt_suffix="attempt_01_offline_auto"
+matrix_attempt_started="$(date +%s)"
+log "Starting matrix/delta attempt started_at=$(date --iso-8601=seconds) with offline automatic module 31"
+run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_staging
 
-    if ((matrix_attempt == 1)); then
-        run_logged "31_matrixMerger_${attempt_suffix}" \
-            "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$run_dir/matrix"
-        log "Automatic offline module 31 completed on attempt $matrix_attempt."
-    else
-        run_logged "31_matrixMerger_${attempt_suffix}" \
-            "$SCRIPT_DIR/31_matrixMerger/run.sh" "$run_dir/matrix"
-        log "Interactive module 31 closed on attempt $matrix_attempt; continuing without validating its generated matrix set."
-    fi
+run_logged "31_matrixMerger_${attempt_suffix}" \
+    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$run_dir/matrix"
+log "Automatic offline module 31 completed."
 
-    module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
-    run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
-        "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix" "$destination"
-    run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
-        validate_export_log_and_pyramid "$module_32_log"
+module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
+run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
+    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix" "$destination"
+run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
+    validate_export_log_and_pyramid "$module_32_log"
 
-    delta="$run_dir/matrix/pyramidalImage"
-    module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
-    if run_logged "42_pyramidalImageMerger_dry_run_${attempt_suffix}" \
-        "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
-        "--args=--dry-run $destination $delta"; then
-        log "Module 42 dry run accepted matrix/delta attempt $matrix_attempt."
-        log "Finished matrix/delta_attempt_$matrix_attempt finished_at=$(date --iso-8601=seconds) status=0 result=accepted elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
-        break
-    else
-        dry_run_status=$?
+delta="$run_dir/matrix/pyramidalImage"
+module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
+if run_logged "42_pyramidalImageMerger_dry_run_${attempt_suffix}" \
+    "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
+    "--args=--dry-run $destination $delta"; then
+    log "Module 42 dry run accepted matrix/delta attempt."
+    log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=0 result=accepted elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+else
+    dry_run_status=$?
+    if module_42_reported_conflicts "$module_42_log"; then
+        append_merge_error "module_42_dry_run_content_conflict"
+        log "Module 42 dry run reported content conflicts. Skipping this capture and continuing without interactive retry."
+        log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=skipped_content_conflict elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+        exit 0
     fi
-    if ! module_42_reported_conflicts "$module_42_log"; then
-        die "Module 42 dry run failed for a reason other than content conflicts (status=$dry_run_status); interactive matrix retry is not applicable."
-    fi
-
-    log "Module 42 reported content conflicts. Reopening interactive module 31 so the operator can reduce the matrix set before rerunning modules 32 and 42."
-    log "Finished matrix/delta_attempt_$matrix_attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=content_conflict elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
-    matrix_attempt=$((matrix_attempt + 1))
-done
+    append_merge_error "module_42_dry_run_failed_status_${dry_run_status}"
+    log "Module 42 dry run failed without a mergeable result. Skipping this capture and continuing."
+    log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=skipped_failure elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+    exit 0
+fi
 
 if ((dry_run == 1)); then
     log "Dry run succeeded. Destination was not modified."
     exit 0
 fi
 
-run_logged 42_pyramidalImageMerger_commit \
+if run_logged 42_pyramidalImageMerger_commit \
     "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
-    "--args=--offline $destination $delta"
-run_timed_step 42_pyramidalImageMerger_commit_validation \
-    validate_merge_completed "$run_dir/logs/42_pyramidalImageMerger_commit.log"
+    "--args=--offline $destination $delta"; then
+    if run_timed_step 42_pyramidalImageMerger_commit_validation \
+        validate_merge_completed "$run_dir/logs/42_pyramidalImageMerger_commit.log"; then
+        :
+    else
+        append_merge_error "module_42_commit_validation_failed"
+        log "Module 42 merge validation failed. Skipping this capture and continuing."
+        exit 0
+    fi
+else
+    commit_status=$?
+    append_merge_error "module_42_commit_failed_status_${commit_status}"
+    log "Module 42 merge failed. Skipping this capture and continuing."
+    exit 0
+fi
 
 printf '\n'
 log "ITERATION COMMITTED SUCCESSFULLY TO $destination"
