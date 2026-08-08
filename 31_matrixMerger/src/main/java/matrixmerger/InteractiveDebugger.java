@@ -61,7 +61,8 @@ public class InteractiveDebugger extends Applet {
         mouseInteraction = new MouseInteractionTechnique(
             renderer.getCameraController(),
             canvas::repaint,
-            canvas::requestFocusInWindow
+            canvas::requestFocusInWindow,
+            event -> renderer.selectTileAtScreen(event.getX(), event.getY())
         );
         canvas.addMouseListener(mouseInteraction);
         canvas.addMouseMotionListener(mouseInteraction);

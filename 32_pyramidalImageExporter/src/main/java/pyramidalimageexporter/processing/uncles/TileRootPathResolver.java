@@ -36,6 +36,24 @@ public final class TileRootPathResolver {
     private static final Pattern QUADKEY_PATTERN = Pattern.compile("[0-3]+");
     private static final int MIN_GRID_ANCHOR_VOTES = 3;
     private final UncleRmsAnalyzer rmsAnalyzer = new UncleRmsAnalyzer();
+    private final int captureBoundaryLevel;
+
+    public TileRootPathResolver() {
+        this(-1);
+    }
+
+    /**
+     * @param captureBoundaryLevel absolute quadtree level of the deepest
+     *     matrix still anchored by this session's shallow capture pass, or
+     *     -1 to disable the correction (single-pass sessions). A relationship
+     *     whose child is deeper than this level but whose reference is at or
+     *     above it crosses into a later capture pass with different camera
+     *     zigzag parameters and needs a one-row-south correction; see the
+     *     level12-anchoring-pipeline project memory.
+     */
+    public TileRootPathResolver(int captureBoundaryLevel) {
+        this.captureBoundaryLevel = captureBoundaryLevel;
+    }
 
     public enum PathSource {
         DIRECT,
@@ -632,7 +650,7 @@ public final class TileRootPathResolver {
         return layerName + "\u0000" + tileId;
     }
 
-    private static Set<String> candidatePathsFor(
+    private Set<String> candidatePathsFor(
         TileOccurrence occurrence,
         Map<String, String> resolvedPath,
         Map<String, String> externalFullPaths,
@@ -707,7 +725,7 @@ public final class TileRootPathResolver {
      * once per relationship and select the unique rigid-grid anchor supported
      * by the most distinct relationships.
      */
-    private static boolean propagateLegacyRelationshipConsensus(
+    private boolean propagateLegacyRelationshipConsensus(
         List<MatrixLayer> layers,
         Map<String, String> resolvedPath,
         Map<String, PathSource> sourceById,
@@ -752,6 +770,11 @@ public final class TileRootPathResolver {
                     );
                     Set<String> childCandidates = new LinkedHashSet<>();
                     for (String parentPath : parentPaths) {
+                        if (crossesCaptureBoundary(parentPath)) {
+                            addShiftedCandidate(childCandidates, parentPath, UncleRelationshipKind.CONTAINING_QUADRANT, relationship.direction());
+                            addShiftedCandidate(childCandidates, parentPath, UncleRelationshipKind.ADJACENT_BORDER, relationship.direction());
+                            continue;
+                        }
                         childCandidates.add(parentPath + quadrantDigit(relationship.direction()));
                         String adjacent = childPathAcrossUncleBorder(parentPath, relationship.direction());
                         if (adjacent != null) {
@@ -865,7 +888,7 @@ public final class TileRootPathResolver {
         return paths;
     }
 
-    private static String childPathForRelationship(
+    private String childPathForRelationship(
         String unclePath,
         ToUncleRelationship relationship,
         UncleRelationshipKind relationshipKind
@@ -879,13 +902,23 @@ public final class TileRootPathResolver {
             );
         }
         UncleDirections direction = relationship == null ? null : relationship.direction();
-        return switch (relationshipKind) {
-            case CONTAINING_QUADRANT -> unclePath + quadrantDigit(direction);
-            case ADJACENT_BORDER -> childPathAcrossUncleBorder(unclePath, direction);
+        UncleRelationshipKind effectiveKind = relationshipKind;
+        UncleDirections effectiveDirection = direction;
+        if (direction != null && crossesCaptureBoundary(unclePath)) {
+            ShiftedRelationship shifted = shiftedOneRowSouth(relationshipKind, direction);
+            if (shifted == null) {
+                return null;
+            }
+            effectiveKind = shifted.kind();
+            effectiveDirection = shifted.direction();
+        }
+        return switch (effectiveKind) {
+            case CONTAINING_QUADRANT -> unclePath + quadrantDigit(effectiveDirection);
+            case ADJACENT_BORDER -> childPathAcrossUncleBorder(unclePath, effectiveDirection);
         };
     }
 
-    private static String pathAtRelativeGridOffset(
+    private String pathAtRelativeGridOffset(
         String referencePath,
         int levelDelta,
         int rowOffset,
@@ -898,12 +931,129 @@ public final class TileRootPathResolver {
         int scale = 1 << levelDelta;
         int targetLevel = reference[0] + levelDelta;
         int side = 1 << targetLevel;
-        int row = scale * reference[1] + rowOffset;
+        int row = scale * reference[1] + correctedRowOffset(reference[0], targetLevel, rowOffset);
         if (row < 0 || row >= side) {
             return null;
         }
         int column = Math.floorMod(scale * reference[2] + columnOffset, side);
         return "0" + encodeQuadtreeLabel(targetLevel, row, column);
+    }
+
+    /**
+     * Adds the empirically validated correction for relationships whose child
+     * is on the deep side of {@link #captureBoundaryLevel} but whose
+     * reference is on the shallow side, unchanged otherwise.
+     */
+    private int correctedRowOffset(int referenceLevel, int childLevel, int rowOffset) {
+        if (captureBoundaryLevel < 0 || referenceLevel > captureBoundaryLevel || childLevel <= captureBoundaryLevel) {
+            return rowOffset;
+        }
+        return rowOffset + (1 << (childLevel - captureBoundaryLevel - 1));
+    }
+
+    private boolean crossesCaptureBoundary(String referencePath) {
+        if (captureBoundaryLevel < 0) {
+            return false;
+        }
+        int[] reference = decodeFullPath(referencePath);
+        return reference != null && reference[0] == captureBoundaryLevel;
+    }
+
+    private record ShiftedRelationship(UncleRelationshipKind kind, UncleDirections direction) {}
+    private record BorderCell(int rowStep, int colStep, boolean south, boolean east) {}
+
+    private static BorderCell borderCell(UncleDirections direction) {
+        return switch (direction) {
+            case WEST_NORTH -> new BorderCell(0, -1, false, true);
+            case WEST_SOUTH -> new BorderCell(0, -1, true, true);
+            case EAST_NORTH -> new BorderCell(0, 1, false, false);
+            case EAST_SOUTH -> new BorderCell(0, 1, true, false);
+            case NORTH_WEST -> new BorderCell(-1, 0, true, false);
+            case NORTH_EAST -> new BorderCell(-1, 0, true, true);
+            case SOUTH_WEST -> new BorderCell(1, 0, false, false);
+            case SOUTH_EAST -> new BorderCell(1, 0, false, true);
+        };
+    }
+
+    private static UncleDirections borderDirection(int rowStep, int colStep, boolean south, boolean east) {
+        for (UncleDirections direction : UncleDirections.values()) {
+            BorderCell cell = borderCell(direction);
+            if (cell.rowStep() == rowStep && cell.colStep() == colStep
+                && cell.south() == south && cell.east() == east) {
+                return direction;
+            }
+        }
+        return null;
+    }
+
+    private static boolean[] quadrantCell(UncleDirections direction) {
+        return switch (direction) {
+            case WEST_SOUTH, SOUTH_WEST -> new boolean[]{true, false};
+            case EAST_SOUTH, SOUTH_EAST -> new boolean[]{true, true};
+            case EAST_NORTH, NORTH_EAST -> new boolean[]{false, true};
+            case WEST_NORTH, NORTH_WEST -> new boolean[]{false, false};
+        };
+    }
+
+    private static UncleDirections quadrantDirectionFor(boolean south, boolean east) {
+        if (south) {
+            return east ? UncleDirections.SOUTH_EAST : UncleDirections.SOUTH_WEST;
+        }
+        return east ? UncleDirections.NORTH_EAST : UncleDirections.NORTH_WEST;
+    }
+
+    /**
+     * Re-derives a direction-only relationship for a target one grid row
+     * further south, the shift validated end-to-end for relationships
+     * crossing the shallow/deep capture-pass boundary. Returns null when the
+     * shifted cell would also need a column shift to name a single adjacent
+     * border (dropped rather than guessed, matching the validated harness).
+     */
+    private static ShiftedRelationship shiftedOneRowSouth(UncleRelationshipKind kind, UncleDirections direction) {
+        int rowStep;
+        int colStep;
+        boolean south;
+        boolean east;
+        if (kind == UncleRelationshipKind.CONTAINING_QUADRANT) {
+            boolean[] cell = quadrantCell(direction);
+            south = cell[0];
+            east = cell[1];
+            rowStep = 0;
+            colStep = 0;
+        }
+        else {
+            BorderCell cell = borderCell(direction);
+            rowStep = cell.rowStep();
+            colStep = cell.colStep();
+            south = cell.south();
+            east = cell.east();
+        }
+        int shiftedRow = 2 * rowStep + (south ? 1 : 0) + 1;
+        int newRowStep = Math.floorDiv(shiftedRow, 2);
+        boolean newSouth = Math.floorMod(shiftedRow, 2) == 1;
+        if (newRowStep == 0 && colStep == 0) {
+            return new ShiftedRelationship(UncleRelationshipKind.CONTAINING_QUADRANT, quadrantDirectionFor(newSouth, east));
+        }
+        UncleDirections shiftedDirection = borderDirection(newRowStep, colStep, newSouth, east);
+        return shiftedDirection == null ? null : new ShiftedRelationship(UncleRelationshipKind.ADJACENT_BORDER, shiftedDirection);
+    }
+
+    private static void addShiftedCandidate(
+        Set<String> childCandidates,
+        String parentPath,
+        UncleRelationshipKind assumedKind,
+        UncleDirections direction
+    ) {
+        ShiftedRelationship shifted = shiftedOneRowSouth(assumedKind, direction);
+        if (shifted == null) {
+            return;
+        }
+        String candidate = shifted.kind() == UncleRelationshipKind.CONTAINING_QUADRANT
+            ? parentPath + quadrantDigit(shifted.direction())
+            : childPathAcrossUncleBorder(parentPath, shifted.direction());
+        if (candidate != null) {
+            childCandidates.add(candidate);
+        }
     }
 
     private static String childPathAcrossUncleBorder(

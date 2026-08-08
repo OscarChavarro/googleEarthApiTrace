@@ -201,6 +201,13 @@ remain supported through legacy rigid-grid consensus. The exporter never
 assumes that `matrix_<n+1>` is the child of
 `matrix_<n>` merely because of folder order.
 
+In contract-v6, an explicit parent emitted by 31 can also be the result of its last-resort
+`BROKEN` resolver: only a structurally broken matrix with multiple incompatible alternatives
+is eligible, and a complete four-child image mosaic must beat the other parent candidates by
+the documented RMSE margin. Normal relationships are never visually re-anchored by 31. Once
+exported, 32 treats that accepted `parentMatrixIndex` and `parentGridTransform` exactly like
+other explicit rigid hierarchy evidence; it does not repeat the ambiguity decision.
+
 Before writing any PNG, the exporter builds a manifest with one selected tile per full
 path. A native local tile has documented priority over a derived TOP tile at the same
 cell. Any other incompatible duplicate path fails the export before writing, so output

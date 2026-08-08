@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import pyramidalimageexporter.config.Configuration;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
@@ -66,7 +67,7 @@ public final class TopLevelLayerMerger {
         );
         externalFullPaths.putAll(topVisualFullPaths);
 
-        TileRootPathResolver pathResolver = new TileRootPathResolver();
+        TileRootPathResolver pathResolver = new TileRootPathResolver(Configuration.captureBoundaryLevel());
         TileRootPathResolver.Resolution resolution;
         Map<String, String> visualDescendantFullPaths = new LinkedHashMap<>();
         Set<String> replaceableExternalVisualIds = new LinkedHashSet<>(externalVisualUnclePaths.keySet());

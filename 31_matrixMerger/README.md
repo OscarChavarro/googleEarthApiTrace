@@ -67,6 +67,12 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 | `t` | Toggle textured rendering |
 | `ESC` | Exit |
 
+Clicking a tile anchors its coordinates in the resolved parent grid, selects the containing
+parent tile and repeats that lookup up the hierarchy. This also works for interior tiles without
+their own `uncles`, using the matrix's consolidated relationship clues or accepted rigid transform.
+Selected tiles use two raised colored outlines; the selection remains active while `1`/`2`
+changes the visible matrix. Clicking the background clears it.
+
 HUD:
 
 - Always: `Frame [1, 2]: i/N | id <frameId> | Matrix: <rows>x<cols>`
@@ -74,7 +80,11 @@ HUD:
 - Otherwise: `Delete current matrix [d], split by west cutters [c]`
 - Uncle relations count, colored green when the matrix reaches top level (`TOPLEVEL`) or
   red when relationships are broken (`BROKEN`).
-- `LEVEL: l` / `LEVEL: l + n`: quadtree hierarchy level of the selected matrix.
+- `ABSOLUTE LEVEL: n | RELATIVE: l [+ d]`: absolute quadtree level and relative hierarchy
+  depth of the selected matrix. The deepest relative layer is anchored to level 14 by
+  default; use `--absolute-max-level=N` for another capture target.
+- If several surviving matrices resolve to the same absolute level, this line is red and
+  includes `ERROR: N MATRICES AT THIS LEVEL`; merge or delete the repeated matrices.
 - On a failed merge (without changing selection): `ERROR: Could not merge with next frame!` (red).
 - If the frame failed west-cutter validation: the invalid reason (red).
 - If no export folder was given: `NOT EXPORTING RESULTS - REVIEW PROGRAM PARAMETERS` (red).
@@ -121,10 +131,16 @@ count stabilizes. It then follows the uncle relationships between the resulting 
 resolves every matrix's relative hierarchy depth, groups all matrices at the same depth,
 orders those groups from the top quadtree level to the deepest one, and selects the first
 top-level matrix for the viewer. Manual mode applies the same ordering immediately before
-opening the interactive viewer. Hierarchy edges and parent transforms come exclusively
-from captured relationship metadata. Image resampling or similarity is not allowed to
-create a parent, an `uncle`, or a positioning transform; visual comparison may only be
-used as a non-mutating validation of an already observed positioning clue. This is the batch equivalent of
+opening the interactive viewer. Only when structural relationship analysis has already marked
+a matrix `BROKEN` because it has several incompatible direct-parent alignments, a last-resort
+visual phase scales each complete `2x2` block of four `256x256`
+child images to four `128x128` quadrants, concatenates them into one `256x256` mosaic and
+compares it with each candidate parent by RGB RMSE. The best candidate is persisted as
+`inferredParent` plus `parentGridTransform` only when RMSE is at most 25 and its best/second
+ratio is at most 0.65. Missing images, incomplete blocks, ties and weak matches remain
+ambiguous and therefore keep the hierarchy error. Normal hierarchies, including several parent
+matrices at one valid level, never enter this phase. Captured `uncles` are never fabricated or
+deleted by the fallback. This is the batch equivalent of
 pressing `n` and `c` over every frame followed by relationship-based hierarchy ordering.
 
 After merge/cut convergence, first assignment wins for any repeated ID still left in

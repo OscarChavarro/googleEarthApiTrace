@@ -34,6 +34,12 @@ public final class AutomaticMatrixGroupingPipeline {
                     );
                 }
                 model.sortFramesByUncleHierarchy();
+                VisualHierarchyAmbiguityResolver.Report visual = model.resolveVisualHierarchyAmbiguities();
+                System.out.println(
+                    "AutomaticMatrixGroupingPipeline: visual hierarchy ambiguity pass resolved "
+                        + visual.resolvedMatrices() + "/" + visual.ambiguousMatrices()
+                        + " matrices from " + visual.comparedMosaics() + " complete mosaics."
+                );
                 MatrixMergerState.SameLevelCollapseReport sameLevel =
                     model.collapseAdjacentMatricesAtSameHierarchyLevel();
                 System.out.println(

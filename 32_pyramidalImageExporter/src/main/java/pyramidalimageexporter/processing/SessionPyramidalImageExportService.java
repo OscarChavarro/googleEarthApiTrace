@@ -60,7 +60,8 @@ public final class SessionPyramidalImageExportService {
     private static final int PROGRESS_REPORT_INTERVAL = 100;
     private static final double FULL_TEXTURE_RECT_TOLERANCE = 1.0e-9;
 
-    private final TileRootPathResolver rootPathResolver = new TileRootPathResolver();
+    private final TileRootPathResolver rootPathResolver =
+        new TileRootPathResolver(Configuration.captureBoundaryLevel());
 
     private record ExportEntry(MatrixLayer layer, MatrixLayerTile tile, String fullPath) {}
     private record ExportManifest(

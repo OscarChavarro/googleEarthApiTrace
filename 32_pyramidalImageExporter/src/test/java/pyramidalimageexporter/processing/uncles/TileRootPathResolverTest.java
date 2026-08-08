@@ -63,6 +63,68 @@ final class TileRootPathResolverTest {
     }
 
     @Test
+    void withoutACaptureBoundaryConfiguredADirectionOnlyRelationshipAcrossPassesIsUncorrected() {
+        MatrixLayerTile anchored = tile("child-a", 0, 0);
+        anchored.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_WEST, "parent")));
+        MatrixLayer layer = layer(anchored);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            List.of(layer),
+            Map.of("parent", "03"),
+            Map.of()
+        );
+
+        assertEquals("030", resolution.pathById().get("child-a"));
+    }
+
+    @Test
+    void shiftsADirectionOnlyRelationshipOneRowSouthWhenItCrossesTheCaptureBoundary() {
+        MatrixLayerTile anchored = tile("child-a", 0, 0);
+        anchored.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_WEST, "parent")));
+        MatrixLayer layer = layer(anchored);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver(1).resolve(
+            List.of(layer),
+            Map.of("parent", "03"),
+            Map.of()
+        );
+
+        assertEquals("003", resolution.pathById().get("child-a"));
+    }
+
+    @Test
+    void shiftsAGridOffsetRelationshipRowByHalfTheCoarserLevelWhenItCrossesTheCaptureBoundary() {
+        MatrixLayerTile anchored = tile("child-a", 0, 0);
+        anchored.setUncles(List.of(new ToUncleRelationship(
+            UncleDirections.SOUTH_WEST, "parent", UncleRelationshipKind.CONTAINING_QUADRANT, 1, 0, 0
+        )));
+        MatrixLayer layer = layer(anchored);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver(1).resolve(
+            List.of(layer),
+            Map.of("parent", "03"),
+            Map.of()
+        );
+
+        assertEquals("030", resolution.pathById().get("child-a"));
+    }
+
+    @Test
+    void doesNotCorrectRelationshipsThatStayOnOneSideOfTheCaptureBoundary() {
+        MatrixLayerTile anchored = tile("child-a", 0, 0);
+        anchored.setUncles(List.of(new ToUncleRelationship(UncleDirections.SOUTH_WEST, "parent")));
+        MatrixLayer layer = layer(anchored);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver(0).resolve(
+            List.of(layer),
+            Map.of("parent", "03"),
+            Map.of()
+        );
+
+        assertEquals("030", resolution.pathById().get("child-a"));
+    }
+
+    @Test
     void doesNotPositionALargeMatrixFromOnlyTwoWeakVotes() {
         MatrixLayerTile first = tile("first", 0, 0);
         first.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "parent")));

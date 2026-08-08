@@ -25,6 +25,8 @@ public final class MatrixMergerApplication {
     private static final int MINIMUM_USEFUL_COMPONENT_TILE_COUNT = 20;
     private static final int DEFAULT_OFFLINE_WIDTH = 1024;
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
+    private static final int DEFAULT_ABSOLUTE_MAX_LEVEL = 14;
+    private static final int DEFAULT_CAPTURE_BOUNDARY_LEVEL = -1;
 
     private enum Mode {
         MANUAL,
@@ -47,6 +49,16 @@ public final class MatrixMergerApplication {
         }
 
         MatrixMergerState model = createModel();
+        model.setAbsoluteMaximumLevel(nonNegativeIntArgValue(
+            args,
+            "--absolute-max-level",
+            DEFAULT_ABSOLUTE_MAX_LEVEL
+        ));
+        model.setCaptureBoundaryLevel(intArgValue(
+            args,
+            "--capture-boundary-level",
+            DEFAULT_CAPTURE_BOUNDARY_LEVEL
+        ));
         model.setOutputFolder(parseOutputFolder(args));
         Path outputPath = Path.of(OUTPUT_DIRECTORY);
         printMissingOutputFolderWarning(model);
@@ -129,6 +141,13 @@ public final class MatrixMergerApplication {
     }
 
     private static void enforceFinalMatrixTopology(MatrixMergerState model) {
+        model.sortFramesByUncleHierarchy();
+        var visual = model.resolveVisualHierarchyAmbiguities();
+        AppLogger.info(
+            "Visual hierarchy ambiguity pass: resolved=" + visual.resolvedMatrices()
+                + "/" + visual.ambiguousMatrices()
+                + ", complete mosaics=" + visual.comparedMosaics() + "."
+        );
         MatrixMergerState.SameLevelCollapseReport collapse =
             model.collapseAdjacentMatricesAtSameHierarchyLevel();
         MatrixMergerState.ExclusiveTileOwnershipReport before = model.enforceExclusiveTileOwnership();
@@ -198,7 +217,8 @@ public final class MatrixMergerApplication {
         for (MatrixMergerState.HierarchyOrderDiagnostic item : model.getHierarchyOrderDiagnostics()) {
             AppLogger.info(
                 "ORDER index=" + item.index()
-                    + " level=" + item.level()
+                    + " relativeLevel=" + item.level()
+                    + " absoluteLevel=" + item.absoluteLevel()
                     + " lastCaptureFrame=" + item.lastCaptureFrameId()
                     + " parents=" + item.resolvedParentIndexes()
                     + " uncles=" + item.uncleCount()
@@ -206,6 +226,12 @@ public final class MatrixMergerApplication {
                     + " tiles=" + item.tileCount()
             );
         }
+        model.getDuplicateAbsoluteLevelCounts().forEach((absoluteLevel, count) ->
+            AppLogger.warn(
+                "ABSOLUTE LEVEL ERROR level=" + absoluteLevel + " matrices=" + count
+                    + "; merge or delete repeated matrices before export."
+            )
+        );
     }
 
     private static MatrixMergerState createModel() {
@@ -340,13 +366,15 @@ public final class MatrixMergerApplication {
             if (arg.startsWith("--mode=") || arg.startsWith("--level=")
                 || arg.startsWith("--output=") || arg.startsWith("--width=")
                 || arg.startsWith("--height=") || arg.startsWith("--minimum-tile-count=")
+                || arg.startsWith("--absolute-max-level=") || arg.startsWith("--capture-boundary-level=")
                 || "--offline".equals(arg) || "-offline".equals(arg)
                 || "--diagnose-order".equals(arg) || "--all-levels".equals(arg)) {
                 continue;
             }
             if ("--mode".equals(arg) || "--level".equals(arg) || "--output".equals(arg)
                 || "--width".equals(arg) || "--height".equals(arg)
-                || "--minimum-tile-count".equals(arg)) {
+                || "--minimum-tile-count".equals(arg) || "--absolute-max-level".equals(arg)
+                || "--capture-boundary-level".equals(arg)) {
                 i++;
                 continue;
             }

@@ -33,6 +33,7 @@ public final class Jogl4TileMatrixRenderer {
         if (renderingConfiguration.isPointsSet()) {
             drawPoints(gl2, matrix, model);
         }
+        drawTileSelection(gl2, matrix, model);
     }
 
     /** Draws the complete matrix for an orthographic offline capture. */
@@ -244,6 +245,52 @@ public final class Jogl4TileMatrixRenderer {
             float cy = -(tile.getI() + 0.5f) + offsetY;
             gl2.glVertex3f(cx, cy, 0.002f);
         }
+        gl2.glEnd();
+    }
+
+    private void drawTileSelection(GL2 gl2, FrameTileMatrix matrix, MatrixMergerState model) {
+        if (model.getSelectedTileIds().isEmpty()) {
+            return;
+        }
+        float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
+        gl2.glDisable(GL2.GL_TEXTURE_2D);
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || !model.isTileSelected(tile.getId())) {
+                continue;
+            }
+            float x0 = tile.getJ() + offsetX;
+            float yTop = -tile.getI() + offsetY;
+            float x1 = x0 + 1.0f;
+            float yBottom = yTop - 1.0f;
+            drawSelectionLine(gl2, x0, yTop, x1, yBottom, 0.025f, 4.0f, 1.0f, 0.85f, 0.05f);
+            drawSelectionLine(
+                gl2, x0 + 0.055f, yTop - 0.055f, x1 - 0.055f, yBottom + 0.055f,
+                0.045f, 2.0f, 1.0f, 0.2f, 0.05f
+            );
+        }
+        gl2.glLineWidth(1.0f);
+    }
+
+    private static void drawSelectionLine(
+        GL2 gl2,
+        float x0,
+        float yTop,
+        float x1,
+        float yBottom,
+        float z,
+        float width,
+        float red,
+        float green,
+        float blue
+    ) {
+        gl2.glLineWidth(width);
+        gl2.glColor3f(red, green, blue);
+        gl2.glBegin(GL2.GL_LINE_LOOP);
+        gl2.glVertex3f(x0, yTop, z);
+        gl2.glVertex3f(x1, yTop, z);
+        gl2.glVertex3f(x1, yBottom, z);
+        gl2.glVertex3f(x0, yBottom, z);
         gl2.glEnd();
     }
 

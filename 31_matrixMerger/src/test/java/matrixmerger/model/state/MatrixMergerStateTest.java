@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import matrixmerger.model.contract.FrameMatrixSet;
 import matrixmerger.model.contract.FrameTileMatrix;
+import matrixmerger.model.contract.ParentGridTransform;
 import matrixmerger.processing.uncles.ToUncleRelationship;
 import matrixmerger.processing.uncles.UncleDirections;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,33 @@ final class MatrixMergerStateTest {
             .map(MatrixMergerState.HierarchyOrderDiagnostic::level)
             .toList());
         assertEquals(2, state.getFrameMatrices().get(1).getParentLevelDelta());
+        assertEquals(List.of(12, 14), state.getHierarchyOrderDiagnostics().stream()
+            .map(MatrixMergerState.HierarchyOrderDiagnostic::absoluteLevel)
+            .toList());
+    }
+
+    @Test
+    void reportsAbsoluteLevelsAndRepeatedMatricesAtTheSameLevel() {
+        FrameMatrixSet firstRoot = frame(-1, "10_1", null);
+        FrameMatrixSet secondRoot = frame(-1, "20_1", null);
+        FrameMatrixSet child = frame(-1, "30_1", "10_1");
+        MatrixMergerState state = new MatrixMergerState();
+        state.setAbsoluteMaximumLevel(14);
+
+        state.setFrameMatrices(List.of(child, secondRoot, firstRoot));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(Map.of(13, 2), state.getDuplicateAbsoluteLevelCounts());
+        state.selectFrameIndex(0);
+        MatrixMergerState.AbsoluteLevelStatus rootStatus = state.getSelectedAbsoluteLevelStatus();
+        assertEquals(13, rootStatus.absoluteLevel());
+        assertTrue(rootStatus.duplicated());
+        assertEquals(
+            "ABSOLUTE LEVEL: 13 | RELATIVE: l | ERROR: 2 MATRICES AT THIS LEVEL",
+            rootStatus.hudLabel()
+        );
+        state.selectFrameIndex(2);
+        assertEquals("ABSOLUTE LEVEL: 14 | RELATIVE: l + 1", state.getSelectedAbsoluteLevelStatus().hudLabel());
     }
 
     @Test
@@ -145,6 +174,43 @@ final class MatrixMergerStateTest {
         assertEquals(List.of(0, 1), state.getHierarchyOrderDiagnostics().get(2).resolvedParentIndexes());
         state.selectFrameIndex(2);
         assertEquals(MatrixMergerState.UncleHudState.NORMAL, state.getSelectedMatrixUncleHudStatus().state());
+        assertEquals(0, state.resolveVisualHierarchyAmbiguities().ambiguousMatrices());
+    }
+
+    @Test
+    void anchorsToTheNearestAncestorWhenSkipLevelReferencesAlsoExist() {
+        FrameMatrixSet grandparent = frame(10, "10_1", null);
+        FrameMatrixSet parent = frame(20, "20_1", "10_1");
+        FrameMatrixSet child = frame(30, "30_1", null);
+        child.getMatrices().get(0).getTiles().get(0).setUncles(List.of(
+            new ToUncleRelationship(UncleDirections.WEST_NORTH, "20_1"),
+            new ToUncleRelationship(
+                UncleDirections.EAST_SOUTH,
+                "10_1",
+                matrixmerger.processing.uncles.UncleRelationshipKind.ADJACENT_BORDER,
+                2,
+                2,
+                4
+            )
+        ));
+        MatrixMergerState state = new MatrixMergerState();
+
+        state.setFrameMatrices(List.of(child, parent, grandparent));
+        state.sortFramesByUncleHierarchy();
+
+        assertEquals(List.of("00010_1", "00020_1", "00030_1"), state.getFrameMatrices().stream()
+            .map(MatrixMergerStateTest::tileId)
+            .toList());
+        assertEquals(List.of(0, 1, 2), state.getHierarchyOrderDiagnostics().stream()
+            .map(MatrixMergerState.HierarchyOrderDiagnostic::level)
+            .toList());
+        // The redundant grandparent (levelDelta 2) reference must not read as a
+        // second competing parent: the child anchors to the direct parent only.
+        assertEquals(List.of(1), state.getHierarchyOrderDiagnostics().get(2).resolvedParentIndexes());
+        assertEquals(1, state.getFrameMatrices().get(2).getParentLevelDelta());
+        state.selectFrameIndex(2);
+        assertEquals(MatrixMergerState.UncleHudState.NORMAL, state.getSelectedMatrixUncleHudStatus().state());
+        assertEquals(0, state.resolveVisualHierarchyAmbiguities().ambiguousMatrices());
     }
 
     @Test
@@ -420,6 +486,86 @@ final class MatrixMergerStateTest {
         assertEquals(0, report.sharedTileMergeCount());
         assertEquals(0, report.relationshipClueMergeCount());
         assertEquals(2, state.getMatrixCount());
+    }
+
+    @Test
+    void selectingATileAlsoSelectsEveryAvailableAncestor() {
+        FrameMatrixSet root = frame(10, "10_1", null);
+        FrameMatrixSet parent = frame(20, "20_1", "10_1");
+        FrameMatrixSet child = frame(30, "30_1", "20_1");
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(root, parent, child));
+
+        state.selectTileAndAncestors("30_1");
+
+        assertEquals(Set.of("00030_1", "00020_1", "00010_1"), state.getSelectedTileIds());
+        state.clearTileSelection();
+        assertTrue(state.getSelectedTileIds().isEmpty());
+    }
+
+    @Test
+    void selectionUsesTheAcceptedGridTransformForTilesWithoutUncleClues() {
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(
+            frame(10, "10_1", null),
+            frame(20, "20_1", null)
+        ));
+        FrameMatrixSet parent = state.getFrameMatrices().get(0);
+        FrameMatrixSet child = state.getFrameMatrices().get(1);
+        child.setInferredParent(parent);
+        child.setParentGridTransform(new ParentGridTransform(0, 0));
+
+        state.selectTileAndAncestors("20_1");
+
+        assertEquals(Set.of("00020_1", "00010_1"), state.getSelectedTileIds());
+    }
+
+    @Test
+    void selectionAnchorsAnInteriorTileFromSiblingRelationshipClues() {
+        FrameMatrixSet parent = frameWithTiles(10, List.of(
+            tile("10_1", 0, 0),
+            tile("10_2", 0, 1)
+        ), 1, 2);
+        FrameTileMatrix.TileCoord clue = tile("20_1", 0, 0);
+        clue.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "10_1")));
+        FrameMatrixSet child = frameWithTiles(20, List.of(
+            clue,
+            tile("20_2", 0, 1)
+        ), 1, 2);
+        MatrixMergerState state = new MatrixMergerState();
+        state.setFrameMatrices(List.of(child, parent));
+        state.sortFramesByUncleHierarchy();
+
+        state.selectTileAndAncestors("20_2");
+
+        assertEquals(Set.of("00020_2", "00010_1"), state.getSelectedTileIds());
+    }
+
+    @Test
+    void shiftsTheInheritedGridAnchorOneRowSouthWhenTheReferencedRelationshipCrossesTheCaptureBoundary() {
+        FrameMatrixSet parent = frameWithTiles(10, List.of(
+            tile("10_1", 0, 0),
+            tile("10_2", 1, 0)
+        ), 2, 1);
+        FrameTileMatrix.TileCoord clue = tile("20_1", 0, 0);
+        clue.setUncles(List.of(new ToUncleRelationship(UncleDirections.WEST_NORTH, "10_1")));
+        FrameMatrixSet child = frameWithTiles(20, List.of(
+            clue,
+            tile("20_2", 1, 0)
+        ), 2, 1);
+        MatrixMergerState state = new MatrixMergerState();
+        state.setAbsoluteMaximumLevel(1);
+        state.setFrameMatrices(List.of(child, parent));
+        state.sortFramesByUncleHierarchy();
+
+        state.selectTileAndAncestors("20_2");
+        assertEquals(Set.of("00020_2", "00010_1"), state.getSelectedTileIds());
+
+        state.setCaptureBoundaryLevel(0);
+        state.clearTileSelection();
+        state.selectTileAndAncestors("20_2");
+
+        assertEquals(Set.of("00020_2", "00010_2"), state.getSelectedTileIds());
     }
 
     private static FrameMatrixSet frame(int frameId, String tileId, String uncleId) {

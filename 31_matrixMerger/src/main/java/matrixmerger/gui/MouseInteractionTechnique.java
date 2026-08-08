@@ -5,6 +5,7 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.util.function.Consumer;
 import vsdk.toolkit.gui.AwtSystem;
 import vsdk.toolkit.gui.CameraControllerOrbiter;
 
@@ -12,19 +13,26 @@ public final class MouseInteractionTechnique implements MouseListener, MouseMoti
     private final CameraControllerOrbiter cameraController;
     private final Runnable repaintAction;
     private final Runnable focusAction;
+    private final Consumer<MouseEvent> tileSelectionAction;
 
     public MouseInteractionTechnique(
         CameraControllerOrbiter cameraController,
         Runnable repaintAction,
-        Runnable focusAction
+        Runnable focusAction,
+        Consumer<MouseEvent> tileSelectionAction
     ) {
         this.cameraController = cameraController;
         this.repaintAction = repaintAction;
         this.focusAction = focusAction;
+        this.tileSelectionAction = tileSelectionAction;
     }
 
     @Override
     public void mouseClicked(MouseEvent e) {
+        if (e.getButton() == MouseEvent.BUTTON1 && tileSelectionAction != null) {
+            tileSelectionAction.accept(e);
+            repaintAction.run();
+        }
         if (cameraController.processMouseClickedEvent(AwtSystem.awt2vsdkEvent(e))) {
             repaintAction.run();
         }

@@ -12,11 +12,14 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.awt.TextRenderer;
 import java.awt.Font;
+import java.awt.Polygon;
 import java.awt.geom.Rectangle2D;
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import matrixmerger.model.contract.FrameTileMatrix;
 import matrixmerger.model.state.MatrixMergerState;
 import com.jogamp.opengl.glu.GLU;
@@ -34,6 +37,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
     private boolean offlineMode;
     private boolean offlineCaptureDone;
     private String offlineOutputPath;
+    private volatile List<ScreenTileHit> screenTileHits = List.of();
 
     public Jogl4MatrixMergerRenderer(MatrixMergerState model) {
         this.model = model;
@@ -124,7 +128,11 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             gl2.glLoadMatrixf(modelView, 0);
 
             tileMatrixRenderer.draw(gl2, selected, model.getRenderingConfiguration(), model);
+            updateScreenTileHits(drawable, gl2, selected);
             drawTileIdsAtCenter(drawable, gl2, selected, model.getRenderingConfiguration().isBoundingVolumeSet());
+        }
+        else {
+            screenTileHits = List.of();
         }
 
         drawHud(drawable);
@@ -197,7 +205,7 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         boolean mergeFailed = model.hasLastMergeFailedForCurrentSelection();
         String selectedFrameLabel = model.getSelectedFrameLabel();
         String nextFrameLabel = model.getNextFrameLabelForSelection();
-        String hierarchyLabel = model.getSelectedHierarchyLabel();
+        MatrixMergerState.AbsoluteLevelStatus absoluteLevelStatus = model.getSelectedAbsoluteLevelStatus();
         boolean selectedFrameInvalid = model.isSelectedFrameInvalid();
         MatrixMergerState.UncleHudStatus uncleHudStatus = model.getSelectedMatrixUncleHudStatus();
 
@@ -238,9 +246,14 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
             }
             printSelectedUncleIds(selectedFrameLabel, uncleHudStatus);
         }
-        if (!selectedFrameInvalid && hierarchyLabel != null && !hierarchyLabel.isBlank()) {
-            hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
-            hudTextRenderer.draw("LEVEL: " + hierarchyLabel, 16, h - 94);
+        if (!selectedFrameInvalid) {
+            if (absoluteLevelStatus.duplicated() || !absoluteLevelStatus.resolved()) {
+                hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
+            }
+            else {
+                hudTextRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+            }
+            hudTextRenderer.draw(absoluteLevelStatus.hudLabel(), 16, h - 94);
         }
         if (!selectedFrameInvalid && hasNext && mergeFailed) {
             hudTextRenderer.setColor(1.0f, 0.15f, 0.15f, 1.0f);
@@ -337,6 +350,65 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         return out;
     }
 
+    public void selectTileAtScreen(int x, int y) {
+        for (int index = screenTileHits.size() - 1; index >= 0; index--) {
+            ScreenTileHit hit = screenTileHits.get(index);
+            if (hit.polygon().contains(x, y)) {
+                model.selectTileAndAncestors(hit.tileId());
+                return;
+            }
+        }
+        model.clearTileSelection();
+    }
+
+    private void updateScreenTileHits(GLAutoDrawable drawable, GL2 gl2, FrameTileMatrix matrix) {
+        if (matrix == null || matrix.getTiles() == null) {
+            screenTileHits = List.of();
+            return;
+        }
+        double[] projection = model.getViewingCamera().calculateViewVolumeMatrix().exportToDoubleArrayColumnOrder();
+        double[] modelView = toDouble16(
+            model.getViewingCamera().calculateTransformationMatrix().exportToFloatArrayColumnOrder()
+        );
+        if (modelView == null) {
+            screenTileHits = List.of();
+            return;
+        }
+        int[] viewport = new int[4];
+        gl2.glGetIntegerv(GL2.GL_VIEWPORT, viewport, 0);
+        int height = drawable.getSurfaceHeight();
+        float offsetX = -(Math.max(0, matrix.getCols()) * 0.5f);
+        float offsetY = (Math.max(0, matrix.getRows()) * 0.5f);
+        GLU glu = GLU.createGLU(gl2);
+        List<ScreenTileHit> hits = new ArrayList<>();
+        for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+            if (tile == null || tile.getId() == null || tile.getId().isBlank()) {
+                continue;
+            }
+            double x0 = tile.getJ() + offsetX;
+            double yTop = -tile.getI() + offsetY;
+            double x1 = x0 + 1.0;
+            double yBottom = yTop - 1.0;
+            double[][] corners = {{x0, yTop}, {x1, yTop}, {x1, yBottom}, {x0, yBottom}};
+            Polygon polygon = new Polygon();
+            boolean projected = true;
+            for (double[] corner : corners) {
+                double[] win = new double[3];
+                if (!glu.gluProject(
+                    corner[0], corner[1], 0.0, modelView, 0, projection, 0, viewport, 0, win, 0
+                )) {
+                    projected = false;
+                    break;
+                }
+                polygon.addPoint((int)Math.round(win[0]), height - (int)Math.round(win[1]));
+            }
+            if (projected) {
+                hits.add(new ScreenTileHit(tile.getId(), polygon));
+            }
+        }
+        screenTileHits = List.copyOf(hits);
+    }
+
     private void printSelectedUncleIds(String selectedFrameLabel, MatrixMergerState.UncleHudStatus uncleHudStatus) {
         if (uncleHudStatus == null) {
             lastPrintedUncleSignature = null;
@@ -382,4 +454,6 @@ public final class Jogl4MatrixMergerRenderer implements GLEventListener {
         sb.append(']');
         return sb.toString();
     }
+
+    private record ScreenTileHit(String tileId, Polygon polygon) {}
 }

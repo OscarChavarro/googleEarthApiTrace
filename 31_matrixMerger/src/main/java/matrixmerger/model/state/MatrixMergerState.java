@@ -19,6 +19,7 @@ import matrixmerger.model.contract.ParentGridTransform;
 import matrixmerger.io.WestCuttersJsonReader;
 import matrixmerger.processing.WestCutterMatrixSplitter;
 import matrixmerger.processing.PairwiseMatrixMerger;
+import matrixmerger.processing.VisualHierarchyAmbiguityResolver;
 import matrixmerger.processing.uncles.ToUncleRelationship;
 import matrixmerger.processing.uncles.UncleDirections;
 import matrixmerger.processing.uncles.UncleRelationshipKind;
@@ -36,10 +37,13 @@ public final class MatrixMergerState {
     private final PairwiseMatrixMerger matrixMerger = new PairwiseMatrixMerger();
     private final WestCutterMatrixSplitter matrixByWestCutterSplitter = new WestCutterMatrixSplitter();
     private final Map<FrameMatrixSet, Integer> hierarchyLevelByFrame = new IdentityHashMap<>();
+    private final Set<String> selectedTileIds = new LinkedHashSet<>();
     private String outputFolder;
     private long gpuTextureBytesAssigned = 0L;
     private int selectedFrameIndex = 0;
     private int maximumRetryCount = 0;
+    private int absoluteMaximumLevel = 14;
+    private int captureBoundaryLevel = -1;
     private boolean lastMergeFailedForCurrentSelection = false;
 
     public MatrixMergerState() {
@@ -63,6 +67,27 @@ public final class MatrixMergerState {
         this.outputFolder = (outputFolder == null || outputFolder.isBlank()) ? null : outputFolder;
     }
 
+    public void setAbsoluteMaximumLevel(int absoluteMaximumLevel) {
+        if (absoluteMaximumLevel < 0) {
+            throw new IllegalArgumentException("absoluteMaximumLevel must be non-negative");
+        }
+        this.absoluteMaximumLevel = absoluteMaximumLevel;
+    }
+
+    /**
+     * Absolute quadtree level of the deepest matrix still anchored by this
+     * session's shallow capture pass, or -1 to disable the correction
+     * (single-pass sessions). A relationship whose child is deeper than this
+     * level but whose reference is at or above it crosses into a later
+     * capture pass with different camera zigzag parameters and carries a
+     * constant one-row-south placement error; see the
+     * level12-anchoring-pipeline project memory for how this was root-caused
+     * and validated.
+     */
+    public void setCaptureBoundaryLevel(int captureBoundaryLevel) {
+        this.captureBoundaryLevel = captureBoundaryLevel;
+    }
+
     public void setFrameMatrices(List<FrameMatrixSet> frames) {
         frameMatrices.clear();
         if (frames != null) {
@@ -73,6 +98,7 @@ public final class MatrixMergerState {
         maximumRetryCount = frameMatrices.size();
         selectedFrameIndex = 0;
         lastMergeFailedForCurrentSelection = false;
+        selectedTileIds.clear();
         normalizeSelection();
         refreshHierarchyOrdering(false);
     }
@@ -161,6 +187,7 @@ public final class MatrixMergerState {
         }
 
         Map<String, Integer> uncleCountsByTileId = new LinkedHashMap<>();
+        Map<String, Integer> minDeltaByUncleId = new LinkedHashMap<>();
         int relationCount = 0;
         for (FrameTileMatrix.TileCoord tile : selected.getTiles()) {
             if (tile == null || tile.getUncles() == null) {
@@ -176,6 +203,7 @@ public final class MatrixMergerState {
                     continue;
                 }
                 uncleCountsByTileId.merge(normalizedUncleId, 1, Integer::sum);
+                minDeltaByUncleId.merge(normalizedUncleId, relationship.effectiveLevelDelta(), Math::min);
             }
         }
 
@@ -184,6 +212,7 @@ public final class MatrixMergerState {
         }
 
         LinkedHashSet<Integer> uncleFrameIndexes = new LinkedHashSet<>();
+        Map<Integer, Integer> minDeltaByFrameIndex = new LinkedHashMap<>();
         List<String> missingUncleIds = new ArrayList<>();
         for (String uncleTileId : uncleCountsByTileId.keySet()) {
             Integer frameIndex = frameIndexByTileId.get(uncleTileId);
@@ -192,7 +221,12 @@ public final class MatrixMergerState {
                 continue;
             }
             uncleFrameIndexes.add(frameIndex);
+            Integer delta = minDeltaByUncleId.get(uncleTileId);
+            if (delta != null) {
+                minDeltaByFrameIndex.merge(frameIndex, delta, Math::min);
+            }
         }
+        retainNearestAncestors(uncleFrameIndexes, minDeltaByFrameIndex);
 
         UncleHudState state;
         if (uncleFrameIndexes.isEmpty()) {
@@ -240,6 +274,167 @@ public final class MatrixMergerState {
         return frame == null ? null : frame.getMatrices().get(0);
     }
 
+    public synchronized void selectTileAndAncestors(String tileId) {
+        selectedTileIds.clear();
+        String normalized = WestCuttersJsonReader.normalizeScopedTileId(tileId);
+        if (normalized == null || normalized.isBlank()) {
+            return;
+        }
+        Map<String, List<String>> parentsByTileId = new LinkedHashMap<>();
+        Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
+        for (FrameMatrixSet frame : frameMatrices) {
+            FrameTileMatrix matrix = firstMatrix(frame);
+            if (matrix == null || matrix.getTiles() == null) {
+                continue;
+            }
+            SelectionParentAnchor parentAnchor = selectionParentAnchor(frame);
+            for (FrameTileMatrix.TileCoord tile : matrix.getTiles()) {
+                if (tile == null) {
+                    continue;
+                }
+                LinkedHashSet<String> selectedParents = new LinkedHashSet<>();
+                FrameTileMatrix.TileCoord transformedParent = transformedParentTile(parentAnchor, tile);
+                if (transformedParent != null) {
+                    selectedParents.add(transformedParent.getId());
+                }
+                else {
+                    String containingParentId = containingParentId(frame, tile, frameIndexByTileId);
+                    if (containingParentId != null) {
+                        selectedParents.add(containingParentId);
+                    }
+                }
+                if (!selectedParents.isEmpty()) {
+                    parentsByTileId.put(tile.getId(), List.copyOf(selectedParents));
+                }
+            }
+        }
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        pending.add(normalized);
+        while (!pending.isEmpty()) {
+            String current = pending.removeFirst();
+            if (!selectedTileIds.add(current)) {
+                continue;
+            }
+            for (String parent : parentsByTileId.getOrDefault(current, List.of())) {
+                String normalizedParent = WestCuttersJsonReader.normalizeScopedTileId(parent);
+                if (normalizedParent != null && !normalizedParent.isBlank()) {
+                    pending.addLast(normalizedParent);
+                }
+            }
+        }
+    }
+
+    public synchronized void clearTileSelection() {
+        selectedTileIds.clear();
+    }
+
+    public synchronized boolean isTileSelected(String tileId) {
+        String normalized = WestCuttersJsonReader.normalizeScopedTileId(tileId);
+        return normalized != null && selectedTileIds.contains(normalized);
+    }
+
+    public synchronized Set<String> getSelectedTileIds() {
+        return Set.copyOf(selectedTileIds);
+    }
+
+    private SelectionParentAnchor selectionParentAnchor(FrameMatrixSet childFrame) {
+        if (childFrame == null) {
+            return null;
+        }
+        FrameMatrixSet inferredParent = childFrame.getInferredParent();
+        ParentGridTransform transform = childFrame.getParentGridTransform();
+        if (inferredParent != null && transform != null) {
+            int levelDelta = Math.max(1, childFrame.getParentLevelDelta() == null
+                ? 1 : childFrame.getParentLevelDelta());
+            return new SelectionParentAnchor(
+                inferredParent, transform.rowOffset(), transform.colOffset(), levelDelta
+            );
+        }
+        int childLevel = hierarchyLevelByFrame.getOrDefault(childFrame, -1);
+        ParentSpaceAnchor observed = observedParentSpaceAnchor(childFrame, childLevel);
+        if (observed == null) {
+            return null;
+        }
+        int parentLevel = hierarchyLevelByFrame.getOrDefault(observed.parent(), -1);
+        int levelDelta = childLevel - parentLevel;
+        if (levelDelta <= 0 || levelDelta >= 30) {
+            return null;
+        }
+        return new SelectionParentAnchor(
+            observed.parent(), observed.rowOffset(), observed.colOffset(), levelDelta
+        );
+    }
+
+    private static FrameTileMatrix.TileCoord transformedParentTile(
+        SelectionParentAnchor anchor,
+        FrameTileMatrix.TileCoord childTile
+    ) {
+        if (anchor == null || childTile == null || anchor.levelDelta() <= 0 || anchor.levelDelta() >= 30) {
+            return null;
+        }
+        int scale = 1 << anchor.levelDelta();
+        int parentI = Math.floorDiv(childTile.getI() + anchor.rowOffset(), scale);
+        int parentJ = Math.floorDiv(childTile.getJ() + anchor.colOffset(), scale);
+        FrameTileMatrix parent = firstMatrix(anchor.parent());
+        if (parent == null || parent.getTiles() == null) {
+            return null;
+        }
+        for (FrameTileMatrix.TileCoord candidate : parent.getTiles()) {
+            if (candidate != null && candidate.getI() == parentI && candidate.getJ() == parentJ) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private String containingParentId(
+        FrameMatrixSet frame,
+        FrameTileMatrix.TileCoord tile,
+        Map<String, Integer> frameIndexByTileId
+    ) {
+        List<ToUncleRelationship> relationships = frame == null || frame.getHierarchyRelationshipsByTileId() == null
+            ? List.of()
+            : frame.getHierarchyRelationshipsByTileId().getOrDefault(tile.getId(), List.of());
+        if (relationships.isEmpty() && tile.getUncles() != null) {
+            relationships = tile.getUncles();
+        }
+        int childLevel = hierarchyLevelByFrame.getOrDefault(frame, -1);
+        for (ToUncleRelationship relationship : relationships) {
+            if (relationship == null
+                || relationship.relationshipKind() != UncleRelationshipKind.CONTAINING_QUADRANT
+                || relationship.uncleContentId() == null) {
+                continue;
+            }
+            String parentId = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
+            Integer parentIndex = frameIndexByTileId.get(parentId);
+            if (parentIndex == null) {
+                continue;
+            }
+            int parentLevel = hierarchyLevelByFrame.getOrDefault(frameMatrices.get(parentIndex), -1);
+            if (parentLevel + relationship.effectiveLevelDelta() == childLevel) {
+                return parentId;
+            }
+        }
+        return null;
+    }
+
+    public VisualHierarchyAmbiguityResolver.Report resolveVisualHierarchyAmbiguities() {
+        Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
+        Set<FrameMatrixSet> brokenFrames = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (FrameMatrixSet frame : frameMatrices) {
+            FrameTileMatrix matrix = firstMatrix(frame);
+            if (matrix != null && buildUncleHudStatus(matrix, frameIndexByTileId).broken()) {
+                brokenFrames.add(frame);
+            }
+        }
+        VisualHierarchyAmbiguityResolver.Report report =
+            new VisualHierarchyAmbiguityResolver().resolve(frameMatrices, brokenFrames);
+        if (report.resolvedMatrices() > 0) {
+            refreshHierarchyOrdering(true);
+        }
+        return report;
+    }
+
     public int getSelectedMatrixOrdinal() {
         return frameMatrices.isEmpty() ? 0 : selectedFrameIndex + 1;
     }
@@ -273,6 +468,44 @@ public final class MatrixMergerState {
         return level == 0 ? "l" : "l + " + level;
     }
 
+    public AbsoluteLevelStatus getSelectedAbsoluteLevelStatus() {
+        Integer relativeLevel = hierarchyLevelByFrame.get(getSelectedFrameMatrices());
+        if (relativeLevel == null || relativeLevel < 0) {
+            return new AbsoluteLevelStatus(-1, -1, 0);
+        }
+        int absoluteLevel = absoluteLevelOf(relativeLevel);
+        int matrixCount = 0;
+        for (Integer candidate : hierarchyLevelByFrame.values()) {
+            if (candidate != null && candidate >= 0 && absoluteLevelOf(candidate) == absoluteLevel) {
+                matrixCount++;
+            }
+        }
+        return new AbsoluteLevelStatus(absoluteLevel, relativeLevel, matrixCount);
+    }
+
+    public Map<Integer, Integer> getDuplicateAbsoluteLevelCounts() {
+        Map<Integer, Integer> counts = new LinkedHashMap<>();
+        for (Integer relativeLevel : hierarchyLevelByFrame.values()) {
+            if (relativeLevel != null && relativeLevel >= 0) {
+                counts.merge(absoluteLevelOf(relativeLevel), 1, Integer::sum);
+            }
+        }
+        counts.entrySet().removeIf(entry -> entry.getValue() < 2);
+        return Map.copyOf(counts);
+    }
+
+    private int absoluteLevelOf(int relativeLevel) {
+        if (relativeLevel < 0) {
+            return -1;
+        }
+        int deepestRelativeLevel = hierarchyLevelByFrame.values().stream()
+            .filter(level -> level != null && level >= 0)
+            .mapToInt(Integer::intValue)
+            .max()
+            .orElse(relativeLevel);
+        return absoluteMaximumLevel - (deepestRelativeLevel - relativeLevel);
+    }
+
     public List<HierarchyOrderDiagnostic> getHierarchyOrderDiagnostics() {
         Map<String, Integer> frameIndexByTileId = buildFrameIndexByTileId();
         List<HierarchyOrderDiagnostic> out = new ArrayList<>(frameMatrices.size());
@@ -290,6 +523,9 @@ public final class MatrixMergerState {
                     parentIndexes.add(parentIndex);
                 }
             }
+            Map<Integer, Integer> levelDeltaByParentIndex = new LinkedHashMap<>();
+            collectParentLevelDeltas(frame, frameIndexByTileId, frameIndex, levelDeltaByParentIndex);
+            retainNearestAncestors(parentIndexes, levelDeltaByParentIndex);
             Integer explicitParentIndex = indexOfFrameIdentity(frame.getInferredParent());
             if (explicitParentIndex != null && explicitParentIndex != frameIndex) {
                 parentIndexes.clear();
@@ -298,6 +534,7 @@ public final class MatrixMergerState {
             out.add(new HierarchyOrderDiagnostic(
                 frameIndex,
                 hierarchyLevelByFrame.getOrDefault(frame, -1),
+                absoluteLevelOf(hierarchyLevelByFrame.getOrDefault(frame, -1)),
                 findLastCaptureFrameId(frame),
                 uncleIds.size(),
                 List.copyOf(parentIndexes),
@@ -891,10 +1128,16 @@ public final class MatrixMergerState {
             return null;
         }
         for (FrameTileMatrix.TileCoord tile : childMatrix.getTiles()) {
-            if (tile == null || tile.getUncles() == null) {
+            if (tile == null) {
                 continue;
             }
-            for (ToUncleRelationship relationship : tile.getUncles()) {
+            List<ToUncleRelationship> relationships = child.getHierarchyRelationshipsByTileId() == null
+                ? List.of()
+                : child.getHierarchyRelationshipsByTileId().getOrDefault(tile.getId(), List.of());
+            if (relationships.isEmpty() && tile.getUncles() != null) {
+                relationships = tile.getUncles();
+            }
+            for (ToUncleRelationship relationship : relationships) {
                 if (relationship == null
                     || relationship.direction() == null
                     || relationship.uncleContentId() == null
@@ -904,12 +1147,17 @@ public final class MatrixMergerState {
                 String uncleId = WestCuttersJsonReader.normalizeScopedTileId(relationship.uncleContentId());
                 ParentTileRef parent = parentTileById.get(uncleId);
                 int levelDelta = relationship.effectiveLevelDelta();
-                if (parent == null
-                    || hierarchyLevelByFrame.getOrDefault(parent.frame(), -1) + levelDelta != childLevel) {
+                int parentRelativeLevel = parent == null ? -1 : hierarchyLevelByFrame.getOrDefault(parent.frame(), -1);
+                if (parent == null || parentRelativeLevel + levelDelta != childLevel) {
                     continue;
                 }
-                int[] childPosition = childPositionInRefinedParentGrid(parent, relationship);
-                if (parent == null || childPosition == null) {
+                int[] childPosition = childPositionInRefinedParentGrid(
+                    parent,
+                    relationship,
+                    absoluteLevelOf(parentRelativeLevel),
+                    absoluteLevelOf(childLevel)
+                );
+                if (childPosition == null) {
                     continue;
                 }
                 ParentSpaceAnchor anchor = new ParentSpaceAnchor(
@@ -932,9 +1180,11 @@ public final class MatrixMergerState {
         return best != null && bestVotes * 2 > acceptedClues ? best : null;
     }
 
-    private static int[] childPositionInRefinedParentGrid(
+    private int[] childPositionInRefinedParentGrid(
         ParentTileRef parent,
-        ToUncleRelationship relationship
+        ToUncleRelationship relationship,
+        int referenceAbsoluteLevel,
+        int childAbsoluteLevel
     ) {
         if (parent == null || parent.tile() == null || relationship == null) {
             return null;
@@ -947,14 +1197,23 @@ public final class MatrixMergerState {
             }
             int scale = 1 << relationship.levelDelta();
             return new int[]{
-                scale * parentI + relationship.rowOffset(),
+                scale * parentI + correctedRowOffset(referenceAbsoluteLevel, childAbsoluteLevel, relationship.rowOffset()),
                 scale * parentJ + relationship.columnOffset()
             };
         }
+        UncleRelationshipKind kind = relationship.relationshipKind();
+        UncleDirections direction = relationship.direction();
+        if (direction != null && crossesCaptureBoundary(referenceAbsoluteLevel, childAbsoluteLevel)) {
+            ShiftedRelationship shifted = shiftedOneRowSouth(kind, direction);
+            if (shifted == null) {
+                return null;
+            }
+            kind = shifted.kind();
+            direction = shifted.direction();
+        }
         boolean south;
         boolean east;
-        UncleDirections direction = relationship.direction();
-        if (relationship.relationshipKind() == UncleRelationshipKind.CONTAINING_QUADRANT) {
+        if (kind == UncleRelationshipKind.CONTAINING_QUADRANT) {
             south = direction == UncleDirections.WEST_SOUTH
                 || direction == UncleDirections.SOUTH_WEST
                 || direction == UncleDirections.EAST_SOUTH
@@ -964,7 +1223,7 @@ public final class MatrixMergerState {
                 || direction == UncleDirections.EAST_NORTH
                 || direction == UncleDirections.NORTH_EAST;
         }
-        else if (relationship.relationshipKind() == UncleRelationshipKind.ADJACENT_BORDER) {
+        else if (kind == UncleRelationshipKind.ADJACENT_BORDER) {
             switch (direction) {
                 case WEST_NORTH -> { parentJ--; south = false; east = true; }
                 case WEST_SOUTH -> { parentJ--; south = true; east = true; }
@@ -981,6 +1240,107 @@ public final class MatrixMergerState {
             return null;
         }
         return new int[]{2 * parentI + (south ? 1 : 0), 2 * parentJ + (east ? 1 : 0)};
+    }
+
+    /**
+     * Adds the empirically validated correction for relationships whose child
+     * is on the deep side of {@link #captureBoundaryLevel} but whose
+     * reference is on the shallow side, unchanged otherwise. See the
+     * level12-anchoring-pipeline project memory.
+     */
+    private int correctedRowOffset(int referenceAbsoluteLevel, int childAbsoluteLevel, int rowOffset) {
+        if (captureBoundaryLevel < 0
+            || referenceAbsoluteLevel < 0
+            || referenceAbsoluteLevel > captureBoundaryLevel
+            || childAbsoluteLevel <= captureBoundaryLevel) {
+            return rowOffset;
+        }
+        return rowOffset + (1 << (childAbsoluteLevel - captureBoundaryLevel - 1));
+    }
+
+    private boolean crossesCaptureBoundary(int referenceAbsoluteLevel, int childAbsoluteLevel) {
+        return captureBoundaryLevel >= 0
+            && referenceAbsoluteLevel == captureBoundaryLevel
+            && childAbsoluteLevel == captureBoundaryLevel + 1;
+    }
+
+    private record ShiftedRelationship(UncleRelationshipKind kind, UncleDirections direction) {}
+    private record BorderCell(int rowStep, int colStep, boolean south, boolean east) {}
+
+    private static BorderCell borderCell(UncleDirections direction) {
+        return switch (direction) {
+            case WEST_NORTH -> new BorderCell(0, -1, false, true);
+            case WEST_SOUTH -> new BorderCell(0, -1, true, true);
+            case EAST_NORTH -> new BorderCell(0, 1, false, false);
+            case EAST_SOUTH -> new BorderCell(0, 1, true, false);
+            case NORTH_WEST -> new BorderCell(-1, 0, true, false);
+            case NORTH_EAST -> new BorderCell(-1, 0, true, true);
+            case SOUTH_WEST -> new BorderCell(1, 0, false, false);
+            case SOUTH_EAST -> new BorderCell(1, 0, false, true);
+        };
+    }
+
+    private static UncleDirections borderDirection(int rowStep, int colStep, boolean south, boolean east) {
+        for (UncleDirections direction : UncleDirections.values()) {
+            BorderCell cell = borderCell(direction);
+            if (cell.rowStep() == rowStep && cell.colStep() == colStep
+                && cell.south() == south && cell.east() == east) {
+                return direction;
+            }
+        }
+        return null;
+    }
+
+    private static boolean[] quadrantCell(UncleDirections direction) {
+        return switch (direction) {
+            case WEST_SOUTH, SOUTH_WEST -> new boolean[]{true, false};
+            case EAST_SOUTH, SOUTH_EAST -> new boolean[]{true, true};
+            case EAST_NORTH, NORTH_EAST -> new boolean[]{false, true};
+            case WEST_NORTH, NORTH_WEST -> new boolean[]{false, false};
+        };
+    }
+
+    private static UncleDirections quadrantDirectionFor(boolean south, boolean east) {
+        if (south) {
+            return east ? UncleDirections.SOUTH_EAST : UncleDirections.SOUTH_WEST;
+        }
+        return east ? UncleDirections.NORTH_EAST : UncleDirections.NORTH_WEST;
+    }
+
+    /**
+     * Re-derives a direction-only relationship for a target one grid row
+     * further south, the shift validated end-to-end for relationships
+     * crossing the shallow/deep capture-pass boundary. Returns null when the
+     * shifted cell would also need a column shift to name a single adjacent
+     * border (dropped rather than guessed, matching the validated harness).
+     */
+    private static ShiftedRelationship shiftedOneRowSouth(UncleRelationshipKind kind, UncleDirections direction) {
+        int rowStep;
+        int colStep;
+        boolean south;
+        boolean east;
+        if (kind == UncleRelationshipKind.CONTAINING_QUADRANT) {
+            boolean[] cell = quadrantCell(direction);
+            south = cell[0];
+            east = cell[1];
+            rowStep = 0;
+            colStep = 0;
+        }
+        else {
+            BorderCell cell = borderCell(direction);
+            rowStep = cell.rowStep();
+            colStep = cell.colStep();
+            south = cell.south();
+            east = cell.east();
+        }
+        int shiftedRow = 2 * rowStep + (south ? 1 : 0) + 1;
+        int newRowStep = Math.floorDiv(shiftedRow, 2);
+        boolean newSouth = Math.floorMod(shiftedRow, 2) == 1;
+        if (newRowStep == 0 && colStep == 0) {
+            return new ShiftedRelationship(UncleRelationshipKind.CONTAINING_QUADRANT, quadrantDirectionFor(newSouth, east));
+        }
+        UncleDirections shiftedDirection = borderDirection(newRowStep, colStep, newSouth, east);
+        return shiftedDirection == null ? null : new ShiftedRelationship(UncleRelationshipKind.ADJACENT_BORDER, shiftedDirection);
     }
 
     private static int minCoordinate(FrameTileMatrix matrix, boolean row) {
@@ -1275,6 +1635,7 @@ public final class MatrixMergerState {
                 }
             }
             collectParentLevelDeltas(frame, frameIndexByTileId, frameIndex, levelDeltaByParentIndex);
+            retainNearestAncestors(resolvedUncleFrameIndexes, levelDeltaByParentIndex);
 
             Integer explicitParentFrameIndex = indexOfFrameIdentity(frame.getInferredParent());
 
@@ -1428,6 +1789,41 @@ public final class MatrixMergerState {
 
     private static int topLevelEvidenceRank(FrameHierarchyNode node) {
         return node.state() == UncleHudState.TOPLEVEL && node.hierarchyUncleCount() > 0 ? 0 : 1;
+    }
+
+    /**
+     * Once deep captures started emitting multi-level uncle clues, a matrix can
+     * reference both its true direct parent (levelDelta 1) and further ancestors
+     * (levelDelta >= 2) at the same time. Those deeper references are consistent
+     * chain links, not competing parents, so the hierarchy must anchor to the
+     * nearest ancestor. Keeps every parent whose known level delta equals the
+     * smallest observed delta (and any parent with an unknown delta, treated as a
+     * direct parent) and drops the deeper skip-level references, so a clean
+     * grandparent+parent chain no longer reads as a broken multi-parent fork.
+     */
+    private static void retainNearestAncestors(
+        Set<Integer> parentFrameIndexes,
+        Map<Integer, Integer> levelDeltaByParentIndex
+    ) {
+        if (parentFrameIndexes.size() <= 1 || levelDeltaByParentIndex.isEmpty()) {
+            return;
+        }
+        int nearestDelta = Integer.MAX_VALUE;
+        for (Integer parentIndex : parentFrameIndexes) {
+            Integer delta = levelDeltaByParentIndex.get(parentIndex);
+            if (delta != null) {
+                nearestDelta = Math.min(nearestDelta, delta);
+            }
+        }
+        if (nearestDelta == Integer.MAX_VALUE) {
+            return;
+        }
+        int keepDelta = nearestDelta;
+        parentFrameIndexes.removeIf(parentIndex -> {
+            Integer delta = levelDeltaByParentIndex.get(parentIndex);
+            return delta != null && delta > keepDelta;
+        });
+        levelDeltaByParentIndex.keySet().retainAll(parentFrameIndexes);
     }
 
     private static void collectParentLevelDeltas(
@@ -1759,12 +2155,38 @@ public final class MatrixMergerState {
     public record HierarchyOrderDiagnostic(
         int index,
         int level,
+        int absoluteLevel,
         int lastCaptureFrameId,
         int uncleCount,
         List<Integer> resolvedParentIndexes,
         int unresolvedUncleCount,
         int tileCount
     ) {
+    }
+
+    public record AbsoluteLevelStatus(
+        int absoluteLevel,
+        int relativeLevel,
+        int matrixCount
+    ) {
+        public boolean resolved() {
+            return absoluteLevel >= 0 && relativeLevel >= 0;
+        }
+
+        public boolean duplicated() {
+            return resolved() && matrixCount > 1;
+        }
+
+        public String hudLabel() {
+            if (!resolved()) {
+                return "ABSOLUTE LEVEL: UNRESOLVED | RELATIVE: UNRESOLVED";
+            }
+            String relative = relativeLevel == 0 ? "l" : "l + " + relativeLevel;
+            String duplicate = duplicated()
+                ? " | ERROR: " + matrixCount + " MATRICES AT THIS LEVEL"
+                : "";
+            return "ABSOLUTE LEVEL: " + absoluteLevel + " | RELATIVE: " + relative + duplicate;
+        }
     }
 
     public record SmallMatrixDiscardReport(
@@ -1804,6 +2226,14 @@ public final class MatrixMergerState {
     }
 
     private record ParentSpaceAnchor(FrameMatrixSet parent, int rowOffset, int colOffset) {
+    }
+
+    private record SelectionParentAnchor(
+        FrameMatrixSet parent,
+        int rowOffset,
+        int colOffset,
+        int levelDelta
+    ) {
     }
 
     public enum UncleHudState {
