@@ -107,7 +107,7 @@ public final class MergeAnalysis {
         if (isMergePossible()) {
             return "Merge ready: green. Compared " + comparedTiles + " overlapping tile(s), delta contributes "
                 + mergeableTiles + " mergeable tile(s), resolution matches: "
-                + resolutionEquivalentNodeIds.size() + ", retained refinement ancestors: "
+                + resolutionEquivalentNodeIds.size() + ", retained refinement context: "
                 + retainedRefinementAncestorNodeIds.size() + ", conflicts: 0.";
         }
         return "Merge blocked: red. Conflict levels " + conflictingLevels + ", conflict tile(s) "

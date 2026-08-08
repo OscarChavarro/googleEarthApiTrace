@@ -83,15 +83,19 @@ When `m` is pressed, the program recursively traverses the delta tree. For every
 - if both files differ, ImageMagick rescales the higher-resolution candidate to the lower
   resolution and accepts a normalized RMSE up to 3%; these matches are outlined in green;
 - if the visual comparison passes, the higher-resolution tile is kept in destination;
-- if a differing tile is one or two levels above the delta's deepest tiles and its subtree
-  contains a new deepest-level tile, it is treated as refinement support: the existing
+- if the delta adds tiles at its deepest level, differing tiles at that level or in the preceding
+  one, two or three levels are treated as refinement context (leaf-neighbor, ancestor, or
+  uncle/sibling context): the existing
   destination ancestor is retained and only the missing descendants are copied;
+- if every delta tile already exists in destination, the repeated capture is accepted as an
+  idempotent no-op: destination tiles are retained and no encoded-size replacements are made;
 - if the visual comparison exceeds the threshold, that tile id becomes a conflict.
 
-The refinement exception is deliberately narrow. Differences at the deepest delta level,
-more than two levels above it, or outside a branch containing a new deepest tile remain hard
-conflicts. This supports level-14 captures that re-observe level-12/13 context without hiding
-coarse placement errors.
+The refinement exception is deliberately narrow. When new content is present, differences more
+than three levels above the deepest new refinement remain hard conflicts. This supports level-14
+captures that re-observe nearby context without hiding coarser placement errors. A fully redundant
+delta is safe regardless of visual differences because it writes no tiles. Context tiles are never
+copied over the destination; only genuinely missing descendants are added.
 
 New tiles are written using the destination's folder layout. The current per-quadrant-digit
 layout is preferred when a destination already contains a mixture of current and legacy

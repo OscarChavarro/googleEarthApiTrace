@@ -50,15 +50,17 @@ import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
  * matrix_&lt;n&gt;/matrixLayer.json, so the tile (and every future run
  * reading that file) becomes directly anchored with no uncle chain needed.
  *
- * The export is strictly session-local: it never reads tiles from any
- * existing pyramidal image (its own destination included) and each slot is
- * simply (re)written from this session's data. Merging different capture
- * sessions' pyramidal images is the responsibility of a separate program.
+ * The export never reads its own previous destination. When a read-only
+ * reference pyramid is supplied, its levels 0..5 may be copied as fallback
+ * scaffold tiles so the delta remains rooted even if the current trace has
+ * no globe-level catalogue. Local session tiles retain priority. Merging the
+ * remaining capture content is the responsibility of a separate program.
  */
 public final class SessionPyramidalImageExportService {
     private static final int TILE_PIXEL_SIZE = 256;
     private static final int PROGRESS_REPORT_INTERVAL = 100;
     private static final double FULL_TEXTURE_RECT_TOLERANCE = 1.0e-9;
+    private static final int HIGHEST_RECONSTRUCTED_TOP_LEVEL = 5;
 
     private final TileRootPathResolver rootPathResolver =
         new TileRootPathResolver(Configuration.captureBoundaryLevel());
@@ -162,6 +164,14 @@ public final class SessionPyramidalImageExportService {
                 model,
                 "Export failed: no native 256x256 tiles with absolute quadtree positions were available; "
                     + "the previous pyramid was preserved."
+            );
+            return;
+        }
+        if (manifest.entries().stream().noneMatch(entry -> "0".equals(entry.fullPath()))) {
+            reportStatus(
+                model,
+                "Export failed: no native root tile 0.png was available from either the current "
+                    + "top-level catalogue or the reference pyramid; the previous pyramid was preserved."
             );
             return;
         }
@@ -455,6 +465,27 @@ public final class SessionPyramidalImageExportService {
             selectedByPath.putIfAbsent(
                 fullPath,
                 new ExportEntry(nativeTopCatalogLayer, nativeTile, fullPath)
+            );
+        }
+
+        MatrixLayer referenceTopCatalogLayer = new MatrixLayer();
+        referenceTopCatalogLayer.setSourceFolderName("topLevel_reference_catalog");
+        Map<String, String> referenceTopCatalog = new TreeMap<>(model.getReferenceQuadPathsByImagePath());
+        for (Map.Entry<String, String> catalogEntry : referenceTopCatalog.entrySet()) {
+            String fullPath = catalogEntry.getValue();
+            if (!isQuadPath(fullPath) || fullPath.length() - 1 > HIGHEST_RECONSTRUCTED_TOP_LEVEL) {
+                continue;
+            }
+            MatrixLayerTile referenceTile = new MatrixLayerTile();
+            referenceTile.setId(fullPath);
+            referenceTile.setTextureFile(catalogEntry.getKey());
+            if (!isNativeExportTile(referenceTile, nativeImageByPath)) {
+                rejectedByLevel.merge(fullPath.length() - 1, 1, Integer::sum);
+                continue;
+            }
+            selectedByPath.putIfAbsent(
+                fullPath,
+                new ExportEntry(referenceTopCatalogLayer, referenceTile, fullPath)
             );
         }
 

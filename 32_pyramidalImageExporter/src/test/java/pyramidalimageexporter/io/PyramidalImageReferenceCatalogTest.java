@@ -46,6 +46,26 @@ final class PyramidalImageReferenceCatalogTest {
         ), catalog);
     }
 
+    @Test
+    void cataloguesTopScaffoldAndDeepPlacementLevels() throws IOException {
+        Path root = tempDir.resolve("0.png");
+        Files.write(root, new byte[]{0});
+        Path top = writeTile("01");
+        writeTile("012");
+        Path deepParent = writeTile("0123");
+        Path deepest = writeTile("01230");
+
+        Map<String, String> catalog = new PyramidalImageReferenceCatalog()
+            .readTopAndDeepestLevels(tempDir, 1, 2);
+
+        assertEquals(Map.of(
+            root.toAbsolutePath().normalize().toString(), "0",
+            top.toAbsolutePath().normalize().toString(), "01",
+            deepParent.toAbsolutePath().normalize().toString(), "0123",
+            deepest.toAbsolutePath().normalize().toString(), "01230"
+        ), catalog);
+    }
+
     private Path writeTile(String quadPath) throws IOException {
         Path directory = tempDir;
         for (int index = 1; index < quadPath.length(); index++) {

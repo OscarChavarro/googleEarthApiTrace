@@ -1,5 +1,6 @@
 package pyramidalimageexporter.processing;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -156,9 +157,10 @@ final class SessionPyramidalImageExportServiceTest {
 
     @Test
     void writesNativeTopCatalogImageAtItsQuadkeyWithoutResampling() throws Exception {
+        String rootImage = nativeImage("native-root.png", 256, 256);
         String imagePath = nativeImage("native-level-one.png", 256, 256);
         PyramidalImageExporterState model = new PyramidalImageExporterState();
-        model.setCataloguedQuadPathsByImagePath(Map.of(imagePath, "03"));
+        model.setCataloguedQuadPathsByImagePath(Map.of(rootImage, "0", imagePath, "03"));
         Path exportRoot = tempDir.resolve("pyramid");
         model.setSessionPyramidalImageExportPath(exportRoot.toString());
 
@@ -170,6 +172,37 @@ final class SessionPyramidalImageExportServiceTest {
         assertEquals(256, image.getWidth());
         assertEquals(256, image.getHeight());
         assertEquals(-1L, java.nio.file.Files.mismatch(Path.of(imagePath), written));
+    }
+
+    @Test
+    void exportsReferenceTopLevelsWhenTheSessionTopCatalogueIsEmpty() throws Exception {
+        String rootImage = nativeImage("reference-root.png", 256, 256);
+        String levelOneImage = nativeImage("reference-level-one.png", 256, 256);
+        PyramidalImageExporterState model = new PyramidalImageExporterState();
+        model.setReferenceQuadPathsByImagePath(Map.of(rootImage, "0", levelOneImage, "02"));
+        Path exportRoot = tempDir.resolve("reference-backed-pyramid");
+        model.setSessionPyramidalImageExportPath(exportRoot.toString());
+
+        new SessionPyramidalImageExportService().export(model);
+
+        assertEquals(-1L, java.nio.file.Files.mismatch(Path.of(rootImage), exportRoot.resolve("0.png")));
+        assertEquals(-1L, java.nio.file.Files.mismatch(Path.of(levelOneImage), exportRoot.resolve("2/02.png")));
+    }
+
+    @Test
+    void preservesPreviousPyramidWhenNoRootTileIsAvailable() throws Exception {
+        PyramidalImageExporterState model = new PyramidalImageExporterState();
+        model.setCataloguedQuadPathsByImagePath(Map.of(nativeImage("orphan.png", 256, 256), "03"));
+        Path exportRoot = tempDir.resolve("preserved-pyramid");
+        java.nio.file.Files.createDirectories(exportRoot);
+        Path previousRoot = exportRoot.resolve("0.png");
+        java.nio.file.Files.write(previousRoot, new byte[]{1, 2, 3});
+        model.setSessionPyramidalImageExportPath(exportRoot.toString());
+
+        new SessionPyramidalImageExportService().export(model);
+
+        assertArrayEquals(new byte[]{1, 2, 3}, java.nio.file.Files.readAllBytes(previousRoot));
+        assertTrue(model.getLastExportStatus().contains("no native root tile"));
     }
 
     @Test

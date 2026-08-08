@@ -46,6 +46,7 @@ readonly TRACE_DIRECTORY="/opt/google/earth/pro"
 readonly TRACE_PATTERN="googleearth-bin*trace"
 readonly SESSION_LOG="/tmp/googleEarthSession.log"
 readonly ERRORS_LOG="$SCRIPT_DIR/errors.log"
+readonly MATRIX_DIR="/tmp/matrix"
 
 destination="$DEFAULT_DESTINATION"
 reuse_capture=0
@@ -93,6 +94,27 @@ die() {
     exit 1
 }
 
+extract_route_coordinates() {
+    if [[ "$route_command" =~ zigzag[[:space:]]+(-?[0-9]+([.][0-9]+)?)[[:space:]]+(-?[0-9]+([.][0-9]+)?) ]]; then
+        printf 'lat=%s lon=%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}"
+        return 0
+    fi
+    return 1
+}
+
+print_cycle_banner() {
+    local title="$1"
+    local coordinates="coordinates=unknown"
+    local border
+    if extracted_coordinates="$(extract_route_coordinates)"; then
+        coordinates="$extracted_coordinates"
+    fi
+    border="$(printf '=%.0s' {1..70})"
+    printf '\n%s\n' "$border"
+    printf '[runFullProcess] %s %s\n' "$title" "$coordinates"
+    printf '%s\n\n' "$border"
+}
+
 on_early_exit() {
     local status=$?
     local elapsed
@@ -136,6 +158,8 @@ while (($# > 0)); do
             ;;
     esac
 done
+
+print_cycle_banner "CYCLE START"
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || die "Required command is not available: $1"
@@ -190,6 +214,7 @@ on_exit() {
     log "Session finished status=$status elapsed_seconds=$elapsed"
     printf '===== googleEarth full-process session ended %s pid=%d status=%d =====\n' \
         "$(date --iso-8601=seconds)" "$$" "$status"
+    print_cycle_banner "CYCLE END (status=$status)"
     exit "$status"
 }
 trap on_exit EXIT
@@ -244,17 +269,6 @@ run_timed_step() {
     finished_at="$(date --iso-8601=seconds)"
     log "Finished $name finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
     return "$status"
-}
-
-safe_delete_staging_path() {
-    local target="$1"
-    local staging_resolved target_resolved
-    [[ -e "$target" ]] || return 0
-    staging_resolved="$(realpath -e -- "$run_dir")"
-    target_resolved="$(realpath -e -- "$target")"
-    [[ "$target_resolved" == "$staging_resolved/"* ]] ||
-        die "Refusing to delete path outside iteration staging: $target_resolved"
-    find "$target_resolved" -xdev -depth -delete
 }
 
 safe_delete_trace_dump_path() {
@@ -343,7 +357,7 @@ validate_dump_analyzer_outputs() {
 
 validate_export_log_and_pyramid() {
     local export_log="$1"
-    local pyramid="$run_dir/matrix/pyramidalImage"
+    local pyramid="$MATRIX_DIR/pyramidalImage"
     local png_count file filename quadkey digits expected digit
 
     ! grep -q 'Export failed' "$export_log" || die "Module 32 reported an export failure."
@@ -384,8 +398,27 @@ validate_export_log_and_pyramid() {
 }
 
 reset_matrix_attempt_staging() {
-    safe_delete_staging_path "$run_dir/matrix"
-    mkdir "$run_dir/matrix"
+    local resolved
+
+    [[ ! -L "$MATRIX_DIR" ]] ||
+        die "Refusing to use matrix staging through a symbolic link: $MATRIX_DIR"
+    if [[ -e "$MATRIX_DIR" ]]; then
+        [[ -d "$MATRIX_DIR" ]] ||
+            die "Matrix staging path exists but is not a directory: $MATRIX_DIR"
+    else
+        mkdir -- "$MATRIX_DIR"
+    fi
+
+    resolved="$(realpath -e -- "$MATRIX_DIR")"
+    [[ "$resolved" == "$MATRIX_DIR" ]] ||
+        die "Matrix staging resolved to unexpected path '$resolved'; expected '$MATRIX_DIR'."
+    [[ -w "$resolved" ]] || die "Matrix staging is not writable: $resolved"
+
+    log "Clearing verified matrix staging directory $resolved"
+    find "$resolved" -xdev -mindepth 1 -depth -delete
+    if [[ -n "$(find "$resolved" -xdev -mindepth 1 -print -quit)" ]]; then
+        die "Matrix staging cleanup left files behind: $resolved"
+    fi
 }
 
 module_42_reported_conflicts() {
@@ -400,14 +433,6 @@ validate_merge_completed() {
         die "Module 42 did not report a completed merge."
 }
 
-extract_route_coordinates() {
-    if [[ "$route_command" =~ zigzag[[:space:]]+(-?[0-9]+([.][0-9]+)?)[[:space:]]+(-?[0-9]+([.][0-9]+)?) ]]; then
-        printf 'lat=%s lon=%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}"
-        return 0
-    fi
-    return 1
-}
-
 append_merge_error() {
     local reason="$1"
     local coordinates="coordinates=unknown"
@@ -419,7 +444,7 @@ append_merge_error() {
         "$coordinates" \
         "${route_command:-unspecified}" \
         "$reason" >> "$ERRORS_LOG"
-    log "Recorded skipped merge in $ERRORS_LOG ($coordinates, reason=$reason)."
+    log "Recorded failed merge in $ERRORS_LOG ($coordinates, reason=$reason)."
 }
 
 preflight_started="$(date +%s)"
@@ -452,8 +477,9 @@ if ((reuse_capture == 0)); then
 fi
 
 run_dir="$(mktemp -d /tmp/google-earth-full-process.XXXXXX)"
-mkdir -p "$run_dir/logs" "$run_dir/matrix"
+mkdir -p "$run_dir/logs"
 log "Staging directory: $run_dir"
+log "Matrix staging directory: $MATRIX_DIR"
 log "Trace dump directory: $trace_dump_dir"
 if [[ -n "$route_command" ]]; then
     log "Prepared route command: $route_command"
@@ -464,6 +490,8 @@ fi
 lock_key="$(printf '%s' "$destination" | cksum | awk '{print $1}')"
 exec 9>"/tmp/google-earth-full-process-${lock_key}.lock"
 flock -n 9 || die "Another automated iteration is using destination $destination"
+exec 7>"/tmp/google-earth-full-process-matrix.lock"
+flock -n 7 || die "Another automated iteration is using matrix staging $MATRIX_DIR"
 log "Finished preflight finished_at=$(date --iso-8601=seconds) status=0 elapsed_seconds=$(($(date +%s) - preflight_started))"
 
 run_logged 21_traceLogSplitter_configure \
@@ -511,16 +539,16 @@ log "Starting matrix/delta attempt started_at=$(date --iso-8601=seconds) with of
 run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_staging
 
 run_logged "31_matrixMerger_${attempt_suffix}" \
-    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$run_dir/matrix"
+    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$MATRIX_DIR"
 log "Automatic offline module 31 completed."
 
 module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
 run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
-    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$run_dir/matrix" "$destination"
+    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$MATRIX_DIR" "$destination"
 run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
     validate_export_log_and_pyramid "$module_32_log"
 
-delta="$run_dir/matrix/pyramidalImage"
+delta="$MATRIX_DIR/pyramidalImage"
 module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
 if run_logged "42_pyramidalImageMerger_dry_run_${attempt_suffix}" \
     "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
@@ -531,14 +559,14 @@ else
     dry_run_status=$?
     if module_42_reported_conflicts "$module_42_log"; then
         append_merge_error "module_42_dry_run_content_conflict"
-        log "Module 42 dry run reported content conflicts. Skipping this capture and continuing without interactive retry."
-        log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=skipped_content_conflict elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
-        exit 0
+        log "Module 42 dry run reported content conflicts. Stopping so the failure can be investigated."
+        log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=failed_content_conflict elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+        exit "$dry_run_status"
     fi
     append_merge_error "module_42_dry_run_failed_status_${dry_run_status}"
-    log "Module 42 dry run failed without a mergeable result. Skipping this capture and continuing."
-    log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=skipped_failure elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
-    exit 0
+    log "Module 42 dry run failed without a mergeable result. Stopping so the failure can be investigated."
+    log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=$dry_run_status result=failed elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
+    exit "$dry_run_status"
 fi
 
 if ((dry_run == 1)); then
@@ -554,14 +582,14 @@ if run_logged 42_pyramidalImageMerger_commit \
         :
     else
         append_merge_error "module_42_commit_validation_failed"
-        log "Module 42 merge validation failed. Skipping this capture and continuing."
-        exit 0
+        log "Module 42 merge validation failed. Stopping so the failure can be investigated."
+        exit 1
     fi
 else
     commit_status=$?
     append_merge_error "module_42_commit_failed_status_${commit_status}"
-    log "Module 42 merge failed. Skipping this capture and continuing."
-    exit 0
+    log "Module 42 merge failed. Stopping so the failure can be investigated."
+    exit "$commit_status"
 fi
 
 printf '\n'

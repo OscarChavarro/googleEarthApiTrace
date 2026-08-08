@@ -27,6 +27,7 @@ public final class PyramidalImageExporterApplication {
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
     private static final String DEFAULT_OFFLINE_OUTPUT = "/tmp/pyramidalImageExporter_offline.png";
     private static final String SESSION_PYRAMID_SUBFOLDER = "pyramidalImage";
+    private static final int HIGHEST_RECONSTRUCTED_TOP_LEVEL = 5;
     private static final String[] VALUE_FLAGS = {
         "--layer", "--width", "--height", "--output", "--reference-pyramid"
     };
@@ -105,7 +106,11 @@ public final class PyramidalImageExporterApplication {
             // texture of its immediate parent. Once the destination itself
             // contains finest-level tiles, indexing only its deepest level
             // makes those parent anchors disappear.
-            : new PyramidalImageReferenceCatalog().readDeepestLevels(referencePyramid, 2);
+            : new PyramidalImageReferenceCatalog().readTopAndDeepestLevels(
+                referencePyramid,
+                HIGHEST_RECONSTRUCTED_TOP_LEVEL,
+                2
+            );
         Map<String, String> anchorPaths = new LinkedHashMap<>(cataloguedPaths);
         if (referencePyramid != null) {
             anchorPaths.putAll(referencePaths);

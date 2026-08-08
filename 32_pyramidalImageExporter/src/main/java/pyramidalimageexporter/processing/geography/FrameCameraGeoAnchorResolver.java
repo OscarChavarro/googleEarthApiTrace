@@ -52,12 +52,14 @@ public final class FrameCameraGeoAnchorResolver {
                 continue;
             }
             GridOffset offset = cameraGridOffset(layer, absoluteLevel, frameRoot, byFrameId);
-            if (offset == null) {
+            if (offset == null
+                || contradictsStructuralPlacement(layer, absoluteLevel, offset, preliminaryResolution)) {
                 continue;
             }
             anchoredLayers.add(layer.getSourceFolderName());
         }
         anchoredLayers = descendantLayerNames(layers, anchoredLayers);
+        Set<String> contradictedLayers = new LinkedHashSet<>();
         for (MatrixLayer layer : layers) {
             if (!isImportedLayer(layer) || !anchoredLayers.contains(layer.getSourceFolderName())
                 || layer.getHierarchyLevel() == null) {
@@ -69,6 +71,10 @@ public final class FrameCameraGeoAnchorResolver {
             if (offset == null) {
                 continue;
             }
+            if (contradictsStructuralPlacement(layer, absoluteLevel, offset, preliminaryResolution)) {
+                contradictedLayers.add(layer.getSourceFolderName());
+                continue;
+            }
             int side = 1 << absoluteLevel;
             for (MatrixLayerTile tile : layer.getTiles()) {
                 int row = offset.row() + tile.getI();
@@ -78,6 +84,7 @@ public final class FrameCameraGeoAnchorResolver {
                 }
             }
         }
+        anchoredLayers.removeAll(contradictedLayers);
         if (!paths.isEmpty()) {
             System.out.println(
                 "FrameCameraGeoAnchorResolver: resolved " + paths.size()
@@ -85,6 +92,61 @@ public final class FrameCameraGeoAnchorResolver {
             );
         }
         return new Anchors(Map.copyOf(paths), Set.copyOf(anchoredLayers));
+    }
+
+    /**
+     * Reports whether a camera-derived grid offset contradicts the placement
+     * the structural resolution already reached for the same layer.
+     *
+     * <p>Structural paths come from images matched against the catalogued
+     * reference pyramid, so they name real planet cells; a camera offset is
+     * trigonometry over the frame's view vector and can be defeated by a
+     * frame whose view centre is not the tile it is attributed to. When the
+     * two disagree for most of the tiles that structure did resolve, the
+     * offset is wrong for the whole layer — it is a single rigid translation,
+     * so one bad vote cluster displaces every tile — and anchoring on it
+     * would silently overwrite correct absolute paths with shifted ones.</p>
+     */
+    static boolean contradictsStructuralPlacement(
+        MatrixLayer layer,
+        int absoluteLevel,
+        GridOffset offset,
+        TileRootPathResolver.Resolution structure
+    ) {
+        if (structure == null || absoluteLevel < 0 || absoluteLevel >= 30) {
+            return false;
+        }
+        int side = 1 << absoluteLevel;
+        int agreements = 0;
+        int disagreements = 0;
+        for (MatrixLayerTile tile : layer.getTiles()) {
+            String structuralPath = structure.pathFor(layer, tile);
+            if (structuralPath == null) {
+                continue;
+            }
+            int row = offset.row() + tile.getI();
+            if (row < 0 || row >= side) {
+                continue;
+            }
+            int col = Math.floorMod(offset.col() + tile.getJ(), side);
+            if (structuralPath.equals(quadPath(absoluteLevel, row, col))) {
+                agreements++;
+            }
+            else {
+                disagreements++;
+            }
+        }
+        if (disagreements > agreements) {
+            System.out.println(
+                "FrameCameraGeoAnchorResolver: rejected camera anchor for layer "
+                    + layer.getSourceFolderName() + " at [" + absoluteLevel + ", "
+                    + offset.row() + ", " + offset.col() + "]; it contradicts the structural"
+                    + " placement of " + disagreements + " tile(s) and matches only "
+                    + agreements + "."
+            );
+            return true;
+        }
+        return false;
     }
 
     private static GridOffset cameraGridOffset(
@@ -271,6 +333,10 @@ public final class FrameCameraGeoAnchorResolver {
             Math.max(0, (int)Math.floor((boundedLatitude + 180.0) / 360.0 * side))
         );
         int row = side - 1 - southRow;
+        return quadPath(level, row, col);
+    }
+
+    static String quadPathForCell(int level, int row, int col) {
         return quadPath(level, row, col);
     }
 
@@ -502,5 +568,5 @@ public final class FrameCameraGeoAnchorResolver {
     }
 
     private record CameraAnchor(String tileId, double longitude, double latitude) {}
-    private record GridOffset(int row, int col) {}
+    record GridOffset(int row, int col) {}
 }

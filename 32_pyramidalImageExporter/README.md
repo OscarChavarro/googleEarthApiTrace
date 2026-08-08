@@ -35,10 +35,10 @@ image" below). The pyramid can be exported to disk as a quadtree of PNG files wi
 
 There is no destination argument: the session's pyramidal image quadtree is always
 written inside the input folder itself, to `<inputFolder>/pyramidalImage` (created on
-first export). This tool is strictly **session-local**: it never reads tiles from any
-existing pyramidal image (not even its own previous export) and never writes anywhere
-outside `<inputFolder>`. Merging the pyramidal images of different capture sessions into
-one consolidated pyramid is the responsibility of a separate, future program. Passing a
+first export). It never reads its own previous export and never writes outside
+`<inputFolder>`. An explicitly supplied reference pyramid is read-only; its upper levels
+may provide the delta scaffold described below. Merging the remaining imagery from
+different capture sessions is the responsibility of program 42. Passing a
 second positional argument (the old destination parameter) is an error: the program
 prints an English message explaining this contract and exits with code `1`.
 
@@ -111,9 +111,9 @@ already drawn in the interactive viewer:
 - Native top-level catalog images are added directly to the export manifest at their resolved
   quadkeys and copied byte-for-byte. Export does not depend on the ancestor-filled matrices
   used by the GUI.
-- `topLevelTiles.json` is still required to recover those absolute quadkeys. If it is missing
-  and imported matrix ids cannot otherwise be anchored, export fails without clearing the
-  previous pyramid instead of reporting a successful zero-tile export.
+- If `topLevelTiles.json` is empty or missing, an explicitly supplied reference pyramid
+  contributes its native levels `0..5` as the delta scaffold. Without either source for
+  `0.png`, export fails without clearing the previous pyramid.
 
 This replaces the earlier `matrix_<n>/matrixLayer.json` copy-based layout used by
 `31_matrixMerger`'s `MatrixLayerExportWriter`: the pyramidal image is written directly as a
@@ -215,15 +215,14 @@ correctness no longer depends on layer iteration order.
 
 ### Session-local export
 
-`<inputFolder>/pyramidalImage` is created if missing, and every placed tile is written
-there from this session's data. With `--reference-pyramid <folder>`, the two deepest
-levels of an existing pyramid are indexed read-only so external parent textures can
-anchor a sparse child layer by exact content hash. If holes also remove that immediate
-parent, conservative visual matching can bridge up to three hierarchy levels; it
-requires a low-error, unique match and a strict majority of grid-offset votes.
-Reference tiles are never copied into the session pyramid. Without that option no
-existing pyramid is read. A re-export also regenerates the session output without
-reading its old PNGs back. Two counters are
+`<inputFolder>/pyramidalImage` is created if missing. With
+`--reference-pyramid <folder>`, levels `0..5` supply missing upper-tree entries and the
+two deepest levels let external parent textures anchor a sparse child layer by exact
+content hash. Current-session tiles override reference scaffold tiles at the same
+quadkey. If holes also remove the immediate parent, conservative visual matching can
+bridge up to three hierarchy levels; it requires a low-error, unique match and a strict
+majority of grid-offset votes. Without that option no existing pyramid is read. A
+re-export also regenerates the session output without reading its old PNGs back. Two counters are
 accumulated in `pyramidalimageexporter.model.PyramidalImageWriteStatistics`
 and printed to the console (via its `toString()`) once the export finishes:
 
@@ -255,9 +254,10 @@ texture source:
 ## Command-line options
 
 - `<inputFolder>` (positional, required, the only positional argument): see Inputs.
-- `--reference-pyramid <folder>`: read the two deepest levels of an existing pyramid as
-  an anchoring catalogue. This is useful when a sparse higher-resolution capture has no
-  in-session overlap with its parent level. The reference is never exported or modified.
+- `--reference-pyramid <folder>`: read levels `0..5` plus the two deepest levels of an
+  existing pyramid. The deepest levels form the anchoring catalogue; levels `0..5` are
+  copied only as fallback entries when the current trace cannot reconstruct the delta's
+  upper tree. Current-session tiles retain priority and the reference is never modified.
 - `--export`: writes the pyramidal image quadtree to `<inputFolder>/pyramidalImage` and
   exits, with no GUI and no OpenGL/JOGL required (same operation as pressing `e`
   interactively).

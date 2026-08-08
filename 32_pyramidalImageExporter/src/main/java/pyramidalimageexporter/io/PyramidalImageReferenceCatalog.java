@@ -51,6 +51,62 @@ public final class PyramidalImageReferenceCatalog {
         return deepest;
     }
 
+    /**
+     * Catalogues the shallow scaffold together with the deepest levels used
+     * for placement. The shallow entries let a session delta remain a valid,
+     * rooted quadtree when the current trace did not contain the globe-level
+     * draw calls needed to rebuild levels 0..highestTopLevel.
+     */
+    public Map<String, String> readTopAndDeepestLevels(
+        Path rootFolder,
+        int highestTopLevel,
+        int deepestLevelCount
+    ) {
+        if (highestTopLevel < 0) {
+            throw new IllegalArgumentException("Highest reference top level must not be negative.");
+        }
+        if (deepestLevelCount <= 0) {
+            throw new IllegalArgumentException("Reference deepest level count must be positive.");
+        }
+        Map<String, String> valid = readValidTiles(rootFolder);
+        int deepestLevel = valid.values().stream()
+            .mapToInt(path -> path.length() - 1)
+            .max()
+            .orElse(-1);
+        int shallowestDeepLevel = Math.max(0, deepestLevel - deepestLevelCount + 1);
+        Map<String, String> selected = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : valid.entrySet()) {
+            int level = entry.getValue().length() - 1;
+            if (level <= highestTopLevel || level >= shallowestDeepLevel) {
+                selected.put(entry.getKey(), entry.getValue());
+            }
+        }
+        System.out.println(
+            "PyramidalImageReferenceCatalog: catalogued " + selected.size()
+                + " reference tile(s) at top level(s) 0.." + highestTopLevel
+                + " and deep level(s) " + shallowestDeepLevel + ".." + deepestLevel + "."
+        );
+        return selected;
+    }
+
+    private Map<String, String> readValidTiles(Path rootFolder) {
+        Map<String, String> valid = new LinkedHashMap<>();
+        try (Stream<Path> paths = Files.walk(rootFolder)) {
+            for (Path path : paths.filter(Files::isRegularFile).filter(this::isPng).toList()) {
+                String fileName = path.getFileName().toString();
+                String quadPath = fileName.substring(0, fileName.length() - 4);
+                if (!quadPath.matches("0[0-3]*") || !matchesSupportedLayout(rootFolder, path, quadPath)) {
+                    continue;
+                }
+                valid.put(path.toAbsolutePath().normalize().toString(), quadPath);
+            }
+        }
+        catch (IOException ex) {
+            throw new IllegalArgumentException("Could not scan reference pyramid " + rootFolder + ": " + ex.getMessage(), ex);
+        }
+        return valid;
+    }
+
     private boolean isPng(Path path) {
         return path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png");
     }
