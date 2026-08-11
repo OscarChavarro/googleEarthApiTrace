@@ -163,11 +163,11 @@ public final class CoverageCanvas extends Canvas {
     ) {
         drawTileBorder(g, target, x, y);
         if (layout.mode() == RenderMode.NATIVE) {
-            BufferedImage image = images.load(target.imagePath());
+            BufferedImage image = images.getOrRequest(target.imagePath(), this::repaint);
             if (image != null) {
                 drawImage(g, image, x, y, 256, 0, 0, image.getWidth(), image.getHeight());
             }
-            else {
+            else if (images.failed(target.imagePath())) {
                 drawMissingData(g, depth, southRow, x, y);
             }
             return;
@@ -178,9 +178,11 @@ public final class CoverageCanvas extends Canvas {
             drawMissingData(g, depth, southRow, x, y);
             return;
         }
-        BufferedImage image = images.load(source.tile().imagePath());
+        BufferedImage image = images.getOrRequest(source.tile().imagePath(), this::repaint);
         if (image == null) {
-            drawMissingData(g, depth, southRow, x, y);
+            if (images.failed(source.tile().imagePath())) {
+                drawMissingData(g, depth, southRow, x, y);
+            }
             return;
         }
         drawImage(g, image, x, y, outputPixels, source.x0(), source.y0(), source.x1(), source.y1());

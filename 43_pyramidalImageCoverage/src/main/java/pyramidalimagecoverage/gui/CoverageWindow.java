@@ -27,7 +27,7 @@ public final class CoverageWindow {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout());
 
-        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        CoverageCanvas canvas = new CoverageCanvas(model, TileImageRepository.asynchronous());
         JScrollPane scrollPane = new JScrollPane(canvas);
         scrollPane.setBorder(null);
         scrollPane.getViewport().setBackground(canvas.getBackground());

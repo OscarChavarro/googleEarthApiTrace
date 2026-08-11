@@ -2,6 +2,7 @@ package pyramidalimagecoverage.io;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,6 +14,28 @@ import pyramidalimagecoverage.model.PyramidCatalog;
 class PyramidalImageScannerTest {
     @TempDir
     Path temporaryFolder;
+
+    @Test
+    void rootScanDoesNotTraverseDescendantFolders() throws IOException {
+        Path root = temporaryFolder.resolve("lazy-layout");
+        Files.createDirectories(root.resolve("0/2"));
+        Files.createFile(root.resolve("0.png"));
+        Files.createFile(root.resolve("0/00.png"));
+        Files.createFile(root.resolve("0/2/002.png"));
+
+        PyramidalImageScanner scanner = new PyramidalImageScanner();
+        PyramidCatalog catalog = scanner.scanRoot(root);
+
+        assertEquals(1, catalog.tileCount());
+        assertNotNull(catalog.tileAt(0, 0, 0));
+        assertNull(catalog.tileAt(1, 0, 0));
+
+        scanner.scanRemaining(catalog, () -> { });
+
+        assertEquals(3, catalog.tileCount());
+        assertNotNull(catalog.tileAt(1, 0, 0));
+        assertNotNull(catalog.tileAt(2, 1, 1));
+    }
 
     @Test
     void scansNewPerDigitFolderLayout() throws IOException {

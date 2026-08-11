@@ -34,6 +34,11 @@ public final class ViewerModel {
         listeners.add(listener);
     }
 
+    /** Notifies the view after a background catalog batch has become available. */
+    public void catalogChanged() {
+        notifyListeners();
+    }
+
     public void toggleSelection(TileRecord tile) {
         if (tile != null) {
             toggleSelection(tile.address());

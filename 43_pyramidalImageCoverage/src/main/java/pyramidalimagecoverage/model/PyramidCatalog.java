@@ -12,32 +12,55 @@ public final class PyramidCatalog {
 
     private final Path rootFolder;
     private final List<Map<Long, TileRecord>> tilesByDepth = new ArrayList<>();
+    private final List<TileBounds> boundsByDepth = new ArrayList<>();
     private int tileCount;
 
     public PyramidCatalog(Path rootFolder) {
         this.rootFolder = rootFolder;
     }
 
-    public void add(TileRecord tile) {
+    public synchronized boolean add(TileRecord tile) {
         int depth = tile.address().depth();
         if (depth > MAX_ADDRESSABLE_DEPTH) {
-            return;
+            return false;
         }
         while (tilesByDepth.size() <= depth) {
             tilesByDepth.add(new HashMap<>());
+            boundsByDepth.add(null);
         }
-        tilesByDepth.get(depth).put(key(tile.address().column(), tile.address().southRow()), tile);
-        tileCount++;
+        TileRecord previous = tilesByDepth.get(depth).putIfAbsent(
+            key(tile.address().column(), tile.address().southRow()), tile
+        );
+        if (previous == null) {
+            tileCount++;
+            TileAddress address = tile.address();
+            TileBounds bounds = boundsByDepth.get(depth);
+            boundsByDepth.set(depth, bounds == null
+                ? new TileBounds(
+                    address.column(), address.southRow(), address.column(), address.southRow()
+                )
+                : new TileBounds(
+                    Math.min(bounds.minimumColumn(), address.column()),
+                    Math.min(bounds.minimumSouthRow(), address.southRow()),
+                    Math.max(bounds.maximumColumn(), address.column()),
+                    Math.max(bounds.maximumSouthRow(), address.southRow())
+                )
+            );
+            return true;
+        }
+        return false;
     }
 
-    public TileRecord tileAt(int depth, int column, int southRow) {
+    public synchronized TileRecord tileAt(int depth, int column, int southRow) {
         if (depth < 0 || depth >= tilesByDepth.size()) {
             return null;
         }
         return tilesByDepth.get(depth).get(key(column, southRow));
     }
 
-    public TileRecord nearestAncestorAtOrAbove(int desiredDepth, int targetDepth, int column, int southRow) {
+    public synchronized TileRecord nearestAncestorAtOrAbove(
+        int desiredDepth, int targetDepth, int column, int southRow
+    ) {
         for (int depth = desiredDepth; depth >= 0; depth--) {
             int shift = targetDepth - depth;
             TileRecord tile = tileAt(depth, column >> shift, southRow >> shift);
@@ -48,39 +71,26 @@ public final class PyramidCatalog {
         return null;
     }
 
-    public int maxDepth() {
+    public synchronized int maxDepth() {
         return Math.max(0, tilesByDepth.size() - 1);
     }
 
-    public int tileCount() {
+    public synchronized int tileCount() {
         return tileCount;
     }
 
-    public Optional<TileBounds> tileBoundsAt(int depth) {
-        if (depth < 0 || depth >= tilesByDepth.size() || tilesByDepth.get(depth).isEmpty()) {
+    public synchronized Optional<TileBounds> tileBoundsAt(int depth) {
+        if (depth < 0 || depth >= boundsByDepth.size()) {
             return Optional.empty();
         }
-        int minimumColumn = Integer.MAX_VALUE;
-        int minimumSouthRow = Integer.MAX_VALUE;
-        int maximumColumn = Integer.MIN_VALUE;
-        int maximumSouthRow = Integer.MIN_VALUE;
-        for (TileRecord tile : tilesByDepth.get(depth).values()) {
-            TileAddress address = tile.address();
-            minimumColumn = Math.min(minimumColumn, address.column());
-            minimumSouthRow = Math.min(minimumSouthRow, address.southRow());
-            maximumColumn = Math.max(maximumColumn, address.column());
-            maximumSouthRow = Math.max(maximumSouthRow, address.southRow());
-        }
-        return Optional.of(new TileBounds(
-            minimumColumn, minimumSouthRow, maximumColumn, maximumSouthRow
-        ));
+        return Optional.ofNullable(boundsByDepth.get(depth));
     }
 
     public Path rootFolder() {
         return rootFolder;
     }
 
-    public Path relativePathFor(TileAddress address) {
+    public synchronized Path relativePathFor(TileAddress address) {
         TileRecord tile = tileAt(address.depth(), address.column(), address.southRow());
         if (tile != null) {
             return rootFolder.relativize(tile.imagePath());
@@ -88,7 +98,7 @@ public final class PyramidCatalog {
         return expectedRelativePathFor(address);
     }
 
-    public boolean setSelectionRecursively(TileRecord tile, boolean selected) {
+    public synchronized boolean setSelectionRecursively(TileRecord tile, boolean selected) {
         if (tile == null) {
             return false;
         }
@@ -104,7 +114,7 @@ public final class PyramidCatalog {
         return changed;
     }
 
-    public boolean clearSelection() {
+    public synchronized boolean clearSelection() {
         boolean changed = false;
         for (Map<Long, TileRecord> tiles : tilesByDepth) {
             for (TileRecord tile : tiles.values()) {

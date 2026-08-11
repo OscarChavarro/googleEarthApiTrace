@@ -82,8 +82,11 @@ centering the complete world matrix.
 AWT key events are converted through Vitral's `AwtSystem`. The command mapping itself
 operates on Vitral events and action interfaces, without depending on AWT or Swing.
 
-Images are loaded lazily into a bounded LRU cache. Scanning startup indexes paths and
-coordinates but does not decode every PNG.
+Startup reads only `0.png`, so the level-0 view appears without first walking a large
+tile tree. Descendant paths are indexed progressively by a small background worker pool
+and the UI refreshes in batches as new levels become available. Visible PNGs are also
+decoded lazily by background image-loader threads into a bounded LRU cache, keeping both
+initial display and navigation through cold folders responsive.
 
 ## Tests
 
