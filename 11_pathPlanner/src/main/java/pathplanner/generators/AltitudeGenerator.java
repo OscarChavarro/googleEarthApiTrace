@@ -7,12 +7,12 @@ import pathplanner.model.Point;
 public final class AltitudeGenerator {
     private static final double FIRST_ALTITUDE_METERS = 16_000_000.0;
     private static final int MAX_ALTITUDE_LEVEL = 16;
+    private static final int FIRST_INCLUDED_LEVEL = 2;
 
     public List<Point> buildAltitudeLandmarks(Point origin, double curveAltitudeMeters) {
         List<Point> landmarks = new ArrayList<>();
         double targetAltitudeMeters = Math.max(0.0, curveAltitudeMeters * 2.0);
         double altitudeMeters = FIRST_ALTITUDE_METERS;
-        landmarks.add(new Point(origin.latDeg(), origin.lonDeg(), altitudeMeters));
 
         for (int level = 1; level <= MAX_ALTITUDE_LEVEL; level++) {
             double nextAltitudeMeters = altitudeMeters / 2.0;
@@ -20,7 +20,9 @@ public final class AltitudeGenerator {
                 break;
             }
             altitudeMeters = nextAltitudeMeters;
-            landmarks.add(new Point(origin.latDeg(), origin.lonDeg(), altitudeMeters));
+            if (level >= FIRST_INCLUDED_LEVEL) {
+                landmarks.add(new Point(origin.latDeg(), origin.lonDeg(), altitudeMeters));
+            }
         }
         return landmarks;
     }
