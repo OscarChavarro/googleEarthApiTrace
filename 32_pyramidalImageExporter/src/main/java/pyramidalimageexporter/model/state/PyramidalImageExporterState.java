@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.processing.uncles.UncleRmsAnalyzer;
@@ -28,6 +29,8 @@ public final class PyramidalImageExporterState {
     private Map<String, String> referenceQuadPathsByImagePath = Map.of();
     private Map<String, String> mergedFullPathByOriginalId = Map.of();
     private UncleRmsAnalyzer.Analysis uncleRmsAnalysis = UncleRmsAnalyzer.Analysis.empty();
+    private Supplier<UncleRmsAnalyzer.Analysis> uncleRmsAnalysisLoader;
+    private boolean uncleRmsAnalysisLoaded = true;
     private boolean rmsHeatMapEnabled;
 
     public PyramidalImageExporterState() {
@@ -85,14 +88,22 @@ public final class PyramidalImageExporterState {
         this.uncleRmsAnalysis = uncleRmsAnalysis == null
             ? UncleRmsAnalyzer.Analysis.empty()
             : uncleRmsAnalysis;
+        uncleRmsAnalysisLoader = null;
+        uncleRmsAnalysisLoaded = true;
+    }
+
+    public void setUncleRmsAnalysisLoader(Supplier<UncleRmsAnalyzer.Analysis> loader) {
+        uncleRmsAnalysis = UncleRmsAnalyzer.Analysis.empty();
+        uncleRmsAnalysisLoader = loader;
+        uncleRmsAnalysisLoaded = loader == null;
     }
 
     public UncleRmsAnalyzer.TileScore getUncleRmsScore(MatrixLayer layer, MatrixLayerTile tile) {
-        return uncleRmsAnalysis.scoreFor(layer, tile);
+        return loadUncleRmsAnalysis().scoreFor(layer, tile);
     }
 
     public int getComparedUncleRelationshipCount() {
-        return uncleRmsAnalysis.matches().size();
+        return uncleRmsAnalysisLoaded ? uncleRmsAnalysis.matches().size() : 0;
     }
 
     public boolean isRmsHeatMapEnabled() {
@@ -101,10 +112,25 @@ public final class PyramidalImageExporterState {
 
     public void setRmsHeatMapEnabled(boolean rmsHeatMapEnabled) {
         this.rmsHeatMapEnabled = rmsHeatMapEnabled;
+        if (rmsHeatMapEnabled) {
+            loadUncleRmsAnalysis();
+        }
     }
 
     public void toggleRmsHeatMap() {
-        rmsHeatMapEnabled = !rmsHeatMapEnabled;
+        setRmsHeatMapEnabled(!rmsHeatMapEnabled);
+    }
+
+    private synchronized UncleRmsAnalyzer.Analysis loadUncleRmsAnalysis() {
+        if (uncleRmsAnalysisLoaded) {
+            return uncleRmsAnalysis;
+        }
+        Supplier<UncleRmsAnalyzer.Analysis> loader = uncleRmsAnalysisLoader;
+        UncleRmsAnalyzer.Analysis loaded = loader == null ? null : loader.get();
+        uncleRmsAnalysis = loaded == null ? UncleRmsAnalyzer.Analysis.empty() : loaded;
+        uncleRmsAnalysisLoader = null;
+        uncleRmsAnalysisLoaded = true;
+        return uncleRmsAnalysis;
     }
 
     public String getSessionPyramidalImageExportPath() {

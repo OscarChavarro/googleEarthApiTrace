@@ -10,6 +10,7 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
@@ -60,6 +61,33 @@ final class UncleRmsAnalyzerTest {
         );
         assertTrue(resolution.pathById().containsKey("child"));
         assertEquals("032", resolution.pathById().get("child"));
+    }
+
+    @Test
+    void analyzesSharedImagesSafelyInParallel() throws IOException {
+        Path parentTexture = writeParentQuadrants();
+        Path childTexture = writeSolid("parallel-child.png", Color.BLUE);
+        MatrixLayerTile parent = tile("parent", parentTexture);
+        MatrixLayer parentLayer = layer("matrix_0", parent);
+        List<MatrixLayerTile> children = new ArrayList<>();
+        for (int index = 0; index < 24; index++) {
+            MatrixLayerTile child = tile("child-" + index, childTexture);
+            child.setUncles(List.of(
+                new ToUncleRelationship(UncleDirections.EAST_NORTH, "parent")
+            ));
+            children.add(child);
+        }
+        MatrixLayer childLayer = new MatrixLayer();
+        childLayer.setSourceFolderName("matrix_1");
+        childLayer.setTiles(children);
+
+        UncleRmsAnalyzer.Analysis analysis = new UncleRmsAnalyzer().analyze(
+            List.of(parentLayer, childLayer),
+            Map.of()
+        );
+
+        assertEquals(24, analysis.matches().size());
+        assertTrue(analysis.matches().values().stream().allMatch(UncleRmsAnalyzer.Match::declaredQuadrantIsMinimum));
     }
 
     private Path writeParentQuadrants() throws IOException {

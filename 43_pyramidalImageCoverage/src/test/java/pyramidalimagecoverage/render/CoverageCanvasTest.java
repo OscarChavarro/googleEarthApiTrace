@@ -179,6 +179,45 @@ class CoverageCanvasTest {
     }
 
     @Test
+    void paintsTheLastSelectedTilePreviewAtOneToOneScaleInTheBottomRightCorner() throws IOException {
+        Path primaryPath = temporaryFolder.resolve("0.png");
+        BufferedImage primaryTile = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D primaryGraphics = primaryTile.createGraphics();
+        primaryGraphics.setColor(Color.BLUE);
+        primaryGraphics.fillRect(0, 0, 256, 256);
+        primaryGraphics.dispose();
+        ImageIO.write(primaryTile, "png", primaryPath.toFile());
+
+        Path secondaryPath = temporaryFolder.resolve("0").resolve("00.png");
+        java.nio.file.Files.createDirectories(secondaryPath.getParent());
+        BufferedImage secondaryTile = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D secondaryGraphics = secondaryTile.createGraphics();
+        secondaryGraphics.setColor(Color.GREEN);
+        secondaryGraphics.fillRect(0, 0, 256, 256);
+        secondaryGraphics.dispose();
+        ImageIO.write(secondaryTile, "png", secondaryPath.toFile());
+
+        PyramidCatalog catalog = new PyramidCatalog(temporaryFolder);
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("0"), primaryPath));
+        catalog.add(new TileRecord(TileAddress.fromQuadKey("00"), secondaryPath));
+        ViewerModel model = new ViewerModel(catalog);
+        model.nextDepth();
+        model.toggleSelection(TileAddress.fromQuadKey("0"));
+        model.toggleSecondarySelection(TileAddress.fromQuadKey("00"));
+
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(600, 600);
+        canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(516, 516)));
+
+        BufferedImage result = new BufferedImage(600, 600, BufferedImage.TYPE_INT_RGB);
+        canvas.paint(result.createGraphics());
+
+        assertEquals(Color.WHITE.getRGB(), result.getRGB(328, 328));
+        assertEquals(Color.GREEN.getRGB(), result.getRGB(335, 335));
+        assertEquals(Color.GREEN.getRGB(), result.getRGB(585, 585));
+    }
+
+    @Test
     void selectedMissingTileFileHudUsesExpectedDataFolderPathAndMissingFlag() throws IOException {
         PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
         ViewerModel model = new ViewerModel(catalog);

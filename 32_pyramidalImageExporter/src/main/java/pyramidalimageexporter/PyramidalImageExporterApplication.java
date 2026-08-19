@@ -126,22 +126,26 @@ public final class PyramidalImageExporterApplication {
         model.setMergedFullPathByOriginalId(mergeResult.mergedFullPathByOriginalId());
         model.setCataloguedQuadPathsByImagePath(cataloguedPaths);
         model.setReferenceQuadPathsByImagePath(referencePaths);
-        ExternalUncleBridgeBuilder.Bridge diagnosticBridge = new ExternalUncleBridgeBuilder().build(
-            mergeResult.layers(),
-            anchorPaths,
-            outputDirectory
-        );
-        UncleRmsAnalyzer.Analysis rmsAnalysis =
-            new UncleRmsAnalyzer().analyze(mergeResult.layers(), diagnosticBridge.aliasById());
-        model.setUncleRmsAnalysis(rmsAnalysis);
-        long visualOutliers = rmsAnalysis.matches().values().stream()
-            .filter(match -> !match.declaredQuadrantIsMinimum())
-            .count();
-        AppLogger.info(
-            "Relative RMS relationship map: " + rmsAnalysis.matches().size()
-                + " comparison(s), " + visualOutliers
-                + " declared quadrant(s) were not the minimum RMS."
-        );
+        // This diagnostic decodes and compares many images. Export and normal
+        // viewing do not need it, so defer it until the RMS overlay is enabled.
+        model.setUncleRmsAnalysisLoader(() -> {
+            ExternalUncleBridgeBuilder.Bridge diagnosticBridge = new ExternalUncleBridgeBuilder().build(
+                mergeResult.layers(),
+                anchorPaths,
+                outputDirectory
+            );
+            UncleRmsAnalyzer.Analysis rmsAnalysis =
+                new UncleRmsAnalyzer().analyze(mergeResult.layers(), diagnosticBridge.aliasById());
+            long visualOutliers = rmsAnalysis.matches().values().stream()
+                .filter(match -> !match.declaredQuadrantIsMinimum())
+                .count();
+            AppLogger.info(
+                "Relative RMS relationship map: " + rmsAnalysis.matches().size()
+                    + " comparison(s), " + visualOutliers
+                    + " declared quadrant(s) were not the minimum RMS."
+            );
+            return rmsAnalysis;
+        });
         return model;
     }
 

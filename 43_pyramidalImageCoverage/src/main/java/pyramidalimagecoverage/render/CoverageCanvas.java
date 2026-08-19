@@ -31,7 +31,10 @@ public final class CoverageCanvas extends Canvas {
     private static final Color SELECTED_BORDER = new Color(0, 255, 0);
     private static final Color SECONDARY_SELECTED_BORDER = new Color(255, 255, 0);
     private static final Color HUD_BACKGROUND = new Color(0, 0, 0, 190);
+    private static final Color PREVIEW_BORDER = Color.WHITE;
     private static final Font HUD_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 14);
+    private static final int HUD_MARGIN = 12;
+    private static final int PREVIEW_FRAME = 2;
 
     private final ViewerModel model;
     private final TileImageRepository images;
@@ -109,6 +112,7 @@ public final class CoverageCanvas extends Canvas {
             drawTiles(g, visible);
             drawHud(g, visible);
             drawSelectedTileFileHud(g, visible);
+            drawLastSelectedTilePreview(g, visible);
         }
         finally {
             g.dispose();
@@ -250,8 +254,8 @@ public final class CoverageCanvas extends Canvas {
         for (String line : lines) width = Math.max(width, metrics.stringWidth(line));
         int boxWidth = width + 20;
         int boxHeight = lines.length * lineHeight + 16;
-        int x = visible.x + visible.width - boxWidth - 12;
-        int y = visible.y + 12;
+        int x = visible.x + visible.width - boxWidth - HUD_MARGIN;
+        int y = visible.y + HUD_MARGIN;
         g.setColor(HUD_BACKGROUND);
         g.fillRect(x, y, boxWidth, boxHeight);
         g.setColor(Color.WHITE);
@@ -273,12 +277,41 @@ public final class CoverageCanvas extends Canvas {
         int lineHeight = metrics.getHeight();
         int boxWidth = metrics.stringWidth(line) + 20;
         int boxHeight = lineHeight + 16;
-        int x = visible.x + 12;
-        int y = visible.y + visible.height - boxHeight - 12;
+        int x = visible.x + HUD_MARGIN;
+        int y = visible.y + visible.height - boxHeight - HUD_MARGIN;
         g.setColor(HUD_BACKGROUND);
         g.fillRect(x, y, boxWidth, boxHeight);
         g.setColor(selectedTileFileExists() ? Color.WHITE : Color.RED);
         g.drawString(line, x + 10, y + 8 + metrics.getAscent());
+    }
+
+    private void drawLastSelectedTilePreview(Graphics2D g, Rectangle visible) {
+        TileAddress previewAddress = model.lastSelectedAddress();
+        if (previewAddress == null) {
+            return;
+        }
+        TileRecord tile = model.catalog().tileAt(
+            previewAddress.depth(), previewAddress.column(), previewAddress.southRow()
+        );
+        if (tile == null) {
+            return;
+        }
+        BufferedImage image = images.getOrRequest(tile.imagePath(), this::repaint);
+        if (image == null) {
+            return;
+        }
+        int frameWidth = image.getWidth() + PREVIEW_FRAME * 2;
+        int frameHeight = image.getHeight() + PREVIEW_FRAME * 2;
+        if (frameWidth + HUD_MARGIN * 2 > visible.width || frameHeight + HUD_MARGIN * 2 > visible.height) {
+            return;
+        }
+        int x = visible.x + visible.width - frameWidth - HUD_MARGIN;
+        int y = visible.y + visible.height - frameHeight - HUD_MARGIN;
+        g.setColor(HUD_BACKGROUND);
+        g.fillRect(x, y, frameWidth, frameHeight);
+        g.drawImage(image, x + PREVIEW_FRAME, y + PREVIEW_FRAME, null);
+        g.setColor(PREVIEW_BORDER);
+        g.drawRect(x, y, frameWidth - 1, frameHeight - 1);
     }
 
     String[] hudLines() {

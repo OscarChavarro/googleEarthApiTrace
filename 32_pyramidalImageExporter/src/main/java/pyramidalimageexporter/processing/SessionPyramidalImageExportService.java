@@ -18,6 +18,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
@@ -61,6 +65,10 @@ public final class SessionPyramidalImageExportService {
     private static final int PROGRESS_REPORT_INTERVAL = 100;
     private static final double FULL_TEXTURE_RECT_TOLERANCE = 1.0e-9;
     private static final int HIGHEST_RECONSTRUCTED_TOP_LEVEL = 5;
+    private static final int DEFAULT_EXPORT_THREADS = Math.min(
+        16,
+        Math.max(2, Runtime.getRuntime().availableProcessors())
+    );
 
     private final TileRootPathResolver rootPathResolver =
         new TileRootPathResolver(Configuration.captureBoundaryLevel());
@@ -181,22 +189,56 @@ public final class SessionPyramidalImageExportService {
         }
 
         int totalTiles = manifest.entries().size();
-        System.out.println("SessionPyramidalImageExportService: export starting, " + totalTiles + " tiles to write to " + rootDirectory);
+        int exportThreads = Math.max(
+            1,
+            Math.min(totalTiles, Integer.getInteger("pyramidalimageexporter.exportThreads", DEFAULT_EXPORT_THREADS))
+        );
+        System.out.println(
+            "SessionPyramidalImageExportService: export starting, " + totalTiles
+                + " tiles to write to " + rootDirectory + " using " + exportThreads + " thread(s)"
+        );
         PyramidalImageWriteStatistics statistics = new PyramidalImageWriteStatistics();
         int failed = 0;
         int processed = 0;
-        for (ExportEntry entry : manifest.entries()) {
-            if (!exportTile(rootDirectory, entry.fullPath(), entry.tile(), statistics)) {
-                failed++;
+        boolean interrupted = false;
+        ExecutorService executor = Executors.newFixedThreadPool(exportThreads);
+        ExecutorCompletionService<Boolean> completedTiles = new ExecutorCompletionService<>(executor);
+        try {
+            for (ExportEntry entry : manifest.entries()) {
+                completedTiles.submit(() -> exportTile(rootDirectory, entry.fullPath(), entry.tile(), statistics));
             }
-            processed++;
-            if (processed % PROGRESS_REPORT_INTERVAL == 0) {
-                System.out.println(
-                    "SessionPyramidalImageExportService: processed " + processed + "/" + totalTiles + " tiles..."
-                );
+            while (processed < totalTiles) {
+                Future<Boolean> completed = completedTiles.take();
+                try {
+                    if (!completed.get()) {
+                        failed++;
+                    }
+                }
+                catch (java.util.concurrent.ExecutionException ex) {
+                    failed++;
+                    System.out.println("SessionPyramidalImageExportService: tile worker failed: " + ex.getCause());
+                }
+                processed++;
+                if (processed % PROGRESS_REPORT_INTERVAL == 0) {
+                    System.out.println(
+                        "SessionPyramidalImageExportService: processed " + processed + "/" + totalTiles + " tiles..."
+                    );
+                }
             }
         }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            interrupted = true;
+            failed += totalTiles - processed;
+        }
+        finally {
+            executor.shutdownNow();
+        }
         System.out.println("SessionPyramidalImageExportService: " + statistics);
+        if (interrupted) {
+            reportStatus(model, "Export interrupted after " + processed + "/" + totalTiles + " tiles.");
+            return;
+        }
         reportStatus(
             model,
             "Export complete: " + processed + " tiles processed to " + rootDirectory

@@ -85,6 +85,13 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 | `e` | Export the pyramidal image quadtree to `<inputFolder>/pyramidalImage` |
 | `ESC` | Exit |
 
+The RMS relationship map is loaded lazily when `--rms-map` is supplied or the
+`c` key enables it for the first time. Export therefore avoids this diagnostic
+image pass. Native tile copies run concurrently; set the JVM system property
+`pyramidalimageexporter.exportThreads` to override the default worker count.
+RMS comparisons also use a bounded worker pool, configurable with
+`pyramidalimageexporter.rmsThreads`.
+
 HUD:
 
 - `Layer [1, 2]: i/N | frame <id> | Matrix: <rows>x<cols>`: selected layer and its size.

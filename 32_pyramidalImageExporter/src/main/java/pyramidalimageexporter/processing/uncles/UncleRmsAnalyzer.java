@@ -11,6 +11,13 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
@@ -24,6 +31,20 @@ import pyramidalimageexporter.model.MatrixLayerTile;
  * distribution for ocean, ice, desert, forest, or any other terrain.
  */
 public final class UncleRmsAnalyzer {
+    private static final int DEFAULT_RMS_THREADS = Math.min(
+        16,
+        Math.max(1, Runtime.getRuntime().availableProcessors())
+    );
+    private static final AtomicInteger RMS_THREAD_NUMBER = new AtomicInteger();
+    private static final ExecutorService RMS_EXECUTOR = Executors.newFixedThreadPool(
+        Math.max(1, Integer.getInteger("pyramidalimageexporter.rmsThreads", DEFAULT_RMS_THREADS)),
+        runnable -> {
+            Thread thread = new Thread(runnable, "pyramid-rms-" + RMS_THREAD_NUMBER.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
+    );
+
     public record RelationshipKey(
         String childLayer,
         String childId,
@@ -95,18 +116,25 @@ public final class UncleRmsAnalyzer {
         int bestQuadrant,
         boolean declaredQuadrantIsMinimum
     ) {}
-    private record ComparisonCacheKey(String childTexture, String parentTexture, UncleDirections direction) {}
+    private record ComparisonTask(
+        MatrixLayer childLayer,
+        MatrixLayerTile child,
+        TileOccurrence parent,
+        ToUncleRelationship relationship
+    ) {}
+    private record ComparisonCacheKey(String childTexture, String parentTexture) {}
+    private record PixelComparison(double[] rms, double minimumRms, int bestQuadrant) {}
     private record Comparison(double declaredRms, double minimumRms, int bestQuadrant, boolean declaredIsMinimum) {}
 
-    private final Map<String, BufferedImage> imageCache = new HashMap<>();
-    private final Map<ComparisonCacheKey, Comparison> comparisonCache = new HashMap<>();
+    private final Map<String, Optional<BufferedImage>> imageCache = new ConcurrentHashMap<>();
+    private final Map<ComparisonCacheKey, Optional<PixelComparison>> comparisonCache = new ConcurrentHashMap<>();
 
     public Analysis analyze(List<MatrixLayer> layers, Map<String, String> uncleAliases) {
         if (layers == null || layers.isEmpty()) {
             return Analysis.empty();
         }
         Map<String, List<TileOccurrence>> occurrencesById = collectOccurrences(layers);
-        List<RawMatch> rawMatches = new ArrayList<>();
+        List<ComparisonTask> tasks = new ArrayList<>();
         Map<String, String> aliases = uncleAliases == null ? Map.of() : uncleAliases;
 
         for (MatrixLayer childLayer : layers) {
@@ -135,24 +163,40 @@ public final class UncleRmsAnalyzer {
                         relationship.uncleContentId()
                     );
                     for (TileOccurrence parent : occurrencesById.getOrDefault(parentId, List.of())) {
-                        Comparison comparison = compare(child, parent.tile(), relationship.direction());
-                        if (comparison == null) {
-                            continue;
-                        }
-                        rawMatches.add(new RawMatch(
-                            keyOf(childLayer, child, relationship),
-                            layerName(parent.layer()),
-                            parent.tile().getId(),
-                            comparison.declaredRms(),
-                            comparison.minimumRms(),
-                            comparison.bestQuadrant(),
-                            comparison.declaredIsMinimum()
-                        ));
+                        tasks.add(new ComparisonTask(childLayer, child, parent, relationship));
                     }
                 }
             }
         }
+        Stream<Optional<RawMatch>> results = tasks.size() < 16
+            ? tasks.stream().map(this::compareTask)
+            : tasks.stream()
+                .map(task -> CompletableFuture.supplyAsync(() -> compareTask(task), RMS_EXECUTOR))
+                .map(CompletableFuture::join);
+        List<RawMatch> rawMatches = results
+            .flatMap(Optional::stream)
+            .toList();
         return buildAnalysis(rawMatches);
+    }
+
+    private Optional<RawMatch> compareTask(ComparisonTask task) {
+        Comparison comparison = compare(
+            task.child(),
+            task.parent().tile(),
+            task.relationship().direction()
+        );
+        if (comparison == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new RawMatch(
+            keyOf(task.childLayer(), task.child(), task.relationship()),
+            layerName(task.parent().layer()),
+            task.parent().tile().getId(),
+            comparison.declaredRms(),
+            comparison.minimumRms(),
+            comparison.bestQuadrant(),
+            comparison.declaredIsMinimum()
+        ));
     }
 
     private Analysis buildAnalysis(List<RawMatch> rawMatches) {
@@ -217,21 +261,35 @@ public final class UncleRmsAnalyzer {
         if (childTexture == null || childTexture.isBlank() || parentTexture == null || parentTexture.isBlank()) {
             return null;
         }
-        ComparisonCacheKey cacheKey = new ComparisonCacheKey(childTexture, parentTexture, direction);
-        if (comparisonCache.containsKey(cacheKey)) {
-            return comparisonCache.get(cacheKey);
+        ComparisonCacheKey cacheKey = new ComparisonCacheKey(childTexture, parentTexture);
+        Optional<PixelComparison> cached = comparisonCache.computeIfAbsent(
+            cacheKey,
+            ignored -> Optional.ofNullable(comparePixels(childTexture, parentTexture))
+        );
+        if (cached.isEmpty()) {
+            return null;
         }
+        PixelComparison pixels = cached.get();
+        int declaredQuadrant = quadrantDigit(direction);
+        double declaredRms = pixels.rms()[declaredQuadrant];
+        return new Comparison(
+            declaredRms,
+            pixels.minimumRms(),
+            pixels.bestQuadrant(),
+            Double.compare(declaredRms, pixels.minimumRms()) == 0
+        );
+    }
+
+    private PixelComparison comparePixels(String childTexture, String parentTexture) {
         BufferedImage childImage = imageOf(childTexture);
         BufferedImage parentImage = imageOf(parentTexture);
         if (childImage == null || parentImage == null || parentImage.getWidth() < 2 || parentImage.getHeight() < 2) {
-            comparisonCache.put(cacheKey, null);
             return null;
         }
 
         int halfWidth = parentImage.getWidth() / 2;
         int halfHeight = parentImage.getHeight() / 2;
         if (halfWidth <= 0 || halfHeight <= 0) {
-            comparisonCache.put(cacheKey, null);
             return null;
         }
         BufferedImage scaledChild = resize(childImage, halfWidth, halfHeight);
@@ -247,20 +305,15 @@ public final class UncleRmsAnalyzer {
                 bestQuadrant = quadrant;
             }
         }
-        int declaredQuadrant = quadrantDigit(direction);
         double minimum = rms[bestQuadrant];
-        // Exact ties remain valid: a uniform texture contains no evidence for
-        // preferring a different quadrant, so the structural relationship is kept.
-        boolean declaredIsMinimum = Double.compare(rms[declaredQuadrant], minimum) == 0;
-        Comparison comparison = new Comparison(rms[declaredQuadrant], minimum, bestQuadrant, declaredIsMinimum);
-        comparisonCache.put(cacheKey, comparison);
-        return comparison;
+        return new PixelComparison(rms, minimum, bestQuadrant);
     }
 
     private BufferedImage imageOf(String textureFile) {
-        if (imageCache.containsKey(textureFile)) {
-            return imageCache.get(textureFile);
-        }
+        return imageCache.computeIfAbsent(textureFile, this::readImage).orElse(null);
+    }
+
+    private Optional<BufferedImage> readImage(String textureFile) {
         BufferedImage image = null;
         try {
             image = ImageIO.read(Path.of(textureFile).toFile());
@@ -275,8 +328,7 @@ public final class UncleRmsAnalyzer {
         catch (IOException | RuntimeException ignored) {
             // Missing visual evidence is neutral; structural resolution remains available.
         }
-        imageCache.put(textureFile, image);
-        return image;
+        return Optional.ofNullable(image);
     }
 
     private static BufferedImage resize(BufferedImage source, int width, int height) {

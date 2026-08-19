@@ -1,5 +1,7 @@
 package pyramidalimageexporter.model;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * Accumulates outcome counters for a session-local pyramidal image export:
  * each placed tile is written to the session's own pyramid folder, either
@@ -8,30 +10,30 @@ package pyramidalimageexporter.model;
  * a plain regeneration of this session's pyramid).
  */
 public final class PyramidalImageWriteStatistics {
-    private int newImages = 0;
-    private int rewrittenImages = 0;
+    private final AtomicInteger newImages = new AtomicInteger();
+    private final AtomicInteger rewrittenImages = new AtomicInteger();
 
     public void incrementNewImages() {
-        newImages++;
+        newImages.incrementAndGet();
     }
 
     public void incrementRewrittenImages() {
-        rewrittenImages++;
+        rewrittenImages.incrementAndGet();
     }
 
     public int getNewImages() {
-        return newImages;
+        return newImages.get();
     }
 
     public int getRewrittenImages() {
-        return rewrittenImages;
+        return rewrittenImages.get();
     }
 
     @Override
     public String toString() {
         return "PyramidalImageWriteStatistics{"
-            + "new=" + newImages
-            + ", rewritten=" + rewrittenImages
+            + "new=" + newImages.get()
+            + ", rewritten=" + rewrittenImages.get()
             + '}';
     }
 }

@@ -89,6 +89,24 @@ class ViewerModelSelectionTest {
         assertNull(model.secondarySelectedAddress());
     }
 
+    @Test
+    void remembersTheLastTileThatWasSelected() {
+        PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
+        add(catalog, "0");
+        ViewerModel model = new ViewerModel(catalog);
+        TileAddress primary = TileAddress.fromCoordinates(1, 0, 0);
+        TileAddress secondary = TileAddress.fromCoordinates(1, 1, 1);
+
+        model.toggleSelection(primary);
+        assertEquals(primary, model.lastSelectedAddress());
+
+        model.toggleSecondarySelection(secondary);
+        assertEquals(secondary, model.lastSelectedAddress());
+
+        model.toggleSecondarySelection(secondary);
+        assertNull(model.lastSelectedAddress());
+    }
+
     private static TileRecord add(PyramidCatalog catalog, String quadKey) {
         TileRecord tile = new TileRecord(TileAddress.fromQuadKey(quadKey), Path.of(quadKey + ".png"));
         catalog.add(tile);

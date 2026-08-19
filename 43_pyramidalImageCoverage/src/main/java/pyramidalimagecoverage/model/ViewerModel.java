@@ -9,6 +9,7 @@ public final class ViewerModel {
     private int selectedDepth;
     private TileAddress selectedAddress;
     private TileAddress secondarySelectedAddress;
+    private TileAddress lastSelectedAddress;
 
     public ViewerModel(PyramidCatalog catalog) {
         this.catalog = catalog;
@@ -59,6 +60,7 @@ public final class ViewerModel {
             selectedAddress = newSelectedAddress;
             changed = true;
         }
+        updateLastSelectedAddress(address, selecting);
         if (changed) {
             notifyListeners();
         }
@@ -68,6 +70,10 @@ public final class ViewerModel {
         return selectedAddress;
     }
 
+    public TileAddress lastSelectedAddress() {
+        return lastSelectedAddress;
+    }
+
     public void toggleSecondarySelection(TileAddress address) {
         if (address == null || !address.hasGeographicCoverage()) {
             return;
@@ -75,6 +81,7 @@ public final class ViewerModel {
         TileAddress newAddress = address.equals(secondarySelectedAddress) ? null : address;
         if (!java.util.Objects.equals(secondarySelectedAddress, newAddress)) {
             secondarySelectedAddress = newAddress;
+            updateLastSelectedAddress(address, newAddress != null);
             notifyListeners();
         }
     }
@@ -108,6 +115,7 @@ public final class ViewerModel {
             changed = true;
         }
         if (changed) {
+            lastSelectedAddress = null;
             notifyListeners();
         }
     }
@@ -121,6 +129,9 @@ public final class ViewerModel {
     public void clearSecondarySelection() {
         if (secondarySelectedAddress != null) {
             secondarySelectedAddress = null;
+            if (!isAddressSelected(lastSelectedAddress)) {
+                lastSelectedAddress = null;
+            }
             notifyListeners();
         }
     }
@@ -131,7 +142,28 @@ public final class ViewerModel {
             selectedAddress = null;
             changed = true;
         }
+        if (!isAddressSelected(lastSelectedAddress)) {
+            lastSelectedAddress = null;
+        }
         return changed;
+    }
+
+    private void updateLastSelectedAddress(TileAddress address, boolean selecting) {
+        if (selecting) {
+            lastSelectedAddress = address;
+            return;
+        }
+        if (java.util.Objects.equals(lastSelectedAddress, address) && !isAddressSelected(address)) {
+            lastSelectedAddress = null;
+        }
+    }
+
+    private boolean isAddressSelected(TileAddress address) {
+        if (address == null) {
+            return false;
+        }
+        return java.util.Objects.equals(selectedAddress, address)
+            || java.util.Objects.equals(secondarySelectedAddress, address);
     }
 
     private void setSelectedDepth(int depth) {
