@@ -220,6 +220,14 @@ path. A native local tile has documented priority over a derived TOP tile at the
 cell. Any other incompatible duplicate path fails the export before writing, so output
 correctness no longer depends on layer iteration order.
 
+When a reference pyramid is supplied, every preliminarily placed imported layer is also
+checked against byte-identical reference tiles near its claimed footprint. Three or more
+unique matches must form a strict majority for one rigid grid offset. That offset validates
+the whole layer; if it differs from the relationship-derived offset, the exporter corrects
+the layer before building the manifest. This catches phase errors that otherwise double at
+successive levels while keeping unmatched or weakly supported layers on the conservative
+structural path.
+
 ### Session-local export
 
 `<inputFolder>/pyramidalImage` is created if missing. With

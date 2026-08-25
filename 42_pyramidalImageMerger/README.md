@@ -88,7 +88,8 @@ When `m` is pressed, the program recursively traverses the delta tree. For every
   uncle/sibling context): the existing
   destination ancestor is retained and only the missing descendants are copied;
 - if every delta tile already exists in destination, the repeated capture is accepted as an
-  idempotent no-op: destination tiles are retained and no encoded-size replacements are made;
+  idempotent no-op: destination tiles are retained, no encoded-size replacements are made, and
+  the completion summary explicitly reports `Merge completed as no-op`;
 - if the visual comparison exceeds the threshold, that tile id becomes a conflict.
 
 The refinement exception is deliberately narrow. When new content is present, differences more

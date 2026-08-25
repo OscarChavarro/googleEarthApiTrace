@@ -27,6 +27,7 @@ public final class PyramidalImageExporterState {
     private int selectedLayerIndex = 0;
     private Map<String, String> cataloguedQuadPathsByImagePath = Map.of();
     private Map<String, String> referenceQuadPathsByImagePath = Map.of();
+    private String referencePyramidFolder;
     private Map<String, String> mergedFullPathByOriginalId = Map.of();
     private UncleRmsAnalyzer.Analysis uncleRmsAnalysis = UncleRmsAnalyzer.Analysis.empty();
     private Supplier<UncleRmsAnalyzer.Analysis> uncleRmsAnalysisLoader;
@@ -72,6 +73,16 @@ public final class PyramidalImageExporterState {
         this.referenceQuadPathsByImagePath = referenceQuadPathsByImagePath == null
             ? Map.of()
             : Map.copyOf(referenceQuadPathsByImagePath);
+    }
+
+    public String getReferencePyramidFolder() {
+        return referencePyramidFolder;
+    }
+
+    public void setReferencePyramidFolder(String referencePyramidFolder) {
+        this.referencePyramidFolder = referencePyramidFolder == null || referencePyramidFolder.isBlank()
+            ? null
+            : referencePyramidFolder;
     }
 
     public Map<String, String> getMergedFullPathByOriginalId() {

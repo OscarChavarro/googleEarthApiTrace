@@ -32,6 +32,7 @@ import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
+import pyramidalimageexporter.processing.content.ReferenceContentRigidAnchorResolver;
 import pyramidalimageexporter.processing.geography.FrameCameraGeoAnchorResolver;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
 import pyramidalimageexporter.processing.uncles.FrameJsonUncleMetadataRestorer;
@@ -117,6 +118,14 @@ public final class SessionPyramidalImageExportService {
             model.getMatrixLayers(),
             preliminaryResolution
         );
+        ReferenceContentRigidAnchorResolver.Anchors referenceContentAnchors =
+            model.getReferencePyramidFolder() == null
+                ? new ReferenceContentRigidAnchorResolver.Anchors(Map.of(), Set.of())
+                : new ReferenceContentRigidAnchorResolver().resolve(
+                    model.getMatrixLayers(),
+                    Path.of(model.getReferencePyramidFolder()),
+                    preliminaryResolution
+                );
         FrameCameraGeoAnchorResolver.Anchors geographicAnchors = new FrameCameraGeoAnchorResolver().resolve(
             model.getMatrixLayers(),
             outputDirectory,
@@ -124,6 +133,7 @@ public final class SessionPyramidalImageExportService {
             preliminaryResolution
         );
         Set<String> protectedLayers = new HashSet<>(structurallyAnchoredLayers);
+        protectedLayers.addAll(referenceContentAnchors.anchoredLayerNames());
         protectedLayers.addAll(geographicAnchors.anchoredLayerNames());
         applyContentHashAnchors(model, protectedLayers);
 
@@ -135,12 +145,15 @@ public final class SessionPyramidalImageExportService {
             outputDirectory
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
-        Set<String> geographicallyPlacedTileIds = tileIdsInLayers(
+        Set<String> directlyPlacedLayerNames = new HashSet<>(geographicAnchors.anchoredLayerNames());
+        directlyPlacedLayerNames.addAll(referenceContentAnchors.anchoredLayerNames());
+        Set<String> directlyPlacedTileIds = tileIdsInLayers(
             model.getMatrixLayers(),
-            geographicAnchors.anchoredLayerNames()
+            directlyPlacedLayerNames
         );
-        geographicallyPlacedTileIds.forEach(externalFullPaths::remove);
+        directlyPlacedTileIds.forEach(externalFullPaths::remove);
         externalFullPaths.putAll(geographicAnchors.fullPathByTileId());
+        externalFullPaths.putAll(referenceContentAnchors.fullPathByTileId());
         System.out.println(
             "SessionPyramidalImageExportService: " + externalFullPaths.size()
                 + " externally anchored id(s) and " + bridge.aliasById().size()

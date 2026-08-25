@@ -126,6 +126,7 @@ public final class PyramidalImageExporterApplication {
         model.setMergedFullPathByOriginalId(mergeResult.mergedFullPathByOriginalId());
         model.setCataloguedQuadPathsByImagePath(cataloguedPaths);
         model.setReferenceQuadPathsByImagePath(referencePaths);
+        model.setReferencePyramidFolder(referencePyramid == null ? null : referencePyramid.toString());
         // This diagnostic decodes and compares many images. Export and normal
         // viewing do not need it, so defer it until the RMS overlay is enabled.
         model.setUncleRmsAnalysisLoader(() -> {

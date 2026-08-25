@@ -216,6 +216,11 @@ class PyramidalImageMergerTest {
         );
         assertEquals(0, result.copiedTiles());
         assertEquals(0, result.replacedTiles());
+        MergeAnalysis merged = new PyramidalImageMergeAnalyzer().markMerged(analysis, 0, 0);
+        assertEquals(
+            "Merge completed as no-op. Copied 0 new tile(s) and replaced 0 lower-resolution tile(s) in destination.",
+            merged.mergeCompletedSummary()
+        );
     }
 
     @Test

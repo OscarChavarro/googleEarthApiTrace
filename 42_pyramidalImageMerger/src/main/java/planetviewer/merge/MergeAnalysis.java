@@ -115,6 +115,10 @@ public final class MergeAnalysis {
     }
 
     public String mergeCompletedSummary() {
+        if (copiedTiles == 0 && replacedTiles == 0) {
+            return "Merge completed as no-op. Copied 0 new tile(s) and replaced 0 lower-resolution tile(s)"
+                + " in destination.";
+        }
         return "Merge completed. Copied " + copiedTiles + " new tile(s) and replaced " + replacedTiles
             + " lower-resolution tile(s) in destination.";
     }
