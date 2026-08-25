@@ -47,6 +47,7 @@ public class Jogl4DumpAnalyzerRenderer implements
     private final Runnable shutdownHook;
     private final DumpAnalyzerState model;
     private final Jogl4HudRenderer hudRenderer;
+    private final Jogl4ReplayHudRenderer replayHudRenderer;
     private final Jogl4AxisAlignedBoundingBoxRenderer axisAlignedBoundingBoxRenderer;
     private final Jogl4NeighborRelationshipRenderer neighborhoodRenderer;
     private final Camera viewingCamera;
@@ -54,11 +55,13 @@ public class Jogl4DumpAnalyzerRenderer implements
     private volatile boolean closing;
     private GLCanvas canvas;
     private JFrame frame;
+    private boolean redrawQueued;
     private boolean offlineMode;
     private boolean offlineCaptureDone;
     private String offlineOutputPath;
     private int lastSelectedFrameIndex = -1;
     private int lastSelectedTileIndex = -1;
+    private int lastCaptureSurfaceFrameId = Integer.MIN_VALUE;
     private static final Vector3Dd DEFAULT_FRONT = new Vector3Dd(0.0, 0.0, -1.0);
     private static final Vector3Dd WORLD_ORIGIN = new Vector3Dd(0.0, 0.0, 0.0);
     private static final double MAX_ABS_COORD = 1.0e6;
@@ -75,6 +78,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         this.model = model;
         this.shutdownHook = shutdownHook;
         this.hudRenderer = new Jogl4HudRenderer();
+        this.replayHudRenderer = new Jogl4ReplayHudRenderer();
         this.axisAlignedBoundingBoxRenderer = new Jogl4AxisAlignedBoundingBoxRenderer();
         this.neighborhoodRenderer = new Jogl4NeighborRelationshipRenderer();
         this.viewingCamera = model.getViewingCamera();
@@ -99,7 +103,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         canvas.addGLEventListener(this);
         canvas.setFocusable(true);
 
-        frame = new JFrame("dumpAnalyzer HUD - ESC to exit");
+        frame = new JFrame("dumpAnalyzer HUD - H: Google Earth HUD - ESC to exit");
         frame.add(canvas, BorderLayout.CENTER);
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.setMinimumSize(new Dimension(900, 540));
@@ -160,6 +164,7 @@ public class Jogl4DumpAnalyzerRenderer implements
         List<Jogl4HudRenderer.ScreenLabel> hudLabels = new ArrayList<>();
         if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
             Frame selectedFrame = frames.get(state.selectedFrameIndex());
+            resizeWindowForCapturedViewport(selectedFrame);
             drawSelectedTile(
                 gl,
                 drawable.getGL().getGL2(),
@@ -206,6 +211,9 @@ public class Jogl4DumpAnalyzerRenderer implements
                 ));
             }
         }
+        if (state.selectedFrameIndex() >= 0 && state.selectedFrameIndex() < frames.size()) {
+            replayHudRenderer.draw(gl, drawable.getGL().getGL2(), model, frames.get(state.selectedFrameIndex()), drawable.getSurfaceWidth(), drawable.getSurfaceHeight(), hudRenderer);
+        }
         String hudTexturePath = null;
         if (!model.getRendererConfiguration().isTextureSet()
             && state.selectedFrameIndex() >= 0
@@ -220,6 +228,19 @@ public class Jogl4DumpAnalyzerRenderer implements
             captureOffscreen(drawable, gl);
             offlineCaptureDone = true;
         }
+    }
+
+    /** Keeps the AWT client area equal to the captured GL viewport, including decorations. */
+    private void resizeWindowForCapturedViewport(Frame selectedFrame) {
+        if (offlineMode || frame == null || selectedFrame == null || selectedFrame.getCaptureSurface().width() <= 0 || selectedFrame.getCaptureSurface().height() <= 0 || selectedFrame.getId() == lastCaptureSurfaceFrameId) return;
+        lastCaptureSurfaceFrameId = selectedFrame.getId();
+        int targetWidth = selectedFrame.getCaptureSurface().width();
+        int targetHeight = selectedFrame.getCaptureSurface().height();
+        SwingUtilities.invokeLater(() -> {
+            if (frame == null || !frame.isDisplayable()) return;
+            java.awt.Insets insets = frame.getInsets();
+            frame.setSize(targetWidth + insets.left + insets.right, targetHeight + insets.top + insets.bottom);
+        });
     }
 
     private void recenterCameraIfSelectionChanged(DumpAnalyzerState.HudState state, List<Frame> frames) {
@@ -842,9 +863,23 @@ public class Jogl4DumpAnalyzerRenderer implements
     }
 
     private void requestRedraw() {
-        if (canvas != null && !closing) {
-            SwingUtilities.invokeLater(canvas::display);
+        if (canvas == null || closing) {
+            return;
         }
+        synchronized (this) {
+            if (redrawQueued) {
+                return;
+            }
+            redrawQueued = true;
+        }
+        SwingUtilities.invokeLater(() -> {
+            synchronized (this) {
+                redrawQueued = false;
+            }
+            if (canvas != null && !closing) {
+                canvas.display();
+            }
+        });
     }
 
     private void requestClose() {

@@ -22,7 +22,12 @@ import dumpanalyzer.model.Frame;
 import vsdk.toolkit.environment.camera.Camera;
 
 public class TraceProcessor {
-    public TraceProcessor() {
+    private final ReplayTextureResolver textureResolver;
+    private final ReplayDisplayListRegistry displayListRegistry;
+
+    public TraceProcessor(ReplayTextureResolver textureResolver, ReplayDisplayListRegistry displayListRegistry) {
+        this.textureResolver = textureResolver;
+        this.displayListRegistry = displayListRegistry;
     }
 
     public Frame processFrame(int frame, String filename, BlockingQueue<String> logQueue) {
@@ -42,7 +47,13 @@ public class TraceProcessor {
             parseOrFail(filePath, normalized);
         }
 
-        TilesProcessor.FrameGeometry frameGeometry = TilesProcessor.processFrameCalls(frame, normalized, filePath.getParent());
+        TilesProcessor.FrameGeometry frameGeometry = TilesProcessor.processFrameCalls(
+            frame,
+            normalized,
+            filePath.getParent(),
+            textureResolver,
+            displayListRegistry
+        );
         List<dumpanalyzer.model.TileInstance> tiles = frameGeometry.tiles();
         dumpanalyzer.model.TileInstance lastTile = tiles.isEmpty() ? null : tiles.get(tiles.size() - 1);
         CameraProcessor.SceneMatrices sceneMatrices = CameraProcessor.extractLastSceneMatrices(normalized);
@@ -65,7 +76,9 @@ public class TraceProcessor {
             frameGeometry.lines(),
             projectionMatrix,
             modelViewMatrix,
-            googleCamera
+            googleCamera,
+            frameGeometry.captureSurface(),
+            frameGeometry.replayDraws()
         );
     }
 

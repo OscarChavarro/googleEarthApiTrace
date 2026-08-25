@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import dumpanalyzer.model.replay.ReplayDraw;
+import dumpanalyzer.model.replay.ReplayViewport;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
@@ -15,6 +17,9 @@ public final class Frame implements Comparable<Frame> {
     private final List<Line> lines;
     private final List<AxisAlignedBoundingBox> axisAlignedBoundingBoxes;
     private final FrameCameraState camera;
+    private final int contractVersion;
+    private final ReplayViewport captureSurface;
+    private final List<ReplayDraw> replayDraws;
     private volatile List<TileInstance> selectableTilesOverride = List.of();
     private volatile List<AxisAlignedBoundingBox> selectableAxisAlignedBoundingBoxes = List.of();
 
@@ -26,12 +31,23 @@ public final class Frame implements Comparable<Frame> {
         double[] modelViewMatrix,
         Camera googleCamera
     ) {
+        this(id, tiles, lines, projectionMatrix, modelViewMatrix, googleCamera, ReplayViewport.EMPTY, List.of());
+    }
+
+    public Frame(
+        int id, List<TileInstance> tiles, List<Line> lines, double[] projectionMatrix,
+        double[] modelViewMatrix, Camera googleCamera, ReplayViewport captureSurface,
+        List<ReplayDraw> replayDraws
+    ) {
         this.id = id;
         List<TileInstance> copy = new ArrayList<>(tiles);
         this.tiles = Collections.unmodifiableList(copy);
         this.lines = lines == null ? List.of() : List.copyOf(lines);
         this.camera = new FrameCameraState(projectionMatrix, modelViewMatrix, googleCamera);
         this.axisAlignedBoundingBoxes = Collections.unmodifiableList(buildAabbsFromTiles(copy));
+        this.contractVersion = 7;
+        this.captureSurface = captureSurface == null ? ReplayViewport.EMPTY : captureSurface;
+        this.replayDraws = replayDraws == null ? List.of() : List.copyOf(replayDraws);
     }
 
     public int getId() {
@@ -72,6 +88,10 @@ public final class Frame implements Comparable<Frame> {
     public FrameCameraState getCamera() {
         return camera;
     }
+
+    public int getContractVersion() { return contractVersion; }
+    public ReplayViewport getCaptureSurface() { return captureSurface; }
+    public List<ReplayDraw> getReplayDraws() { return replayDraws; }
 
     @JsonIgnore
     public double[] getProjectionMatrix() {

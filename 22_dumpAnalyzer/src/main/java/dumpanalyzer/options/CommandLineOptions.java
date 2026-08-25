@@ -8,6 +8,7 @@ public final class CommandLineOptions {
     private final int height;
     private final String outputPath;
     private final String tileContentId;
+    private final boolean originalHud;
 
     private CommandLineOptions(
         boolean offline,
@@ -16,7 +17,7 @@ public final class CommandLineOptions {
         int width,
         int height,
         String outputPath,
-        String tileContentId
+        String tileContentId, boolean originalHud
     ) {
         this.offline = offline;
         this.startFrame = startFrame;
@@ -25,6 +26,7 @@ public final class CommandLineOptions {
         this.height = height;
         this.outputPath = outputPath;
         this.tileContentId = tileContentId;
+        this.originalHud = originalHud;
     }
 
     public static CommandLineOptions parseArgs(String[] args) {
@@ -35,6 +37,7 @@ public final class CommandLineOptions {
         int height = 720;
         String outputPath = "/tmp/vitral/testsuite/_APITests/_JOGL4PbufferExample/src/output.png";
         String tileContentId = null;
+        boolean originalHud = true;
 
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -64,10 +67,13 @@ public final class CommandLineOptions {
             }
             if ("--tile-content-id".equals(a) && i + 1 < args.length) {
                 tileContentId = args[++i];
+                continue;
             }
+            if ("--original-hud".equals(a)) { originalHud = true; continue; }
+            if ("--no-original-hud".equals(a)) { originalHud = false; }
         }
 
-        return new CommandLineOptions(offline, startFrame, endFrame, width, height, outputPath, tileContentId);
+        return new CommandLineOptions(offline, startFrame, endFrame, width, height, outputPath, tileContentId, originalHud);
     }
 
     public boolean offline() {
@@ -97,6 +103,7 @@ public final class CommandLineOptions {
     public String tileContentId() {
         return tileContentId;
     }
+    public boolean originalHud() { return originalHud; }
 
     private static int safeParseInt(String s, int fallback) {
         try {

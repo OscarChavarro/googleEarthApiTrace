@@ -19,6 +19,10 @@ The input/output directory is read from `output.directory` in
 - Computes per-frame tile sets, axis-aligned bounding boxes, and tile neighborhood
   relationships (including generic cross-level references), exporting the
   result as `frame.json` inside each frame folder.
+- Writes contract v7 `replayDraws[]` alongside the unchanged `tiles[]`.  These are ordered,
+  screen-space OpenGL draws (currently triangle strips/triangles) with their matrix,
+  viewport, scissor, blend/depth state and resolved texture path.  They are deliberately
+  not tiles and downstream stages must continue consuming only `tiles[]`.
 - Processes globe-level tile sets covering quadtree levels 0-5 and writes a global
   `topLevelTiles.json` file at the root of the output directory (consumed later by
   `32_pyramidalImageExporter`).
@@ -126,6 +130,7 @@ Program-specific keys (generic camera handling comes from Vitral and is not list
 | `c` | Toggle active camera: traced Google Earth camera vs. free orbiter camera |
 | `t` | Toggle textured rendering |
 | `T` | Toggle the on-screen texture preview for the selected tile |
+| `H` | Toggle the reconstructed original Google Earth HUD |
 | `ESC` | Exit |
 
 The HUD shows the selected frame (`Frame [1, 2]`), tile count, selected tile
@@ -141,6 +146,12 @@ The HUD shows the selected frame (`Frame [1, 2]`), tile count, selected tile
 - `--output <path>`: output image path used in offline mode.
 - `--tile-content-id <id>`: in offline mode, select a tile by content id and enable
   bounding-volume + wireframe display for it.
+- `--original-hud` / `--no-original-hud`: enable/disable replay of captured screen-space
+  HUD draws (enabled by default).
+
+When changing frames interactively, the JOGL/Swing window resizes its client area to the
+captured `captureSurface` viewport. This is required for pixel-coordinate HUD geometry;
+window decorations are added outside that requested client size.
 
 ### Example: load only first 500 frames
 

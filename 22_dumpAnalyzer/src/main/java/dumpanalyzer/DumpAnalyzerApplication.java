@@ -14,6 +14,7 @@ public final class DumpAnalyzerApplication {
         CommandLineOptions config = CommandLineOptions.parseArgs(args);
 
         DumpAnalyzerState model = new DumpAnalyzerState();
+        model.setOriginalGoogleEarthHudEnabled(config.originalHud());
         model.setSelectedFrameIndex(config.startFrame());
         TraceSessionFrameImporter traceSessionFrameImporter = new TraceSessionFrameImporter(
             Configuration.OUTPUT_ROOT,

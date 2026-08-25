@@ -97,7 +97,9 @@ public final class VisualTilePositioner {
             frame.getLines(),
             frame.getProjectionMatrix(),
             frame.getModelViewMatrix(),
-            frame.getGoogleCamera()
+            frame.getGoogleCamera(),
+            frame.getCaptureSurface(),
+            frame.getReplayDraws()
         );
     }
 

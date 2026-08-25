@@ -6,6 +6,15 @@ agentic coding agent reconstruct the necessary context to perform maintenance on
 program **without changing the contracts** other programs depend on — the pipeline is
 functional end to end, and the contracts below are the part that must stay stable.
 
+## Contract v7: replay draws remain separate from tiles
+
+`22_dumpAnalyzer` may write `contractVersion: 7`, `captureSurface` and `replayDraws[]` in
+each `frame.json`. `replayDraws[]` preserves ordered generic OpenGL composition operations
+for the captured screen-space HUD; each element carries its own matrices, viewport/scissor,
+texture provenance and minimum blend/depth state. It is not a source of pyramid tiles.
+Programs `23`, `31` and `32` must continue to read only `tiles[]` and the existing TOP files;
+they must neither normalize nor copy replay draws into `matrix.json`.
+
 Each section names a producer and its consumer(s), the exact files/fields involved, and
 the invariants a maintenance change must preserve. Examples are taken from a real capture
 session at `/media/ramdisk/output` (paths below use that default; the actual root is

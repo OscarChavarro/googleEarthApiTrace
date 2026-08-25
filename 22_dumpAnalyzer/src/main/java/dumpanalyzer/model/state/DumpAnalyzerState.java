@@ -36,6 +36,7 @@ public final class DumpAnalyzerState {
     private final AtomicLong gpuRamTextureBytesAssigned = new AtomicLong(0L);
     private volatile boolean useGoogleCameraAsView = true;
     private volatile boolean showGuiTextures = true;
+    private volatile boolean originalGoogleEarthHudEnabled = true;
 
     public DumpAnalyzerState() {
         rendererConfiguration.setWires(false);
@@ -136,6 +137,9 @@ public final class DumpAnalyzerState {
         showGuiTextures = !showGuiTextures;
         notifyListeners();
     }
+    public boolean isOriginalGoogleEarthHudEnabled() { return originalGoogleEarthHudEnabled; }
+    public void setOriginalGoogleEarthHudEnabled(boolean value) { originalGoogleEarthHudEnabled = value; notifyListeners(); }
+    public void toggleOriginalGoogleEarthHud() { setOriginalGoogleEarthHudEnabled(!originalGoogleEarthHudEnabled); }
 
     public boolean isTexture256x256(int frameId, int textureId) {
         String texturePath = getTexturePath(frameId, textureId);

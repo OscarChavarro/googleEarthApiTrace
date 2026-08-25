@@ -13,6 +13,12 @@ import java.util.regex.Pattern;
 
 import dumpanalyzer.model.Line;
 import dumpanalyzer.model.TileInstance;
+import dumpanalyzer.model.replay.ReplayDraw;
+import dumpanalyzer.model.replay.ReplayScissor;
+import dumpanalyzer.model.replay.ReplayState;
+import dumpanalyzer.model.replay.ReplayTexture;
+import dumpanalyzer.model.replay.ReplayVertex;
+import dumpanalyzer.model.replay.ReplayViewport;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 final class TilesProcessor {
@@ -26,6 +32,9 @@ final class TilesProcessor {
     private static final Pattern VERTEX_ATTRIB_LINE_PATTERN = Pattern.compile("\\bglVertexAttribPointer\\s*\\((.*)\\)");
     private static final Pattern DRAW_ELEMENTS_LINE_PATTERN = Pattern.compile("\\bglDrawElements\\s*\\((.*)\\)");
     private static final Pattern DRAW_ARRAYS_LINE_PATTERN = Pattern.compile("\\bglDrawArrays\\s*\\((.*)\\)");
+    private static final Pattern NEW_LIST_LINE_PATTERN = Pattern.compile("\\bglNewList\\s*\\((.*)\\)");
+    private static final Pattern END_LIST_LINE_PATTERN = Pattern.compile("\\bglEndList\\s*\\(");
+    private static final Pattern CALL_LIST_LINE_PATTERN = Pattern.compile("\\bglCallList\\s*\\((.*)\\)");
     private static final Pattern MATRIX_MODE_LINE_PATTERN = Pattern.compile("\\bglMatrixMode\\s*\\((.*)\\)");
     private static final Pattern LOAD_IDENTITY_LINE_PATTERN = Pattern.compile("\\bglLoadIdentity\\s*\\((.*)\\)");
     private static final Pattern LOAD_MATRIXF_LINE_PATTERN = Pattern.compile("\\bglLoadMatrixf\\s*\\((.*)\\)");
@@ -42,14 +51,28 @@ final class TilesProcessor {
     private static final Pattern DRAW_COUNT_PATTERN = Pattern.compile("count\\s*=\\s*(\\d+)");
     private static final Pattern DRAW_TYPE_PATTERN = Pattern.compile("type\\s*=\\s*([A-Z0-9_]+)");
     private static final Pattern DRAW_FIRST_PATTERN = Pattern.compile("first\\s*=\\s*(\\d+)");
+    private static final Pattern LIST_ID_PATTERN = Pattern.compile("list\\s*=\\s*(\\d+)");
+    private static final Pattern LIST_MODE_PATTERN = Pattern.compile("mode\\s*=\\s*(GL_[A-Z0-9_]+)");
     private static final Pattern GL_CALL_NUMBER_PATTERN = Pattern.compile("^\\s*(\\d+)\\s+gl[A-Za-z0-9_]+\\s*\\(");
 
     private TilesProcessor() {
     }
 
-    static FrameGeometry processFrameCalls(int frameId, String normalizedContent, Path frameDirectory) {
+    static FrameGeometry processFrameCalls(
+        int frameId,
+        String normalizedContent,
+        Path frameDirectory,
+        ReplayTextureResolver textureResolver,
+        ReplayDisplayListRegistry displayListRegistry
+    ) {
         Map<TileKey, TileBuilder> tilesByKey = new LinkedHashMap<>();
         List<Line> frameLines = new ArrayList<>();
+        List<ReplayDraw> replayDraws = new ArrayList<>();
+        List<ReplayDraw> compilingListReplayDraws = null;
+        int compilingListId = -1;
+        boolean compilingListExecutes = false;
+        int replaySequence = 0;
+        GlReplayStateTracker replayState = new GlReplayStateTracker();
         ManifestProcessor.ManifestIndex manifest = ManifestProcessor.loadManifestIndex(frameDirectory);
         String[] lines = normalizedContent.split("\\n");
         int drawCount = 0;
@@ -74,6 +97,38 @@ final class TilesProcessor {
         double[] currentModelViewMatrix = null;
 
         for (String line : lines) {
+            replayState.consume(line);
+
+            Matcher newListMatcher = NEW_LIST_LINE_PATTERN.matcher(line);
+            if (newListMatcher.find()) {
+                Integer listId = extractInt(LIST_ID_PATTERN, newListMatcher.group(1));
+                String listMode = extractToken(LIST_MODE_PATTERN, newListMatcher.group(1));
+                compilingListId = listId == null ? -1 : listId;
+                compilingListExecutes = "GL_COMPILE_AND_EXECUTE".equals(listMode);
+                compilingListReplayDraws = new ArrayList<>();
+                continue;
+            }
+            if (END_LIST_LINE_PATTERN.matcher(line).find()) {
+                if (displayListRegistry != null && compilingListId >= 0 && compilingListReplayDraws != null) {
+                    displayListRegistry.put(compilingListId, compilingListReplayDraws);
+                }
+                compilingListId = -1;
+                compilingListExecutes = false;
+                compilingListReplayDraws = null;
+                continue;
+            }
+            Matcher callListMatcher = CALL_LIST_LINE_PATTERN.matcher(line);
+            if (callListMatcher.find()) {
+                Integer listId = extractInt(LIST_ID_PATTERN, callListMatcher.group(1));
+                long callListGlCall = extractGlCallNumber(line);
+                if (displayListRegistry != null && listId != null) {
+                    for (ReplayDraw draw : displayListRegistry.get(listId)) {
+                        replayDraws.add(copyReplayDraw(draw, replaySequence++, callListGlCall));
+                    }
+                }
+                continue;
+            }
+
             Matcher matrixModeMatcher = MATRIX_MODE_LINE_PATTERN.matcher(line);
             if (matrixModeMatcher.find()) {
                 String mode = extractToken(MATRIX_MODE_VALUE_PATTERN, matrixModeMatcher.group(1));
@@ -88,6 +143,8 @@ final class TilesProcessor {
                 if (textureMatrixMode) {
                     currentTextureMatrix = TextureProcessor.identityTextureMatrix();
                 }
+                if (projectionMatrixMode) currentProjectionMatrix = TextureProcessor.identityTextureMatrix();
+                if (modelViewMatrixMode) currentModelViewMatrix = TextureProcessor.identityTextureMatrix();
                 continue;
             }
 
@@ -270,6 +327,24 @@ final class TilesProcessor {
                 List<Vector3Dd> baseTexCoords = TextureProcessor.computeTexCoords(texCoordBlob, currentTexCoordSize, currentTexCoordStride, drawIndices);
                 List<Vector3Dd> transformedTexCoords = TextureProcessor.buildTexCoords(baseTexCoords, candidate.points(), candidate.min(), candidate.max(), currentTextureMatrix);
 
+                // Replay is intentionally emitted before tile aggregation: repeated draws and
+                // GL_TRIANGLES are valid composition operations even when not exportable tiles.
+                ReplayDraw replayDraw = buildReplayDraw(
+                    replaySequence++, glCallNumber, mode, candidate.points(), transformedTexCoords,
+                    currentProjectionMatrix, currentModelViewMatrix, currentTextureMatrix,
+                    boundTextureId, activeTextureUnit, frameId, frameDirectory, textureResolver, replayState.snapshot()
+                );
+                // The default contract is screen-space only.  Retaining every scene draw
+                // would duplicate the multipatch lifetime and can exhaust memory on a full run.
+                if ("SCREEN_SPACE".equals(replayDraw.pass())) {
+                    if (compilingListReplayDraws != null) {
+                        compilingListReplayDraws.add(replayDraw);
+                    }
+                    if (compilingListReplayDraws == null || compilingListExecutes) {
+                        replayDraws.add(replayDraw);
+                    }
+                }
+
                 if (GL_TRIANGLES.equals(mode)) {
                     TrianglesProcessor.addTrianglesAsStrips(
                         candidate.points(),
@@ -317,7 +392,85 @@ final class TilesProcessor {
         for (TileBuilder builder : tilesByKey.values()) {
             tiles.add(builder.build());
         }
-        return new FrameGeometry(tiles, frameLines);
+        return new FrameGeometry(tiles, frameLines, replayDraws, replayState.viewport());
+    }
+
+    private static ReplayDraw buildReplayDraw(
+        int sequence, long glCall, String primitive, List<Vector3Dd> points, List<Vector3Dd> uvs,
+        double[] projection, double[] modelView, double[] textureMatrix, int textureId, int textureUnit,
+        int frameId, Path frameDirectory, ReplayTextureResolver textureResolver, GlReplayStateTracker.Snapshot state
+    ) {
+        List<ReplayVertex> vertices = new ArrayList<>(points.size());
+        for (int i = 0; i < points.size(); i++) {
+            Vector3Dd p = points.get(i);
+            Vector3Dd uv = i < uvs.size() ? uvs.get(i) : null;
+            vertices.add(new ReplayVertex(p.x(), p.y(), p.z(), uv == null ? 0 : uv.x(), uv == null ? 0 : uv.y()));
+        }
+        ReplayViewport viewport = state.viewport();
+        String coordinateSpace = isPixelOrtho(projection, viewport) ? "PIXEL" : "UNKNOWN";
+        boolean screen = "PIXEL".equals(coordinateSpace) && isIdentity(modelView)
+            && !state.depthTestEnabled() && pointsInsideViewport(points, viewport);
+        String imagePath = resolveTexturePath(frameId, frameDirectory, textureId, textureResolver);
+        return new ReplayDraw(sequence, glCall, screen ? "SCREEN_SPACE" : "UNKNOWN", coordinateSpace,
+            primitive, vertices, projection, modelView, textureMatrix, viewport, state.scissor(),
+            new ReplayTexture(textureUnit, "GL_TEXTURE_2D", textureId, 0, 0, imagePath, 0, 0), state.toReplayState());
+    }
+
+    private static ReplayDraw copyReplayDraw(ReplayDraw source, int sequence, long glCall) {
+        return new ReplayDraw(
+            sequence,
+            glCall,
+            source.pass(),
+            source.coordinateSpace(),
+            source.primitive(),
+            source.vertices(),
+            source.projectionMatrix(),
+            source.modelViewMatrix(),
+            source.textureMatrix(),
+            source.viewport(),
+            source.scissor(),
+            source.texture(),
+            source.state()
+        );
+    }
+
+    private static boolean isIdentity(double[] m) {
+        if (m == null || m.length != 16) return false;
+        for (int i = 0; i < 16; i++) if (Math.abs(m[i] - ((i % 5 == 0) ? 1 : 0)) > 1e-5) return false;
+        return true;
+    }
+    private static boolean isPixelOrtho(double[] m, ReplayViewport v) {
+        return m != null && m.length == 16 && v.width() > 0 && v.height() > 0
+            && Math.abs(Math.abs(m[0]) * v.width() - 2.0) < .05
+            && Math.abs(Math.abs(m[5]) * v.height() - 2.0) < .05;
+    }
+    private static boolean pointsInsideViewport(List<Vector3Dd> points, ReplayViewport v) {
+        if (points.isEmpty() || v.width() <= 0 || v.height() <= 0) return false;
+        for (Vector3Dd p : points) if (p.x() < v.x() - 2 || p.x() > v.x() + v.width() + 2 || p.y() < v.y() - 2 || p.y() > v.y() + v.height() + 2) return false;
+        return true;
+    }
+    private static String resolveTexturePath(
+        int frameId,
+        Path frameDirectory,
+        int textureId,
+        ReplayTextureResolver textureResolver
+    ) {
+        if (textureResolver != null && textureId >= 0) {
+            String resolved = textureResolver.resolveTexturePath(frameId, textureId);
+            if (resolved != null && !resolved.isBlank()) {
+                return resolved;
+            }
+        }
+        if (frameDirectory == null || textureId < 0) return null;
+        String suffix = "_" + textureId + ".";
+        for (int delta = 0; delta <= 1; delta++) {
+            Path directory = delta == 0 ? frameDirectory : frameDirectory.resolveSibling(String.format("%05d", Math.max(0, Integer.parseInt(frameDirectory.getFileName().toString()) - delta)));
+            try (var files = java.nio.file.Files.list(directory)) {
+                var found = files.filter(p -> { String n = p.getFileName().toString(); return n.startsWith("") && (n.endsWith(".png") || n.endsWith(".dds")) && n.contains(suffix); }).findFirst();
+                if (found.isPresent()) return found.get().toAbsolutePath().toString();
+            } catch (Exception ignored) { }
+        }
+        return null;
     }
 
     private static TileBuilder findLastTileByTexture(Map<TileKey, TileBuilder> tilesByKey, int textureId) {
@@ -524,7 +677,54 @@ final class TilesProcessor {
         }
     }
 
-    record FrameGeometry(List<TileInstance> tiles, List<Line> lines) {}
+    record FrameGeometry(List<TileInstance> tiles, List<Line> lines, List<ReplayDraw> replayDraws, ReplayViewport captureSurface) {}
+
+    /** Minimal fixed-function state needed to replay Google Earth's screen overlays. */
+    private static final class GlReplayStateTracker {
+        private static final Pattern VIEWPORT = Pattern.compile("glViewport\\s*\\([^)]*x\\s*=\\s*(-?\\d+).*?y\\s*=\\s*(-?\\d+).*?width\\s*=\\s*(\\d+).*?height\\s*=\\s*(\\d+)");
+        private static final Pattern SCISSOR = Pattern.compile("glScissor\\s*\\([^)]*x\\s*=\\s*(-?\\d+).*?y\\s*=\\s*(-?\\d+).*?width\\s*=\\s*(\\d+).*?height\\s*=\\s*(\\d+)");
+        private static final Pattern CAP = Pattern.compile("GL_(BLEND|DEPTH_TEST|SCISSOR_TEST|ALPHA_TEST|CULL_FACE|TEXTURE_2D)");
+        private static final Pattern COLOR = Pattern.compile("(?:red|r)\\s*=\\s*(\\d+).*?(?:green|g)\\s*=\\s*(\\d+).*?(?:blue|b)\\s*=\\s*(\\d+).*?(?:alpha|a)\\s*=\\s*(\\d+)");
+        private static final Pattern PROGRAM = Pattern.compile("program\\s*=\\s*(\\d+)");
+        private ReplayViewport viewport = ReplayViewport.EMPTY;
+        private ReplayScissor scissor = new ReplayScissor(false, 0, 0, 0, 0);
+        private boolean blend, depth = true, alpha, cull, texture2d, depthMask = true;
+        private String blendSrc = "GL_ONE", blendDst = "GL_ZERO", depthFunc = "GL_LESS";
+        private double[] color = {1, 1, 1, 1};
+        private int program;
+
+        void consume(String line) {
+            Matcher m = VIEWPORT.matcher(line);
+            if (m.find()) { viewport = new ReplayViewport(i(m, 1), i(m, 2), i(m, 3), i(m, 4)); return; }
+            m = SCISSOR.matcher(line);
+            if (m.find()) { scissor = new ReplayScissor(scissor.enabled(), i(m, 1), i(m, 2), i(m, 3), i(m, 4)); return; }
+            if (line.contains("glEnable")) setCapability(line, true);
+            if (line.contains("glDisable")) setCapability(line, false);
+            if (line.contains("glDepthMask")) depthMask = !line.contains("GL_FALSE");
+            if (line.contains("glDepthFunc")) depthFunc = tokenAfter(line, "func", depthFunc);
+            if (line.contains("glBlendFunc")) { blendSrc = tokenAfter(line, "sfactor", blendSrc); blendDst = tokenAfter(line, "dfactor", blendDst); }
+            m = COLOR.matcher(line);
+            if (m.find()) color = new double[] {i(m, 1) / 255.0, i(m, 2) / 255.0, i(m, 3) / 255.0, i(m, 4) / 255.0};
+            if (line.contains("glUseProgram")) { m = PROGRAM.matcher(line); if (m.find()) program = i(m, 1); }
+        }
+        private void setCapability(String line, boolean value) {
+            Matcher m = CAP.matcher(line); if (!m.find()) return;
+            switch (m.group(1)) {
+                case "BLEND" -> blend = value; case "DEPTH_TEST" -> depth = value;
+                case "SCISSOR_TEST" -> scissor = new ReplayScissor(value, scissor.x(), scissor.y(), scissor.width(), scissor.height());
+                case "ALPHA_TEST" -> alpha = value; case "CULL_FACE" -> cull = value; case "TEXTURE_2D" -> texture2d = value;
+            }
+        }
+        Snapshot snapshot() { return new Snapshot(viewport, scissor, blend, depth, alpha, cull, texture2d, depthMask, blendSrc, blendDst, depthFunc, color, program); }
+        ReplayViewport viewport() { return viewport; }
+        private static int i(Matcher m, int n) { return Integer.parseInt(m.group(n)); }
+        private static String tokenAfter(String line, String key, String fallback) { Pattern p = Pattern.compile(key + "\\s*=\\s*(GL_[A-Z0-9_]+)"); Matcher m = p.matcher(line); return m.find() ? m.group(1) : fallback; }
+        private record Snapshot(ReplayViewport viewport, ReplayScissor scissor, boolean blendEnabled, boolean depthTestEnabled,
+                                boolean alphaTestEnabled, boolean cullEnabled, boolean texture2dEnabled, boolean depthMask,
+                                String blendSrc, String blendDst, String depthFunc, double[] color, int program) {
+            ReplayState toReplayState() { return new ReplayState(color, blendEnabled, blendSrc, blendDst, depthTestEnabled, depthMask, depthFunc, alphaTestEnabled, cullEnabled, texture2dEnabled, program); }
+        }
+    }
 
     private record TileGeometry(Vector3Dd min, Vector3Dd max, List<Vector3Dd> points) {}
     private record LineGeometry(Vector3Dd min, Vector3Dd max, List<List<Vector3Dd>> strips) {}

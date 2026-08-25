@@ -44,7 +44,6 @@ public final class KeyboardInteractionTechnique implements KeyListener {
         if (keyChar == 't') {
             event.keycode = vsdk.toolkit.gui.KeyEvent.KEY_F8;
             if (model.processRendererConfigurationKey(event)) {
-                repaintAction.run();
                 return;
             }
         }
@@ -59,22 +58,19 @@ public final class KeyboardInteractionTechnique implements KeyListener {
             case KeyEvent.VK_3 -> model.selectPreviousTile();
             case KeyEvent.VK_4 -> model.selectNextTile();
             case KeyEvent.VK_C -> model.toggleActiveCamera();
+            case KeyEvent.VK_H -> model.toggleOriginalGoogleEarthHud();
             case KeyEvent.VK_F4 -> {
-                if (model.processRendererConfigurationKey(event)) {
-                    repaintAction.run();
-                }
+                model.processRendererConfigurationKey(event);
             }
             case KeyEvent.VK_T -> {
                 if (keyChar == 'T') {
                     model.toggleShowGuiTextures();
-                    repaintAction.run();
                 }
             }
             default -> {
-                if (model.processRendererConfigurationKey(event)) {
-                    repaintAction.run();
-                }
-                else if (cameraController != null && cameraController.processKeyPressedEvent(event)) {
+                if (!model.processRendererConfigurationKey(event)
+                    && cameraController != null
+                    && cameraController.processKeyPressedEvent(event)) {
                     repaintAction.run();
                 }
             }
