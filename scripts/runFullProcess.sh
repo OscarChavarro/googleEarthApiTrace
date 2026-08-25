@@ -23,7 +23,10 @@ fi
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_DIR="$RUN_FULL_PROCESS_SCRIPT_DIR"
+readonly SCRIPT_FILE_DIR="$RUN_FULL_PROCESS_SCRIPT_DIR"
+readonly SCRIPT_DIR="$(
+    cd "$SCRIPT_FILE_DIR/.." && pwd
+)"
 readonly SCRIPT_SNAPSHOT_PATH="$RUN_FULL_PROCESS_SNAPSHOT_PATH"
 case "$SCRIPT_SNAPSHOT_PATH" in
     /tmp/google-earth-runFullProcess.snapshot.[A-Za-z0-9]*)
@@ -68,7 +71,7 @@ printf '[runFullProcess] Master log: %s\n' "$SESSION_LOG"
 
 usage() {
     cat <<'EOF'
-Usage: ./runFullProcess.sh [options]
+Usage: ./scripts/runFullProcess.sh [options]
 
 Runs modules 14, 21, 22, 23, 31, 32 and 42 for one capture iteration,
 including an offline `apitrace dump` between modules 14 and 21.
@@ -87,6 +90,10 @@ EOF
 
 log() {
     printf '[runFullProcess][%s] %s\n' "$(date --iso-8601=seconds)" "$*"
+}
+
+phase_log() {
+    printf '[runFullProcess][%s][PHASE] Starting %s\n' "$(date --iso-8601=seconds)" "$*"
 }
 
 die() {
@@ -429,7 +436,7 @@ module_42_reported_conflicts() {
 
 validate_merge_completed() {
     local merge_log="$1"
-    grep -q 'Merge completed\.' "$merge_log" ||
+    grep -Eq 'Merge completed( as no-op)?\.' "$merge_log" ||
         die "Module 42 did not report a completed merge."
 }
 
@@ -494,8 +501,10 @@ exec 7>"/tmp/google-earth-full-process-matrix.lock"
 flock -n 7 || die "Another automated iteration is using matrix staging $MATRIX_DIR"
 log "Finished preflight finished_at=$(date --iso-8601=seconds) status=0 elapsed_seconds=$(($(date +%s) - preflight_started))"
 
+phase_log "21 traceLogSplitter configure"
 run_logged 21_traceLogSplitter_configure \
     cmake -S "$SCRIPT_DIR/21_traceLogSplitter" -B "$SCRIPT_DIR/21_traceLogSplitter/build"
+phase_log "21 traceLogSplitter build"
 run_logged 21_traceLogSplitter_build \
     cmake --build "$SCRIPT_DIR/21_traceLogSplitter/build" --parallel
 splitter="$SCRIPT_DIR/21_traceLogSplitter/build/traceLogSplitter"
@@ -503,6 +512,7 @@ splitter="$SCRIPT_DIR/21_traceLogSplitter/build/traceLogSplitter"
 
 if ((reuse_capture == 0)); then
     run_timed_step capture_root_cleanup safe_clear_capture_root
+    phase_log "14 sessionController"
     run_logged 14_sessionController "$SCRIPT_DIR/14_sessionController/run.sh"
 else
     log "Reusing the existing capture; cleanup and module 14 are skipped."
@@ -517,20 +527,24 @@ else
 fi
 log "Finished completed_trace_selection finished_at=$(date --iso-8601=seconds) status=$trace_selection_status elapsed_seconds=$(($(date +%s) - trace_selection_started)) trace=${trace_file:-unavailable}"
 ((trace_selection_status == 0)) || exit "$trace_selection_status"
+phase_log "apitrace dump"
 dump_completed_trace "$trace_file"
 dump_file="$trace_dump_dir/bigtrace.log"
+phase_log "21 traceLogSplitter"
 run_logged_in_directory 21_traceLogSplitter \
     "$(dirname "$CAPTURE_ROOT")" "$splitter" "$dump_file"
 
+phase_log "22 dumpAnalyzer"
 run_logged 22_dumpAnalyzer \
-    "$SCRIPT_DIR/gradlew" :22_dumpAnalyzer:run \
+    "$SCRIPT_DIR/gradlew" --console=plain :22_dumpAnalyzer:run \
     "--args=--offline --start-frame 3 --output $run_dir/dumpAnalyzer.png"
 
 run_timed_step 22_dumpAnalyzer_validation validate_dump_analyzer_outputs
 run_timed_step trace_dump_cleanup safe_delete_trace_dump_path "$dump_file"
 
+phase_log "23 frameTextureNormalizer"
 run_logged 23_frameTextureNormalizer \
-    "$SCRIPT_DIR/gradlew" :23_frameTextureNormalizer:run \
+    "$SCRIPT_DIR/gradlew" --console=plain :23_frameTextureNormalizer:run \
     "--args=--offline"
 
 attempt_suffix="attempt_01_offline_auto"
@@ -538,11 +552,13 @@ matrix_attempt_started="$(date +%s)"
 log "Starting matrix/delta attempt started_at=$(date --iso-8601=seconds) with offline automatic module 31"
 run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_staging
 
+phase_log "31 matrixMerger"
 run_logged "31_matrixMerger_${attempt_suffix}" \
     "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$MATRIX_DIR"
 log "Automatic offline module 31 completed."
 
 module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
+phase_log "32 pyramidalImageExporter"
 run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
     "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$MATRIX_DIR" "$destination"
 run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
@@ -550,8 +566,9 @@ run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
 
 delta="$MATRIX_DIR/pyramidalImage"
 module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
+phase_log "42 pyramidalImageMerger dry-run"
 if run_logged "42_pyramidalImageMerger_dry_run_${attempt_suffix}" \
-    "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
+    "$SCRIPT_DIR/gradlew" --console=plain :42_pyramidalImageMerger:run \
     "--args=--dry-run $destination $delta"; then
     log "Module 42 dry run accepted matrix/delta attempt."
     log "Finished matrix/delta attempt finished_at=$(date --iso-8601=seconds) status=0 result=accepted elapsed_seconds=$(($(date +%s) - matrix_attempt_started))"
@@ -574,8 +591,9 @@ if ((dry_run == 1)); then
     exit 0
 fi
 
+phase_log "42 pyramidalImageMerger commit"
 if run_logged 42_pyramidalImageMerger_commit \
-    "$SCRIPT_DIR/gradlew" :42_pyramidalImageMerger:run \
+    "$SCRIPT_DIR/gradlew" --console=plain :42_pyramidalImageMerger:run \
     "--args=--offline $destination $delta"; then
     if run_timed_step 42_pyramidalImageMerger_commit_validation \
         validate_merge_completed "$run_dir/logs/42_pyramidalImageMerger_commit.log"; then
@@ -593,7 +611,11 @@ else
 fi
 
 printf '\n'
-log "ITERATION COMMITTED SUCCESSFULLY TO $destination"
+if grep -q 'Merge completed as no-op\.' "$run_dir/logs/42_pyramidalImageMerger_commit.log"; then
+    log "ITERATION COMPLETED AS NO-OP FOR $destination (0 tiles copied or replaced)"
+else
+    log "ITERATION COMMITTED SUCCESSFULLY TO $destination"
+fi
 printf '\n'
 if ((keep_work == 0)); then
     log "Temporary staging will now be removed. Use --keep-work to retain it."

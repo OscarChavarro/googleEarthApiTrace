@@ -56,6 +56,21 @@ class PyramidalImageScannerTest {
     }
 
     @Test
+    void scansDeepTilesWhenIntermediateTileImagesAreMissing() throws IOException {
+        Path root = temporaryFolder.resolve("sparse-layout");
+        Files.createDirectories(root.resolve("3/0/3"));
+        Files.createFile(root.resolve("0.png"));
+        Files.createFile(root.resolve("3/0/3/0303.png"));
+
+        PyramidCatalog catalog = new PyramidalImageScanner().scan(root);
+
+        assertEquals(2, catalog.tileCount());
+        assertNull(catalog.tileAt(1, 0, 1));
+        assertNull(catalog.tileAt(2, 0, 2));
+        assertNotNull(catalog.tileAt(3, 0, 5));
+    }
+
+    @Test
     void stillScansLegacyCumulativeFolderLayout() throws IOException {
         Path root = temporaryFolder.resolve("legacy-layout");
         Files.createDirectories(root.resolve("03/030/0303"));
