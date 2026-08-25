@@ -6,4 +6,4 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-gradle run --quiet --args="$1"
+gradle --console=plain run --quiet --args="$1"

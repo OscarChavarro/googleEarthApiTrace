@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "$#" -eq 0 ]; then
-    gradle run --quiet
+    gradle --console=plain run --quiet
 else
-    gradle run --quiet --args="$*"
+    gradle --console=plain run --quiet --args="$*"
 fi

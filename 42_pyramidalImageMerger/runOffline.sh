@@ -12,4 +12,4 @@ else
     ARGS="$*"
 fi
 
-gradle run --quiet --args="$ARGS"
+gradle --console=plain run --quiet --args="$ARGS"

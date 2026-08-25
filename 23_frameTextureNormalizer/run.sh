@@ -4,4 +4,4 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$script_dir"
 
-exec gradle run --quiet
+exec gradle --console=plain run --quiet

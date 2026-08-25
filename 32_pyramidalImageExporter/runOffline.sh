@@ -20,7 +20,7 @@ if ! flock -n 8; then
 fi
 
 if (($# == 2)); then
-    exec gradle run --quiet --args="--offline --reference-pyramid $2 $1"
+    exec gradle --console=plain run --quiet --args="--offline --reference-pyramid $2 $1"
 fi
 
-exec gradle run --quiet --args="--offline $1"
+exec gradle --console=plain run --quiet --args="--offline $1"

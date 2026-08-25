@@ -21,4 +21,4 @@ if ! flock -n 8; then
     exit 1
 fi
 
-gradle run --quiet --args="$*"
+gradle --console=plain run --quiet --args="$*"

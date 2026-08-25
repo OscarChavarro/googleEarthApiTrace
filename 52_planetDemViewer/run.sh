@@ -9,4 +9,4 @@ if [ "$#" -eq 0 ]; then
     set -- "$DEFAULT_DEM"
 fi
 
-gradle run --quiet --args="$*"
+gradle --console=plain run --quiet --args="$*"

@@ -6,4 +6,4 @@ if [ "$#" -gt 0 ]; then
 else
     ARGS="$DEFAULT_IMAGE"
 fi
-gradle run --quiet --args="$ARGS"
+gradle --console=plain run --quiet --args="$ARGS"

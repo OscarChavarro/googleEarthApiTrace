@@ -17,7 +17,7 @@ if (($# > 0)) && [[ "$1" != -* ]]; then
 fi
 
 if (($# == 0)); then
-    exec gradle run --quiet --args="--mode auto"
+    exec gradle --console=plain run --quiet --args="--mode auto"
 fi
 
-exec gradle run --quiet --args="--mode auto $*"
+exec gradle --console=plain run --quiet --args="--mode auto $*"

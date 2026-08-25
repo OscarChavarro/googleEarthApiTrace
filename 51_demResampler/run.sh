@@ -10,4 +10,4 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export GRADLE_USER_HOME="${GRADLE_USER_HOME:-${script_dir}/../.gradle}"
 
 cd "$script_dir"
-gradle run --quiet --args="$*"
+gradle --console=plain run --quiet --args="$*"

@@ -25,5 +25,5 @@ if ! flock -n 8; then
     exit 1
 fi
 
-exec gradle run --quiet \
+exec gradle --console=plain run --quiet \
     --args="--mode auto --offline --diagnose-order --minimum-tile-count=$minimum_tile_count $1"
