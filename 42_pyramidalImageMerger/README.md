@@ -84,7 +84,7 @@ When `m` is pressed, the program recursively traverses the delta tree. For every
   resolution and accepts a normalized RMSE up to 3%; these matches are outlined in green;
 - if the visual comparison passes, the higher-resolution tile is kept in destination;
 - if the delta adds tiles at its deepest level, differing tiles at that level or in the preceding
-  one, two or three levels are treated as refinement context (leaf-neighbor, ancestor, or
+  one, two, three or four levels are treated as refinement context (leaf-neighbor, ancestor, or
   uncle/sibling context): the existing
   destination ancestor is retained and only the missing descendants are copied;
 - if every delta tile already exists in destination, the repeated capture is accepted as an
@@ -93,10 +93,10 @@ When `m` is pressed, the program recursively traverses the delta tree. For every
 - if the visual comparison exceeds the threshold, that tile id becomes a conflict.
 
 The refinement exception is deliberately narrow. When new content is present, differences more
-than three levels above the deepest new refinement remain hard conflicts. This supports level-14
-captures that re-observe nearby context without hiding coarser placement errors. A fully redundant
-delta is safe regardless of visual differences because it writes no tiles. Context tiles are never
-copied over the destination; only genuinely missing descendants are added.
+than four levels above the deepest new refinement remain hard conflicts. This supports captures
+that jump from the level-11 boundary directly to level 15 without hiding coarser placement errors.
+A fully redundant delta is safe regardless of visual differences because it writes no tiles.
+Context tiles are never copied over the destination; only genuinely missing descendants are added.
 
 New tiles are written using the destination's folder layout. The current per-quadrant-digit
 layout is preferred when a destination already contains a mixture of current and legacy

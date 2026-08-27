@@ -6,10 +6,11 @@ readonly PROJECT_DIR="/paradigmas/master/algoritmos_basicos_3d/googleEarthApiTra
 readonly PATH_PLANNER_DIR="$PROJECT_DIR/11_pathPlanner"
 readonly MY_PLACES_DIR="$HOME/.googleearth"
 readonly TARGETS=(
-    "37.51 -8.9"
+    "37.5 -2.0"
 )
 readonly TILE_SIZE="0.5"
 readonly TOTAL_TILES="${#TARGETS[@]}"
+
 
 tile_origin() {
     awk -v value="$1" -v tile_size="$TILE_SIZE" '

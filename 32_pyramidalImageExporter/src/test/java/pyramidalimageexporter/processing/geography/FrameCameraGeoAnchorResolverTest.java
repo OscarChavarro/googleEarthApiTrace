@@ -85,4 +85,11 @@ final class FrameCameraGeoAnchorResolverTest {
         assertTrue(FrameCameraGeoAnchorResolver.hasSufficientExactCameraEvidence(5, 3));
         assertTrue(FrameCameraGeoAnchorResolver.hasSufficientExactCameraEvidence(13, 0));
     }
+
+    @Test
+    void requiresAnExactMajorityBeforeCameraEvidenceCanOverrideStructure() {
+        assertTrue(FrameCameraGeoAnchorResolver.hasStrongExactCameraEvidence(72, 72, 68));
+        assertFalse(FrameCameraGeoAnchorResolver.hasStrongExactCameraEvidence(72, 72, 2));
+        assertFalse(FrameCameraGeoAnchorResolver.hasStrongExactCameraEvidence(40, 72, 35));
+    }
 }

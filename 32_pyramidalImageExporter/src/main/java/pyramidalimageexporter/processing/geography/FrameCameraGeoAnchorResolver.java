@@ -51,9 +51,14 @@ public final class FrameCameraGeoAnchorResolver {
             if (preliminaryLevel != null && preliminaryLevel != absoluteLevel) {
                 continue;
             }
-            GridOffset offset = cameraGridOffset(layer, absoluteLevel, frameRoot, byFrameId);
-            if (offset == null
-                || contradictsStructuralPlacement(layer, absoluteLevel, offset, preliminaryResolution)) {
+            CameraGridAnchor cameraAnchor = cameraGridAnchor(layer, absoluteLevel, frameRoot, byFrameId);
+            if (cameraAnchor == null
+                || contradictsStructuralPlacement(
+                    layer,
+                    absoluteLevel,
+                    cameraAnchor,
+                    preliminaryResolution
+                )) {
                 continue;
             }
             anchoredLayers.add(layer.getSourceFolderName());
@@ -67,14 +72,20 @@ public final class FrameCameraGeoAnchorResolver {
             }
             int absoluteLevel = deepestReferenceLevel
                 - (deepestHierarchyLevel - layer.getHierarchyLevel());
-            GridOffset offset = cameraGridOffset(layer, absoluteLevel, frameRoot, byFrameId);
-            if (offset == null) {
+            CameraGridAnchor cameraAnchor = cameraGridAnchor(layer, absoluteLevel, frameRoot, byFrameId);
+            if (cameraAnchor == null) {
                 continue;
             }
-            if (contradictsStructuralPlacement(layer, absoluteLevel, offset, preliminaryResolution)) {
+            if (contradictsStructuralPlacement(
+                layer,
+                absoluteLevel,
+                cameraAnchor,
+                preliminaryResolution
+            )) {
                 contradictedLayers.add(layer.getSourceFolderName());
                 continue;
             }
+            GridOffset offset = cameraAnchor.offset();
             int side = 1 << absoluteLevel;
             for (MatrixLayerTile tile : layer.getTiles()) {
                 int row = offset.row() + tile.getI();
@@ -103,9 +114,10 @@ public final class FrameCameraGeoAnchorResolver {
      * trigonometry over the frame's view vector and can be defeated by a
      * frame whose view centre is not the tile it is attributed to. When the
      * two disagree for most of the tiles that structure did resolve, the
-     * offset is wrong for the whole layer — it is a single rigid translation,
-     * so one bad vote cluster displaces every tile — and anchoring on it
-     * would silently overwrite correct absolute paths with shifted ones.</p>
+     * structural placement normally wins. The exception is a camera cluster
+     * supported by an absolute majority of exact centre-tile observations;
+     * this protects new captures from following an already misplaced copy of
+     * their own content in the reference pyramid.</p>
      */
     static boolean contradictsStructuralPlacement(
         MatrixLayer layer,
@@ -113,9 +125,24 @@ public final class FrameCameraGeoAnchorResolver {
         GridOffset offset,
         TileRootPathResolver.Resolution structure
     ) {
+        return contradictsStructuralPlacement(
+            layer,
+            absoluteLevel,
+            new CameraGridAnchor(offset, 0, 0, 0),
+            structure
+        );
+    }
+
+    private static boolean contradictsStructuralPlacement(
+        MatrixLayer layer,
+        int absoluteLevel,
+        CameraGridAnchor cameraAnchor,
+        TileRootPathResolver.Resolution structure
+    ) {
         if (structure == null || absoluteLevel < 0 || absoluteLevel >= 30) {
             return false;
         }
+        GridOffset offset = cameraAnchor.offset();
         int side = 1 << absoluteLevel;
         int agreements = 0;
         int disagreements = 0;
@@ -136,6 +163,17 @@ public final class FrameCameraGeoAnchorResolver {
                 disagreements++;
             }
         }
+        if (disagreements > agreements && hasStrongExactCameraEvidence(cameraAnchor)) {
+            System.out.println(
+                "FrameCameraGeoAnchorResolver: accepted camera anchor for layer "
+                    + layer.getSourceFolderName() + " at [" + absoluteLevel + ", "
+                    + offset.row() + ", " + offset.col() + "] despite " + disagreements
+                    + " structural disagreement(s); camera support is "
+                    + cameraAnchor.exactVotes() + " exact vote(s) out of "
+                    + cameraAnchor.totalVotes() + "."
+            );
+            return false;
+        }
         if (disagreements > agreements) {
             System.out.println(
                 "FrameCameraGeoAnchorResolver: rejected camera anchor for layer "
@@ -149,7 +187,7 @@ public final class FrameCameraGeoAnchorResolver {
         return false;
     }
 
-    private static GridOffset cameraGridOffset(
+    private static CameraGridAnchor cameraGridAnchor(
         MatrixLayer layer,
         int absoluteLevel,
         Path frameRoot,
@@ -242,8 +280,23 @@ public final class FrameCameraGeoAnchorResolver {
                     + offset.col() + "] from " + clusterVotes + "/" + totalVotes
                     + " clustered camera vote(s), including " + exactVotes + " exact."
             );
+            return new CameraGridAnchor(offset, clusterVotes, totalVotes, exactVotes);
         }
-        return offset;
+        return null;
+    }
+
+    static boolean hasStrongExactCameraEvidence(int clusteredVotes, int totalVotes, int exactVotes) {
+        return exactVotes >= MIN_EXACT_VOTES_FOR_LOW_LEVEL_ANCHOR
+            && clusteredVotes * 2 > totalVotes
+            && exactVotes * 2 > totalVotes;
+    }
+
+    private static boolean hasStrongExactCameraEvidence(CameraGridAnchor anchor) {
+        return anchor != null && hasStrongExactCameraEvidence(
+            anchor.clusteredVotes(),
+            anchor.totalVotes(),
+            anchor.exactVotes()
+        );
     }
 
     private static boolean isCloserTo(
@@ -568,5 +621,11 @@ public final class FrameCameraGeoAnchorResolver {
     }
 
     private record CameraAnchor(String tileId, double longitude, double latitude) {}
+    private record CameraGridAnchor(
+        GridOffset offset,
+        int clusteredVotes,
+        int totalVotes,
+        int exactVotes
+    ) {}
     record GridOffset(int row, int col) {}
 }

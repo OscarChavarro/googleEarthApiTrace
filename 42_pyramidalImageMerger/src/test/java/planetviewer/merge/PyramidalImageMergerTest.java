@@ -224,7 +224,7 @@ class PyramidalImageMergerTest {
     }
 
     @Test
-    void blocksAConflictMoreThanThreeLevelsAboveTheNewRefinement() throws IOException {
+    void retainsAConflictingSupportAncestorFourLevelsAboveTheNewRefinement() throws IOException {
         Path destinationRoot = temporaryFolder.resolve("unsafe-destination");
         Path deltaRoot = temporaryFolder.resolve("unsafe-delta");
         writePerDigitTile(destinationRoot, "0", Color.GRAY);
@@ -232,6 +232,26 @@ class PyramidalImageMergerTest {
         writePerDigitTile(deltaRoot, "0", Color.GRAY);
         writePerDigitTile(deltaRoot, "03", Color.BLUE);
         writePerDigitTile(deltaRoot, "030123", Color.BLUE);
+
+        MergeAnalysis analysis = new PyramidalImageMergeAnalyzer().analyze(
+            read(destinationRoot),
+            read(deltaRoot)
+        );
+
+        assertTrue(analysis.isMergePossible());
+        assertTrue(analysis.getConflictingNodeIds().isEmpty());
+        assertEquals(Set.of("03"), analysis.getRetainedRefinementAncestorNodeIds());
+    }
+
+    @Test
+    void blocksAConflictMoreThanFourLevelsAboveTheNewRefinement() throws IOException {
+        Path destinationRoot = temporaryFolder.resolve("five-level-destination");
+        Path deltaRoot = temporaryFolder.resolve("five-level-delta");
+        writePerDigitTile(destinationRoot, "0", Color.GRAY);
+        writePerDigitTile(destinationRoot, "03", Color.RED);
+        writePerDigitTile(deltaRoot, "0", Color.GRAY);
+        writePerDigitTile(deltaRoot, "03", Color.BLUE);
+        writePerDigitTile(deltaRoot, "0301230", Color.BLUE);
 
         MergeAnalysis analysis = new PyramidalImageMergeAnalyzer().analyze(
             read(destinationRoot),

@@ -12,7 +12,9 @@ import planetviewer.model.PyramidalImage;
 import planetviewer.model.QuadtreeNode;
 
 public final class PyramidalImageMergeAnalyzer {
-    private static final int MAX_REFINEMENT_SUPPORT_LEVEL_GAP = 3;
+    // Captures may jump directly from the configured level-11 boundary to level 15.
+    // Those level-11 tiles are placement context, not replacement candidates.
+    private static final int MAX_REFINEMENT_SUPPORT_LEVEL_GAP = 4;
     private int comparedTiles;
     private int mergeableTiles;
     private int copiedTiles;
