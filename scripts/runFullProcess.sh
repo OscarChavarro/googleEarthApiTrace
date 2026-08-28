@@ -10,13 +10,16 @@ if [[ -z "${RUN_FULL_PROCESS_SNAPSHOT_ACTIVE:-}" ]]; then
     run_full_process_dir="$(
         cd "$(dirname "$run_full_process_source")" && pwd
     )"
+    run_full_process_tmp_dir="${PIPELINE_TMP_DIR:-/media/ramdisk}"
+    mkdir -p "$run_full_process_tmp_dir"
     run_full_process_snapshot="$(
-        mktemp /tmp/google-earth-runFullProcess.snapshot.XXXXXX
+        mktemp "$run_full_process_tmp_dir/google-earth-runFullProcess.snapshot.XXXXXX"
     )"
     cp -- "$run_full_process_source" "$run_full_process_snapshot"
     RUN_FULL_PROCESS_SNAPSHOT_ACTIVE=1 \
     RUN_FULL_PROCESS_SCRIPT_DIR="$run_full_process_dir" \
     RUN_FULL_PROCESS_SNAPSHOT_PATH="$run_full_process_snapshot" \
+    RUN_FULL_PROCESS_TMP_DIR="$run_full_process_tmp_dir" \
         exec bash "$run_full_process_snapshot" "$@"
 fi
 
@@ -28,8 +31,9 @@ readonly SCRIPT_DIR="$(
     cd "$SCRIPT_FILE_DIR/.." && pwd
 )"
 readonly SCRIPT_SNAPSHOT_PATH="$RUN_FULL_PROCESS_SNAPSHOT_PATH"
+readonly SNAPSHOT_TMP_DIR="$RUN_FULL_PROCESS_TMP_DIR"
 case "$SCRIPT_SNAPSHOT_PATH" in
-    /tmp/google-earth-runFullProcess.snapshot.[A-Za-z0-9]*)
+    "$SNAPSHOT_TMP_DIR"/google-earth-runFullProcess.snapshot.[A-Za-z0-9]*)
         find "$SCRIPT_SNAPSHOT_PATH" -maxdepth 0 -type f -delete
         ;;
     *)
@@ -41,10 +45,12 @@ esac
 unset RUN_FULL_PROCESS_SNAPSHOT_ACTIVE
 unset RUN_FULL_PROCESS_SCRIPT_DIR
 unset RUN_FULL_PROCESS_SNAPSHOT_PATH
+unset RUN_FULL_PROCESS_TMP_DIR
 
 CAPTURE_ROOT="${PIPELINE_OUTPUT_DIRECTORY:-/media/ramdisk/output}"
 LOGICAL_OUTPUT_ROOT="${PIPELINE_LOGICAL_OUTPUT_DIRECTORY:-$CAPTURE_ROOT}"
 TRACE_DUMP_DIR="${PIPELINE_TRACE_DUMP_DIR:-$CAPTURE_ROOT}"
+PIPELINE_TMP_DIR="${PIPELINE_TMP_DIR:-/media/ramdisk}"
 trace_dump_dir_explicit=0
 if [[ -n "${PIPELINE_TRACE_DUMP_DIR:-}" ]]; then
     trace_dump_dir_explicit=1
@@ -52,9 +58,10 @@ fi
 readonly DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
 readonly TRACE_DIRECTORY="/opt/google/earth/pro"
 readonly TRACE_PATTERN="googleearth-bin*trace"
-SESSION_LOG="${PIPELINE_SESSION_LOG:-/tmp/googleEarthSession.log}"
+SESSION_LOG="${PIPELINE_SESSION_LOG:-$PIPELINE_TMP_DIR/googleEarthSession.log}"
 readonly ERRORS_LOG="$SCRIPT_DIR/errors.log"
-MATRIX_DIR="${PIPELINE_MATRIX_DIR:-/tmp/matrix}"
+MATRIX_DIR="${PIPELINE_MATRIX_DIR:-$PIPELINE_TMP_DIR/matrix}"
+mkdir -p "$PIPELINE_TMP_DIR"
 
 destination="$DEFAULT_DESTINATION"
 reuse_capture=0
@@ -109,8 +116,8 @@ Options:
                       (default: capture root)
   --trace-dump-dir PATH
                       Write bigtrace.log staging under PATH (default: capture root)
-  --matrix-dir PATH   Matrix/delta staging directory (default: /tmp/matrix)
-  --session-log PATH  Master session log path (default: /tmp/googleEarthSession.log)
+  --matrix-dir PATH   Matrix/delta staging directory (default: /media/ramdisk/matrix)
+  --session-log PATH  Master session log path (default: /media/ramdisk/googleEarthSession.log)
   -h, --help          Show this help
 EOF
 }
@@ -264,7 +271,7 @@ safe_remove_run_dir() {
     [[ -n "$run_dir" && -d "$run_dir" ]] || return 0
     resolved="$(realpath -e -- "$run_dir")"
     case "$resolved" in
-        /tmp/google-earth-full-process.[A-Za-z0-9]*) ;;
+        "$PIPELINE_TMP_DIR"/google-earth-full-process.[A-Za-z0-9]*) ;;
         *)
             log "Refusing to delete unexpected staging path: $resolved"
             return 1
@@ -600,7 +607,8 @@ if ((reuse_capture == 0)); then
     [[ -x "$SCRIPT_DIR/14_sessionController/run.sh" ]] || die "Module 14 launcher is not executable."
 fi
 
-run_dir="$(mktemp -d /tmp/google-earth-full-process.XXXXXX)"
+export TMPDIR="$PIPELINE_TMP_DIR"
+run_dir="$(mktemp -d "$PIPELINE_TMP_DIR/google-earth-full-process.XXXXXX")"
 mkdir -p "$run_dir/logs"
 log "Staging directory: $run_dir"
 log "Matrix staging directory: $MATRIX_DIR"
@@ -612,9 +620,9 @@ else
 fi
 
 lock_key="$(printf '%s' "$destination" | cksum | awk '{print $1}')"
-exec 9>"/tmp/google-earth-full-process-${lock_key}.lock"
+exec 9>"$PIPELINE_TMP_DIR/google-earth-full-process-${lock_key}.lock"
 flock -n 9 || die "Another automated iteration is using destination $destination"
-exec 7>"/tmp/google-earth-full-process-matrix.lock"
+exec 7>"$PIPELINE_TMP_DIR/google-earth-full-process-matrix.lock"
 flock -n 7 || die "Another automated iteration is using matrix staging $MATRIX_DIR"
 log "Finished preflight finished_at=$(date --iso-8601=seconds) status=0 elapsed_seconds=$(($(date +%s) - preflight_started))"
 

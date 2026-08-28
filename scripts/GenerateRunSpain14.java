@@ -178,7 +178,9 @@ public final class GenerateRunSpain14 {
             writer.println("        ./run.sh zigzag \"$LAT\" \"$LON\" 10000 200 6000 0.5 0.5");
             writer.println();
             writer.println("        cd \"$PROJECT_DIR\"");
-            writer.println("        run_log=\"$(mktemp /tmp/runSpain14.runFullProcess.XXXXXX)\"");
+            writer.println("        pipeline_tmp_dir=\"${PIPELINE_TMP_DIR:-/media/ramdisk}\"");
+            writer.println("        mkdir -p \"$pipeline_tmp_dir\"");
+            writer.println("        run_log=\"$(mktemp \"$pipeline_tmp_dir/runSpain14.runFullProcess.XXXXXX\")\"");
             writer.println("        if ./scripts/runFullProcess.sh \\");
             writer.println("            --route-command \"./run.sh zigzag $LAT $LON 10000 200 6000 0.5 0.5\" \\");
             writer.println("            > >(tee \"$run_log\") 2>&1; then");

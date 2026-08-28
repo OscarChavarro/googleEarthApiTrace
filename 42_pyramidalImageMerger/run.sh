@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
-DEFAULT_DELTA="/tmp/matrix/pyramidalImage"
+DEFAULT_DELTA="${PIPELINE_MATRIX_DIR:-/media/ramdisk/matrix}/pyramidalImage"
 if [ "$#" -eq 0 ]; then
     ARGS="$DEFAULT_DESTINATION $DEFAULT_DELTA"
 elif [ "$#" -eq 2 ]; then

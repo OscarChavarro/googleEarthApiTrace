@@ -20,9 +20,10 @@ MY_PLACES_DIR = Path.home() / ".googleearth"
 DEFAULT_DESTINATION = Path("/samples/datasets/googleEarth/toplevel")
 DEFAULT_SLOT_A = Path("/media/ramdisk/output")
 DEFAULT_SLOT_B = Path("/media/ramdisk/output_incoming")
-DEFAULT_MATRIX_DIR = Path("/tmp/matrix")
+DEFAULT_TMP_DIR = Path(os.environ.get("PIPELINE_TMP_DIR", "/media/ramdisk"))
+DEFAULT_MATRIX_DIR = DEFAULT_TMP_DIR / "matrix"
 DEFAULT_LOG_ROOT = Path("/media/ramdisk/logs/superPipeline")
-LOCK_PATH = Path("/tmp/google-earth-superpipeline.lock")
+LOCK_PATH = DEFAULT_TMP_DIR / "google-earth-superpipeline.lock"
 
 
 class SuperPipelineError(RuntimeError):
@@ -85,6 +86,7 @@ def ensured_work_directory(raw_path: str, label: str) -> Path:
 def acquire_lock() -> object:
     import fcntl
 
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     handle = LOCK_PATH.open("w")
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -155,6 +157,14 @@ def write_slot_job(slot: Path, job: dict, state: str, extra: dict | None = None)
     if extra:
         payload.update(extra)
     atomic_write_json(pipeline_dir / "job.json", payload)
+
+
+def format_job_progress(job: dict, batch_total: int) -> str:
+    return (
+        f"{job['jobId']} "
+        f"(tile {job['sequence']}/{batch_total} "
+        f"lat={job['latitude']} lon={job['longitude']})"
+    )
 
 
 def read_slot_job(slot: Path) -> dict | None:
@@ -374,6 +384,8 @@ def run_stage_b(
     env["PIPELINE_MATRIX_DIR"] = str(matrix_dir)
     env["PIPELINE_LOG_ROOT"] = str(log_root)
     env["PIPELINE_SESSION_LOG"] = str(job_log_root / "runFullProcess.session.log")
+    env["PIPELINE_TMP_DIR"] = str(DEFAULT_TMP_DIR)
+    env["TMPDIR"] = str(DEFAULT_TMP_DIR)
     command = [
         str(SCRIPT_DIR / "runFullProcess.sh"),
         "--destination",
@@ -444,10 +456,15 @@ def run_overlapped_jobs(
 ) -> None:
     validate_initial_slots(output_slot, incoming_slot)
     ready_job: dict | None = None
+    batch_total = len(jobs)
 
     for index, job in enumerate(jobs):
         if ready_job is None:
-            print(f"[superPipeline][INFO] Stage A starting {job['jobId']}.", flush=True)
+            print(
+                f"[superPipeline][INFO] Stage A starting "
+                f"{format_job_progress(job, batch_total)}.",
+                flush=True,
+            )
             try:
                 run_stage_a(job, incoming_slot, log_root, output_slot)
             except Exception as exc:
@@ -459,8 +476,9 @@ def run_overlapped_jobs(
             continue
 
         print(
-            f"[superPipeline][INFO] Stage B starting {ready_job['jobId']} while "
-            f"stage A captures {job['jobId']}.",
+            f"[superPipeline][INFO] Stage B starting "
+            f"{format_job_progress(ready_job, batch_total)} while "
+            f"stage A captures {format_job_progress(job, batch_total)}.",
             flush=True,
         )
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="superpipeline") as executor:
@@ -512,7 +530,11 @@ def run_overlapped_jobs(
         ready_job = job
 
     if ready_job is not None:
-        print(f"[superPipeline][INFO] Draining final stage B for {ready_job['jobId']}.", flush=True)
+        print(
+            f"[superPipeline][INFO] Draining final stage B for "
+            f"{format_job_progress(ready_job, batch_total)}.",
+            flush=True,
+        )
         try:
             run_stage_b(ready_job, output_slot, matrix_dir, destination, log_root, dry_run)
         except Exception as exc:

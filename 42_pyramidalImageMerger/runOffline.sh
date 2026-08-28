@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
-DEFAULT_DELTA="/tmp/matrix/pyramidalImage"
+DEFAULT_DELTA="${PIPELINE_MATRIX_DIR:-/media/ramdisk/matrix}/pyramidalImage"
 
 if [ "$#" -eq 0 ]; then
     ARGS="--offline $DEFAULT_DESTINATION $DEFAULT_DELTA"

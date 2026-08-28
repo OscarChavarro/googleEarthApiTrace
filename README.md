@@ -67,21 +67,28 @@ cd /paradigmas/master/algoritmos_basicos_3d/googleEarthApiTrace
 Preview the selected Spain level-16 tile jobs without running captures:
 
 ```bash
-./scripts/runSpain16.sh --emit-jobs --start-from 29 --limit 5
+./scripts/runSpain16.sh --emit-jobs --start-from 30 --limit 5
 ```
 
 Run a small batch through the super-pipeline in the default overlapped mode. This starts
 processing the previous captured tile while Google Earth captures the next one:
 
 ```bash
-./scripts/runSuperPipeline.sh --start-from 29 --limit 5
+./scripts/runSuperPipeline.sh --start-from 30 --limit 5
+```
+
+Resume the Spain level-16 download in parallel mode from tile 30 using the ramdisk for
+temporary pipeline state:
+
+```bash
+PIPELINE_TMP_DIR=/media/ramdisk ./scripts/runSuperPipeline.sh --start-from 30
 ```
 
 Run the same number of tiles in sequential mode, with no overlap between capture and
 post-processing:
 
 ```bash
-./scripts/runSuperPipeline.sh --start-from 29 --limit 5 --sequential
+./scripts/runSuperPipeline.sh --start-from 30 --limit 5 --sequential
 ```
 
 Run or preview a different tile range by changing `--start-from` and `--limit`. For

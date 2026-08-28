@@ -15,8 +15,10 @@ readonly MAX_LON="4.5"
 readonly TILE_LAT_SPAN="0.25"
 readonly TILE_LON_SPAN="0.25"
 readonly TILE_CENTER_OFFSET="0.125"
-readonly DEFAULT_START_FROM_TILE=29
+readonly DEFAULT_TMP_DIR="${PIPELINE_TMP_DIR:-/media/ramdisk}"
+readonly DEFAULT_START_FROM_TILE=30
 readonly PERFORMANCE_REPORT="/media/ramdisk/pyramidalImageExporterPerformanceReport.log"
+readonly ERRORS_LOG="$PROJECT_DIR/scripts/errors.log"
 
 emit_jobs=0
 start_from_tile="$DEFAULT_START_FROM_TILE"
@@ -27,6 +29,25 @@ die() {
     exit 1
 }
 
+append_tile_error() {
+    local cycle_number="$1"
+    local status="$2"
+    local lat="$3"
+    local lon="$4"
+    local center="$5"
+    local route_command="$6"
+
+    printf '%s | script=runSpain16 | cycle=%s/%s | lat=%s lon=%s center=%s | route=%s | reason=tile_failed_status_%s\n' \
+        "$(date --iso-8601=seconds)" \
+        "$cycle_number" \
+        "$TOTAL_TILES" \
+        "$lat" \
+        "$lon" \
+        "$center" \
+        "$route_command" \
+        "$status" >> "$ERRORS_LOG" || true
+}
+
 usage() {
     cat <<'EOF'
 Usage: ./scripts/runSpain16.sh [options]
@@ -35,7 +56,7 @@ Runs the Spain level-16 batch in the deterministic Madrid-distance order.
 
 Options:
   --emit-jobs      Print the selected jobs as JSONL and do not run captures.
-  --start-from N   Start at tile N in the ordered list (default: 29).
+  --start-from N   Start at tile N in the ordered list (default: 30).
   --limit N        Run or emit at most N jobs after --start-from.
   -h, --help       Show this help.
 EOF
@@ -207,7 +228,8 @@ for index in "${!ORDERED_TILES[@]}"; do
         "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$start_from_tile" "$LAT" "$LON" "$TILE_CENTER"
 
     cycle_start_ns="$(date +%s%N)"
-    run_log="$(mktemp /tmp/runSpain16.runFullProcess.XXXXXX)"
+    mkdir -p "$DEFAULT_TMP_DIR"
+    run_log="$(mktemp "$DEFAULT_TMP_DIR/runSpain16.runFullProcess.XXXXXX")"
     if (
         cp -- "$MY_PLACES_DIR/myplaces.kml.bak" "$MY_PLACES_DIR/myplaces.kml" &&
         cd "$PATH_PLANNER_DIR" &&
@@ -224,8 +246,10 @@ for index in "${!ORDERED_TILES[@]}"; do
             $(((cycle_end_ns - cycle_start_ns) / 1000000)) 2>/dev/null >> "$PERFORMANCE_REPORT" || true
         rm -f -- "$run_log"
     else
+        status=$?
         # A failed tile must not stop the batch nor emit its failure output.
         cycle_end_ns="$(date +%s%N)"
+        append_tile_error "$cycle_number" "$status" "$LAT" "$LON" "$TILE_CENTER" "$route_command"
         printf '[runSpain16] cycle=%d/%d status=FAILED lat=%s lon=%s center=%s elapsed_ms=%d\n' \
             "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON" "$TILE_CENTER" \
             $(((cycle_end_ns - cycle_start_ns) / 1000000)) 2>/dev/null >> "$PERFORMANCE_REPORT" || true
