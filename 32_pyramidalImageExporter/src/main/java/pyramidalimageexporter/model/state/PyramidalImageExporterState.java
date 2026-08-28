@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
+import pyramidalimageexporter.processing.content.ContentHashCatalog;
 import pyramidalimageexporter.processing.uncles.UncleRmsAnalyzer;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.material.RendererConfiguration;
@@ -27,6 +28,8 @@ public final class PyramidalImageExporterState {
     private int selectedLayerIndex = 0;
     private Map<String, String> cataloguedQuadPathsByImagePath = Map.of();
     private Map<String, String> referenceQuadPathsByImagePath = Map.of();
+    private Map<String, String> referenceContentHashByImagePath = Map.of();
+    private ContentHashCatalog contentHashCatalog = new ContentHashCatalog();
     private String referencePyramidFolder;
     private Map<String, String> mergedFullPathByOriginalId = Map.of();
     private UncleRmsAnalyzer.Analysis uncleRmsAnalysis = UncleRmsAnalyzer.Analysis.empty();
@@ -73,6 +76,26 @@ public final class PyramidalImageExporterState {
         this.referenceQuadPathsByImagePath = referenceQuadPathsByImagePath == null
             ? Map.of()
             : Map.copyOf(referenceQuadPathsByImagePath);
+    }
+
+    public Map<String, String> getReferenceContentHashByImagePath() {
+        return referenceContentHashByImagePath;
+    }
+
+    public void setReferenceContentHashByImagePath(Map<String, String> referenceContentHashByImagePath) {
+        this.referenceContentHashByImagePath = referenceContentHashByImagePath == null
+            ? Map.of()
+            : Map.copyOf(referenceContentHashByImagePath);
+    }
+
+    public ContentHashCatalog getContentHashCatalog() {
+        return contentHashCatalog;
+    }
+
+    public void setContentHashCatalog(ContentHashCatalog contentHashCatalog) {
+        this.contentHashCatalog = contentHashCatalog == null
+            ? new ContentHashCatalog()
+            : contentHashCatalog;
     }
 
     public String getReferencePyramidFolder() {

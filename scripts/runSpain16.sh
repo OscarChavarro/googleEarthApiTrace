@@ -16,6 +16,7 @@ readonly TILE_LAT_SPAN="0.25"
 readonly TILE_LON_SPAN="0.25"
 readonly TILE_CENTER_OFFSET="0.125"
 readonly START_FROM_TILE=1
+readonly PERFORMANCE_REPORT="/media/ramdisk/pyramidalImageExporterPerformanceReport.log"
 
 die() {
     printf '[runSpain16][ERROR] %s\n' "$*" >&2
@@ -124,6 +125,9 @@ readonly TOTAL_TILES="${#ORDERED_TILES[@]}"
 
 printf '[runSpain16][INFO] Built %d covered 0.25-degree regions from %d level-15 tiles.\n' \
     "$TOTAL_TILES" "$SOURCE_TILE_COUNT"
+mkdir -p "$(dirname "$PERFORMANCE_REPORT")" 2>/dev/null || true
+printf '[runSpain16] start totalTiles=%d sourceLevel15Tiles=%d pyramidDir=%s\n' \
+    "$TOTAL_TILES" "$SOURCE_TILE_COUNT" "$PYRAMID_DIR" 2>/dev/null >> "$PERFORMANCE_REPORT" || true
 
 for index in "${!ORDERED_TILES[@]}"; do
     cycle_number=$((index + 1))
@@ -134,9 +138,10 @@ for index in "${!ORDERED_TILES[@]}"; do
 
     IFS=$'\t' read -r _distance_sq LAT LON TILE_CENTER <<< "${ORDERED_TILES[$index]}"
 
-    printf '[runSpain16][INFO] Starting cycle %d/%d (tile %d onward) at lat=%s lon=%s center=%s.\n' \
-        "$cycle_number" "$TOTAL_TILES" "$START_FROM_TILE" "$LAT" "$LON" "$TILE_CENTER"
+    printf '[runSpain16][INFO][%s] Starting cycle %d/%d (tile %d onward) at lat=%s lon=%s center=%s.\n' \
+        "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$START_FROM_TILE" "$LAT" "$LON" "$TILE_CENTER"
 
+    cycle_start_ns="$(date +%s%N)"
     run_log="$(mktemp /tmp/runSpain16.runFullProcess.XXXXXX)"
     if (
         cp -- "$MY_PLACES_DIR/myplaces.kml.bak" "$MY_PLACES_DIR/myplaces.kml" &&
@@ -147,11 +152,19 @@ for index in "${!ORDERED_TILES[@]}"; do
             --route-command "./run.sh zigzag $LAT $LON 3500 100 1600 $TILE_LAT_SPAN $TILE_LON_SPAN"
     ) > >(tee "$run_log" | grep --line-buffered '\[PHASE\]') 2>&1; then
         grep -v '\[PHASE\]' "$run_log" || true
-        printf '[runSpain16][INFO] Finished cycle %d/%d at lat=%s lon=%s.\n' \
-            "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON"
+        printf '[runSpain16][INFO][%s] Finished cycle %d/%d at lat=%s lon=%s.\n' \
+            "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON"
+        cycle_end_ns="$(date +%s%N)"
+        printf '[runSpain16] cycle=%d/%d status=OK lat=%s lon=%s center=%s elapsed_ms=%d\n' \
+            "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON" "$TILE_CENTER" \
+            $(((cycle_end_ns - cycle_start_ns) / 1000000)) 2>/dev/null >> "$PERFORMANCE_REPORT" || true
         rm -f -- "$run_log"
     else
         # A failed tile must not stop the batch nor emit its failure output.
+        cycle_end_ns="$(date +%s%N)"
+        printf '[runSpain16] cycle=%d/%d status=FAILED lat=%s lon=%s center=%s elapsed_ms=%d\n' \
+            "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON" "$TILE_CENTER" \
+            $(((cycle_end_ns - cycle_start_ns) / 1000000)) 2>/dev/null >> "$PERFORMANCE_REPORT" || true
         rm -f -- "$run_log"
         pkill -9 google-earth >/dev/null 2>&1 || true
     fi

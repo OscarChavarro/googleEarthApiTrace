@@ -9,9 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import pyramidalimageexporter.config.Configuration;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
-import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
+import pyramidalimageexporter.processing.content.ContentHashCatalog;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
 import pyramidalimageexporter.processing.uncles.FrameJsonUncleMetadataRestorer;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
@@ -27,6 +28,20 @@ public final class TopLevelLayerMerger {
         Map<String, String> cataloguedQuadPathsByImagePath,
         Path outputDirectory
     ) {
+        ContentHashCatalog contentHashCatalog = ContentHashCatalog.build(
+            cataloguedQuadPathsByImagePath == null ? Map.of() : cataloguedQuadPathsByImagePath,
+            Map.of()
+        );
+        return merge(inferredTopLayers, importedLayers, cataloguedQuadPathsByImagePath, contentHashCatalog, outputDirectory);
+    }
+
+    public MergeResult merge(
+        List<MatrixLayer> inferredTopLayers,
+        List<MatrixLayer> importedLayers,
+        Map<String, String> cataloguedQuadPathsByImagePath,
+        ContentHashCatalog contentHashCatalog,
+        Path outputDirectory
+    ) {
         List<MatrixLayer> inferredCopies = copyLayers(inferredTopLayers);
         if (importedLayers == null || importedLayers.isEmpty()) {
             return new MergeResult(inferredCopies, Map.of());
@@ -37,28 +52,39 @@ public final class TopLevelLayerMerger {
             new FrameJsonUncleMetadataRestorer().enrich(importedCopies, outputDirectory);
         }
 
-        Map<String, String> externalFullPaths = buildCoverageAnchors(
+        Map<String, String> externalFullPaths = PerformanceReport.time("topLevelMerge.coverageAnchors", () -> buildCoverageAnchors(
             importedCopies,
-            cataloguedQuadPathsByImagePath
+            contentHashCatalog
+        ));
+        Map<String, String> cataloguedUnclePaths = PerformanceReport.time(
+            "topLevelMerge.externalUncleFullPaths",
+            () -> buildExternalUncleFullPaths(cataloguedQuadPathsByImagePath)
         );
-        Map<String, String> cataloguedUnclePaths = buildExternalUncleFullPaths(cataloguedQuadPathsByImagePath);
         externalFullPaths.putAll(cataloguedUnclePaths);
 
-        ExternalUncleBridgeBuilder.Bridge bridge = new ExternalUncleBridgeBuilder().build(
-            importedCopies,
-            cataloguedQuadPathsByImagePath == null ? Map.of() : cataloguedQuadPathsByImagePath,
-            outputDirectory
+        ExternalUncleBridgeBuilder.Bridge bridge = PerformanceReport.time(
+            "topLevelMerge.externalUncleBridge",
+            () -> new ExternalUncleBridgeBuilder().build(
+                importedCopies,
+                cataloguedQuadPathsByImagePath == null ? Map.of() : cataloguedQuadPathsByImagePath,
+                contentHashCatalog,
+                outputDirectory
+            )
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
 
-        Map<String, String> topVisualFullPaths = new TopLevelVisualAnchorResolver()
-            .resolve(inferredCopies, importedCopies);
-        Map<String, String> externalVisualUnclePaths = new TopLevelVisualAnchorResolver()
-            .resolveExternalTextures(
+        Map<String, String> topVisualFullPaths = PerformanceReport.time(
+            "topLevelMerge.topVisualAnchors",
+            () -> new TopLevelVisualAnchorResolver().resolve(inferredCopies, importedCopies)
+        );
+        Map<String, String> externalVisualUnclePaths = PerformanceReport.time(
+            "topLevelMerge.externalVisualUncleAnchors",
+            () -> new TopLevelVisualAnchorResolver().resolveExternalTextures(
                 inferredCopies,
                 bridge.texturePathByExternalId(),
                 buildNearbyExternalUncleCandidates(importedCopies, topVisualFullPaths)
-            );
+            )
+        );
         externalVisualUnclePaths.forEach(externalFullPaths::putIfAbsent);
         suppressVisualFallbackForExternallyAnchoredLayers(
             topVisualFullPaths,
@@ -71,37 +97,57 @@ public final class TopLevelLayerMerger {
         TileRootPathResolver.Resolution resolution;
         Map<String, String> visualDescendantFullPaths = new LinkedHashMap<>();
         Set<String> replaceableExternalVisualIds = new LinkedHashSet<>(externalVisualUnclePaths.keySet());
+        int iteration = 0;
+        int deepestCataloguedLevel = deepestCataloguedLevel(cataloguedQuadPathsByImagePath);
         while (true) {
-            resolution = pathResolver.resolve(importedCopies, externalFullPaths, bridge.aliasById());
-            ImportedLayerVisualAnchorResolver visualResolver = new ImportedLayerVisualAnchorResolver();
-            Map<String, String> unresolvedExternalTextures = referencedExternalTexturesOfUnresolvedLayers(
-                importedCopies,
-                resolution,
-                bridge.texturePathByExternalId(),
-                externalFullPaths.keySet(),
-                replaceableExternalVisualIds
+            iteration++;
+            int currentIteration = iteration;
+            resolution = PerformanceReport.time(
+                "topLevelMerge.iteration.rootPathResolution",
+                () -> pathResolver.resolve(importedCopies, externalFullPaths, bridge.aliasById())
             );
-            Map<String, String> externalDescendantAnchors = visualResolver.resolveExternalTextures(
-                unresolvedExternalTextures,
-                importedCopies,
-                resolution,
-                deepestCataloguedLevel(cataloguedQuadPathsByImagePath) - 1
+            TileRootPathResolver.Resolution currentResolution = resolution;
+            ImportedLayerVisualAnchorResolver visualResolver = new ImportedLayerVisualAnchorResolver();
+            Map<String, String> unresolvedExternalTextures = PerformanceReport.time(
+                "topLevelMerge.iteration.unresolvedExternalTextures",
+                () -> referencedExternalTexturesOfUnresolvedLayers(
+                    importedCopies,
+                    currentResolution,
+                    bridge.texturePathByExternalId(),
+                    externalFullPaths.keySet(),
+                    replaceableExternalVisualIds
+                )
+            );
+            Map<String, String> externalDescendantAnchors = PerformanceReport.time(
+                "topLevelMerge.iteration.externalDescendantAnchors",
+                () -> visualResolver.resolveExternalTextures(
+                    unresolvedExternalTextures,
+                    importedCopies,
+                    currentResolution,
+                    deepestCataloguedLevel - 1
+                )
             );
             if (!externalDescendantAnchors.isEmpty()) {
+                PerformanceReport.incrementBy("topLevelMerge.iteration.externalDescendantAnchors.found", externalDescendantAnchors.size());
                 externalFullPaths.putAll(externalDescendantAnchors);
                 visualDescendantFullPaths.putAll(externalDescendantAnchors);
                 replaceableExternalVisualIds.removeAll(externalDescendantAnchors.keySet());
                 continue;
             }
-            Map<String, String> visualDescendantAnchors = visualResolver.resolve(
-                importedCopies,
-                resolution,
-                cataloguedQuadPathsByImagePath
+            Map<String, String> visualDescendantAnchors = PerformanceReport.time(
+                "topLevelMerge.iteration.visualDescendantAnchors",
+                () -> visualResolver.resolve(
+                    importedCopies,
+                    currentResolution,
+                    cataloguedQuadPathsByImagePath
+                )
             );
             visualDescendantAnchors.keySet().removeAll(externalFullPaths.keySet());
             if (visualDescendantAnchors.isEmpty()) {
+                PerformanceReport.incrementBy("topLevelMerge.iterations", currentIteration);
                 break;
             }
+            PerformanceReport.incrementBy("topLevelMerge.iteration.visualDescendantAnchors.found", visualDescendantAnchors.size());
             externalFullPaths.putAll(visualDescendantAnchors);
             visualDescendantFullPaths.putAll(visualDescendantAnchors);
         }
@@ -285,11 +331,12 @@ public final class TopLevelLayerMerger {
 
     private static Map<String, String> buildCoverageAnchors(
         List<MatrixLayer> importedLayers,
-        Map<String, String> cataloguedQuadPathsByImagePath
+        ContentHashCatalog contentHashCatalog
     ) {
         Map<String, String> out = new HashMap<>();
-        ContentHashRootPathResolver resolver = new ContentHashRootPathResolver();
-        resolver.indexCataloguedImages(cataloguedQuadPathsByImagePath == null ? Map.of() : cataloguedQuadPathsByImagePath);
+        ContentHashCatalog resolver = contentHashCatalog == null
+            ? ContentHashCatalog.build(Map.of(), Map.of())
+            : contentHashCatalog;
         for (MatrixLayer layer : importedLayers) {
             for (MatrixLayerTile tile : layer.getTiles()) {
                 if (tile.getId() == null || tile.getId().isBlank()) {

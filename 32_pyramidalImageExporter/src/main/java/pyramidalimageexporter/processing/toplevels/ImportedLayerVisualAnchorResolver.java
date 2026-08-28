@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
@@ -43,16 +44,26 @@ final class ImportedLayerVisualAnchorResolver {
         if (layers == null || resolution == null) {
             return anchors;
         }
-        List<ParentTile> parents = stronglyAnchoredParents(layers, resolution);
-        parents.addAll(referenceParentTiles(referenceQuadPathsByImagePath));
-        int maximumTargetLevel = deepestReferenceLevel(referenceQuadPathsByImagePath);
-        for (MatrixLayer childLayer : layers) {
-            if (childLayer == null || childLayer.getTiles() == null || childLayer.getTiles().isEmpty()) {
-                continue;
-            }
-            if (isStronglyResolved(childLayer, resolution)) {
-                continue;
-            }
+        List<MatrixLayer> unresolvedLayers = unresolvedLayers(layers, resolution);
+        if (unresolvedLayers.isEmpty()) {
+            PerformanceReport.increment("importedVisualAnchor.layers.noneUnresolved");
+            return anchors;
+        }
+        List<ParentTile> parents = PerformanceReport.time(
+            "importedVisualAnchor.stronglyAnchoredParents",
+            () -> stronglyAnchoredParents(layers, resolution)
+        );
+        parents.addAll(PerformanceReport.time(
+            "importedVisualAnchor.referenceParentTiles",
+            () -> referenceParentTiles(referenceQuadPathsByImagePath)
+        ));
+        int maximumTargetLevel = PerformanceReport.time(
+            "importedVisualAnchor.deepestReferenceLevel",
+            () -> deepestReferenceLevel(referenceQuadPathsByImagePath)
+        );
+        PerformanceReport.incrementBy("importedVisualAnchor.layers.unresolved", unresolvedLayers.size());
+        PerformanceReport.incrementBy("importedVisualAnchor.parents", parents.size());
+        for (MatrixLayer childLayer : unresolvedLayers) {
             AnchorChoice choice = chooseAnchor(childLayer, layers, parents, maximumTargetLevel);
             if (choice == null) {
                 continue;
@@ -78,6 +89,22 @@ final class ImportedLayerVisualAnchorResolver {
         }
         imageCache.clear();
         return anchors;
+    }
+
+    private List<MatrixLayer> unresolvedLayers(
+        List<MatrixLayer> layers,
+        TileRootPathResolver.Resolution resolution
+    ) {
+        List<MatrixLayer> unresolved = new ArrayList<>();
+        for (MatrixLayer layer : layers) {
+            if (layer == null || layer.getTiles() == null || layer.getTiles().isEmpty()) {
+                continue;
+            }
+            if (!isStronglyResolved(layer, resolution)) {
+                unresolved.add(layer);
+            }
+        }
+        return unresolved;
     }
 
     Map<String, String> resolveExternalTextures(

@@ -27,25 +27,77 @@ proceso:            B(tile 1)       B(tile 2)       B(tile 3)
 
 En régimen estable, el tiempo por tile será aproximadamente
 `max(T_A, T_B)`, no `T_A + T_B`. El log real de `/tmp/googleEarthSession.log` del
-23 de agosto de 2026 muestra capturas de aproximadamente 11 minutos, mientras que
-`32_pyramidalImageExporter` por sí solo emplea habitualmente 24–40 minutos (ejemplos
-recientes: 1446, 1453, 1476, 1578, 1735, 2002, 2404 y 3077 segundos). El resto de B
-añade aproximadamente 8–11 minutos.
+23 de agosto de 2026 muestra capturas de aproximadamente 11 minutos. Antes de las
+optimizaciones de `32_pyramidalImageExporter`, ese módulo por sí solo empleaba
+habitualmente 24–40 minutos (ejemplos recientes: 1446, 1453, 1476, 1578, 1735, 2002,
+2404 y 3077 segundos), y el resto de B añadía aproximadamente 8–11 minutos.
+
+El estado actual ya incorpora una primera reducción importante en `32`: `ContentHashCatalog`
+reutiliza un índice de contenido dentro de la ejecución y `ReferencePyramidCache` mantiene
+`cache.bin` en la pirámide de referencia append-only. Los reportes posteriores muestran
+ejecuciones con referencia alrededor de 1m45s..2m para el exporter, después de pagar una
+construcción inicial lenta de la caché. Por tanto, antes de implementar el superpipeline
+hay que volver a medir `T_B` completo; el límite de 20 minutos puede haber pasado de
+objetivo de segunda fase a candidato realista, pero solo si el percentil 95 de B completa
+lo confirma con datos recientes.
 
 Por ello:
 
 - el solapamiento propuesto es útil y debería eliminar del camino crítico la mayor parte
   de los aproximadamente 11 minutos de captura;
-- **menos de 20 minutos por tile no es un objetivo realista con solo dos etapas y el
-  código actual**, porque B, y con frecuencia solo el módulo 32, ya supera ese tiempo;
-- un primer objetivo realista debe ser medir una cadencia sostenida de aproximadamente
-  30–40 minutos en los tiles actuales, con la variación dictada por el módulo 32;
-- alcanzar menos de 20 minutos requiere una segunda línea de trabajo sobre el módulo 32
-  (perfilado, caché/indexación de la pirámide de referencia, reducción de recorridos y/o
-  paralelismo interno), además del pipeline doble.
+- **menos de 20 minutos por tile ya no debe descartarse usando el baseline antiguo**,
+  porque las optimizaciones recientes de `32` cambiaron el perfil de B;
+- un primer objetivo realista ahora debe ser medir una cadencia sostenida de
+  `max(T_A,T_B)` con las optimizaciones de `32` ya activas, no reutilizar el baseline
+  antiguo;
+- si B completa queda por debajo de la captura, el superpipeline ya no acelerará mucho la
+  latencia de un tile individual, pero sí debe mantener una cadencia estable y eliminar
+  huecos entre captura y proceso;
+- alcanzar menos de 20 minutos solo debe aceptarse cuando una corrida larga confirme el
+  percentil 95 de **B completa**, incluyendo dump, módulos `21`, `22`, `23`, `31`, `32`,
+  dry-run y commit de `42`.
 
 No se debe cambiar ningún contrato geométrico, de IDs, relaciones, quadkeys ni formato de
 pirámide descrito en `doc/README.md`.
+
+## 1.1. Estado actual del código que debe conocer el implementador
+
+El plan sigue siendo viable, pero no parte de un código ya parametrizado para slots. A
+fecha de esta revisión, los puntos duros son:
+
+- `scripts/runFullProcess.sh` ejecuta una copia privada de sí mismo mediante snapshot en
+  `/tmp/google-earth-runFullProcess.snapshot.*`. Cualquier refactor debe preservar este
+  patrón o reemplazarlo por una alternativa equivalente, porque evita que una edición del
+  script corrompa una captura larga en curso.
+- `scripts/runFullProcess.sh` todavía define constantes fijas:
+  `CAPTURE_ROOT=/media/ramdisk/output`, `TRACE_DUMP_DIR=/media/ramdisk/output`,
+  `TRACE_DIRECTORY=/opt/google/earth/pro`, `SESSION_LOG=/tmp/googleEarthSession.log` y
+  `MATRIX_DIR=/tmp/matrix`. Esas son las primeras líneas a convertir en variables de
+  runtime antes de intentar concurrencia.
+- `12_fileSystemChangesDetector/run.sh` siempre ejecuta el detector sobre
+  `/media/ramdisk/output`; debe aceptar una raíz como argumento y conservar ese valor como
+  default.
+- `14_sessionController/session_controller.py` fija `OUTPUT_DIRECTORY =
+  Path("/media/ramdisk/output")` y borra trazas globales con patrón
+  `googleearth-bin*trace`. Debe aceptar raíz de captura, log root y política de traza
+  privada desde argumentos/env.
+- `13_googleEarthController` ya lee `output.directory` desde properties con fallback a
+  `/media/ramdisk/output`; la parametrización más limpia es añadir precedencia a una
+  variable de entorno o argumento, no editar `application.properties` por job.
+- `22`, `23`, `31` y `32` siguen usando `output.directory` en resources/properties con
+  fallback a `/media/ramdisk/output`. Para B pueden seguir usando el nombre lógico
+  `/media/ramdisk/output`; para tests de slots temporales conviene añadir override por
+  env `PIPELINE_OUTPUT_DIRECTORY`.
+- `32_pyramidalImageExporter` ya escribe métricas en
+  `/media/ramdisk/pyramidalImageExporterPerformanceReport.log`; las métricas
+  `referenceCache.*`, `contentHashCatalog.*`, `topLevelMerge.*` e
+  `importedVisualAnchor.*` deben conservarse porque sirven para validar si B vuelve a ser
+  cuello de botella.
+- `scripts/runSpain16.sh` es el proveedor de jobs más actualizado para España: calcula la
+  máscara desde tiles level-15 existentes, ordena por distancia a Madrid, usa
+  `START_FROM_TILE`, registra ciclos en el performance log y sus mensajes `Starting` /
+  `Finished` ya incluyen timestamp minuto-resolución. `runSpain15.sh` sigue siendo útil
+  como referencia, pero está menos alineado con el flujo actual.
 
 ## 2. Restricciones que condicionan el diseño
 
@@ -174,6 +226,63 @@ añadir dos modos internos:
 El modo secuencial sin esas opciones debe seguir funcionando para facilitar rollback y
 comparaciones A/B.
 
+### 4.0. Interfaz concreta recomendada
+
+Implementar primero una CLI pequeña y explícita, aunque internamente siga llamando a
+funciones de shell existentes:
+
+```text
+scripts/runSuperPipeline.sh \
+  --job-source spain16 \
+  --destination /samples/datasets/googleEarth/toplevel \
+  --slot-a /media/ramdisk/output \
+  --slot-b /media/ramdisk/output_incoming \
+  --matrix-dir /tmp/matrix \
+  --log-root /media/ramdisk/logs/superPipeline \
+  [--start-from N] [--limit N] [--sequential]
+```
+
+Para facilitar recuperación, el Python debe tratar las rutas como `Path.resolve()` y
+rechazar symlinks en slots, matriz y destino salvo que se añada soporte explícito. Los
+slots físicos pueden llamarse `slot-a`/`slot-b`; los roles lógicos son `output` e
+`incoming`. El rol lógico debe quedar en `job.json`, no inferirse del nombre del
+directorio.
+
+Funciones mínimas del coordinador:
+
+- `load_or_create_queue()`: genera `jobs.jsonl` determinista desde el proveedor elegido.
+- `preflight()`: comprueba binarios, locks, slots vacíos o recuperables, destino,
+  display/DBus, espacio e inodos.
+- `run_stage_a(job, incoming_slot)`: prepara KML, limpia solo el slot recibido, ejecuta
+  captura, privatiza traza, publica `CAPTURE_READY`.
+- `run_stage_b(job, output_slot)`: vuelca la traza privada, ejecuta módulos `21`, `22`,
+  `23`, `31`, `32`, dry-run y commit `42`, publica estado terminal.
+- `exchange_slots(expected_ready_job)`: intercambia roles y valida `job.json`.
+- `recover()`: decide qué hacer con `CAPTURE_READY`, `PROCESSING`, `CAPTURING` huérfano
+  y handoff incompleto antes de admitir trabajo nuevo.
+
+No implementar la concurrencia hasta que `run_stage_a` y `run_stage_b` funcionen
+secuencialmente sobre slots distintos con logs por job.
+
+### 4.0.1. Provider de jobs `spain16`
+
+Extraer de `scripts/runSpain16.sh` la lógica de máscara/orden a un modo que solo emita
+jobs, sin ejecutar `runFullProcess.sh`. La salida recomendada es JSONL:
+
+```json
+{"sequence":1,"jobId":"spain16-000001-40.25--3.75","latitude":40.25,"longitude":-3.75,"center":"40.375000,-3.625000","routeCommand":"./run.sh zigzag 40.25 -3.75 3500 100 1600 0.25 0.25"}
+```
+
+Reglas:
+
+- `jobId` debe ser determinista y estable entre reinicios para la misma secuencia y
+  coordenadas.
+- Preservar `START_FROM_TILE`, el orden por distancia a Madrid y el cálculo del centro.
+- Conservar una ruta secuencial compatible: `runSpain16.sh` puede delegar en
+  `runSuperPipeline.sh --sequential` cuando el coordinador esté estable.
+- No depender de parsear texto humano `Starting`/`Finished`; esos mensajes sirven para
+  operadores, no para estado de máquina.
+
 ### 4.1. Bucle de ejecución
 
 1. Preflight único: compilar/validar dependencias, comprobar los dos slots, locks,
@@ -202,6 +311,60 @@ Si no se usa `RENAME_EXCHANGE`, el fallback debe llevar un journal de promoción
 estados después de un corte entre renames; nunca debe borrar un directorio cuyo job no
 haya sido identificado y marcado terminal.
 
+### 4.1.1. Handoff sin carreras
+
+El handoff debe ser una operación corta, sin módulos ejecutándose dentro de ninguno de los
+dos slots:
+
+1. Verificar que A terminó con `state=CAPTURE_READY`, que su traza privada existe y que
+   `job.json.captureTraceSha256` coincide.
+2. Verificar que B no está en `PROCESSING`. Si B terminó bien, su job debe estar
+   `COMMITTED`; si terminó mal, el ledger debe contener el fallo antes de liberar el slot.
+3. Tomar un lock de handoff independiente, por ejemplo
+   `/tmp/google-earth-superpipeline-handoff.lock`.
+4. Si existe helper `rename_exchange`, ejecutar intercambio atómico entre los dos paths.
+   El helper debe fallar si cualquiera de los dos no es directorio, si cruza filesystem o
+   si alguna ruta resuelve a symlink.
+5. Si se usa fallback sin `RENAME_EXCHANGE`, escribir
+   `handoff.json.partial -> handoff.json` con `from`, `to`, `readyJobId`, `retiredJobId`
+   y `phase`. Actualizar `phase` antes de cada rename para que `recover()` pueda completar
+   o revertir sin adivinar.
+6. Tras el intercambio, leer `output/_pipeline/job.json` y exigir que `jobId` sea el
+   `CAPTURE_READY` esperado. Si no coincide, detenerse sin limpiar.
+
+No usar `mv output output_old; mv incoming output` sin journal: un corte entre ambos deja
+el nombre lógico ausente y puede hacer que módulos Java arranquen contra datos
+equivocados.
+
+### 4.1.2. Traza privada
+
+El plan no debe confiar en `select_completed_trace()` durante B concurrente. La etapa A
+debe reemplazar ese flujo por:
+
+```text
+/opt/google/earth/pro/googleearth-bin*.trace
+  -> output_incoming/_pipeline/capture.trace.partial
+  -> fsync archivo
+  -> rename capture.trace
+  -> sha256sum
+  -> job.json state=CAPTURE_READY
+  -> borrar traza fuente
+```
+
+La etapa B debe recibir `job.json.captureTracePath` o asumir
+`output/_pipeline/capture.trace` y ejecutar:
+
+```text
+apitrace dump output/_pipeline/capture.trace > output/_pipeline/bigtrace.log.partial
+mv output/_pipeline/bigtrace.log.partial output/_pipeline/bigtrace.log
+21_traceLogSplitter output/_pipeline/bigtrace.log
+rm output/_pipeline/bigtrace.log output/_pipeline/capture.trace
+```
+
+Hasta que `21` haya validado el split, no borrar la traza privada. Después de esa
+validación, borrarla temprano reduce presión de tmpfs y permite que A siga capturando con
+menos riesgo de espacio.
+
 ### 4.2. Adaptación de los scripts masivos
 
 `runSpain15.sh` y `runWorld.sh` no deben seguir siendo largas secuencias que llaman a
@@ -228,6 +391,13 @@ coordinador con Spain15.
   compilados actuales como fallback.
 - Centralizar la construcción de rutas; no dejar usos directos de `OUTPUT_DIRECTORY` en
   cada exportador.
+- Buscar usos en `01_tracer/lib/trace/trace_writer.cpp` y código cercano que genera
+  `manifest.txt`, PNG, DDS, `.bin.bz2` y `.meta.txt`. El cambio correcto es una función
+  tipo `physicalOutputPath(frame, file)` y otra `manifestOutputPath(frame, file)`.
+- Variables propuestas:
+  - `TRACE_OUTPUT_DIRECTORY`: destino físico de escritura.
+  - `TRACE_MANIFEST_OUTPUT_DIRECTORY`: prefijo lógico que aparece en `manifest.txt`.
+  - Si no existen, ambas caen en el `OUTPUT_DIRECTORY` compilado por CMake.
 - Garantizar que la salida normal del proceso espera el vaciado y `join` de los pools PNG
   y bzip2. A no puede publicar `CAPTURE_READY` mientras exista un job asíncrono pendiente.
 - Publicar temporales con nombre parcial y rename para PNG/blobs donde aún no se haga.
@@ -237,6 +407,11 @@ coordinador con Spain15.
 
 - Hacer explícita la raíz a observar mediante argumento o variable de entorno; el
   fallback sigue siendo `/media/ramdisk/output`.
+- `12_fileSystemChangesDetector/run.sh` actualmente ejecuta siempre
+  `fileSystemChangesDetector /media/ramdisk/output`. Cambiarlo a:
+  `exec "$BUILD_DIR/fileSystemChangesDetector" "${1:-${PIPELINE_OUTPUT_DIRECTORY:-/media/ramdisk/output}}"`.
+- `13_googleEarthController` debe pasar esa raíz a `12` cuando lo lance; si solo cambia
+  su `application.properties` se vuelve difícil ejecutar dos slots en tests.
 - En superpipeline, 13 debe lanzar 12 apuntando a `output_incoming` y esperar su `ready`.
 - Mantener el protocolo actual real (`ready`, `activity`, `exit`) y actualizar la sección
   desactualizada de `doc/README.md` que todavía documenta `Updated at ...`.
@@ -244,6 +419,13 @@ coordinador con Spain15.
 ### `14_sessionController`
 
 - Aceptar/propagar la raíz de captura y validar `output_incoming`.
+- `14_sessionController/session_controller.py` fija `OUTPUT_DIRECTORY` y ejecuta
+  `13_googleEarthController/run.sh --offline`. Añadir argumentos como
+  `--capture-root PATH`, `--log-root PATH` y `--private-trace PATH`; propagar
+  `PIPELINE_OUTPUT_DIRECTORY` al entorno de 13 y 12.
+- La limpieza de trazas globales en `remove_google_earth_traces()` solo puede ejecutarse
+  mientras no exista una B que dependa de una traza global. Tras introducir traza privada,
+  esa limpieza vuelve a ser segura para la siguiente A.
 - Separar “Google Earth terminó” de “artefactos capturados publicados”. La segunda
   condición incluye pools drenados, traza copiada y validaciones del slot.
 - Mantener el cierre dirigido al PID exacto y los códigos de salida actuales.
@@ -252,6 +434,14 @@ coordinador con Spain15.
 
 - Extraer preflight común, A, B y validaciones a funciones/modos invocables.
 - Parametrizar `CAPTURE_ROOT`, `TRACE_DUMP_DIR`, `MATRIX_DIR`, log y job descriptor.
+- Preservar el snapshot inicial del script o mover la lógica a Python; no volver a un
+  shell largo que se lee directamente desde `scripts/runFullProcess.sh` durante horas.
+- Añadir opciones concretas:
+  - `--stage-a --job-file PATH --capture-root PATH --logical-output-root PATH`
+  - `--stage-b --job-file PATH --capture-root PATH --matrix-dir PATH --destination PATH`
+  - `--session-log PATH --run-dir PATH`
+- En modo `--stage-a`, no tomar el lock de `/tmp/matrix` ni del destino consolidado.
+- En modo `--stage-b`, no ejecutar `14_sessionController` ni limpiar trazas globales.
 - En B seleccionar `output/_pipeline/capture.trace`, no el glob de `/opt`.
 - Mantener todas las validaciones actuales: 320 strips y apariencias, export completo,
   colocación de todas las matrices, dry-run de 42 y validación del commit.
@@ -264,6 +454,22 @@ No es necesario cambiar sus contratos. Como mejora de testabilidad, aceptar
 `PIPELINE_OUTPUT_DIRECTORY` con precedencia sobre `application.properties`, conservando
 el default actual. Esto permitirá pruebas con slots temporales sin editar recursos del
 proyecto.
+
+Detalles actuales:
+
+- `22_dumpAnalyzer/config/Configuration.java`, `23_frameTextureNormalizer/config/Configuration.java`,
+  `31_matrixMerger/MatrixMergerApplication.java` y
+  `32_pyramidalImageExporter/config/Configuration.java` leen `output.directory` con
+  fallback a `/media/ramdisk/output`.
+- La precedencia recomendada es: argumento CLI si existe, luego `PIPELINE_OUTPUT_DIRECTORY`,
+  luego `application.properties`, luego default. Evitar escribir properties desde el
+  coordinador.
+- `31_matrixMerger/runOffline.sh` y `32_pyramidalImageExporter/runOffline.sh` ya aceptan
+  `/tmp/matrix` como argumento de staging; el coordinador debe pasar siempre `--matrix-dir`
+  o equivalente y no depender del default.
+- `32_pyramidalImageExporter` usa `ReferencePyramidCache` (`cache.bin`) y métricas de
+  performance. El superpipeline no debe borrar ni recrear ese cache; vive bajo el destino
+  consolidado append-only y es compartido entre jobs.
 
 ### Módulo `42`
 
@@ -343,10 +549,53 @@ handoff, tiempo bloqueado por espacio, pico del tmpfs, tamaños de output/traza/
 resultado y recuentos de tiles. Mantener además los mensajes de progreso parseables ya
 existentes.
 
+Campos mínimos recomendados para `metrics.json`:
+
+```json
+{
+  "jobId": "spain16-000001-40.25--3.75",
+  "sequence": 1,
+  "stageA": {"startedAt": "...", "finishedAt": "...", "elapsedSeconds": 0},
+  "stageB": {"startedAt": "...", "finishedAt": "...", "elapsedSeconds": 0},
+  "modules": {
+    "14_sessionController": 0,
+    "apitrace_dump": 0,
+    "21_traceLogSplitter": 0,
+    "22_dumpAnalyzer": 0,
+    "23_frameTextureNormalizer": 0,
+    "31_matrixMerger": 0,
+    "32_pyramidalImageExporter": 0,
+    "42_dry_run": 0,
+    "42_commit": 0
+  },
+  "sizes": {
+    "captureRootBytes": 0,
+    "captureTraceBytes": 0,
+    "bigtraceBytes": 0,
+    "matrixBytes": 0,
+    "tmpfsFreeBytesAtStart": 0,
+    "tmpfsFreeBytesAtEnd": 0
+  },
+  "module32": {
+    "performanceReportStart": "...",
+    "elapsed": "...",
+    "referenceCacheEntriesNew": 0,
+    "referenceCacheHashReused": 0,
+    "contentHashFileCount": 0
+  }
+}
+```
+
+El coordinador puede extraer `module32` del bloque más reciente de
+`/media/ramdisk/pyramidalImageExporterPerformanceReport.log` usando el `start:` y `args:`
+del job. Si no puede correlacionarlo de forma inequívoca, debe copiar el reporte antes y
+después de cada job y guardar el delta en el directorio de logs del job.
+
 Benchmark mínimo:
 
-1. Ejecutar 10–20 tiles representativos secuencialmente para obtener `T_A`, `T_B` y sus
-   subpasos.
+1. Ejecutar 10–20 tiles representativos secuencialmente con el código actual para obtener
+   `T_A`, `T_B` y sus subpasos. No usar los tiempos antiguos de `32` como baseline
+   principal: pertenecen al periodo previo a `ContentHashCatalog` y `ReferencePyramidCache`.
 2. Ejecutar exactamente los mismos tiles con dos etapas.
 3. Comparar hashes/quadkeys del delta y el resultado de 42; el resultado debe ser idéntico
    al secuencial.
@@ -364,18 +613,25 @@ Métricas de aceptación de la primera entrega:
 - recuperación probada después de cortar A, B y cada lado del handoff;
 - ninguna pérdida de un job fallido antes de quedar en el ledger;
 - mejora demostrable de throughput frente al baseline, sin prometer aún 20 minutos.
+- en los logs de `32`, `contentHash.indexCataloguedImages.inputPaths` debe mantenerse
+  cercano a `catalogued + reference selected`, no multiplicado por 5; `referenceCache.hash.reused`
+  debe dominar sobre `referenceCache.hash.count` después del primer calentamiento.
 
 ## 9. Orden de implementación recomendado
 
 ### Fase 0: baseline y pruebas de contrato
 
-- Añadir extracción automática de tiempos del log y medir tamaños máximos.
+- Añadir extracción automática de tiempos del log y medir tamaños máximos con el código
+  actual, incluyendo las métricas nuevas de `32`.
 - Crear fixtures pequeños para manifests y dos slots temporales.
 - Congelar mediante tests el resultado secuencial de varios tiles conocidos.
+- Crear el provider JSONL de `spain16` sin ejecutar capturas.
 
 ### Fase 1: parametrización sin concurrencia
 
 - Implementar los dos directorios del tracer y la raíz configurable de 12/13/14.
+- Parametrizar `runFullProcess.sh` o extraer sus funciones a un runner invocable por
+  etapa, manteniendo el modo secuencial antiguo.
 - Hacer que una ejecución secuencial capture en `output_incoming`, promocione y procese
   en `output`.
 - Verificar manifests, traza privada y equivalencia completa. Mantener este modo como
@@ -396,11 +652,13 @@ Métricas de aceptación de la primera entrega:
 
 ### Fase 4: objetivo inferior a 20 minutos
 
-- Perfilar el módulo 32 separando escaneo de referencia, hashing/decodificación,
-  resolución de anchors, copia de PNG y render/export.
-- Evitar reindexar la pirámide consolidada completa en cada tile mediante una caché
-  persistente invalidada por cambios de 42 o un índice incremental mantenido al hacer el
-  merge.
+- Perfilar nuevamente B completa. Si `32` vuelve a dominar, usar sus métricas actuales:
+  `referenceCache.scan`, `referenceCache.files.visited`, `contentHashCatalog.resolve`,
+  `topLevelMerge.*`, `frameCameraGeoAnchors`, `export.referenceContentRigidAnchors` y
+  `export.buildManifest`.
+- Mantener la caché persistente de `32` y no invalidarla salvo corrupción o cambio de
+  formato. La pirámide consolidada se trata como append-only para PNG existentes; el
+  cache debe procesar solo archivos nuevos.
 - Revisar si el modo usado por automatización hace trabajo de render/diagnóstico que no
   necesita `--export`.
 - Paralelizar únicamente los subpasos demostrados como CPU-bound y mantener acotadas las

@@ -26,12 +26,13 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 import pyramidalimageexporter.config.Configuration;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.io.MatrixLayerIdRewriteWriter;
 import pyramidalimageexporter.model.PyramidalImageWriteStatistics;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
-import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
+import pyramidalimageexporter.processing.content.ContentHashCatalog;
 import pyramidalimageexporter.processing.content.ReferenceContentRigidAnchorResolver;
 import pyramidalimageexporter.processing.geography.FrameCameraGeoAnchorResolver;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
@@ -92,57 +93,89 @@ public final class SessionPyramidalImageExportService {
             return;
         }
         Path rootDirectory = Path.of(destination);
-        if (!ensureDirectory(rootDirectory)) {
+        if (!PerformanceReport.time("export.ensureDestinationDirectory", () -> ensureDirectory(rootDirectory))) {
             reportStatus(model, "Export failed: destination directory is not accessible: " + rootDirectory);
             return;
         }
 
         Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
-        new FrameJsonUncleMetadataRestorer().enrich(model.getMatrixLayers(), outputDirectory);
+        PerformanceReport.time(
+            "export.restoreFrameJsonUncleMetadata",
+            () -> new FrameJsonUncleMetadataRestorer().enrich(model.getMatrixLayers(), outputDirectory)
+        );
 
         Map<String, String> anchorCatalog = anchorCatalog(model);
-        Map<String, String> preliminaryExternalPaths = buildExternalUncleFullPaths(anchorCatalog);
+        Map<String, String> preliminaryExternalPaths = PerformanceReport.time(
+            "export.preliminaryExternalPathsFromCatalog",
+            () -> buildExternalUncleFullPaths(anchorCatalog)
+        );
         preliminaryExternalPaths.putAll(model.getMergedFullPathByOriginalId());
-        ExternalUncleBridgeBuilder.Bridge preliminaryBridge = new ExternalUncleBridgeBuilder().build(
-            model.getMatrixLayers(),
-            anchorCatalog,
-            outputDirectory
+        ExternalUncleBridgeBuilder.Bridge preliminaryBridge = PerformanceReport.time(
+            "export.preliminaryExternalUncleBridge",
+            () -> new ExternalUncleBridgeBuilder().build(
+                model.getMatrixLayers(),
+                anchorCatalog,
+                model.getContentHashCatalog(),
+                outputDirectory
+            )
         );
         preliminaryExternalPaths.putAll(preliminaryBridge.fullPathByExternalId());
-        TileRootPathResolver.Resolution preliminaryResolution = rootPathResolver.resolve(
-            model.getMatrixLayers(),
-            preliminaryExternalPaths,
-            preliminaryBridge.aliasById()
+        TileRootPathResolver.Resolution preliminaryResolution = PerformanceReport.time(
+            "export.preliminaryRootPathResolution",
+            () -> rootPathResolver.resolve(
+                model.getMatrixLayers(),
+                preliminaryExternalPaths,
+                preliminaryBridge.aliasById()
+            )
         );
-        Set<String> structurallyAnchoredLayers = resolvedLayerNames(
-            model.getMatrixLayers(),
-            preliminaryResolution
+        Set<String> structurallyAnchoredLayers = PerformanceReport.time(
+            "export.resolveStructurallyAnchoredLayerNames",
+            () -> resolvedLayerNames(
+                model.getMatrixLayers(),
+                preliminaryResolution
+            )
         );
         ReferenceContentRigidAnchorResolver.Anchors referenceContentAnchors =
             model.getReferencePyramidFolder() == null
                 ? new ReferenceContentRigidAnchorResolver.Anchors(Map.of(), Set.of())
-                : new ReferenceContentRigidAnchorResolver().resolve(
-                    model.getMatrixLayers(),
-                    Path.of(model.getReferencePyramidFolder()),
-                    preliminaryResolution
+                : PerformanceReport.time(
+                    "export.referenceContentRigidAnchors",
+                    () -> new ReferenceContentRigidAnchorResolver().resolve(
+                        model.getMatrixLayers(),
+                        Path.of(model.getReferencePyramidFolder()),
+                        preliminaryResolution
+                    )
                 );
-        FrameCameraGeoAnchorResolver.Anchors geographicAnchors = new FrameCameraGeoAnchorResolver().resolve(
-            model.getMatrixLayers(),
-            outputDirectory,
-            model.getReferenceQuadPathsByImagePath(),
-            preliminaryResolution
+        FrameCameraGeoAnchorResolver.Anchors geographicAnchors = PerformanceReport.time(
+            "export.frameCameraGeoAnchors",
+            () -> new FrameCameraGeoAnchorResolver().resolve(
+                model.getMatrixLayers(),
+                outputDirectory,
+                model.getReferenceQuadPathsByImagePath(),
+                preliminaryResolution
+            )
         );
         Set<String> protectedLayers = new HashSet<>(structurallyAnchoredLayers);
         protectedLayers.addAll(referenceContentAnchors.anchoredLayerNames());
         protectedLayers.addAll(geographicAnchors.anchoredLayerNames());
-        applyContentHashAnchors(model, protectedLayers);
+        PerformanceReport.time(
+            "export.applyContentHashAnchors",
+            () -> applyContentHashAnchors(model, protectedLayers, model.getContentHashCatalog())
+        );
 
-        Map<String, String> externalFullPaths = buildExternalUncleFullPaths(anchorCatalog);
+        Map<String, String> externalFullPaths = PerformanceReport.time(
+            "export.externalPathsFromCatalog",
+            () -> buildExternalUncleFullPaths(anchorCatalog)
+        );
         externalFullPaths.putAll(model.getMergedFullPathByOriginalId());
-        ExternalUncleBridgeBuilder.Bridge bridge = new ExternalUncleBridgeBuilder().build(
-            model.getMatrixLayers(),
-            anchorCatalog,
-            outputDirectory
+        ExternalUncleBridgeBuilder.Bridge bridge = PerformanceReport.time(
+            "export.externalUncleBridge",
+            () -> new ExternalUncleBridgeBuilder().build(
+                model.getMatrixLayers(),
+                anchorCatalog,
+                model.getContentHashCatalog(),
+                outputDirectory
+            )
         );
         externalFullPaths.putAll(bridge.fullPathByExternalId());
         Set<String> directlyPlacedLayerNames = new HashSet<>(geographicAnchors.anchoredLayerNames());
@@ -159,14 +192,16 @@ public final class SessionPyramidalImageExportService {
                 + " externally anchored id(s) and " + bridge.aliasById().size()
                 + " dangling-uncle alias(es) available for root path resolution."
         );
-        TileRootPathResolver.Resolution resolution =
-            rootPathResolver.resolve(model.getMatrixLayers(), externalFullPaths, bridge.aliasById());
-        reportPlacement(model, resolution);
-        reportMissingAbsoluteSeed(model, resolution);
+        TileRootPathResolver.Resolution resolution = PerformanceReport.time(
+            "export.rootPathResolution",
+            () -> rootPathResolver.resolve(model.getMatrixLayers(), externalFullPaths, bridge.aliasById())
+        );
+        PerformanceReport.time("export.reportPlacement", () -> reportPlacement(model, resolution));
+        PerformanceReport.time("export.reportMissingAbsoluteSeed", () -> reportMissingAbsoluteSeed(model, resolution));
 
         ExportManifest manifest;
         try {
-            manifest = buildExportManifest(model, resolution);
+            manifest = PerformanceReport.time("export.buildManifest", () -> buildExportManifest(model, resolution));
         }
         catch (IllegalStateException ex) {
             reportStatus(model, "Export failed before writing: " + ex.getMessage());
@@ -196,7 +231,7 @@ public final class SessionPyramidalImageExportService {
             );
             return;
         }
-        if (!clearPreviousExport(rootDirectory)) {
+        if (!PerformanceReport.time("export.clearPreviousExport", () -> clearPreviousExport(rootDirectory))) {
             reportStatus(model, "Export failed: could not clear previous pyramid at " + rootDirectory);
             return;
         }
@@ -217,9 +252,11 @@ public final class SessionPyramidalImageExportService {
         ExecutorService executor = Executors.newFixedThreadPool(exportThreads);
         ExecutorCompletionService<Boolean> completedTiles = new ExecutorCompletionService<>(executor);
         try {
+            long submitStartNanos = System.nanoTime();
             for (ExportEntry entry : manifest.entries()) {
                 completedTiles.submit(() -> exportTile(rootDirectory, entry.fullPath(), entry.tile(), statistics));
             }
+            PerformanceReport.addNanos("export.tile.submitAll", System.nanoTime() - submitStartNanos);
             while (processed < totalTiles) {
                 Future<Boolean> completed = completedTiles.take();
                 try {
@@ -401,14 +438,16 @@ public final class SessionPyramidalImageExportService {
 
     private static void applyContentHashAnchors(
         PyramidalImageExporterState model,
-        Set<String> geographicallyAnchoredLayerNames
+        Set<String> geographicallyAnchoredLayerNames,
+        ContentHashCatalog resolver
     ) {
         String inputFolder = model.getInputFolder();
         if (inputFolder == null) {
             return;
         }
-        ContentHashRootPathResolver resolver = new ContentHashRootPathResolver();
-        resolver.indexCataloguedImages(anchorCatalog(model));
+        ContentHashCatalog contentHashCatalog = resolver == null
+            ? ContentHashCatalog.build(anchorCatalog(model), model.getReferenceContentHashByImagePath())
+            : resolver;
 
         MatrixLayerIdRewriteWriter rewriter = new MatrixLayerIdRewriteWriter();
         for (MatrixLayer layer : model.getMatrixLayers()) {
@@ -424,7 +463,7 @@ public final class SessionPyramidalImageExportService {
                 if (tile == null || isQuadPath(tile.getId())) {
                     continue;
                 }
-                Optional<String> resolvedQuadPath = resolver.resolveQuadPath(tile.getTextureFile());
+                Optional<String> resolvedQuadPath = contentHashCatalog.resolveQuadPath(tile.getTextureFile());
                 if (resolvedQuadPath.isEmpty()) {
                     continue;
                 }
@@ -610,38 +649,71 @@ public final class SessionPyramidalImageExportService {
         try {
             Path firstPath = Path.of(first.getTextureFile());
             Path secondPath = Path.of(second.getTextureFile());
-            if (!Files.isRegularFile(firstPath) || !Files.isRegularFile(secondPath)) {
+            if (!PerformanceReport.time("fs.sameTextureContent.stat", () -> Files.isRegularFile(firstPath))
+                || !PerformanceReport.time("fs.sameTextureContent.stat", () -> Files.isRegularFile(secondPath))) {
                 return false;
             }
-            if (Files.mismatch(firstPath, secondPath) == -1L) {
+            Long mismatch = PerformanceReport.time("fs.sameTextureContent.mismatch", () -> {
+                try {
+                    return Files.mismatch(firstPath, secondPath);
+                }
+                catch (IOException ex) {
+                    throw new FileComparisonException(ex);
+                }
+            });
+            PerformanceReport.increment("fs.sameTextureContent.mismatch.count");
+            if (mismatch == -1L) {
                 return true;
             }
             return sameDecodedPixels(firstPath, secondPath);
         }
-        catch (IOException | RuntimeException ex) {
+        catch (RuntimeException ex) {
             return false;
         }
     }
 
     private static boolean sameDecodedPixels(Path firstPath, Path secondPath) {
         try {
-            BufferedImage first = ImageIO.read(firstPath.toFile());
-            BufferedImage second = ImageIO.read(secondPath.toFile());
+            BufferedImage first = PerformanceReport.time(
+                "image.sameDecodedPixels.read",
+                () -> {
+                    try {
+                        return ImageIO.read(firstPath.toFile());
+                    }
+                    catch (IOException ex) {
+                        throw new ImageReadException(ex);
+                    }
+                }
+            );
+            BufferedImage second = PerformanceReport.time(
+                "image.sameDecodedPixels.read",
+                () -> {
+                    try {
+                        return ImageIO.read(secondPath.toFile());
+                    }
+                    catch (IOException ex) {
+                        throw new ImageReadException(ex);
+                    }
+                }
+            );
             if (first == null || second == null
                 || first.getWidth() != second.getWidth()
                 || first.getHeight() != second.getHeight()) {
                 return false;
             }
+            long compareStartNanos = System.nanoTime();
             for (int y = 0; y < first.getHeight(); y++) {
                 for (int x = 0; x < first.getWidth(); x++) {
                     if (first.getRGB(x, y) != second.getRGB(x, y)) {
+                        PerformanceReport.addNanos("image.sameDecodedPixels.compareRgb", System.nanoTime() - compareStartNanos);
                         return false;
                     }
                 }
             }
+            PerformanceReport.addNanos("image.sameDecodedPixels.compareRgb", System.nanoTime() - compareStartNanos);
             return true;
         }
-        catch (IOException | RuntimeException ex) {
+        catch (RuntimeException ex) {
             return false;
         }
     }
@@ -676,10 +748,21 @@ public final class SessionPyramidalImageExportService {
         catch (RuntimeException ex) {
             return false;
         }
-        if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+        if (!PerformanceReport.time("image.is256Square.stat", () -> Files.isRegularFile(path))
+            || !PerformanceReport.time("image.is256Square.stat", () -> Files.isReadable(path))) {
             return false;
         }
-        try (ImageInputStream input = ImageIO.createImageInputStream(path.toFile())) {
+        try (ImageInputStream input = PerformanceReport.time(
+            "image.is256Square.open",
+            () -> {
+                try {
+                    return ImageIO.createImageInputStream(path.toFile());
+                }
+                catch (IOException ex) {
+                    throw new ImageReadException(ex);
+                }
+            }
+        )) {
             if (input == null) {
                 return false;
             }
@@ -690,13 +773,23 @@ public final class SessionPyramidalImageExportService {
             ImageReader reader = readers.next();
             try {
                 reader.setInput(input, true, true);
-                return reader.getWidth(0) == TILE_PIXEL_SIZE && reader.getHeight(0) == TILE_PIXEL_SIZE;
+                return PerformanceReport.time(
+                    "image.is256Square.readDimensions",
+                    () -> {
+                        try {
+                            return reader.getWidth(0) == TILE_PIXEL_SIZE && reader.getHeight(0) == TILE_PIXEL_SIZE;
+                        }
+                        catch (IOException ex) {
+                            throw new ImageReadException(ex);
+                        }
+                    }
+                );
             }
             finally {
                 reader.dispose();
             }
         }
-        catch (IOException ex) {
+        catch (ImageReadException | IOException ex) {
             return false;
         }
     }
@@ -742,22 +835,43 @@ public final class SessionPyramidalImageExportService {
         PyramidalImageWriteStatistics statistics
     ) {
         Path tileDirectory = directoryFor(rootDirectory, fullPath);
-        if (!ensureDirectory(tileDirectory)) {
+        if (!PerformanceReport.time("export.tile.ensureDirectory", () -> ensureDirectory(tileDirectory))) {
             return false;
         }
         File outputFile = tileDirectory.resolve(fullPath + ".png").toFile();
 
         // Session-local export: the slot is simply (re)written from this
         // session's data, without ever reading what a previous run left there.
-        boolean existedBefore = outputFile.isFile();
+        boolean existedBefore = PerformanceReport.time("export.tile.outputExistsStat", outputFile::isFile);
         try {
-            Files.copy(
-                Path.of(tile.getTextureFile()),
-                outputFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING
+            Path source = Path.of(tile.getTextureFile());
+            Long sourceSize = PerformanceReport.time("export.tile.sourceSizeStat", () -> {
+                try {
+                    return Files.size(source);
+                }
+                catch (IOException ex) {
+                    return 0L;
+                }
+            });
+            PerformanceReport.time(
+                "export.tile.copy",
+                () -> {
+                    try {
+                        Files.copy(
+                            source,
+                            outputFile.toPath(),
+                            StandardCopyOption.REPLACE_EXISTING
+                        );
+                    }
+                    catch (IOException ex) {
+                        throw new TileCopyException(ex);
+                    }
+                }
             );
+            PerformanceReport.increment("export.tile.copy.count");
+            PerformanceReport.incrementBy("export.tile.copy.bytes", sourceSize);
         }
-        catch (IOException | RuntimeException ex) {
+        catch (RuntimeException ex) {
             System.out.println(
                 "SessionPyramidalImageExportService: could not copy native tile to "
                     + outputFile + ": " + ex.getMessage()
@@ -775,14 +889,32 @@ public final class SessionPyramidalImageExportService {
 
     private static boolean clearPreviousExport(Path rootDirectory) {
         try (var paths = Files.walk(rootDirectory)) {
-            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+            List<Path> pathList = PerformanceReport.time(
+                "export.clearPreviousExport.walkAndSort",
+                () -> paths.sorted(Comparator.reverseOrder()).toList()
+            );
+            PerformanceReport.incrementBy("export.clearPreviousExport.paths", pathList.size());
+            for (Path path : pathList) {
                 if (!path.equals(rootDirectory)) {
-                    Files.deleteIfExists(path);
+                    boolean deleted = PerformanceReport.time(
+                        "export.clearPreviousExport.deleteIfExists",
+                        () -> {
+                            try {
+                                return Files.deleteIfExists(path);
+                            }
+                            catch (IOException ex) {
+                                throw new DeleteExportException(ex);
+                            }
+                        }
+                    );
+                    if (deleted) {
+                        PerformanceReport.increment("export.clearPreviousExport.deleted");
+                    }
                 }
             }
             return true;
         }
-        catch (IOException ex) {
+        catch (IOException | DeleteExportException ex) {
             System.out.println(
                 "SessionPyramidalImageExportService: could not clear previous export at "
                     + rootDirectory + ": " + ex.getMessage()
@@ -814,5 +946,29 @@ public final class SessionPyramidalImageExportService {
             return false;
         }
         return Files.isDirectory(directory) && Files.isWritable(directory);
+    }
+
+    private static final class FileComparisonException extends RuntimeException {
+        private FileComparisonException(Throwable cause) {
+            super(cause);
+        }
+    }
+
+    private static final class ImageReadException extends RuntimeException {
+        private ImageReadException(Throwable cause) {
+            super(cause);
+        }
+    }
+
+    private static final class TileCopyException extends RuntimeException {
+        private TileCopyException(Throwable cause) {
+            super(cause);
+        }
+    }
+
+    private static final class DeleteExportException extends RuntimeException {
+        private DeleteExportException(Throwable cause) {
+            super(cause);
+        }
     }
 }

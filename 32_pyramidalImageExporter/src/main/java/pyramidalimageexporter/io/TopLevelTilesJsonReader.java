@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.TopLevelTilesCatalog;
 
 public final class TopLevelTilesJsonReader {
@@ -23,7 +24,17 @@ public final class TopLevelTilesJsonReader {
             return Optional.empty();
         }
         try {
-            TopLevelTilesCatalog parsed = JSON.readValue(topLevelTilesPath.toFile(), TopLevelTilesCatalog.class);
+            TopLevelTilesCatalog parsed = PerformanceReport.time(
+                "topLevelTilesJsonReader.readJson",
+                () -> {
+                    try {
+                        return JSON.readValue(topLevelTilesPath.toFile(), TopLevelTilesCatalog.class);
+                    }
+                    catch (IOException ex) {
+                        throw new TopLevelTilesReadException(ex);
+                    }
+                }
+            );
             if (parsed == null || parsed.getByStripId() == null || parsed.getByStripId().isEmpty()) {
                 System.out.println("TopLevelTilesJsonReader: file read but contains no strips.");
                 return Optional.empty();
@@ -51,9 +62,15 @@ public final class TopLevelTilesJsonReader {
             );
             return Optional.of(parsed);
         }
-        catch (IOException ex) {
+        catch (TopLevelTilesReadException ex) {
             System.out.println("Unable to read " + topLevelTilesPath + ": " + ex.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private static final class TopLevelTilesReadException extends RuntimeException {
+        private TopLevelTilesReadException(Throwable cause) {
+            super(cause);
         }
     }
 }

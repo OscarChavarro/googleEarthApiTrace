@@ -13,9 +13,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
-import pyramidalimageexporter.processing.content.ContentHashRootPathResolver;
+import pyramidalimageexporter.processing.content.ContentHashCatalog;
 
 /**
  * Repairs uncle references that dangle because their target tile did not
@@ -46,6 +47,19 @@ public final class ExternalUncleBridgeBuilder {
     private final Map<String, JsonNode> frameJsonCache = new HashMap<>();
 
     public Bridge build(List<MatrixLayer> layers, Map<String, String> quadLabelByImagePath, Path outputDirectory) {
+        ContentHashCatalog contentResolver = ContentHashCatalog.build(
+            quadLabelByImagePath == null ? Map.of() : quadLabelByImagePath,
+            Map.of()
+        );
+        return build(layers, quadLabelByImagePath, contentResolver, outputDirectory);
+    }
+
+    public Bridge build(
+        List<MatrixLayer> layers,
+        Map<String, String> quadLabelByImagePath,
+        ContentHashCatalog contentResolver,
+        Path outputDirectory
+    ) {
         Map<String, String> fullPathByExternalId = new HashMap<>();
         Map<String, String> aliasById = new HashMap<>();
         Map<String, String> texturePathByExternalId = new HashMap<>();
@@ -53,8 +67,9 @@ public final class ExternalUncleBridgeBuilder {
             return new Bridge(fullPathByExternalId, aliasById, texturePathByExternalId);
         }
         Map<String, String> catalogued = quadLabelByImagePath == null ? Map.of() : quadLabelByImagePath;
-        ContentHashRootPathResolver contentResolver = new ContentHashRootPathResolver();
-        contentResolver.indexCataloguedImages(catalogued);
+        ContentHashCatalog resolver = contentResolver == null
+            ? ContentHashCatalog.build(catalogued, Map.of())
+            : contentResolver;
 
         Set<String> loadedIds = new HashSet<>();
         Map<String, String> tileIdByTexture = new HashMap<>();
@@ -91,7 +106,7 @@ public final class ExternalUncleBridgeBuilder {
                 indexByContentHash(tileIdByTextureHash, ambiguousTextureHashes, canonicalTexture, tile.getId());
                 String label = catalogued.get(canonicalTexture);
                 if (label == null) {
-                    label = contentResolver.resolveQuadPath(canonicalTexture).orElse(null);
+                    label = resolver.resolveQuadPath(canonicalTexture).orElse(null);
                 }
                 if (label != null) {
                     fullPathByExternalId.putIfAbsent(tile.getId(), requireFullPath(label));
@@ -123,7 +138,7 @@ public final class ExternalUncleBridgeBuilder {
                     texturePathByExternalId.putIfAbsent(uncleId, textureFile);
                     String label = catalogued.get(textureFile);
                     if (label == null) {
-                        label = contentResolver.resolveQuadPath(textureFile).orElse(null);
+                        label = resolver.resolveQuadPath(textureFile).orElse(null);
                     }
                     if (label != null) {
                         fullPathByExternalId.put(uncleId, requireFullPath(label));
@@ -156,7 +171,8 @@ public final class ExternalUncleBridgeBuilder {
         }
         try {
             Path path = Path.of(textureFile);
-            return Files.isRegularFile(path) && Files.isReadable(path);
+            return PerformanceReport.time("externalUncleBridge.texture.stat", () -> Files.isRegularFile(path))
+                && PerformanceReport.time("externalUncleBridge.texture.stat", () -> Files.isReadable(path));
         }
         catch (RuntimeException ex) {
             return false;
@@ -198,10 +214,23 @@ public final class ExternalUncleBridgeBuilder {
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(Files.readAllBytes(Path.of(textureFile)));
+            byte[] bytes = PerformanceReport.time(
+                "externalUncleBridge.hashTexture.readAllBytes",
+                () -> {
+                    try {
+                        return Files.readAllBytes(Path.of(textureFile));
+                    }
+                    catch (IOException ex) {
+                        throw new ExternalUncleIoException(ex);
+                    }
+                }
+            );
+            PerformanceReport.increment("externalUncleBridge.hashTexture.count");
+            PerformanceReport.incrementBy("externalUncleBridge.hashTexture.bytes", bytes.length);
+            digest.update(bytes);
             return HexFormat.of().formatHex(digest.digest());
         }
-        catch (IOException | NoSuchAlgorithmException | RuntimeException ex) {
+        catch (NoSuchAlgorithmException | RuntimeException ex) {
             return null;
         }
     }
@@ -253,11 +282,23 @@ public final class ExternalUncleBridgeBuilder {
         }
         Path frameJsonPath = outputDirectory.resolve(key).resolve("frame.json");
         JsonNode parsed = null;
-        if (Files.isRegularFile(frameJsonPath) && Files.isReadable(frameJsonPath)) {
+        if (PerformanceReport.time("externalUncleBridge.frameJson.stat", () -> Files.isRegularFile(frameJsonPath))
+            && PerformanceReport.time("externalUncleBridge.frameJson.stat", () -> Files.isReadable(frameJsonPath))) {
             try {
-                parsed = JSON.readTree(frameJsonPath.toFile());
+                parsed = PerformanceReport.time(
+                    "externalUncleBridge.frameJson.read",
+                    () -> {
+                        try {
+                            return JSON.readTree(frameJsonPath.toFile());
+                        }
+                        catch (IOException ex) {
+                            throw new ExternalUncleIoException(ex);
+                        }
+                    }
+                );
+                PerformanceReport.increment("externalUncleBridge.frameJson.read.count");
             }
-            catch (IOException ex) {
+            catch (ExternalUncleIoException ex) {
                 System.out.println("ExternalUncleBridgeBuilder: could not read " + frameJsonPath + ": " + ex.getMessage());
             }
         }
@@ -286,5 +327,11 @@ public final class ExternalUncleBridgeBuilder {
             throw new IllegalArgumentException("Catalogued quadtree path is not absolute: " + path);
         }
         return path;
+    }
+
+    private static final class ExternalUncleIoException extends RuntimeException {
+        private ExternalUncleIoException(Throwable cause) {
+            super(cause);
+        }
     }
 }

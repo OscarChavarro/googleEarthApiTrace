@@ -11,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
@@ -518,11 +519,22 @@ public final class FrameCameraGeoAnchorResolver {
 
     private static CameraAnchor readAnchor(Path frameRoot, int frameId) {
         Path frameJson = frameRoot.resolve(String.format("%05d", frameId)).resolve("frame.json");
-        if (!Files.isRegularFile(frameJson)) {
+        if (!PerformanceReport.time("frameCameraGeoAnchor.frameJson.stat", () -> Files.isRegularFile(frameJson))) {
             return null;
         }
         try {
-            JsonNode root = JSON.readTree(frameJson.toFile());
+            JsonNode root = PerformanceReport.time(
+                "frameCameraGeoAnchor.frameJson.read",
+                () -> {
+                    try {
+                        return JSON.readTree(frameJson.toFile());
+                    }
+                    catch (IOException ex) {
+                        throw new FrameCameraReadException(ex);
+                    }
+                }
+            );
+            PerformanceReport.increment("frameCameraGeoAnchor.frameJson.read.count");
             JsonNode camera = root.path("camera");
             JsonNode googleCamera = camera.path("googleCamera");
             double frontX = googleCamera.path("frontX").asDouble(Double.NaN);
@@ -536,7 +548,7 @@ public final class FrameCameraGeoAnchorResolver {
             double latitude = Math.toDegrees(Math.asin(Math.max(-1.0, Math.min(1.0, frontY))));
             return new CameraAnchor(centerTileId, longitude, latitude);
         }
-        catch (IOException | RuntimeException ignored) {
+        catch (RuntimeException ignored) {
             return null;
         }
     }
@@ -628,4 +640,10 @@ public final class FrameCameraGeoAnchorResolver {
         int exactVotes
     ) {}
     record GridOffset(int row, int col) {}
+
+    private static final class FrameCameraReadException extends RuntimeException {
+        private FrameCameraReadException(Throwable cause) {
+            super(cause);
+        }
+    }
 }

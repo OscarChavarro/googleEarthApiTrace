@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.ParentGridTransform;
@@ -26,15 +27,26 @@ public final class MatrixLayerJsonReader {
             return List.of();
         }
         List<MatrixLayer> out = new ArrayList<>();
-        try (Stream<Path> stream = Files.list(inputDirectory)) {
-            stream.filter(Files::isDirectory)
+        try (Stream<Path> stream = PerformanceReport.time(
+            "matrixLayerJsonReader.listInputDirectory.open",
+            () -> {
+                try {
+                    return Files.list(inputDirectory);
+                }
+                catch (IOException ex) {
+                    throw new MatrixLayerReadException(ex);
+                }
+            }
+        )) {
+            stream.filter(path -> PerformanceReport.time("matrixLayerJsonReader.listInputDirectory.isDirectory", () -> Files.isDirectory(path)))
                 .filter(path -> path.getFileName() != null && path.getFileName().toString().startsWith("matrix_"))
                 .sorted(Comparator.comparingInt(MatrixLayerJsonReader::layerIndexOf))
                 .forEach(path -> readLayer(path).ifPresent(out::add));
         }
-        catch (IOException ex) {
+        catch (MatrixLayerReadException ex) {
             System.out.println("Unable to scan " + inputDirectory + ": " + ex.getMessage());
         }
+        PerformanceReport.incrementBy("matrixLayerJsonReader.layersRead", out.size());
         return out;
     }
 
@@ -44,15 +56,27 @@ public final class MatrixLayerJsonReader {
             return Optional.empty();
         }
         try {
-            JsonNode root = JSON.readTree(matrixPath.toFile());
+            JsonNode root = PerformanceReport.time(
+                "matrixLayerJsonReader.readMatrixLayerJson",
+                () -> {
+                    try {
+                        return JSON.readTree(matrixPath.toFile());
+                    }
+                    catch (IOException ex) {
+                        throw new MatrixLayerReadException(ex);
+                    }
+                }
+            );
             MatrixLayer layer = parseLayer(root, layerIndexOf(layerDirectory));
             if (layer == null || layer.getTiles() == null || layer.getTiles().isEmpty()) {
                 return Optional.empty();
             }
             layer.setSourceFolderName(layerDirectory.getFileName().toString());
+            PerformanceReport.increment("matrixLayerJsonReader.matrixLayerJson.count");
+            PerformanceReport.incrementBy("matrixLayerJsonReader.tilesRead", layer.getTiles().size());
             return Optional.of(layer);
         }
-        catch (IOException ex) {
+        catch (MatrixLayerReadException | IOException ex) {
             System.out.println("Unable to read " + matrixPath + ": " + ex.getMessage());
             return Optional.empty();
         }
@@ -147,6 +171,12 @@ public final class MatrixLayerJsonReader {
         }
         catch (NumberFormatException ex) {
             return Integer.MAX_VALUE;
+        }
+    }
+
+    private static final class MatrixLayerReadException extends RuntimeException {
+        private MatrixLayerReadException(Throwable cause) {
+            super(cause);
         }
     }
 }

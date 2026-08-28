@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import pyramidalimageexporter.config.Configuration;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.io.MatrixLayerJsonReader;
 import pyramidalimageexporter.io.PyramidalImageReferenceCatalog;
 import pyramidalimageexporter.io.TopLevelTilesJsonReader;
@@ -15,6 +16,7 @@ import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.TopLevelTilesCatalog;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.processing.SessionPyramidalImageExportService;
+import pyramidalimageexporter.processing.content.ContentHashCatalog;
 import pyramidalimageexporter.processing.toplevels.TopLevelLayerMerger;
 import pyramidalimageexporter.processing.toplevels.TopLevelMatrixRebuilder;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
@@ -59,8 +61,11 @@ public final class PyramidalImageExporterApplication {
             System.exit(1);
         }
 
-        Path referencePyramid = referencePyramid(args);
-        PyramidalImageExporterState model = createState(inputPath, referencePyramid);
+        Path referencePyramid = PerformanceReport.time("application.referencePyramidArgument", () -> referencePyramid(args));
+        PyramidalImageExporterState model = PerformanceReport.time(
+            "application.createState.total",
+            () -> createState(inputPath, referencePyramid)
+        );
         model.setSessionPyramidalImageExportPath(inputPath.resolve(SESSION_PYRAMID_SUBFOLDER).toString());
         model.setRmsHeatMapEnabled(hasArg(args, "--rms-map"));
 
@@ -69,7 +74,7 @@ public final class PyramidalImageExporterApplication {
                 (offline ? "Offline export mode" : "Export mode")
                     + " loaded " + model.getMatrixLayerCount() + " matrix layers."
             );
-            new SessionPyramidalImageExportService().export(model);
+            PerformanceReport.time("application.export.total", () -> new SessionPyramidalImageExportService().export(model));
             return;
         }
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
@@ -94,38 +99,68 @@ public final class PyramidalImageExporterApplication {
     private static PyramidalImageExporterState createState(Path inputPath, Path referencePyramid) {
         PyramidalImageExporterState model = new PyramidalImageExporterState();
         model.setInputFolder(inputPath.toString());
-        List<MatrixLayer> importedLayers = new MatrixLayerJsonReader().readAllFromInput(inputPath);
+        List<MatrixLayer> importedLayers = PerformanceReport.time(
+            "createState.readMatrixLayers",
+            () -> new MatrixLayerJsonReader().readAllFromInput(inputPath)
+        );
+        PerformanceReport.incrementBy("createState.importedLayers", importedLayers.size());
         Path outputDirectory = Path.of(Configuration.outputDirectory()).toAbsolutePath().normalize();
         TopLevelTilesJsonReader topLevelTilesReader = new TopLevelTilesJsonReader();
         TopLevelMatrixRebuilder topLevelMatrixRebuilder = new TopLevelMatrixRebuilder();
-        TopLevelTilesCatalog topLevelTiles = topLevelTilesReader.read(outputDirectory).orElse(null);
-        Map<String, String> cataloguedPaths = topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles);
-        Map<String, String> referencePaths = referencePyramid == null
-            ? Map.of()
+        TopLevelTilesCatalog topLevelTiles = PerformanceReport.time(
+            "createState.readTopLevelTiles",
+            () -> topLevelTilesReader.read(outputDirectory).orElse(null)
+        );
+        Map<String, String> cataloguedPaths = PerformanceReport.time(
+            "createState.catalogTopLevelImagePaths",
+            () -> topLevelMatrixRebuilder.catalogedQuadPathsByImagePath(topLevelTiles)
+        );
+        PerformanceReport.incrementBy("createState.cataloguedTopLevelPaths", cataloguedPaths.size());
+        PyramidalImageReferenceCatalog.Selection referenceSelection = referencePyramid == null
+            ? new PyramidalImageReferenceCatalog.Selection(Map.of(), Map.of())
             // A disconnected finest-level island is positioned through the
             // texture of its immediate parent. Once the destination itself
             // contains finest-level tiles, indexing only its deepest level
             // makes those parent anchors disappear.
-            : new PyramidalImageReferenceCatalog().readTopAndDeepestLevels(
-                referencePyramid,
-                HIGHEST_RECONSTRUCTED_TOP_LEVEL,
-                2
+            : PerformanceReport.time(
+                "createState.referenceCatalog",
+                () -> new PyramidalImageReferenceCatalog().readTopAndDeepestLevelSelection(
+                    referencePyramid,
+                    HIGHEST_RECONSTRUCTED_TOP_LEVEL,
+                    2
+                )
             );
+        Map<String, String> referencePaths = referenceSelection.quadPathByImagePath();
+        PerformanceReport.incrementBy("createState.referencePaths", referencePaths.size());
         Map<String, String> anchorPaths = new LinkedHashMap<>(cataloguedPaths);
         if (referencePyramid != null) {
             anchorPaths.putAll(referencePaths);
         }
-        TopLevelLayerMerger.MergeResult mergeResult = new TopLevelLayerMerger().merge(
-            topLevelMatrixRebuilder.importLayers(topLevelTiles),
-            importedLayers,
+        ContentHashCatalog contentHashCatalog = ContentHashCatalog.build(
             anchorPaths,
-            outputDirectory
+            referenceSelection.sha256ByImagePath()
+        );
+        List<MatrixLayer> topLevelLayers = PerformanceReport.time(
+            "createState.importTopLevelLayers",
+            () -> topLevelMatrixRebuilder.importLayers(topLevelTiles)
+        );
+        TopLevelLayerMerger.MergeResult mergeResult = PerformanceReport.time(
+            "createState.mergeTopLevelAndImportedLayers",
+            () -> new TopLevelLayerMerger().merge(
+                topLevelLayers,
+                importedLayers,
+                anchorPaths,
+                contentHashCatalog,
+                outputDirectory
+            )
         );
 
         model.setMatrixLayers(mergeResult.layers());
         model.setMergedFullPathByOriginalId(mergeResult.mergedFullPathByOriginalId());
         model.setCataloguedQuadPathsByImagePath(cataloguedPaths);
         model.setReferenceQuadPathsByImagePath(referencePaths);
+        model.setReferenceContentHashByImagePath(referenceSelection.sha256ByImagePath());
+        model.setContentHashCatalog(contentHashCatalog);
         model.setReferencePyramidFolder(referencePyramid == null ? null : referencePyramid.toString());
         // This diagnostic decodes and compares many images. Export and normal
         // viewing do not need it, so defer it until the RMS overlay is enabled.
@@ -133,6 +168,7 @@ public final class PyramidalImageExporterApplication {
             ExternalUncleBridgeBuilder.Bridge diagnosticBridge = new ExternalUncleBridgeBuilder().build(
                 mergeResult.layers(),
                 anchorPaths,
+                contentHashCatalog,
                 outputDirectory
             );
             UncleRmsAnalyzer.Analysis rmsAnalysis =

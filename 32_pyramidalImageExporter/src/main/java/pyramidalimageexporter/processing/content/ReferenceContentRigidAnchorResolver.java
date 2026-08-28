@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import pyramidalimageexporter.diagnostics.PerformanceReport;
 import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
@@ -43,10 +44,16 @@ public final class ReferenceContentRigidAnchorResolver {
                 continue;
             }
             GridOffset currentOffset = placement.offset();
-            int exactCurrentMatches = exactMatchesAtOffset(layer, referenceRoot, placement.level(), currentOffset);
+            int exactCurrentMatches = PerformanceReport.time(
+                "referenceContent.exactMatchesAtOffset",
+                () -> exactMatchesAtOffset(layer, referenceRoot, placement.level(), currentOffset)
+            );
             GridOffset acceptedOffset = exactCurrentMatches >= MINIMUM_MATCHES
                 ? currentOffset
-                : searchOffset(layer, referenceRoot, placement);
+                : PerformanceReport.time(
+                    "referenceContent.searchOffset",
+                    () -> searchOffset(layer, referenceRoot, placement)
+                );
             if (acceptedOffset == null) {
                 continue;
             }
@@ -123,7 +130,10 @@ public final class ReferenceContentRigidAnchorResolver {
             int row = offset.row() + tile.getI();
             int col = Math.floorMod(offset.col() + tile.getJ(), side);
             Path reference = tilePath(referenceRoot, encode(level, row, col));
-            if (sameFileContent(Path.of(tile.getTextureFile()), reference)) {
+            if (PerformanceReport.time(
+                "referenceContent.sameFileContent",
+                () -> sameFileContent(Path.of(tile.getTextureFile()), reference)
+            )) {
                 matches++;
             }
         }
@@ -155,8 +165,13 @@ public final class ReferenceContentRigidAnchorResolver {
         for (int row = firstRow; row <= lastRow; row++) {
             for (int col = minimumCol - radius; col <= maximumCol + radius; col++) {
                 int wrappedCol = Math.floorMod(col, placement.side());
-                Path reference = tilePath(referenceRoot, encode(placement.level(), row, wrappedCol));
-                String hash = hash(reference);
+                int currentRow = row;
+                int currentWrappedCol = wrappedCol;
+                Path reference = PerformanceReport.time(
+                    "referenceContent.tilePath",
+                    () -> tilePath(referenceRoot, encode(placement.level(), currentRow, currentWrappedCol))
+                );
+                String hash = PerformanceReport.time("referenceContent.hashReference", () -> hash(reference));
                 if (hash == null || ambiguousHashes.contains(hash)) {
                     continue;
                 }
@@ -170,7 +185,9 @@ public final class ReferenceContentRigidAnchorResolver {
 
         Map<GridOffset, Integer> votes = new LinkedHashMap<>();
         for (MatrixLayerTile tile : layer.getTiles()) {
-            String hash = tile.getTextureFile() == null ? null : hash(Path.of(tile.getTextureFile()));
+            String hash = tile.getTextureFile() == null
+                ? null
+                : PerformanceReport.time("referenceContent.hashSessionTile", () -> hash(Path.of(tile.getTextureFile())));
             Cell cell = hash == null || ambiguousHashes.contains(hash) ? null : referenceCellByHash.get(hash);
             if (cell != null) {
                 GridOffset candidate = new GridOffset(
@@ -198,7 +215,7 @@ public final class ReferenceContentRigidAnchorResolver {
             path = path.resolve(String.valueOf(quadPath.charAt(index)));
         }
         Path perDigit = path.resolve(quadPath + ".png");
-        if (Files.isRegularFile(perDigit)) {
+        if (PerformanceReport.time("referenceContent.tilePath.perDigitStat", () -> Files.isRegularFile(perDigit))) {
             return perDigit;
         }
         path = root;
@@ -210,21 +227,46 @@ public final class ReferenceContentRigidAnchorResolver {
 
     private static boolean sameFileContent(Path left, Path right) {
         try {
-            return Files.isRegularFile(left) && Files.isRegularFile(right) && Files.mismatch(left, right) == -1L;
+            return PerformanceReport.time("referenceContent.sameFileContent.stat", () -> Files.isRegularFile(left))
+                && PerformanceReport.time("referenceContent.sameFileContent.stat", () -> Files.isRegularFile(right))
+                && PerformanceReport.time(
+                    "referenceContent.sameFileContent.mismatch",
+                    () -> {
+                        try {
+                            return Files.mismatch(left, right);
+                        }
+                        catch (IOException ex) {
+                            throw new ReferenceContentIoException(ex);
+                        }
+                    }
+                ) == -1L;
         }
-        catch (IOException ex) {
+        catch (ReferenceContentIoException ex) {
             return false;
         }
     }
 
     private static String hash(Path file) {
-        if (file == null || !Files.isRegularFile(file)) {
+        if (file == null || !PerformanceReport.time("referenceContent.hash.stat", () -> Files.isRegularFile(file))) {
             return null;
         }
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file)));
+            byte[] bytes = PerformanceReport.time(
+                "referenceContent.hash.readAllBytes",
+                () -> {
+                    try {
+                        return Files.readAllBytes(file);
+                    }
+                    catch (IOException ex) {
+                        throw new ReferenceContentIoException(ex);
+                    }
+                }
+            );
+            PerformanceReport.increment("referenceContent.hash.count");
+            PerformanceReport.incrementBy("referenceContent.hash.bytes", bytes.length);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         }
-        catch (IOException | NoSuchAlgorithmException ex) {
+        catch (ReferenceContentIoException | NoSuchAlgorithmException ex) {
             return null;
         }
     }
@@ -256,4 +298,10 @@ public final class ReferenceContentRigidAnchorResolver {
     private record GridOffset(int row, int col) {}
     private record Cell(int row, int col) {}
     private record LayerPlacement(int level, int side, GridOffset offset) {}
+
+    private static final class ReferenceContentIoException extends RuntimeException {
+        private ReferenceContentIoException(Throwable cause) {
+            super(cause);
+        }
+    }
 }
