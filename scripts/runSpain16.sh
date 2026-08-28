@@ -15,7 +15,7 @@ readonly MAX_LON="4.5"
 readonly TILE_LAT_SPAN="0.25"
 readonly TILE_LON_SPAN="0.25"
 readonly TILE_CENTER_OFFSET="0.125"
-readonly START_FROM_TILE=1
+readonly START_FROM_TILE=29
 readonly PERFORMANCE_REPORT="/media/ramdisk/pyramidalImageExporterPerformanceReport.log"
 
 die() {
@@ -150,8 +150,7 @@ for index in "${!ORDERED_TILES[@]}"; do
         cd "$PROJECT_DIR" &&
         ./scripts/runFullProcess.sh \
             --route-command "./run.sh zigzag $LAT $LON 3500 100 1600 $TILE_LAT_SPAN $TILE_LON_SPAN"
-    ) > >(tee "$run_log" | grep --line-buffered '\[PHASE\]') 2>&1; then
-        grep -v '\[PHASE\]' "$run_log" || true
+    ) > >(tee "$run_log" | grep --line-buffered -E '\[PHASE\]|ITERATION (COMPLETED AS NO-OP|COMMITTED SUCCESSFULLY)') 2>&1; then
         printf '[runSpain16][INFO][%s] Finished cycle %d/%d at lat=%s lon=%s.\n' \
             "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON"
         cycle_end_ns="$(date +%s%N)"

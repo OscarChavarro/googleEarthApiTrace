@@ -233,11 +233,12 @@ run_logged() {
     started="$(date +%s)"
     started_at="$(date --iso-8601=seconds)"
     log "Starting $name started_at=$started_at"
-    if "$@" 2>&1 | tee "$run_dir/logs/$name.log"; then
+    if "$@" > "$run_dir/logs/$name.log" 2>&1; then
         status=0
     else
         status=$?
     fi
+    cat "$run_dir/logs/$name.log" >> "$SESSION_LOG" || true
     finished_at="$(date --iso-8601=seconds)"
     log "Finished $name finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
     return "$status"
@@ -251,11 +252,12 @@ run_logged_in_directory() {
     started="$(date +%s)"
     started_at="$(date --iso-8601=seconds)"
     log "Starting $name started_at=$started_at working_directory=$directory"
-    if (cd "$directory" && "$@") 2>&1 | tee "$run_dir/logs/$name.log"; then
+    if (cd "$directory" && "$@") > "$run_dir/logs/$name.log" 2>&1; then
         status=0
     else
         status=$?
     fi
+    cat "$run_dir/logs/$name.log" >> "$SESSION_LOG" || true
     finished_at="$(date --iso-8601=seconds)"
     log "Finished $name finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
     return "$status"
@@ -322,11 +324,12 @@ dump_completed_trace() {
     started="$(date +%s)"
     started_at="$(date --iso-8601=seconds)"
     log "Starting apitrace_dump started_at=$started_at trace=$trace_file"
-    if apitrace dump "$trace_file" > "$partial" 2> >(tee "$run_dir/logs/apitrace_dump.log" >&2); then
+    if apitrace dump "$trace_file" > "$partial" 2> "$run_dir/logs/apitrace_dump.log"; then
         status=0
     else
         status=$?
     fi
+    cat "$run_dir/logs/apitrace_dump.log" >> "$SESSION_LOG" || true
     finished_at="$(date --iso-8601=seconds)"
     log "Finished apitrace_dump finished_at=$finished_at status=$status elapsed_seconds=$(($(date +%s) - started))"
     if ((status != 0)); then
