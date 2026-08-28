@@ -15,6 +15,10 @@ public final class Configuration {
     public static final int DEFAULT_CAPTURE_BOUNDARY_LEVEL = -1;
 
     public static String outputDirectory() {
+        String environmentValue = System.getenv("PIPELINE_OUTPUT_DIRECTORY");
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return environmentValue.trim();
+        }
         String value = loadProperties().getProperty("output.directory");
         if (value == null || value.isBlank()) {
             return DEFAULT_OUTPUT_DIRECTORY;

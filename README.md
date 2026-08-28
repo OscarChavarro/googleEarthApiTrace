@@ -56,6 +56,41 @@ The extraction workflow is split into stages. Each stage has separate codebases,
 - [51_demResampler/README.md](51_demResampler/README.md): Uses GDAL from a Java 17 CLI to resample FABDEM at quadtree level 12 and recursively build raw `256x256` Int16 little-endian elevation tiles through level 0.
 - [52_planetDemViewer/README.md](52_planetDemViewer/README.md): Interactive Java 17 + JOGL/Vitral viewer for raw `258x258` Int16 DEM pyramids with selectable elevation color palettes.
 
+## Tile Download Script Examples
+
+Run these examples from the repository root:
+
+```bash
+cd /paradigmas/master/algoritmos_basicos_3d/googleEarthApiTrace
+```
+
+Preview the selected Spain level-16 tile jobs without running captures:
+
+```bash
+./scripts/runSpain16.sh --emit-jobs --start-from 29 --limit 5
+```
+
+Run a small batch through the super-pipeline in the default overlapped mode. This starts
+processing the previous captured tile while Google Earth captures the next one:
+
+```bash
+./scripts/runSuperPipeline.sh --start-from 29 --limit 5
+```
+
+Run the same number of tiles in sequential mode, with no overlap between capture and
+post-processing:
+
+```bash
+./scripts/runSuperPipeline.sh --start-from 29 --limit 5 --sequential
+```
+
+Run or preview a different tile range by changing `--start-from` and `--limit`. For
+example, this starts at ordered tile 120 and processes 10 tiles:
+
+```bash
+./scripts/runSuperPipeline.sh --start-from 120 --limit 10
+```
+
 ## Notes
 
 - This codebase is experimental and tailored to a specific workflow and environment.

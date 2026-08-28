@@ -12,6 +12,7 @@ public final class Configuration {
     }
 
     private static String loadOutputDirectory() {
+        String environmentValue = System.getenv("PIPELINE_OUTPUT_DIRECTORY");
         Properties properties = new Properties();
         try (InputStream input = Configuration.class.getClassLoader().getResourceAsStream("application.properties")) {
             if (input != null) {
@@ -23,7 +24,9 @@ public final class Configuration {
         }
         return System.getProperty(
             "output.directory",
-            properties.getProperty("output.directory", "/media/ramdisk/output")
+            environmentValue == null || environmentValue.isBlank()
+                ? properties.getProperty("output.directory", "/media/ramdisk/output")
+                : environmentValue.trim()
         );
     }
 }

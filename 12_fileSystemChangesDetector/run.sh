@@ -7,4 +7,4 @@ BUILD_DIR="$SCRIPT_DIR/build"
 cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR"
 cmake --build "$BUILD_DIR" -j
 
-exec "$BUILD_DIR/fileSystemChangesDetector" /media/ramdisk/output
+exec "$BUILD_DIR/fileSystemChangesDetector" "${1:-${PIPELINE_OUTPUT_DIRECTORY:-/media/ramdisk/output}}"

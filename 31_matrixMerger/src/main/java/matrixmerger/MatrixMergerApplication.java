@@ -262,6 +262,10 @@ public final class MatrixMergerApplication {
     }
 
     private static String loadOutputDirectory() {
+        String environmentValue = System.getenv("PIPELINE_OUTPUT_DIRECTORY");
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return environmentValue.trim();
+        }
         Properties properties = new Properties();
         try (InputStream input = Main.class.getClassLoader().getResourceAsStream("application.properties")) {
             if (input != null) {

@@ -115,6 +115,50 @@ static std::unordered_map<int, unsigned long long> g_bufferDataUpdateCountByFram
 static std::unordered_map<int, std::vector<uint8_t>> g_arrayBufferSnapshots;
 static std::unordered_map<int, std::vector<uint8_t>> g_elementArrayBufferSnapshots;
 
+static const char *configuredOutputDirectory(const char *environmentName, const char *fallback) {
+    const char *value = getenv(environmentName);
+    if (value && *value) {
+        return value;
+    }
+    return fallback;
+}
+
+static const char *physicalOutputDirectory() {
+    return configuredOutputDirectory("TRACE_OUTPUT_DIRECTORY", OUTPUT_DIRECTORY);
+}
+
+static const char *manifestOutputDirectory() {
+    return configuredOutputDirectory("TRACE_MANIFEST_OUTPUT_DIRECTORY", physicalOutputDirectory());
+}
+
+static void ensureOutputDirectory(const char *directory) {
+    struct stat st = {0};
+    if (stat(directory, &st) == -1) {
+        mkdir(directory, 0755);
+    }
+}
+
+static void frameOutputDirectory(int frameNumber, char *out, size_t outSize) {
+    const char *root = physicalOutputDirectory();
+    ensureOutputDirectory(root);
+    snprintf(out, outSize, "%s/%05d", root, frameNumber);
+    ensureOutputDirectory(out);
+}
+
+static void manifestPathForPhysicalPath(const char *physicalPath, char *out, size_t outSize) {
+    const char *physicalRoot = physicalOutputDirectory();
+    const char *manifestRoot = manifestOutputDirectory();
+    size_t physicalRootLength = strlen(physicalRoot);
+    if (
+        strncmp(physicalPath, physicalRoot, physicalRootLength) == 0
+        && physicalPath[physicalRootLength] == '/'
+    ) {
+        snprintf(out, outSize, "%s%s", manifestRoot, physicalPath + physicalRootLength);
+        return;
+    }
+    snprintf(out, outSize, "%s", physicalPath);
+}
+
 static void compressedBlobPath(const char *binPath, char *out, size_t outSize) {
     snprintf(out, outSize, "%s.bz2", binPath);
 }
@@ -123,15 +167,8 @@ static void appendManifestLine(int frameNumber, const char *line) {
     if (!line) {
         return;
     }
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, frameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(frameNumber, frameDir, sizeof(frameDir));
     char manifestPath[512];
     snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.txt", frameDir);
     FILE *m = fopen(manifestPath, "ab");
@@ -414,16 +451,8 @@ private:
             return false;
         }
 
-        struct stat st = {0};
-        if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-            mkdir(OUTPUT_DIRECTORY, 0755);
-        }
-
-        char frameDir[256];
-        snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, job.frameNumber);
-        if (stat(frameDir, &st) == -1) {
-            mkdir(frameDir, 0755);
-        }
+        char frameDir[512];
+        frameOutputDirectory(job.frameNumber, frameDir, sizeof(frameDir));
 
         char pngPath[512];
         snprintf(pngPath, sizeof(pngPath), "%s/%dx%d_%d.png", frameDir, job.textureWidth, job.textureHeight, job.textureId);
@@ -662,17 +691,8 @@ static void exportPlain(const void *ptr, size_t size, int id) {
         }
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
-
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(THE_FrameNumber, frameDir, sizeof(frameDir));
 
     if (THE_TextureFormat == THE_GL_COMPRESSED_RGB_S3TC_DXT1_EXT) {
         char filePath[512];
@@ -728,16 +748,8 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
         return;
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(THE_FrameNumber, frameDir, sizeof(frameDir));
 
     unsigned long long drawCount = ++g_drawElementCountByFrame[THE_FrameNumber];
 
@@ -751,8 +763,10 @@ static void exportDrawElementsBlob(const void *ptr, size_t size) {
 
         char compressedPath[1024];
         compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+        char manifestFilePath[1024];
+        manifestPathForPhysicalPath(compressedPath, manifestFilePath, sizeof(manifestFilePath));
         char manifestLine[2048];
-        snprintf(manifestLine, sizeof(manifestLine), "kind=draw_elements frame=%d call=%llu parserCall=%llu file=%s mode=%d type=%d blobPtr=%llu bytes=%zu compression=bzip2", THE_FrameNumber, THE_CurrentGlCallNumber, drawCount, compressedPath, THE_DrawElementMode, THE_DrawElementType, THE_DrawElementIndicesBlobId, size);
+        snprintf(manifestLine, sizeof(manifestLine), "kind=draw_elements frame=%d call=%llu parserCall=%llu file=%s mode=%d type=%d blobPtr=%llu bytes=%zu compression=bzip2", THE_FrameNumber, THE_CurrentGlCallNumber, drawCount, manifestFilePath, THE_DrawElementMode, THE_DrawElementType, THE_DrawElementIndicesBlobId, size);
         appendManifestLine(THE_FrameNumber, manifestLine);
         enqueueBlobCompression(filePath);
     }
@@ -807,15 +821,8 @@ static void exportVertexPositionsFromVbo(int frameNumber, unsigned long long dra
         return;
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, frameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(frameNumber, frameDir, sizeof(frameDir));
 
     const size_t outBytes = (maxIndex + 1u) * stride;
     char filePath[512];
@@ -826,6 +833,8 @@ static void exportVertexPositionsFromVbo(int frameNumber, unsigned long long dra
 
     char compressedPath[1024];
     compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+    char manifestFilePath[1024];
+    manifestPathForPhysicalPath(compressedPath, manifestFilePath, sizeof(manifestFilePath));
     char manifestLine[2048];
     snprintf(
         manifestLine,
@@ -833,7 +842,7 @@ static void exportVertexPositionsFromVbo(int frameNumber, unsigned long long dra
         "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=0 bufferId=%d offset=%llu stride=%d size=%d type=%d bytes=%zu source=vbo_snapshot compression=bzip2",
         frameNumber,
         drawCall,
-        compressedPath,
+        manifestFilePath,
         THE_PositionAttribBufferId,
         THE_PositionAttribOffset,
         THE_PositionAttribStride,
@@ -866,15 +875,8 @@ void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, u
         return;
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(THE_FrameNumber, frameDir, sizeof(frameDir));
 
     char filePath[512];
     snprintf(filePath, sizeof(filePath), "%s/drawElements_indices_call_%llu.bin", frameDir, THE_CurrentGlCallNumber);
@@ -884,6 +886,8 @@ void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, u
 
     char compressedPath[1024];
     compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+    char manifestFilePath[1024];
+    manifestPathForPhysicalPath(compressedPath, manifestFilePath, sizeof(manifestFilePath));
     char manifestLine[2048];
     snprintf(
         manifestLine,
@@ -891,7 +895,7 @@ void exportDrawElementsFromBoundBuffers(unsigned long long indicesOffsetBytes, u
         "kind=draw_elements frame=%d call=%llu parserCall=0 file=%s mode=%d type=%d indicesOffset=%llu bytes=%zu source=ebo_snapshot compression=bzip2",
         THE_FrameNumber,
         THE_CurrentGlCallNumber,
-        compressedPath,
+        manifestFilePath,
         THE_DrawElementMode,
         THE_DrawElementType,
         indicesOffsetBytes,
@@ -920,16 +924,8 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
         return;
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(THE_FrameNumber, frameDir, sizeof(frameDir));
 
     unsigned long long vertexAttribCount = ++g_vertexAttribPointerCountByFrame[THE_FrameNumber];
 
@@ -943,6 +939,8 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
 
         char compressedPath[1024];
         compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+        char manifestFilePath[1024];
+        manifestPathForPhysicalPath(compressedPath, manifestFilePath, sizeof(manifestFilePath));
         char manifestLine[2048];
         snprintf(
             manifestLine,
@@ -951,7 +949,7 @@ static void exportVertexAttribPointerBlob(const void *ptr, size_t size) {
             THE_FrameNumber,
             THE_CurrentGlCallNumber,
             vertexAttribCount,
-            compressedPath,
+            manifestFilePath,
             THE_VertexAttribPointerAttribIndex,
             THE_VertexAttribPointerBlobId,
             size
@@ -970,15 +968,8 @@ void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribI
         return;
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(THE_FrameNumber, frameDir, sizeof(frameDir));
 
     char filePath[512];
     snprintf(filePath, sizeof(filePath), "%s/glVertexAttribPointer_vertexAttrib_call_%llu.bin", frameDir, callNo);
@@ -988,6 +979,8 @@ void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribI
 
     char compressedPath[1024];
     compressedBlobPath(filePath, compressedPath, sizeof(compressedPath));
+    char manifestFilePath[1024];
+    manifestPathForPhysicalPath(compressedPath, manifestFilePath, sizeof(manifestFilePath));
     char manifestLine[2048];
     snprintf(
         manifestLine,
@@ -995,7 +988,7 @@ void exportVertexAttribPointerBlobForCall(unsigned long long callNo, int attribI
         "kind=vertex_attrib frame=%d call=%llu parserCall=0 file=%s attribIndex=%d blobPtr=%llu bytes=%zu source=fake_call compression=bzip2",
         THE_FrameNumber,
         callNo,
-        compressedPath,
+        manifestFilePath,
         attribIndex,
         blobPtr,
         size
@@ -1014,16 +1007,8 @@ static void exportBufferDataBlob(const void *ptr, size_t size) {
         return;
     }
 
-    struct stat st = {0};
-    if (stat(OUTPUT_DIRECTORY, &st) == -1) {
-        mkdir(OUTPUT_DIRECTORY, 0755);
-    }
-
-    char frameDir[256];
-    snprintf(frameDir, sizeof(frameDir), "%s/%05d", OUTPUT_DIRECTORY, THE_FrameNumber);
-    if (stat(frameDir, &st) == -1) {
-        mkdir(frameDir, 0755);
-    }
+    char frameDir[512];
+    frameOutputDirectory(THE_FrameNumber, frameDir, sizeof(frameDir));
 
     const char *targetLabel = THE_BufferDataTarget == THE_GL_ARRAY_BUFFER ? "arrayBuffer" : "elementArrayBuffer";
     unsigned long long updateId = ++g_bufferDataUpdateCountByFrame[THE_FrameNumber];

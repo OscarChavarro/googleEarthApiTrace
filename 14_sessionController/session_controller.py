@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import argparse
 import queue
 import re
 import signal
@@ -20,7 +21,8 @@ CONTROLLER_DIR = CONTROLLER_RUNNER.parent
 GOOGLE_EARTH = Path("/opt/google/earth/pro/google-earth-pro")
 GOOGLE_EARTH_DIRECTORY = GOOGLE_EARTH.parent
 GOOGLE_EARTH_TRACE_PATTERN = "googleearth-bin*trace"
-OUTPUT_DIRECTORY = Path("/media/ramdisk/output")
+DEFAULT_OUTPUT_DIRECTORY = Path(os.environ.get("PIPELINE_OUTPUT_DIRECTORY", "/media/ramdisk/output"))
+DEFAULT_LOG_ROOT = Path(os.environ.get("PIPELINE_LOG_ROOT", "/media/ramdisk/logs"))
 
 GOOGLE_EARTH_STARTUP_SECONDS = 10
 CONTROLLER_STARTUP_TIMEOUT_SECONDS = 180
@@ -56,12 +58,14 @@ class ManagedProcess:
         cwd: Path,
         stdout,
         stdin=None,
+        env: Optional[dict[str, str]] = None,
     ) -> None:
         self.name = name
         self.command = command
         self.cwd = cwd
         self.stdout = stdout
         self.stdin = stdin
+        self.env = env
         self.process: Optional[subprocess.Popen] = None
         self.process_group: Optional[int] = None
 
@@ -74,6 +78,7 @@ class ManagedProcess:
             stdout=self.stdout,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            env=self.env,
         )
         self.process_group = self.process.pid
         return self.process
@@ -144,8 +149,9 @@ class ControllerOutputReader(threading.Thread):
 
 
 class SessionController:
-    def __init__(self) -> None:
-        log_root = Path("/media/ramdisk/logs")
+    def __init__(self, output_directory: Path, logical_output_directory: Path, log_root: Path) -> None:
+        self.output_directory = output_directory
+        self.logical_output_directory = logical_output_directory
         log_root.mkdir(parents=True, exist_ok=True)
         log_directory = log_root / f"14_sessionController-{os.getpid()}"
         log_directory.mkdir(parents=True, exist_ok=False)
@@ -153,19 +159,26 @@ class SessionController:
         self.google_earth_log = (log_directory / "google-earth.log").open("wb")
         self.controller_log = (log_directory / "13_googleEarthController.log").open("wb")
 
+        google_earth_env = os.environ.copy()
+        google_earth_env["TRACE_OUTPUT_DIRECTORY"] = str(output_directory)
+        google_earth_env["TRACE_MANIFEST_OUTPUT_DIRECTORY"] = str(logical_output_directory)
         self.google_earth = ManagedProcess(
             "Google Earth",
             [str(GOOGLE_EARTH)],
             PROJECT_ROOT,
             self.google_earth_log,
             subprocess.DEVNULL,
+            google_earth_env,
         )
+        controller_env = os.environ.copy()
+        controller_env["PIPELINE_OUTPUT_DIRECTORY"] = str(output_directory)
         self.controller = ManagedProcess(
             "13_googleEarthController",
             [str(CONTROLLER_RUNNER), "--offline"],
             CONTROLLER_DIR,
             subprocess.PIPE,
             subprocess.DEVNULL,
+            controller_env,
         )
         self.controller_output_queue: queue.Queue = queue.Queue()
         self.controller_reader: Optional[ControllerOutputReader] = None
@@ -200,8 +213,8 @@ class SessionController:
                 raise SessionFailure(f"required executable not found: {executable}")
             if not os.access(executable, os.X_OK):
                 raise SessionFailure(f"required file is not executable: {executable}")
-        if not OUTPUT_DIRECTORY.is_dir():
-            raise SessionFailure(f"output directory not found: {OUTPUT_DIRECTORY}")
+        if not self.output_directory.is_dir():
+            raise SessionFailure(f"output directory not found: {self.output_directory}")
         if not os.environ.get("DISPLAY"):
             raise SessionFailure("DISPLAY is not set; an X11 desktop session is required")
         if not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
@@ -386,8 +399,39 @@ class SessionController:
         print("[SESSION] All managed processes have been stopped.", flush=True)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a managed Google Earth capture session.")
+    parser.add_argument(
+        "--capture-root",
+        default=str(DEFAULT_OUTPUT_DIRECTORY),
+        help="Directory where captured files are written, defaulting to PIPELINE_OUTPUT_DIRECTORY or /media/ramdisk/output.",
+    )
+    parser.add_argument(
+        "--logical-output-root",
+        default=None,
+        help="Directory prefix written into tracer manifests. Defaults to --capture-root.",
+    )
+    parser.add_argument(
+        "--log-root",
+        default=str(DEFAULT_LOG_ROOT),
+        help="Root directory for per-session logs, defaulting to PIPELINE_LOG_ROOT or /media/ramdisk/logs.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
-    session = SessionController()
+    args = parse_args()
+    capture_root = Path(args.capture_root).expanduser().resolve()
+    logical_output_root = (
+        Path(args.logical_output_root).expanduser().resolve()
+        if args.logical_output_root is not None
+        else capture_root
+    )
+    session = SessionController(
+        capture_root,
+        logical_output_root,
+        Path(args.log_root).expanduser().resolve(),
+    )
     try:
         return session.run()
     except KeyboardInterrupt:

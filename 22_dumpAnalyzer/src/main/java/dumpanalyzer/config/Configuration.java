@@ -19,9 +19,12 @@ public final class Configuration {
 
     private static Path loadOutputRoot() {
         Properties properties = loadProperties();
+        String environmentValue = System.getenv("PIPELINE_OUTPUT_DIRECTORY");
         return Paths.get(System.getProperty(
             "output.directory",
-            properties.getProperty("output.directory", "/media/ramdisk/output")
+            environmentValue == null || environmentValue.isBlank()
+                ? properties.getProperty("output.directory", "/media/ramdisk/output")
+                : environmentValue.trim()
         ));
     }
 

@@ -42,14 +42,19 @@ unset RUN_FULL_PROCESS_SNAPSHOT_ACTIVE
 unset RUN_FULL_PROCESS_SCRIPT_DIR
 unset RUN_FULL_PROCESS_SNAPSHOT_PATH
 
-readonly CAPTURE_ROOT="/media/ramdisk/output"
-readonly TRACE_DUMP_DIR="/media/ramdisk/output"
+CAPTURE_ROOT="${PIPELINE_OUTPUT_DIRECTORY:-/media/ramdisk/output}"
+LOGICAL_OUTPUT_ROOT="${PIPELINE_LOGICAL_OUTPUT_DIRECTORY:-$CAPTURE_ROOT}"
+TRACE_DUMP_DIR="${PIPELINE_TRACE_DUMP_DIR:-$CAPTURE_ROOT}"
+trace_dump_dir_explicit=0
+if [[ -n "${PIPELINE_TRACE_DUMP_DIR:-}" ]]; then
+    trace_dump_dir_explicit=1
+fi
 readonly DEFAULT_DESTINATION="/samples/datasets/googleEarth/toplevel"
 readonly TRACE_DIRECTORY="/opt/google/earth/pro"
 readonly TRACE_PATTERN="googleearth-bin*trace"
-readonly SESSION_LOG="/tmp/googleEarthSession.log"
+SESSION_LOG="${PIPELINE_SESSION_LOG:-/tmp/googleEarthSession.log}"
 readonly ERRORS_LOG="$SCRIPT_DIR/errors.log"
-readonly MATRIX_DIR="/tmp/matrix"
+MATRIX_DIR="${PIPELINE_MATRIX_DIR:-/tmp/matrix}"
 
 destination="$DEFAULT_DESTINATION"
 reuse_capture=0
@@ -60,6 +65,19 @@ run_dir=""
 trace_dump_dir="$TRACE_DUMP_DIR"
 session_started_epoch="$(date +%s)"
 original_args=("$@")
+
+for ((arg_index = 0; arg_index < ${#original_args[@]}; arg_index++)); do
+    case "${original_args[arg_index]}" in
+        --session-log)
+            if ((arg_index + 1 < ${#original_args[@]})); then
+                SESSION_LOG="${original_args[arg_index + 1]}"
+            fi
+            ;;
+        --session-log=*)
+            SESSION_LOG="${original_args[arg_index]#--session-log=}"
+            ;;
+    esac
+done
 
 exec > >(tee -a "$SESSION_LOG") 2>&1
 printf '\n===== googleEarth full-process session started %s pid=%d =====\n' \
@@ -84,6 +102,15 @@ Options:
   --dry-run           Build and validate the delta, but do not merge it
   --keep-work         Preserve staging when the script exits
   --route-command CMD Record the module-11 command that prepared the current KML
+  --capture-root PATH Read/write the capture dataset from PATH
+                      (default: PIPELINE_OUTPUT_DIRECTORY or /media/ramdisk/output)
+  --logical-output-root PATH
+                      Prefix serialized by the tracer in manifest file= entries
+                      (default: capture root)
+  --trace-dump-dir PATH
+                      Write bigtrace.log staging under PATH (default: capture root)
+  --matrix-dir PATH   Matrix/delta staging directory (default: /tmp/matrix)
+  --session-log PATH  Master session log path (default: /tmp/googleEarthSession.log)
   -h, --help          Show this help
 EOF
 }
@@ -156,6 +183,42 @@ while (($# > 0)); do
             route_command="$2"
             shift 2
             ;;
+        --capture-root)
+            (($# >= 2)) || die "--capture-root requires a path."
+            CAPTURE_ROOT="$2"
+            if [[ -z "${PIPELINE_LOGICAL_OUTPUT_DIRECTORY:-}" ]]; then
+                LOGICAL_OUTPUT_ROOT="$CAPTURE_ROOT"
+            fi
+            if ((trace_dump_dir_explicit == 0)); then
+                TRACE_DUMP_DIR="$CAPTURE_ROOT"
+            fi
+            shift 2
+            ;;
+        --logical-output-root)
+            (($# >= 2)) || die "--logical-output-root requires a path."
+            LOGICAL_OUTPUT_ROOT="$2"
+            shift 2
+            ;;
+        --trace-dump-dir)
+            (($# >= 2)) || die "--trace-dump-dir requires a path."
+            TRACE_DUMP_DIR="$2"
+            trace_dump_dir_explicit=1
+            shift 2
+            ;;
+        --matrix-dir)
+            (($# >= 2)) || die "--matrix-dir requires a path."
+            MATRIX_DIR="$2"
+            shift 2
+            ;;
+        --session-log)
+            (($# >= 2)) || die "--session-log requires a path."
+            SESSION_LOG="$2"
+            shift 2
+            ;;
+        --session-log=*)
+            SESSION_LOG="${1#--session-log=}"
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -167,6 +230,9 @@ while (($# > 0)); do
 done
 
 print_cycle_banner "CYCLE START"
+export PIPELINE_OUTPUT_DIRECTORY="$CAPTURE_ROOT"
+export PIPELINE_LOGICAL_OUTPUT_DIRECTORY="$LOGICAL_OUTPUT_ROOT"
+trace_dump_dir="$TRACE_DUMP_DIR"
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || die "Required command is not available: $1"
@@ -291,11 +357,28 @@ safe_delete_trace_dump_path() {
     find "$target_resolved" -xdev -depth -delete
 }
 
+safe_delete_capture_path() {
+    local target="$1"
+    local capture_dir_resolved target_resolved
+    [[ -e "$target" ]] || return 0
+    capture_dir_resolved="$(realpath -e -- "$CAPTURE_ROOT")"
+    target_resolved="$(realpath -e -- "$target")"
+    [[ "$target_resolved" == "$capture_dir_resolved/"* ]] ||
+        die "Refusing to delete path outside capture root: $target_resolved"
+    find "$target_resolved" -xdev -depth -delete
+}
+
 available_bytes() {
     df -B1 --output=avail "$1" | awk 'NR == 2 { print $1 }'
 }
 
 select_completed_trace() {
+    local private_trace="$CAPTURE_ROOT/_pipeline/capture.trace"
+    if [[ -r "$private_trace" && -s "$private_trace" ]]; then
+        printf '%s\n' "$private_trace"
+        return 0
+    fi
+
     local -a traces=()
     mapfile -d '' traces < <(
         find "$TRACE_DIRECTORY" -maxdepth 1 -type f -name "$TRACE_PATTERN" -print0 | sort -z
@@ -307,6 +390,37 @@ select_completed_trace() {
 
     sync "${traces[0]}"
     printf '%s\n' "${traces[0]}"
+}
+
+publish_private_trace() {
+    local trace_file pipeline_dir partial private_trace sha_file source_sha private_sha
+    trace_file="$(select_completed_trace)"
+    [[ "$trace_file" != "$CAPTURE_ROOT/_pipeline/capture.trace" ]] || return 0
+
+    pipeline_dir="$CAPTURE_ROOT/_pipeline"
+    partial="$pipeline_dir/capture.trace.partial"
+    private_trace="$pipeline_dir/capture.trace"
+    sha_file="$pipeline_dir/capture.trace.sha256"
+
+    mkdir -p "$pipeline_dir"
+    cp -- "$trace_file" "$partial"
+    sync "$partial"
+    mv -- "$partial" "$private_trace"
+    sync "$private_trace"
+
+    source_sha="$(sha256sum "$trace_file" | awk '{print $1}')"
+    private_sha="$(sha256sum "$private_trace" | awk '{print $1}')"
+    [[ "$source_sha" == "$private_sha" ]] ||
+        die "Private trace SHA-256 mismatch after copy from $trace_file to $private_trace."
+    printf '%s  %s\n' "$private_sha" "$private_trace" > "$sha_file"
+    rm -f -- "$trace_file"
+}
+
+safe_delete_private_trace() {
+    local trace_file="$1"
+    [[ "$trace_file" == "$CAPTURE_ROOT/_pipeline/capture.trace" ]] || return 0
+    safe_delete_capture_path "$trace_file"
+    safe_delete_capture_path "$CAPTURE_ROOT/_pipeline/capture.trace.sha256"
 }
 
 dump_completed_trace() {
@@ -459,7 +573,7 @@ append_merge_error() {
 
 preflight_started="$(date +%s)"
 log "Starting preflight started_at=$(date --iso-8601=seconds)"
-for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum compare identify mktemp mkdir basename dirname stat df sleep cp mv; do
+for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum sha256sum compare identify mktemp mkdir basename dirname stat df sleep cp mv; do
     require_command "$command_name"
 done
 [[ -x "$SCRIPT_DIR/gradlew" ]] || die "Gradle wrapper is not executable: $SCRIPT_DIR/gradlew"
@@ -516,7 +630,11 @@ splitter="$SCRIPT_DIR/21_traceLogSplitter/build/traceLogSplitter"
 if ((reuse_capture == 0)); then
     run_timed_step capture_root_cleanup safe_clear_capture_root
     phase_log "14 sessionController"
-    run_logged 14_sessionController "$SCRIPT_DIR/14_sessionController/run.sh"
+    run_logged 14_sessionController "$SCRIPT_DIR/14_sessionController/run.sh" \
+        --capture-root "$CAPTURE_ROOT" \
+        --logical-output-root "$LOGICAL_OUTPUT_ROOT" \
+        --log-root "${PIPELINE_LOG_ROOT:-/media/ramdisk/logs}"
+    run_timed_step private_trace_publish publish_private_trace
 else
     log "Reusing the existing capture; cleanup and module 14 are skipped."
 fi
@@ -536,6 +654,7 @@ dump_file="$trace_dump_dir/bigtrace.log"
 phase_log "21 traceLogSplitter"
 run_logged_in_directory 21_traceLogSplitter \
     "$(dirname "$CAPTURE_ROOT")" "$splitter" "$dump_file"
+run_timed_step private_trace_cleanup safe_delete_private_trace "$trace_file"
 
 phase_log "22 dumpAnalyzer"
 run_logged 22_dumpAnalyzer \

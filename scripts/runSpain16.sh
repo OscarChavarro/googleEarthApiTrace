@@ -15,12 +15,60 @@ readonly MAX_LON="4.5"
 readonly TILE_LAT_SPAN="0.25"
 readonly TILE_LON_SPAN="0.25"
 readonly TILE_CENTER_OFFSET="0.125"
-readonly START_FROM_TILE=29
+readonly DEFAULT_START_FROM_TILE=29
 readonly PERFORMANCE_REPORT="/media/ramdisk/pyramidalImageExporterPerformanceReport.log"
+
+emit_jobs=0
+start_from_tile="$DEFAULT_START_FROM_TILE"
+limit_tiles=0
 
 die() {
     printf '[runSpain16][ERROR] %s\n' "$*" >&2
     exit 1
+}
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/runSpain16.sh [options]
+
+Runs the Spain level-16 batch in the deterministic Madrid-distance order.
+
+Options:
+  --emit-jobs      Print the selected jobs as JSONL and do not run captures.
+  --start-from N   Start at tile N in the ordered list (default: 29).
+  --limit N        Run or emit at most N jobs after --start-from.
+  -h, --help       Show this help.
+EOF
+}
+
+parse_args() {
+    while (($# > 0)); do
+        case "$1" in
+            --emit-jobs)
+                emit_jobs=1
+                shift
+                ;;
+            --start-from)
+                (($# >= 2)) || die "--start-from requires a tile number."
+                [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--start-from must be a positive integer: $2"
+                start_from_tile="$2"
+                shift 2
+                ;;
+            --limit)
+                (($# >= 2)) || die "--limit requires a count."
+                [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--limit must be a positive integer: $2"
+                limit_tiles="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                die "Unknown argument: $1"
+                ;;
+        esac
+    done
 }
 
 build_coverage_mask() {
@@ -119,27 +167,44 @@ build_ordered_tiles() {
     ' | sort -t $'\t' -k1,1n -k2,2n -k3,3n
 }
 
+parse_args "$@"
+
 mapfile -t ORDERED_TILES < <(build_ordered_tiles)
 readonly TOTAL_TILES="${#ORDERED_TILES[@]}"
 (( TOTAL_TILES > 0 )) || die "The level-15 coverage mask contains no runnable regions"
 
-printf '[runSpain16][INFO] Built %d covered 0.25-degree regions from %d level-15 tiles.\n' \
-    "$TOTAL_TILES" "$SOURCE_TILE_COUNT"
-mkdir -p "$(dirname "$PERFORMANCE_REPORT")" 2>/dev/null || true
-printf '[runSpain16] start totalTiles=%d sourceLevel15Tiles=%d pyramidDir=%s\n' \
-    "$TOTAL_TILES" "$SOURCE_TILE_COUNT" "$PYRAMID_DIR" 2>/dev/null >> "$PERFORMANCE_REPORT" || true
+if (( emit_jobs == 0 )); then
+    printf '[runSpain16][INFO] Built %d covered 0.25-degree regions from %d level-15 tiles.\n' \
+        "$TOTAL_TILES" "$SOURCE_TILE_COUNT"
+    mkdir -p "$(dirname "$PERFORMANCE_REPORT")" 2>/dev/null || true
+    printf '[runSpain16] start totalTiles=%d sourceLevel15Tiles=%d pyramidDir=%s\n' \
+        "$TOTAL_TILES" "$SOURCE_TILE_COUNT" "$PYRAMID_DIR" 2>/dev/null >> "$PERFORMANCE_REPORT" || true
+fi
 
+emitted_tiles=0
 for index in "${!ORDERED_TILES[@]}"; do
     cycle_number=$((index + 1))
 
-    if (( cycle_number < START_FROM_TILE )); then
+    if (( cycle_number < start_from_tile )); then
         continue
     fi
 
     IFS=$'\t' read -r _distance_sq LAT LON TILE_CENTER <<< "${ORDERED_TILES[$index]}"
+    route_command="./run.sh zigzag $LAT $LON 3500 100 1600 $TILE_LAT_SPAN $TILE_LON_SPAN"
+
+    if (( emit_jobs == 1 )); then
+        printf '{"sequence":%d,"total":%d,"jobId":"spain16-%06d-%s-%s","latitude":%s,"longitude":%s,"center":"%s","routeCommand":"%s"}\n' \
+            "$cycle_number" "$TOTAL_TILES" "$cycle_number" "$LAT" "$LON" \
+            "$LAT" "$LON" "$TILE_CENTER" "$route_command"
+        emitted_tiles=$((emitted_tiles + 1))
+        if (( limit_tiles > 0 && emitted_tiles >= limit_tiles )); then
+            break
+        fi
+        continue
+    fi
 
     printf '[runSpain16][INFO][%s] Starting cycle %d/%d (tile %d onward) at lat=%s lon=%s center=%s.\n' \
-        "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$START_FROM_TILE" "$LAT" "$LON" "$TILE_CENTER"
+        "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$start_from_tile" "$LAT" "$LON" "$TILE_CENTER"
 
     cycle_start_ns="$(date +%s%N)"
     run_log="$(mktemp /tmp/runSpain16.runFullProcess.XXXXXX)"
@@ -149,7 +214,7 @@ for index in "${!ORDERED_TILES[@]}"; do
         ./run.sh zigzag "$LAT" "$LON" 3500 100 1600 "$TILE_LAT_SPAN" "$TILE_LON_SPAN" &&
         cd "$PROJECT_DIR" &&
         ./scripts/runFullProcess.sh \
-            --route-command "./run.sh zigzag $LAT $LON 3500 100 1600 $TILE_LAT_SPAN $TILE_LON_SPAN"
+            --route-command "$route_command"
     ) > >(tee "$run_log" | grep --line-buffered -E '\[PHASE\]|ITERATION (COMPLETED AS NO-OP|COMMITTED SUCCESSFULLY)') 2>&1; then
         printf '[runSpain16][INFO][%s] Finished cycle %d/%d at lat=%s lon=%s.\n' \
             "$(date '+%Y-%m-%d %H:%M')" "$cycle_number" "$TOTAL_TILES" "$LAT" "$LON"
@@ -166,5 +231,10 @@ for index in "${!ORDERED_TILES[@]}"; do
             $(((cycle_end_ns - cycle_start_ns) / 1000000)) 2>/dev/null >> "$PERFORMANCE_REPORT" || true
         rm -f -- "$run_log"
         pkill -9 google-earth >/dev/null 2>&1 || true
+    fi
+
+    emitted_tiles=$((emitted_tiles + 1))
+    if (( limit_tiles > 0 && emitted_tiles >= limit_tiles )); then
+        break
     fi
 done
