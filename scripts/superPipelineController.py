@@ -386,6 +386,10 @@ def run_stage_b(
     env["PIPELINE_SESSION_LOG"] = str(job_log_root / "runFullProcess.session.log")
     env["PIPELINE_TMP_DIR"] = str(DEFAULT_TMP_DIR)
     env["TMPDIR"] = str(DEFAULT_TMP_DIR)
+    # OCR metadata is not consumed by tile extraction or merging. PaddleOCR is
+    # currently unsafe in this long-running embedded-JVM workload (SIGSEGV 139),
+    # so keep it out of the production batch pipeline.
+    env["LOCAL_OCR_ENABLED"] = "false"
     command = [
         str(SCRIPT_DIR / "runFullProcess.sh"),
         "--destination",

@@ -128,6 +128,7 @@ public final class TraceSessionFrameImporter {
                     continue;
                 }
                 Frame frame = processor.processFrame(frameId, glFilePath, logQueue);
+                FrameOcrWriter.writeFrame(outputRoot, frame);
                 model.addFrameDuringImport(frame);
                 progressProducer.update(0, 1, 1);
             }
