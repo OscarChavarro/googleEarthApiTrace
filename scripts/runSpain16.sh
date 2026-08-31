@@ -105,7 +105,7 @@ delegate_to_superpipeline() {
     local -a command=(
         "$PROJECT_DIR/scripts/runSuperPipeline.sh"
         --job-source spain16
-        --keep-failed-capture
+        --continue-on-errors
     )
 
     if (( start_from_tile != DEFAULT_START_FROM_TILE )); then

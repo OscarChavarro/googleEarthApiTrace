@@ -5,10 +5,187 @@ set -Eeuo pipefail
 readonly PROJECT_DIR="/paradigmas/master/algoritmos_basicos_3d/googleEarthApiTrace"
 readonly PATH_PLANNER_DIR="$PROJECT_DIR/11_pathPlanner"
 readonly MY_PLACES_DIR="$HOME/.googleearth"
+readonly DEFAULT_START_FROM_TILE=1
+readonly ERRORS_LOG="$PROJECT_DIR/scripts/errors.log"
+
+emit_jobs=0
+direct_mode=0
+start_from_tile="$DEFAULT_START_FROM_TILE"
+limit_tiles=0
+
+die() {
+    printf '[runWorld10][ERROR] %s\n' "$*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/runWorld10.sh [options]
+
+Runs the world level-10 batch in descending land-like coverage order. By default,
+captures and post-processing overlap through the superpipeline.
+
+Options:
+  --emit-jobs      Print the selected jobs as JSONL and do not run captures.
+  --direct         Run jobs sequentially without the superpipeline.
+  --start-from N   Start at tile N in the generated order (default: 1).
+  --limit N        Run or emit at most N jobs after --start-from.
+  -h, --help       Show this help.
+EOF
+}
+
+parse_args() {
+    while (($# > 0)); do
+        case "$1" in
+            --emit-jobs)
+                emit_jobs=1
+                shift
+                ;;
+            --direct)
+                direct_mode=1
+                shift
+                ;;
+            --start-from)
+                (($# >= 2)) || die "--start-from requires a tile number."
+                [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--start-from must be a positive integer: $2"
+                start_from_tile="$2"
+                shift 2
+                ;;
+            --limit)
+                (($# >= 2)) || die "--limit requires a count."
+                [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--limit must be a positive integer: $2"
+                limit_tiles="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                die "Unknown argument: $1"
+                ;;
+        esac
+    done
+
+    (( emit_jobs == 0 || direct_mode == 0 )) || die "--emit-jobs and --direct cannot be combined."
+}
+
+selected_job_records() {
+    awk \
+        -v start_from="$start_from_tile" \
+        -v limit="$limit_tiles" '
+        /^# trueCount=[0-9]+ lat=\[-?[0-9]+,-?[0-9]+\) lon=\[-?[0-9]+,-?[0-9]+\)$/ {
+            sequence++
+            record = $0
+            gsub(/[=\[\),]/, " ", record)
+            split(record, fields, /[[:space:]]+/)
+            true_count = fields[3]
+            latitude = fields[5]
+            longitude = fields[8]
+            records[sequence] = true_count "\t" latitude "\t" longitude
+        }
+        END {
+            total = sequence
+            emitted = 0
+            for (sequence = 1; sequence <= total; sequence++) {
+                if (sequence < start_from || (limit > 0 && emitted >= limit)) {
+                    continue
+                }
+                printf "%d\t%d\t%s\n", sequence, total, records[sequence]
+                emitted++
+            }
+        }
+    ' "${BASH_SOURCE[0]}"
+}
+
+emit_selected_jobs() {
+    local sequence
+    local total
+    local true_count
+    local lat
+    local lon
+    local center_lat
+    local center_lon
+    local route_command
+
+    while IFS=$'\t' read -r sequence total true_count lat lon; do
+        center_lat=$((lat + 4))
+        center_lon=$((lon + 4))
+        route_command="./run.sh zigzag $lat $lon 100000 3200 100000 8 8"
+        printf '{"sequence":%d,"total":%d,"jobId":"world10-%06d-%s-%s","latitude":%s,"longitude":%s,"center":"%s,%s","landLikeCells":%d,"routeCommand":"%s"}\n' \
+            "$sequence" "$total" "$sequence" "$lat" "$lon" "$lat" "$lon" \
+            "$center_lat" "$center_lon" "$true_count" "$route_command"
+    done < <(selected_job_records)
+}
+
+delegate_to_superpipeline() {
+    local -a command=(
+        "$PROJECT_DIR/scripts/runSuperPipeline.sh"
+        --job-source world10
+        --continue-on-errors
+    )
+
+    if (( start_from_tile != DEFAULT_START_FROM_TILE )); then
+        command+=(--start-from "$start_from_tile")
+    fi
+    if (( limit_tiles > 0 )); then
+        command+=(--limit "$limit_tiles")
+    fi
+
+    exec "${command[@]}"
+}
+
+run_direct() {
+    local sequence
+    local total
+    local _true_count
+    local lat
+    local lon
+    local route_command
+    local status
+
+    while IFS=$'\t' read -r sequence total _true_count lat lon; do
+        route_command="./run.sh zigzag $lat $lon 100000 3200 100000 8 8"
+        printf '[runWorld10][INFO] Starting cycle %d/%d at lat=%s lon=%s.\n' \
+            "$sequence" "$total" "$lat" "$lon"
+        if (
+            cp -- "$MY_PLACES_DIR/myplaces.kml.bak" "$MY_PLACES_DIR/myplaces.kml" &&
+            cd "$PATH_PLANNER_DIR" &&
+            ./run.sh zigzag "$lat" "$lon" 100000 3200 100000 8 8 &&
+            cd "$PROJECT_DIR" &&
+            ./scripts/runFullProcess.sh --route-command "$route_command"
+        ); then
+            printf '[runWorld10][INFO] Finished cycle %d/%d at lat=%s lon=%s.\n' \
+                "$sequence" "$total" "$lat" "$lon"
+        else
+            status=$?
+            printf '%s | script=runWorld10 | cycle=%s/%s | lat=%s lon=%s | route=%s | reason=tile_failed_status_%s\n' \
+                "$(date --iso-8601=seconds)" "$sequence" "$total" "$lat" "$lon" \
+                "$route_command" "$status" >> "$ERRORS_LOG" || true
+            pkill -9 google-earth >/dev/null 2>&1 || true
+        fi
+    done < <(selected_job_records)
+}
+
+parse_args "$@"
+
+if (( emit_jobs == 1 )); then
+    emit_selected_jobs
+    exit 0
+fi
+
+if (( direct_mode == 1 )); then
+    run_direct
+    exit 0
+fi
+
+delegate_to_superpipeline
 
 # Generated by scripts/GenerateRunWorld.java.
 # Blocks are ordered by descending land-like coverage on a 320x180 world mask.
 # Classification only uses quadtree levels 0..5 from /samples/datasets/googleEarth/toplevel.
+# The generated blocks below are the job catalog consumed by selected_job_records;
+# all execution paths above exit or exec before reaching their legacy command bodies.
 
 # trueCount=64 lat=[52,60) lon=[-148,-140)
 cp -- "$MY_PLACES_DIR/myplaces.kml.bak" "$MY_PLACES_DIR/myplaces.kml"
@@ -6759,4 +6936,3 @@ cd "$PATH_PLANNER_DIR"
 cd "$PROJECT_DIR"
 ./scripts/runFullProcess.sh \
     --route-command "./run.sh zigzag -44 172 100000 3200 100000 8 8"
-

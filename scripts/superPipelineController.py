@@ -32,7 +32,7 @@ class SuperPipelineError(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Coordinate Google Earth batch pipeline jobs.")
-    parser.add_argument("--job-source", default="spain16", choices=("spain16",))
+    parser.add_argument("--job-source", default="spain16", choices=("spain16", "world10"))
     parser.add_argument("--destination", default=str(DEFAULT_DESTINATION))
     parser.add_argument("--slot-a", default=str(DEFAULT_SLOT_A))
     parser.add_argument("--slot-b", default=str(DEFAULT_SLOT_B))
@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
         "--keep-failed-capture",
         action="store_true",
         help="Stop after a stage-B failure and preserve the output slot for diagnosis.",
+    )
+    parser.add_argument(
+        "--continue-on-errors",
+        action="store_true",
+        help="Record failed jobs and continue processing the rest of the batch.",
     )
     parser.add_argument(
         "--dry-run",
@@ -95,8 +100,12 @@ def acquire_lock() -> object:
     return handle
 
 
-def load_spain16_jobs(start_from: int | None, limit: int | None) -> list[dict]:
-    command = [str(SCRIPT_DIR / "runSpain16.sh"), "--emit-jobs"]
+def load_jobs(job_source: str, start_from: int | None, limit: int | None) -> list[dict]:
+    provider_scripts = {
+        "spain16": SCRIPT_DIR / "runSpain16.sh",
+        "world10": SCRIPT_DIR / "runWorld10.sh",
+    }
+    command = [str(provider_scripts[job_source]), "--emit-jobs"]
     if start_from is not None:
         command.extend(["--start-from", str(start_from)])
     if limit is not None:
@@ -114,7 +123,7 @@ def load_spain16_jobs(start_from: int | None, limit: int | None) -> list[dict]:
         if line.strip():
             jobs.append(json.loads(line))
     if not jobs:
-        raise SuperPipelineError("spain16 provider returned no jobs")
+        raise SuperPipelineError(f"{job_source} provider returned no jobs")
     return jobs
 
 
@@ -456,6 +465,7 @@ def run_overlapped_jobs(
     destination: Path,
     log_root: Path,
     keep_failed_capture: bool,
+    continue_on_errors: bool,
     dry_run: bool,
 ) -> None:
     validate_initial_slots(output_slot, incoming_slot)
@@ -474,7 +484,14 @@ def run_overlapped_jobs(
             except Exception as exc:
                 record_failure(log_root, job, "A", exc, incoming_slot)
                 write_slot_job(incoming_slot, job, "CAPTURE_FAILED", {"error": str(exc)})
-                raise
+                if not continue_on_errors:
+                    raise
+                print(
+                    f"[superPipeline][WARN] Stage A failed for {job['jobId']}; "
+                    "failure was recorded and the next tile will be attempted.",
+                    flush=True,
+                )
+                continue
             exchange_slots_sequential(output_slot, incoming_slot, job, log_root / job["jobId"])
             ready_job = job
             continue
@@ -528,7 +545,18 @@ def run_overlapped_jobs(
                 flush=True,
             )
         if stage_a_error is not None:
-            raise SuperPipelineError(f"stage A failed for {job['jobId']}") from stage_a_error
+            if not continue_on_errors:
+                raise SuperPipelineError(f"stage A failed for {job['jobId']}") from stage_a_error
+            print(
+                f"[superPipeline][WARN] Stage A failed for {job['jobId']}; "
+                "failure was recorded and the next tile will be attempted.",
+                flush=True,
+            )
+            # Stage B has finished (successfully or otherwise), but there is no
+            # valid incoming capture to hand off. The next iteration starts a
+            # fresh stage A and then resumes the normal A/B overlap.
+            ready_job = None
+            continue
 
         exchange_slots_sequential(output_slot, incoming_slot, job, log_root / job["jobId"])
         ready_job = job
@@ -544,7 +572,13 @@ def run_overlapped_jobs(
         except Exception as exc:
             record_failure(log_root, ready_job, "B", exc, output_slot)
             write_slot_job(output_slot, ready_job, "PROCESSING_FAILED", {"error": str(exc)})
-            raise
+            if keep_failed_capture or not continue_on_errors:
+                raise
+            print(
+                f"[superPipeline][WARN] Stage B failed for {ready_job['jobId']}; "
+                "failure was recorded after draining the batch.",
+                flush=True,
+            )
 
 
 def main() -> int:
@@ -558,7 +592,7 @@ def main() -> int:
         matrix_dir = ensured_work_directory(args.matrix_dir, "matrix-dir")
         log_root = ensured_work_directory(args.log_root, "log-root")
 
-        jobs = load_spain16_jobs(args.start_from, args.limit)
+        jobs = load_jobs(args.job_source, args.start_from, args.limit)
         print(f"[superPipeline][INFO] Loaded {len(jobs)} {args.job_source} job(s).", flush=True)
         if args.sequential:
             validate_initial_slots(slot_a, slot_b)
@@ -579,6 +613,7 @@ def main() -> int:
                 destination,
                 log_root,
                 args.keep_failed_capture,
+                args.continue_on_errors,
                 args.dry_run,
             )
         return 0

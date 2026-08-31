@@ -64,38 +64,51 @@ Run these examples from the repository root:
 cd /paradigmas/master/algoritmos_basicos_3d/googleEarthApiTrace
 ```
 
-Preview the selected Spain level-16 tile jobs without running captures:
+`runSpain16.sh` and `runWorld10.sh` use the super-pipeline by default. It overlaps the
+capture of the next tile with processing of the previous capture. Only one instance can
+run at a time because both scripts share the Google Earth process, the two pipeline slots,
+and an exclusive lock.
+
+Preview selected jobs without running Google Earth or writing tiles:
 
 ```bash
 ./scripts/runSpain16.sh --emit-jobs --start-from 30 --limit 5
+./scripts/runWorld10.sh --emit-jobs --start-from 100 --limit 5
 ```
 
-Run a small batch through the super-pipeline in the default overlapped mode. This starts
-processing the previous captured tile while Google Earth captures the next one:
+Run a small batch through the default overlapped super-pipeline:
 
 ```bash
-./scripts/runSuperPipeline.sh --start-from 30 --limit 5
+./scripts/runSpain16.sh --start-from 30 --limit 5
+./scripts/runWorld10.sh --start-from 100 --limit 5
 ```
 
-Resume the Spain level-16 download in parallel mode from tile 30 using the ramdisk for
-temporary pipeline state:
+Resume either download from an ordered tile number. `PIPELINE_TMP_DIR` controls temporary
+pipeline state; `/media/ramdisk` is the default:
 
 ```bash
-PIPELINE_TMP_DIR=/media/ramdisk ./scripts/runSuperPipeline.sh --start-from 30
+PIPELINE_TMP_DIR=/media/ramdisk ./scripts/runSpain16.sh --start-from 30
+PIPELINE_TMP_DIR=/media/ramdisk ./scripts/runWorld10.sh --start-from 100
 ```
 
-Run the same number of tiles in sequential mode, with no overlap between capture and
-post-processing:
+Use `--direct` only when sequential execution without the super-pipeline is required:
 
 ```bash
-./scripts/runSuperPipeline.sh --start-from 30 --limit 5 --sequential
+./scripts/runSpain16.sh --direct --start-from 30 --limit 5
+./scripts/runWorld10.sh --direct --start-from 100 --limit 5
 ```
 
-Run or preview a different tile range by changing `--start-from` and `--limit`. For
-example, this starts at ordered tile 120 and processes 10 tiles:
+These are long-running batch jobs, not quick examples. On a system processing roughly
+3--4 tiles per hour, they take several days and should be run in a persistent terminal
+such as `tmux` or `screen`. As observed reference points, `runSpain15.sh` took about one
+week, while `runSpain16.sh` can take almost one month. Start with `--limit`, inspect the
+logs and output, and only then launch or resume the complete range.
+
+The controller can also be called directly by selecting the provider explicitly:
 
 ```bash
-./scripts/runSuperPipeline.sh --start-from 120 --limit 10
+./scripts/runSuperPipeline.sh --job-source spain16 --start-from 120 --limit 10
+./scripts/runSuperPipeline.sh --job-source world10 --start-from 120 --limit 10
 ```
 
 ## Notes
