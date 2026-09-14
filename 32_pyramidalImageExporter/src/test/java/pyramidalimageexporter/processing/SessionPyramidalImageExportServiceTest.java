@@ -190,6 +190,43 @@ final class SessionPyramidalImageExportServiceTest {
     }
 
     @Test
+    void localCaptureReplacesReferenceTopFallbackAtTheSameQuadkey() throws Exception {
+        String referenceImage = nativeImageWithType(
+            "reference-top.png",
+            BufferedImage.TYPE_INT_RGB,
+            0xff203040
+        );
+        String localImage = nativeImageWithType(
+            "local-capture.png",
+            BufferedImage.TYPE_INT_RGB,
+            0xff506070
+        );
+        MatrixLayerTile localTile = tile("capture-tile", 0, 0, localImage);
+        MatrixLayer localLayer = new MatrixLayer();
+        localLayer.setSourceFolderName("matrix_0");
+        localLayer.setTiles(List.of(localTile));
+
+        PyramidalImageExporterState model = new PyramidalImageExporterState();
+        model.setReferenceQuadPathsByImagePath(Map.of(referenceImage, "031102"));
+        model.setMatrixLayers(List.of(localLayer));
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver().resolve(
+            model.getMatrixLayers(),
+            Map.of("capture-tile", "031102"),
+            Map.of()
+        );
+
+        List<?> entries = manifestEntries(model, resolution);
+
+        assertEquals(1, entries.size());
+        Object keptEntry = entries.get(0);
+        Method tileAccessor = keptEntry.getClass().getDeclaredMethod("tile");
+        tileAccessor.setAccessible(true);
+        MatrixLayerTile keptTile = (MatrixLayerTile) tileAccessor.invoke(keptEntry);
+        assertEquals("capture-tile", keptTile.getId());
+        assertEquals(localImage, keptTile.getTextureFile());
+    }
+
+    @Test
     void preservesPreviousPyramidWhenNoRootTileIsAvailable() throws Exception {
         PyramidalImageExporterState model = new PyramidalImageExporterState();
         model.setCataloguedQuadPathsByImagePath(Map.of(nativeImage("orphan.png", 256, 256), "03"));

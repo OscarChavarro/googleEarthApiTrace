@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-readonly PYRAMID_DIR="${1:-/samples/datasets/googleEarth/toplevel}"
+readonly DEFAULT_PYRAMID_DIR="/samples/datasets/googleEarth/toplevel"
 readonly MIN_LAT="36.0"
 readonly MAX_LAT="44.0"
 readonly MIN_LON="-9.5"
@@ -12,6 +12,9 @@ readonly TILE_LON_SPAN="0.25"
 readonly TILE_CENTER_OFFSET="0.125"
 readonly COMPLETION_CHECK_DEPTH=16
 
+pyramid_dir="$DEFAULT_PYRAMID_DIR"
+emit_centers=0
+
 die() {
     printf '[countLevel16Centers][ERROR] %s\n' "$*" >&2
     exit 1
@@ -19,21 +22,50 @@ die() {
 
 usage() {
     cat <<'EOF'
-Usage: ./scripts/countLevel16Centers.sh [pyramid-dir]
+Usage: ./scripts/countLevel16Centers.sh [options] [pyramid-dir]
 
 Counts Spain 0.25-degree candidate-region centers that already have their
 containing level-16 PNG in the pyramidal image tree.
+
+Options:
+  --emit-centers  Emit machine-readable META/TILE TSV records. Each TILE is
+                  marked as downloaded or pending and includes its region,
+                  center, and expected level-16 quadkey.
+  -h, --help      Show this help.
 
 Default pyramid-dir: /samples/datasets/googleEarth/toplevel
 EOF
 }
 
-case "${1:-}" in
-    -h|--help)
-        usage
-        exit 0
-        ;;
-esac
+parse_args() {
+    local pyramid_dir_seen=0
+
+    while (($# > 0)); do
+        case "$1" in
+            --emit-centers)
+                emit_centers=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -*)
+                die "Unknown option: $1"
+                ;;
+            *)
+                (( pyramid_dir_seen == 0 )) || die "Only one pyramid-dir may be specified."
+                pyramid_dir="$1"
+                pyramid_dir_seen=1
+                shift
+                ;;
+        esac
+    done
+}
+
+parse_args "$@"
+readonly PYRAMID_DIR="$pyramid_dir"
+readonly EMIT_CENTERS="$emit_centers"
 
 [[ -d "$PYRAMID_DIR" ]] || die "Pyramid directory does not exist: $PYRAMID_DIR"
 
@@ -46,7 +78,8 @@ awk \
     -v region_lon_span="$TILE_LON_SPAN" \
     -v center_offset="$TILE_CENTER_OFFSET" \
     -v completion_depth="$COMPLETION_CHECK_DEPTH" \
-    -v pyramid_dir="$PYRAMID_DIR" '
+    -v pyramid_dir="$PYRAMID_DIR" \
+    -v emit_centers="$EMIT_CENTERS" '
     function floor_value(value) {
         return value < int(value) ? int(value) - 1 : int(value)
     }
@@ -125,8 +158,10 @@ awk \
     END {
         for (key in covered) {
             split(key, coordinates, SUBSEP)
-            center_lat = min_lat + coordinates[1] * region_lat_span + center_offset
-            center_lon = min_lon + coordinates[2] * region_lon_span + center_offset
+            region_south = min_lat + coordinates[1] * region_lat_span
+            region_west = min_lon + coordinates[2] * region_lon_span
+            center_lat = region_south + center_offset
+            center_lon = region_west + center_offset
             matrix_side = 2 ^ completion_depth
             source_span = 360.0 / matrix_side
             column = clamp(floor_value((center_lon + 180.0) / source_span), 0, matrix_side - 1)
@@ -135,18 +170,34 @@ awk \
 
             total_centers++
             if (center_quadkey in present) {
+                status = "downloaded"
                 downloaded_centers++
             } else {
+                status = "pending"
                 pending_centers++
+            }
+
+            if (emit_centers) {
+                printf "TILE\t%s\t%.2f\t%.2f\t%.6f,%.6f\t%s\n", \
+                    status, region_south, region_west, center_lat, center_lon, center_quadkey
             }
         }
 
-        printf "pyramidDir=%s\n", pyramid_dir
-        printf "sourceLevel15Files=%d\n", level15_files
-        printf "existingLevel16Files=%d\n", level16_files
-        printf "expectedCenters=%d\n", total_centers
-        printf "downloadedCenters=%d\n", downloaded_centers
-        printf "pendingCenters=%d\n", pending_centers
+        if (emit_centers) {
+            printf "META\tpyramidDir\t%s\n", pyramid_dir
+            printf "META\tsourceLevel15Files\t%d\n", level15_files
+            printf "META\texistingLevel16Files\t%d\n", level16_files
+            printf "META\texpectedCenters\t%d\n", total_centers
+            printf "META\tdownloadedCenters\t%d\n", downloaded_centers
+            printf "META\tpendingCenters\t%d\n", pending_centers
+        } else {
+            printf "pyramidDir=%s\n", pyramid_dir
+            printf "sourceLevel15Files=%d\n", level15_files
+            printf "existingLevel16Files=%d\n", level16_files
+            printf "expectedCenters=%d\n", total_centers
+            printf "downloadedCenters=%d\n", downloaded_centers
+            printf "pendingCenters=%d\n", pending_centers
+        }
     }
 ' \
     <(find "$PYRAMID_DIR" -type f -name '?????????????????.png' -printf '%f\n') \

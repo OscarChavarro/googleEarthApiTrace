@@ -7,6 +7,7 @@ import dumpanalyzer.model.Frame;
 import dumpanalyzer.model.TileInstance;
 import dumpanalyzer.processing.TriangleMeshVertexComparator;
 import dumpanalyzer.processing.TriangleStripTileClassifier;
+import dumpanalyzer.processing.TriangleStripTileTopology;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -194,14 +195,8 @@ public final class TopLevelTilesJsonBuilder {
                 if (frame == null) {
                     continue;
                 }
-                for (TileInstance tile : frame.getTiles()) {
-                    if (tile == null) {
-                        continue;
-                    }
-                    List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
-                    if (geometries.size() != SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
-                        continue;
-                    }
+                List<TileInstance.TriangleStripGeometry> geometries = selectGlobeLevelGeometries(frame);
+                if (!geometries.isEmpty()) {
                     for (int stripIndex = 0; stripIndex < geometries.size(); stripIndex++) {
                         TopLevelTileIdentity identity = toIdentity(stripIndex, geometries.get(stripIndex));
                         if (identity != null) {
@@ -214,6 +209,74 @@ public final class TopLevelTilesJsonBuilder {
             }
         }
         globeLevelTileIdentityMap = identities;
+    }
+
+    /**
+     * Google Earth normally submits the 320 globe-level strips with one texture,
+     * but it may split the same mesh across multiple texture atlases. Preserve the
+     * historical single-tile case, then find a smallest group of complete strip
+     * batches whose combined geometry is exactly the canonical 320 strips.
+     */
+    static List<TileInstance.TriangleStripGeometry> selectGlobeLevelGeometries(Frame frame) {
+        if (frame == null || frame.getTiles().isEmpty()) {
+            return List.of();
+        }
+        List<List<TileInstance.TriangleStripGeometry>> candidates = new ArrayList<>();
+        for (TileInstance tile : frame.getTiles()) {
+            if (tile == null) {
+                continue;
+            }
+            List<TileInstance.TriangleStripGeometry> geometries = tile.getTriangleStripGeometries();
+            if (geometries.size() == SPECIAL_TILE_TRIANGLE_STRIP_COUNT && allCanonicalStrips(geometries)) {
+                return geometries;
+            }
+            if (!geometries.isEmpty()
+                && geometries.size() < SPECIAL_TILE_TRIANGLE_STRIP_COUNT
+                && allCanonicalStrips(geometries)) {
+                candidates.add(geometries);
+            }
+        }
+        candidates.sort((left, right) -> Integer.compare(right.size(), left.size()));
+        List<TileInstance.TriangleStripGeometry> selected = new ArrayList<>(SPECIAL_TILE_TRIANGLE_STRIP_COUNT);
+        return selectGeometryBatches(candidates, 0, selected)
+            ? List.copyOf(selected)
+            : List.of();
+    }
+
+    private static boolean selectGeometryBatches(
+        List<List<TileInstance.TriangleStripGeometry>> candidates,
+        int candidateIndex,
+        List<TileInstance.TriangleStripGeometry> selected
+    ) {
+        if (selected.size() == SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+            return true;
+        }
+        if (candidateIndex >= candidates.size() || selected.size() > SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+            return false;
+        }
+        List<TileInstance.TriangleStripGeometry> candidate = candidates.get(candidateIndex);
+        if (selected.size() + candidate.size() <= SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+            selected.addAll(candidate);
+            if (selectGeometryBatches(candidates, candidateIndex + 1, selected)) {
+                return true;
+            }
+            selected.subList(selected.size() - candidate.size(), selected.size()).clear();
+        }
+        return selectGeometryBatches(candidates, candidateIndex + 1, selected);
+    }
+
+    private static boolean allCanonicalStrips(List<TileInstance.TriangleStripGeometry> geometries) {
+        for (TileInstance.TriangleStripGeometry geometry : geometries) {
+            if (geometry == null || geometry.vertexCount() != 20) {
+                return false;
+            }
+            TriangleStripTileTopology topology = TRIANGLE_STRIP_CLASSIFIER.classify(geometry);
+            if (topology != TriangleStripTileTopology.DEDUPLICATED_9_VERTICES_QUAD
+                && topology != TriangleStripTileTopology.DEDUPLICATED_7_VERTICES_NORTH_POLE_TRIANGLE) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void writeGlobalPatches(

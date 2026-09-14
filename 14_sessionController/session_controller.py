@@ -2,6 +2,7 @@
 
 import os
 import argparse
+import fcntl
 import queue
 import re
 import signal
@@ -21,14 +22,19 @@ CONTROLLER_DIR = CONTROLLER_RUNNER.parent
 GOOGLE_EARTH = Path("/opt/google/earth/pro/google-earth-pro")
 GOOGLE_EARTH_DIRECTORY = GOOGLE_EARTH.parent
 GOOGLE_EARTH_TRACE_PATTERN = "googleearth-bin*trace"
+GOOGLE_EARTH_INSTANCE_LOCK = Path.home() / ".googleearth" / "instance-running-lock"
 DEFAULT_OUTPUT_DIRECTORY = Path(os.environ.get("PIPELINE_OUTPUT_DIRECTORY", "/media/ramdisk/output"))
 DEFAULT_LOG_ROOT = Path(os.environ.get("PIPELINE_LOG_ROOT", "/media/ramdisk/logs"))
+DEFAULT_TMP_DIR = Path(os.environ.get("PIPELINE_TMP_DIR", "/media/ramdisk"))
+GOOGLE_EARTH_CAPTURE_LOCK = DEFAULT_TMP_DIR / "google-earth-capture.lock"
 
 GOOGLE_EARTH_STARTUP_SECONDS = 10
 CONTROLLER_STARTUP_TIMEOUT_SECONDS = 180
 POLL_INTERVAL_SECONDS = 0.25
 SHUTDOWN_TIMEOUT_SECONDS = 5
 GOOGLE_EARTH_FINALIZATION_TIMEOUT_SECONDS = 10
+GOOGLE_EARTH_FREE_TIMEOUT_SECONDS = int(os.environ.get("GOOGLE_EARTH_FREE_TIMEOUT_SECONDS", "0"))
+GOOGLE_EARTH_FREE_STABLE_SECONDS = 2.0
 
 SUCCESS_PATTERN = re.compile(rb"\[OK\] Finished traversing (\d+) points\.")
 ERROR_PATTERNS = (
@@ -48,6 +54,58 @@ MILESTONES = (
 
 class SessionFailure(RuntimeError):
     pass
+
+
+class CaptureLock:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.handle = None
+
+    def acquire(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.handle = self.path.open("w")
+        print(f"[SESSION] Waiting for exclusive Google Earth capture lock: {self.path}", flush=True)
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX)
+        self.handle.seek(0)
+        self.handle.truncate()
+        self.handle.write(f"pid={os.getpid()}\n")
+        self.handle.flush()
+        os.fsync(self.handle.fileno())
+        print("[SESSION] Exclusive Google Earth capture lock acquired.", flush=True)
+
+    def release(self) -> None:
+        if self.handle is None:
+            return
+        try:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.handle.close()
+            self.handle = None
+
+
+def google_earth_processes() -> list[tuple[int, str]]:
+    matches: list[tuple[int, str]] = []
+    own_pid = os.getpid()
+    for proc_entry in Path("/proc").iterdir():
+        if not proc_entry.name.isdigit():
+            continue
+        pid = int(proc_entry.name)
+        if pid == own_pid:
+            continue
+        try:
+            comm = (proc_entry / "comm").read_text(encoding="utf-8", errors="replace").strip()
+            raw_cmdline = (proc_entry / "cmdline").read_bytes()
+        except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+            continue
+        cmdline = raw_cmdline.replace(b"\0", b" ").decode("utf-8", errors="replace").strip()
+        searchable = f"{comm} {cmdline}"
+        if (
+            "googleearth-bin" in searchable
+            or "google-earth-pro" in searchable
+            or "qgoogleearth" in searchable
+        ):
+            matches.append((pid, searchable))
+    return sorted(matches)
 
 
 class ManagedProcess:
@@ -152,6 +210,7 @@ class SessionController:
     def __init__(self, output_directory: Path, logical_output_directory: Path, log_root: Path) -> None:
         self.output_directory = output_directory
         self.logical_output_directory = logical_output_directory
+        self.capture_lock = CaptureLock(GOOGLE_EARTH_CAPTURE_LOCK)
         log_root.mkdir(parents=True, exist_ok=True)
         log_directory = log_root / f"14_sessionController-{os.getpid()}"
         log_directory.mkdir(parents=True, exist_ok=False)
@@ -188,6 +247,9 @@ class SessionController:
         try:
             self.validate_prerequisites()
             print(f"[SESSION] Runtime logs: {self.log_directory}", flush=True)
+            self.capture_lock.acquire()
+            self.wait_for_google_earth_to_be_free("before startup")
+            self.remove_stale_google_earth_instance_lock()
             self.start_google_earth()
             point_count = self.start_and_monitor_controller()
             self.controller_completed_successfully = True
@@ -204,7 +266,10 @@ class SessionController:
             )
             return 1
         finally:
-            self.shutdown()
+            try:
+                self.shutdown()
+            finally:
+                self.capture_lock.release()
 
     def validate_prerequisites(self) -> None:
         required_executables = (DETECTOR, GOOGLE_EARTH, CONTROLLER_RUNNER)
@@ -390,6 +455,8 @@ class SessionController:
         else:
             print("[SESSION] Google Earth already exited; no kill is needed.", flush=True)
 
+        self.wait_for_google_earth_to_be_free("after shutdown")
+
         if self.controller_reader is not None:
             self.controller_reader.join(timeout=1)
         if not self.google_earth_log.closed:
@@ -397,6 +464,62 @@ class SessionController:
         if not self.controller_log.closed:
             self.controller_log.close()
         print("[SESSION] All managed processes have been stopped.", flush=True)
+
+    def wait_for_google_earth_to_be_free(self, reason: str) -> None:
+        started = time.monotonic()
+        stable_since: Optional[float] = None
+        last_reported_pids: tuple[int, ...] | None = None
+        while True:
+            processes = google_earth_processes()
+            if not processes:
+                if stable_since is None:
+                    stable_since = time.monotonic()
+                if time.monotonic() - stable_since >= GOOGLE_EARTH_FREE_STABLE_SECONDS:
+                    if last_reported_pids:
+                        print(f"[SESSION] Google Earth is free {reason}.", flush=True)
+                    return
+                time.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            stable_since = None
+            pids = tuple(pid for pid, _ in processes)
+            if pids != last_reported_pids:
+                summary = ", ".join(f"{pid}:{description[:80]}" for pid, description in processes)
+                print(
+                    f"[SESSION] Waiting for Google Earth to be free {reason}; "
+                    f"active process(es): {summary}",
+                    flush=True,
+                )
+                last_reported_pids = pids
+
+            if (
+                GOOGLE_EARTH_FREE_TIMEOUT_SECONDS > 0
+                and time.monotonic() - started > GOOGLE_EARTH_FREE_TIMEOUT_SECONDS
+            ):
+                raise SessionFailure(
+                    f"Google Earth did not become free {reason} within "
+                    f"{GOOGLE_EARTH_FREE_TIMEOUT_SECONDS} seconds"
+                )
+            time.sleep(1.0)
+
+    def remove_stale_google_earth_instance_lock(self) -> None:
+        if not GOOGLE_EARTH_INSTANCE_LOCK.exists():
+            return
+        if google_earth_processes():
+            return
+        try:
+            GOOGLE_EARTH_INSTANCE_LOCK.unlink()
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            raise SessionFailure(
+                f"could not remove stale Google Earth instance lock "
+                f"{GOOGLE_EARTH_INSTANCE_LOCK}: {error}"
+            ) from error
+        print(
+            f"[SESSION] Removed stale Google Earth instance lock: {GOOGLE_EARTH_INSTANCE_LOCK}",
+            flush=True,
+        )
 
 
 def parse_args() -> argparse.Namespace:

@@ -815,7 +815,7 @@ public final class SessionPyramidalImageExportService {
     private static boolean isTopLayer(MatrixLayer layer) {
         return layer != null
             && layer.getSourceFolderName() != null
-            && layer.getSourceFolderName().startsWith("topLevel_matrix_");
+            && layer.getSourceFolderName().startsWith("topLevel_");
     }
 
     private static String describe(ExportEntry entry) {

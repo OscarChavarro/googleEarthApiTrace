@@ -2,19 +2,17 @@
 
 set -Eeuo pipefail
 
+export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+
 readonly PROJECT_DIR="/paradigmas/master/algoritmos_basicos_3d/googleEarthApiTrace"
 readonly PATH_PLANNER_DIR="$PROJECT_DIR/11_pathPlanner"
 readonly MY_PLACES_DIR="$HOME/.googleearth"
 readonly PYRAMID_DIR="/samples/datasets/googleEarth/toplevel"
+readonly CENTER_INVENTORY_SCRIPT="$PROJECT_DIR/scripts/countLevel16Centers.sh"
 readonly ORDER_REFERENCE_LAT="40.4166"
 readonly ORDER_REFERENCE_LON="-3.703"
-readonly MIN_LAT="36.0"
-readonly MAX_LAT="44.0"
-readonly MIN_LON="-9.5"
-readonly MAX_LON="4.5"
 readonly TILE_LAT_SPAN="0.25"
 readonly TILE_LON_SPAN="0.25"
-readonly TILE_CENTER_OFFSET="0.125"
 readonly COMPLETION_CHECK_DEPTH=16
 readonly DEFAULT_TMP_DIR="${PIPELINE_TMP_DIR:-/media/ramdisk}"
 readonly DEFAULT_START_FROM_TILE=1
@@ -24,7 +22,9 @@ readonly ERRORS_LOG="$PROJECT_DIR/scripts/errors.log"
 emit_jobs=0
 direct_mode=0
 start_from_tile="$DEFAULT_START_FROM_TILE"
+start_from_tile_was_set=0
 limit_tiles=0
+continue_on_errors=1
 
 die() {
     printf '[runSpain16][ERROR] %s\n' "$*" >&2
@@ -56,14 +56,19 @@ Usage: ./scripts/runSpain16.sh [options]
 
 Runs the missing Spain level-16 batch in the deterministic Madrid-distance order.
 The candidate regions come from the level-15 coverage mask; regions whose center
-already has a level-16 PNG are skipped.
+already has a level-16 PNG are skipped using countLevel16Centers.sh. Re-running
+the script therefore resumes from the current pyramid contents automatically.
 
 Options:
-  --emit-jobs      Print the selected jobs as JSONL and do not run captures.
-  --direct         Run jobs sequentially without the superpipeline.
-  --start-from N   Start at tile N in the filtered ordered list (default: 1).
-  --limit N        Run or emit at most N jobs after --start-from.
-  -h, --help       Show this help.
+  --emit-jobs           Print the selected jobs as JSONL and do not run captures.
+  --direct              Run jobs sequentially without the superpipeline.
+  --start-from N        Start at tile N in the current pending ordered list.
+                        By default, all currently pending centers are emitted.
+  --limit N             Run or emit at most N jobs after --start-from.
+  --stop-on-error       Stop the superpipeline at the first failed stage.
+  --continue-on-errors  Record failed jobs and continue with later pending jobs
+                        (default).
+  -h, --help            Show this help.
 EOF
 }
 
@@ -82,6 +87,7 @@ parse_args() {
                 (($# >= 2)) || die "--start-from requires a tile number."
                 [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--start-from must be a positive integer: $2"
                 start_from_tile="$2"
+                start_from_tile_was_set=1
                 shift 2
                 ;;
             --limit)
@@ -89,6 +95,14 @@ parse_args() {
                 [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--limit must be a positive integer: $2"
                 limit_tiles="$2"
                 shift 2
+                ;;
+            --stop-on-error)
+                continue_on_errors=0
+                shift
+                ;;
+            --continue-on-errors)
+                continue_on_errors=1
+                shift
                 ;;
             -h|--help)
                 usage
@@ -105,10 +119,12 @@ delegate_to_superpipeline() {
     local -a command=(
         "$PROJECT_DIR/scripts/runSuperPipeline.sh"
         --job-source spain16
-        --continue-on-errors
     )
 
-    if (( start_from_tile != DEFAULT_START_FROM_TILE )); then
+    if (( continue_on_errors == 1 )); then
+        command+=(--continue-on-errors)
+    fi
+    if (( start_from_tile_was_set == 1 )); then
         command+=(--start-from "$start_from_tile")
     fi
     if (( limit_tiles > 0 )); then
@@ -118,86 +134,6 @@ delegate_to_superpipeline() {
     exec "${command[@]}"
 }
 
-build_coverage_mask() {
-    find "$PYRAMID_DIR" -type f -name '????????????????.png' -printf '%f\n' | awk \
-        -v min_lat="$MIN_LAT" \
-        -v max_lat="$MAX_LAT" \
-        -v min_lon="$MIN_LON" \
-        -v max_lon="$MAX_LON" \
-        -v region_lat_span="$TILE_LAT_SPAN" \
-        -v region_lon_span="$TILE_LON_SPAN" '
-        function floor_value(value) {
-            return value < int(value) ? int(value) - 1 : int(value)
-        }
-
-        length($0) == 20 && substr($0, 1, 1) == "0" {
-            quadkey = substr($0, 1, 16)
-            column = 0
-            south_row = 0
-
-            for (digit_index = 2; digit_index <= 16; digit_index++) {
-                quadrant = substr(quadkey, digit_index, 1)
-                if (quadrant !~ /^[0-3]$/) {
-                    next
-                }
-                column = column * 2 + ((quadrant == 1 || quadrant == 2) ? 1 : 0)
-                south_row = south_row * 2 + ((quadrant == 2 || quadrant == 3) ? 1 : 0)
-            }
-
-            source_tiles++
-            source_span = 360.0 / 32768.0
-            west = -180.0 + column * source_span
-            east = west + source_span
-            south = -180.0 + south_row * source_span
-            north = south + source_span
-            base_x = floor_value((west - min_lon) / region_lon_span)
-            base_y = floor_value((south - min_lat) / region_lat_span)
-
-            # A level-15 tile is smaller than a 0.25-degree region. Testing the
-            # containing cell and its neighbors also handles straddled boundaries.
-            for (dx = -1; dx <= 1; dx++) {
-                for (dy = -1; dy <= 1; dy++) {
-                    x = base_x + dx
-                    y = base_y + dy
-                    region_west = min_lon + x * region_lon_span
-                    region_south = min_lat + y * region_lat_span
-                    if (region_west >= min_lon && region_west < max_lon &&
-                        region_south >= min_lat && region_south < max_lat &&
-                        east > region_west && west < region_west + region_lon_span &&
-                        north > region_south && south < region_south + region_lat_span) {
-                        covered[y SUBSEP x] = 1
-                    }
-                }
-            }
-        }
-
-        END {
-            printf "META\t%d\n", source_tiles
-            for (key in covered) {
-                split(key, coordinates, SUBSEP)
-                printf "TILE\t%.2f\t%.2f\n", \
-                    min_lat + coordinates[1] * region_lat_span, \
-                    min_lon + coordinates[2] * region_lon_span
-            }
-        }
-    '
-}
-
-build_completion_keys() {
-    local name_pattern
-
-    printf -v name_pattern '%*s.png' "$((COMPLETION_CHECK_DEPTH + 1))" ''
-    name_pattern="${name_pattern// /?}"
-
-    find "$PYRAMID_DIR" -type f -name "$name_pattern" -printf '%f\n' | awk \
-        -v expected_length="$((COMPLETION_CHECK_DEPTH + 5))" \
-        -v key_length="$((COMPLETION_CHECK_DEPTH + 1))" '
-        length($0) == expected_length && substr($0, 1, 1) == "0" {
-            print substr($0, 1, key_length)
-        }
-    '
-}
-
 parse_args "$@"
 
 if (( emit_jobs == 0 && direct_mode == 0 )); then
@@ -205,83 +141,115 @@ if (( emit_jobs == 0 && direct_mode == 0 )); then
 fi
 
 [[ -d "$PYRAMID_DIR" ]] || die "Pyramid directory does not exist: $PYRAMID_DIR"
+[[ -x "$CENTER_INVENTORY_SCRIPT" ]] || die "Center inventory script is not executable: $CENTER_INVENTORY_SCRIPT"
 
-mapfile -t MASK_RECORDS < <(build_coverage_mask)
-(( ${#MASK_RECORDS[@]} > 1 )) || die "No level-15 coverage was found in $PYRAMID_DIR"
+if ! CENTER_INVENTORY_OUTPUT="$($CENTER_INVENTORY_SCRIPT --emit-centers "$PYRAMID_DIR")"; then
+    die "Could not inventory Spain level-16 centers with $CENTER_INVENTORY_SCRIPT"
+fi
+mapfile -t CENTER_INVENTORY_RECORDS <<< "$CENTER_INVENTORY_OUTPUT"
+unset CENTER_INVENTORY_OUTPUT
 
-mapfile -t COMPLETION_KEYS < <(build_completion_keys)
-readonly COMPLETION_TILE_COUNT="${#COMPLETION_KEYS[@]}"
-readonly -a COMPLETION_KEYS
+SOURCE_TILE_COUNT=""
+COMPLETION_TILE_COUNT=""
+EXPECTED_CENTER_COUNT=""
+DOWNLOADED_CENTER_COUNT=""
+PENDING_CENTER_COUNT=""
+PENDING_TILES=()
 
-IFS=$'\t' read -r record_type SOURCE_TILE_COUNT <<< "${MASK_RECORDS[0]}"
-[[ "$record_type" == "META" && "$SOURCE_TILE_COUNT" =~ ^[1-9][0-9]*$ ]] || \
-    die "Could not count the level-15 source tiles"
+for record in "${CENTER_INVENTORY_RECORDS[@]}"; do
+    IFS=$'\t' read -r record_type field_1 field_2 field_3 field_4 field_5 extra <<< "$record"
+    case "$record_type" in
+        META)
+            case "$field_1" in
+                sourceLevel15Files) SOURCE_TILE_COUNT="$field_2" ;;
+                existingLevel16Files) COMPLETION_TILE_COUNT="$field_2" ;;
+                expectedCenters) EXPECTED_CENTER_COUNT="$field_2" ;;
+                downloadedCenters) DOWNLOADED_CENTER_COUNT="$field_2" ;;
+                pendingCenters) PENDING_CENTER_COUNT="$field_2" ;;
+            esac
+            ;;
+        TILE)
+            [[ "$field_1" == "downloaded" || "$field_1" == "pending" ]] || \
+                die "Invalid center inventory status: $field_1"
+            [[ -n "$field_2" && -n "$field_3" && -n "$field_4" && -n "$field_5" && -z "$extra" ]] || \
+                die "Malformed center inventory record: $record"
+            if [[ "$field_1" == "pending" ]]; then
+                PENDING_TILES+=("$record")
+            fi
+            ;;
+        *)
+            [[ -z "$record" ]] || die "Unknown center inventory record: $record"
+            ;;
+    esac
+done
 
-readonly SOURCE_TILE_COUNT
-readonly -a COVERED_TILES=("${MASK_RECORDS[@]:1}")
-unset MASK_RECORDS
+for count_value in \
+    "$SOURCE_TILE_COUNT" "$COMPLETION_TILE_COUNT" "$EXPECTED_CENTER_COUNT" \
+    "$DOWNLOADED_CENTER_COUNT" "$PENDING_CENTER_COUNT"; do
+    [[ "$count_value" =~ ^[0-9]+$ ]] || die "Center inventory returned incomplete metadata"
+done
+(( SOURCE_TILE_COUNT > 0 && EXPECTED_CENTER_COUNT > 0 )) || die "No level-15 coverage was found in $PYRAMID_DIR"
+(( DOWNLOADED_CENTER_COUNT + PENDING_CENTER_COUNT == EXPECTED_CENTER_COUNT )) || \
+    die "Center inventory totals are inconsistent"
+(( ${#PENDING_TILES[@]} == PENDING_CENTER_COUNT )) || \
+    die "Center inventory listed ${#PENDING_TILES[@]} pending tiles but reported $PENDING_CENTER_COUNT"
+
+readonly SOURCE_TILE_COUNT COMPLETION_TILE_COUNT EXPECTED_CENTER_COUNT
+readonly DOWNLOADED_CENTER_COUNT PENDING_CENTER_COUNT
+readonly -a CENTER_INVENTORY_RECORDS
+readonly -a PENDING_TILES
 
 build_ordered_tiles() {
     awk \
         -F $'\t' \
-        -v center_offset="$TILE_CENTER_OFFSET" \
-        -v completion_depth="$COMPLETION_CHECK_DEPTH" \
         -v ref_lat="$ORDER_REFERENCE_LAT" \
         -v ref_lon="$ORDER_REFERENCE_LON" '
-        function floor_value(value) {
-            return value < int(value) ? int(value) - 1 : int(value)
-        }
-
-        function clamp(value, minimum, maximum) {
-            if (value < minimum) return minimum
-            if (value > maximum) return maximum
-            return value
-        }
-
-        function quadkey_from_coordinates(depth, column, south_row,    bit, east, north, quadkey) {
-            quadkey = "0"
-            for (bit = depth - 1; bit >= 0; bit--) {
-                east = int(column / (2 ^ bit)) % 2
-                north = int(south_row / (2 ^ bit)) % 2
-                if (north == 0 && east == 0) {
-                    quadkey = quadkey "0"
-                } else if (north == 0 && east == 1) {
-                    quadkey = quadkey "1"
-                } else if (north == 1 && east == 0) {
-                    quadkey = quadkey "3"
-                } else {
-                    quadkey = quadkey "2"
-                }
-            }
-            return quadkey
-        }
-
-        FNR == NR {
-            if ($0 != "") {
-                completed[$0] = 1
-            }
-            next
+        function cell_key(lat, lon) {
+            return sprintf("%.2f\t%.2f", lat, lon)
         }
 
         $1 == "TILE" {
-            center_lat = $2 + center_offset
-            center_lon = $3 + center_offset
-            matrix_side = 2 ^ completion_depth
-            source_span = 360.0 / matrix_side
-            column = clamp(floor_value((center_lon + 180.0) / source_span), 0, matrix_side - 1)
-            south_row = clamp(floor_value((center_lat + 180.0) / source_span), 0, matrix_side - 1)
-            center_quadkey = quadkey_from_coordinates(completion_depth, column, south_row)
-            if (center_quadkey in completed) {
-                next
-            }
-            d_lat = center_lat - ref_lat
-            d_lon = center_lon - ref_lon
-            distance_sq = d_lat * d_lat + d_lon * d_lon
-            printf "%.12f\t%s\t%s\t%.6f,%.6f\t%s\n", \
-                distance_sq, $2, $3, center_lat, center_lon, center_quadkey
+            status_by_cell[cell_key($3, $4)] = $2
+            records[++record_count] = $0
+            next
         }
-    ' <(printf '%s\n' "${COMPLETION_KEYS[@]}") <(printf '%s\n' "${COVERED_TILES[@]}") \
-        | sort -t $'\t' -k1,1n -k2,2n -k3,3n
+
+        END {
+            for (record_index = 1; record_index <= record_count; record_index++) {
+                split(records[record_index], record, FS)
+                if (record[2] != "pending") {
+                    continue
+                }
+
+                downloaded_neighbors = 0
+                for (lat_step = -1; lat_step <= 1; lat_step++) {
+                    for (lon_step = -1; lon_step <= 1; lon_step++) {
+                        if (lat_step == 0 && lon_step == 0) {
+                            continue
+                        }
+                        neighbor_lat = record[3] + lat_step * 0.25
+                        neighbor_lon = record[4] + lon_step * 0.25
+                        if (status_by_cell[cell_key(neighbor_lat, neighbor_lon)] == "downloaded") {
+                            downloaded_neighbors++
+                        }
+                    }
+                }
+
+                # Interior failures appear as missing cells surrounded by completed level-16 tiles.
+                # Run those first, then continue with the Madrid-distance sweep.
+                patch_priority = downloaded_neighbors >= 5 ? 0 : 1
+                split(record[5], center, ",")
+                center_lat = center[1]
+                center_lon = center[2]
+                d_lat = center_lat - ref_lat
+                d_lon = center_lon - ref_lon
+                distance_sq = d_lat * d_lat + d_lon * d_lon
+                printf "%d\t%.12f\t%s\t%s\t%.6f,%.6f\t%s\n", \
+                    patch_priority, distance_sq, record[3], record[4], center_lat, center_lon, record[6]
+            }
+        }
+    ' <(printf '%s\n' "${CENTER_INVENTORY_RECORDS[@]}") \
+        | sort -t $'\t' -k1,1n -k2,2n -k3,3n -k4,4n
 }
 
 mapfile -t ORDERED_TILES < <(build_ordered_tiles)
@@ -289,13 +257,14 @@ readonly TOTAL_TILES="${#ORDERED_TILES[@]}"
 (( TOTAL_TILES > 0 )) || die "The level-15 coverage mask contains no runnable regions"
 
 if (( emit_jobs == 0 )); then
-    printf '[runSpain16][INFO] Built %d pending 0.25-degree regions from %d level-15 tiles.\n' \
-        "$TOTAL_TILES" "$SOURCE_TILE_COUNT"
-    printf '[runSpain16][INFO] Skipped regions whose center is already present at level %d using %d existing tiles.\n' \
-        "$COMPLETION_CHECK_DEPTH" "$COMPLETION_TILE_COUNT"
+    printf '[runSpain16][INFO] Center inventory: %d downloaded, %d pending, %d expected.\n' \
+        "$DOWNLOADED_CENTER_COUNT" "$PENDING_CENTER_COUNT" "$EXPECTED_CENTER_COUNT"
+    printf '[runSpain16][INFO] Scanned %d level-15 and %d level-16 files in %s.\n' \
+        "$SOURCE_TILE_COUNT" "$COMPLETION_TILE_COUNT" "$PYRAMID_DIR"
     mkdir -p "$(dirname "$PERFORMANCE_REPORT")" 2>/dev/null || true
-    printf '[runSpain16] start totalTiles=%d sourceLevel15Tiles=%d completionLevel=%d completionTiles=%d pyramidDir=%s\n' \
-        "$TOTAL_TILES" "$SOURCE_TILE_COUNT" "$COMPLETION_CHECK_DEPTH" "$COMPLETION_TILE_COUNT" "$PYRAMID_DIR" \
+    printf '[runSpain16] start totalTiles=%d downloadedCenters=%d expectedCenters=%d sourceLevel15Tiles=%d completionLevel=%d completionTiles=%d pyramidDir=%s\n' \
+        "$TOTAL_TILES" "$DOWNLOADED_CENTER_COUNT" "$EXPECTED_CENTER_COUNT" "$SOURCE_TILE_COUNT" \
+        "$COMPLETION_CHECK_DEPTH" "$COMPLETION_TILE_COUNT" "$PYRAMID_DIR" \
         2>/dev/null >> "$PERFORMANCE_REPORT" || true
 fi
 
@@ -307,7 +276,7 @@ for index in "${!ORDERED_TILES[@]}"; do
         continue
     fi
 
-    IFS=$'\t' read -r _distance_sq LAT LON TILE_CENTER CENTER_QUADKEY <<< "${ORDERED_TILES[$index]}"
+    IFS=$'\t' read -r _patch_priority _distance_sq LAT LON TILE_CENTER CENTER_QUADKEY <<< "${ORDERED_TILES[$index]}"
     route_command="./run.sh zigzag $LAT $LON 3500 100 1600 $TILE_LAT_SPAN $TILE_LON_SPAN"
 
     if (( emit_jobs == 1 )); then

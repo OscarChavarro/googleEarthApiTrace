@@ -18,6 +18,7 @@ public class GoogleEarthController {
     private static final long AFTER_TURTLE_DISABLE_MILLIS = 2000;
     private static final long BETWEEN_CHILD_ENABLE_ACTIONS_MILLIS = 1000;
     private static final long AFTER_CRASH_DIALOG_CLICK_MILLIS = 1500;
+    private static final long GOOGLE_EARTH_WINDOW_RETRY_DELAY_SECONDS = 60;
     private static final int WINDOW_RECOVERY_ATTEMPTS = 10;
     private static final long WINDOW_RECOVERY_RETRY_MILLIS = 500;
     private static final long MENU_DISCOVERY_TIMEOUT_MILLIS = 10_000;
@@ -106,7 +107,7 @@ public class GoogleEarthController {
         ui.setFeedback(null);
         Optional<X11AccessService.X11Window> googleEarthWindow;
         try {
-            googleEarthWindow = x11AccessService.findGoogleEarthWindow();
+            googleEarthWindow = findGoogleEarthWindowWithDelayedRetry();
         } catch (RuntimeException e) {
             System.err.println("[ERROR] X11 access failed: " + e.getMessage());
             ui.setFeedback("X11 access failed");
@@ -224,6 +225,24 @@ public class GoogleEarthController {
         ui.clickAt(target.centerX(), target.centerY());
         System.out.println("[OK] Clicked checkbox for " + target.name() + " at ("
             + target.centerX() + ", " + target.centerY() + ").");
+    }
+
+    private Optional<X11AccessService.X11Window> findGoogleEarthWindowWithDelayedRetry() {
+        Optional<X11AccessService.X11Window> window = x11AccessService.findGoogleEarthWindow();
+        if (window.isPresent()) {
+            return window;
+        }
+
+        System.out.println("[WAIT] Google Earth window not found; waiting "
+            + GOOGLE_EARTH_WINDOW_RETRY_DELAY_SECONDS + " seconds before retrying.");
+        ui.setFeedback("Waiting for Google Earth window");
+        sleepInterruptibly(TimeUnit.SECONDS.toMillis(GOOGLE_EARTH_WINDOW_RETRY_DELAY_SECONDS));
+
+        if (Thread.currentThread().isInterrupted()) {
+            return Optional.empty();
+        }
+        System.out.println("[STEP] Retrying Google Earth window discovery.");
+        return x11AccessService.findGoogleEarthWindow();
     }
 
     private boolean dismissCrashDialogIfPresent() {

@@ -28,8 +28,9 @@ After clearing `turtle`, the controller waits two seconds before enabling the fi
 then waits one second before enabling the second child.
 
 Before starting navigation, the controller verifies that a Google Earth X11 window exists
-and reports how many X11 child windows are exposed by the application. If Google Earth
-is not running, the controller stays idle and shows `Google Earth window not found`.
+and reports how many X11 child windows are exposed by the application. If the window is
+not found on the first attempt, the controller waits 60 seconds and retries once. Only
+if that second lookup also fails does it stay idle and show `Google Earth window not found`.
 
 Google Earth must publish its Qt accessibility tree through AT-SPI. The launcher therefore
 needs `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`. START remains idle if `turtle` is not expanded

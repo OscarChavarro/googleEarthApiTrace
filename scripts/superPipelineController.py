@@ -30,6 +30,10 @@ class SuperPipelineError(RuntimeError):
     pass
 
 
+class CaptureSessionError(SuperPipelineError):
+    pass
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Coordinate Google Earth batch pipeline jobs.")
     parser.add_argument("--job-source", default="spain16", choices=("spain16", "world10"))
@@ -340,19 +344,22 @@ def run_stage_a(
     prepare_myplaces()
     route_parts = shlex.split(job["routeCommand"])
     run_command(route_parts, PATH_PLANNER_DIR, job_log_root / "11_pathPlanner.log")
-    run_command(
-        [
-            str(PROJECT_ROOT / "14_sessionController" / "run.sh"),
-            "--capture-root",
-            str(incoming_slot),
-            "--logical-output-root",
-            str(logical_output_slot),
-            "--log-root",
-            str(log_root),
-        ],
-        PROJECT_ROOT,
-        job_log_root / "14_sessionController.log",
-    )
+    try:
+        run_command(
+            [
+                str(PROJECT_ROOT / "14_sessionController" / "run.sh"),
+                "--capture-root",
+                str(incoming_slot),
+                "--logical-output-root",
+                str(logical_output_slot),
+                "--log-root",
+                str(log_root),
+            ],
+            PROJECT_ROOT,
+            job_log_root / "14_sessionController.log",
+        )
+    except SuperPipelineError as exc:
+        raise CaptureSessionError(str(exc)) from exc
     trace_metadata = publish_private_trace(incoming_slot)
     write_slot_job(incoming_slot, job, "CAPTURE_READY", trace_metadata)
     write_job_snapshot(job, job_log_root, "CAPTURE_READY", trace_metadata)
@@ -484,6 +491,8 @@ def run_overlapped_jobs(
             except Exception as exc:
                 record_failure(log_root, job, "A", exc, incoming_slot)
                 write_slot_job(incoming_slot, job, "CAPTURE_FAILED", {"error": str(exc)})
+                if isinstance(exc, CaptureSessionError):
+                    raise
                 if not continue_on_errors:
                     raise
                 print(
@@ -545,7 +554,7 @@ def run_overlapped_jobs(
                 flush=True,
             )
         if stage_a_error is not None:
-            if not continue_on_errors:
+            if isinstance(stage_a_error, CaptureSessionError) or not continue_on_errors:
                 raise SuperPipelineError(f"stage A failed for {job['jobId']}") from stage_a_error
             print(
                 f"[superPipeline][WARN] Stage A failed for {job['jobId']}; "
