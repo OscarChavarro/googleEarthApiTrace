@@ -39,17 +39,17 @@ public final class FrameCameraGeoAnchorResolver {
         Map<Integer, CameraAnchor> byFrameId = new HashMap<>();
         Map<String, String> paths = new LinkedHashMap<>();
         Set<String> anchoredLayers = new LinkedHashSet<>();
+        Map<String, Integer> absoluteLevelByLayerName = new HashMap<>();
         for (MatrixLayer layer : layers) {
-            if (!isCameraAnchorRoot(layer)) {
+            if (!isImportedLayer(layer)) {
                 continue;
             }
-            int absoluteLevel = deepestReferenceLevel
-                - (deepestHierarchyLevel - layer.getHierarchyLevel());
+            Integer preliminaryLevel = consistentlyResolvedLevel(layer, preliminaryResolution);
+            int hierarchyLevel = layer.getHierarchyLevel() == null
+                ? -1
+                : deepestReferenceLevel - (deepestHierarchyLevel - layer.getHierarchyLevel());
+            int absoluteLevel = preliminaryLevel == null ? hierarchyLevel : preliminaryLevel;
             if (absoluteLevel < 0 || absoluteLevel >= 30) {
-                continue;
-            }
-            Integer preliminaryLevel = firstResolvedLevel(layer, preliminaryResolution);
-            if (preliminaryLevel != null && preliminaryLevel != absoluteLevel) {
                 continue;
             }
             CameraGridAnchor cameraAnchor = cameraGridAnchor(layer, absoluteLevel, frameRoot, byFrameId);
@@ -63,6 +63,7 @@ public final class FrameCameraGeoAnchorResolver {
                 continue;
             }
             anchoredLayers.add(layer.getSourceFolderName());
+            absoluteLevelByLayerName.put(layer.getSourceFolderName(), absoluteLevel);
         }
         anchoredLayers = descendantLayerNames(layers, anchoredLayers);
         Set<String> contradictedLayers = new LinkedHashSet<>();
@@ -71,8 +72,13 @@ public final class FrameCameraGeoAnchorResolver {
                 || layer.getHierarchyLevel() == null) {
                 continue;
             }
-            int absoluteLevel = deepestReferenceLevel
+            Integer preliminaryLevel = consistentlyResolvedLevel(layer, preliminaryResolution);
+            int hierarchyLevel = deepestReferenceLevel
                 - (deepestHierarchyLevel - layer.getHierarchyLevel());
+            int absoluteLevel = absoluteLevelByLayerName.getOrDefault(
+                layer.getSourceFolderName(),
+                preliminaryLevel == null ? hierarchyLevel : preliminaryLevel
+            );
             CameraGridAnchor cameraAnchor = cameraGridAnchor(layer, absoluteLevel, frameRoot, byFrameId);
             if (cameraAnchor == null) {
                 continue;
@@ -115,10 +121,10 @@ public final class FrameCameraGeoAnchorResolver {
      * trigonometry over the frame's view vector and can be defeated by a
      * frame whose view centre is not the tile it is attributed to. When the
      * two disagree for most of the tiles that structure did resolve, the
-     * structural placement normally wins. The exception is a camera cluster
-     * supported by an absolute majority of exact centre-tile observations;
-     * this protects new captures from following an already misplaced copy of
-     * their own content in the reference pyramid.</p>
+     * structural placement normally wins. At detailed levels, the exception
+     * is a camera cluster supported by an absolute majority of exact
+     * centre-tile observations; this protects new captures from following an
+     * already misplaced copy of their own content in the reference pyramid.</p>
      */
     static boolean contradictsStructuralPlacement(
         MatrixLayer layer,
@@ -164,7 +170,12 @@ public final class FrameCameraGeoAnchorResolver {
                 disagreements++;
             }
         }
-        if (disagreements > agreements && hasStrongExactCameraEvidence(cameraAnchor)) {
+        if (disagreements > agreements && canOverrideStructuralPlacement(
+            absoluteLevel,
+            cameraAnchor.clusteredVotes(),
+            cameraAnchor.totalVotes(),
+            cameraAnchor.exactVotes()
+        )) {
             System.out.println(
                 "FrameCameraGeoAnchorResolver: accepted camera anchor for layer "
                     + layer.getSourceFolderName() + " at [" + absoluteLevel + ", "
@@ -292,12 +303,14 @@ public final class FrameCameraGeoAnchorResolver {
             && exactVotes * 2 > totalVotes;
     }
 
-    private static boolean hasStrongExactCameraEvidence(CameraGridAnchor anchor) {
-        return anchor != null && hasStrongExactCameraEvidence(
-            anchor.clusteredVotes(),
-            anchor.totalVotes(),
-            anchor.exactVotes()
-        );
+    static boolean canOverrideStructuralPlacement(
+        int absoluteLevel,
+        int clusteredVotes,
+        int totalVotes,
+        int exactVotes
+    ) {
+        return absoluteLevel >= LOW_LEVEL_CAMERA_LIMIT
+            && hasStrongExactCameraEvidence(clusteredVotes, totalVotes, exactVotes);
     }
 
     private static boolean isCloserTo(
@@ -454,20 +467,25 @@ public final class FrameCameraGeoAnchorResolver {
             || exactVotes >= MIN_EXACT_VOTES_FOR_LOW_LEVEL_ANCHOR;
     }
 
-    private static Integer firstResolvedLevel(
+    static Integer consistentlyResolvedLevel(
         MatrixLayer layer,
         TileRootPathResolver.Resolution resolution
     ) {
         if (resolution == null) {
             return null;
         }
+        Integer resolvedLevel = null;
         for (MatrixLayerTile tile : layer.getTiles()) {
             String path = resolution.pathFor(layer, tile);
             if (path != null && path.matches("0[0-3]*")) {
-                return path.length() - 1;
+                int level = path.length() - 1;
+                if (resolvedLevel != null && resolvedLevel != level) {
+                    return null;
+                }
+                resolvedLevel = level;
             }
         }
-        return null;
+        return resolvedLevel;
     }
 
     private static int deepestLevel(Map<String, String> pathsByImage) {
@@ -497,12 +515,6 @@ public final class FrameCameraGeoAnchorResolver {
     private static boolean isImportedLayer(MatrixLayer layer) {
         return layer != null && layer.getSourceFolderName() != null
             && layer.getSourceFolderName().matches("matrix_\\d+");
-    }
-
-    private static boolean isCameraAnchorRoot(MatrixLayer layer) {
-        return isImportedLayer(layer)
-            && layer.getHierarchyLevel() != null
-            && layer.getParentMatrixIndex() == null;
     }
 
     private static Integer frameIdOf(String id) {

@@ -67,6 +67,7 @@ destination="$DEFAULT_DESTINATION"
 reuse_capture=0
 dry_run=0
 keep_work=0
+merge_level_only=""
 route_command=""
 run_dir=""
 trace_dump_dir="$TRACE_DUMP_DIR"
@@ -108,6 +109,9 @@ Options:
   --reuse-capture     Do not clear/capture; reprocess /media/ramdisk/output
   --dry-run           Build and validate the delta, but do not merge it
   --keep-work         Preserve staging when the script exits
+  --merge-level-only N
+                      Merge only exported leaves at level N, using the
+                      destination's existing tiles as their ancestors
   --route-command CMD Record the module-11 command that prepared the current KML
   --capture-root PATH Read/write the capture dataset from PATH
                       (default: PIPELINE_OUTPUT_DIRECTORY or /media/ramdisk/output)
@@ -184,6 +188,12 @@ while (($# > 0)); do
         --keep-work)
             keep_work=1
             shift
+            ;;
+        --merge-level-only)
+            (($# >= 2)) || die "--merge-level-only requires a level."
+            [[ "$2" =~ ^[0-9]+$ ]] || die "--merge-level-only must be a non-negative integer: $2"
+            merge_level_only="$2"
+            shift 2
             ;;
         --route-command)
             (($# >= 2)) || die "--route-command requires a description."
@@ -528,6 +538,74 @@ validate_export_log_and_pyramid() {
     done < <(find "$pyramid" -type f -name '*.png' -print0)
 }
 
+quadkey_file_path() {
+    local root="$1"
+    local quadkey="$2"
+    local path="$root"
+    local digits digit_index
+
+    if [[ "$quadkey" == "0" ]]; then
+        printf '%s/0.png\n' "$root"
+        return 0
+    fi
+
+    digits="${quadkey:1}"
+    for ((digit_index = 0; digit_index < ${#digits}; digit_index++)); do
+        path="$path/${digits:digit_index:1}"
+    done
+    printf '%s/%s.png\n' "$path" "$quadkey"
+}
+
+build_level_only_delta() {
+    local source="$1"
+    local target="$2"
+    local level="$3"
+    local leaf_pattern leaf relative quadkey target_leaf
+    local prefix_length ancestor_quadkey source_ancestor target_ancestor
+    local leaf_count=0 ancestor_count=0
+    local -A required_ancestors=()
+
+    [[ -d "$source" ]] || die "Full delta does not exist: $source"
+    [[ ! -e "$target" && ! -L "$target" ]] ||
+        die "Level-only delta path already exists: $target"
+    mkdir -- "$target"
+
+    printf -v leaf_pattern '%*s.png' "$((level + 1))" ''
+    leaf_pattern="${leaf_pattern// /?}"
+
+    while IFS= read -r -d '' leaf; do
+        relative="${leaf#"$source"/}"
+        quadkey="$(basename "$leaf" .png)"
+        target_leaf="$target/$relative"
+        mkdir -p -- "$(dirname "$target_leaf")"
+        ln -- "$leaf" "$target_leaf"
+        leaf_count=$((leaf_count + 1))
+
+        for ((prefix_length = 1; prefix_length <= level; prefix_length++)); do
+            ancestor_quadkey="${quadkey:0:prefix_length}"
+            required_ancestors["$ancestor_quadkey"]="$quadkey"
+        done
+    done < <(find "$source" -type f -name "$leaf_pattern" -print0)
+
+    ((leaf_count > 0)) || die "Full delta contains no level-$level leaves."
+
+    # Thousands of leaves share almost all ancestors. Resolve and copy each
+    # unique ancestor once instead of repeating the filesystem checks for
+    # every leaf/prefix pair.
+    for ancestor_quadkey in "${!required_ancestors[@]}"; do
+        source_ancestor="$(quadkey_file_path "$destination" "$ancestor_quadkey")"
+        target_ancestor="$(quadkey_file_path "$target" "$ancestor_quadkey")"
+        [[ -r "$source_ancestor" ]] ||
+            die "Destination lacks ancestor $ancestor_quadkey required by ${required_ancestors[$ancestor_quadkey]}"
+        mkdir -p -- "$(dirname "$target_ancestor")"
+        cp -- "$source_ancestor" "$target_ancestor"
+        ancestor_count=$((ancestor_count + 1))
+    done
+
+    [[ -r "$target/0.png" ]] || die "Level-only delta has no root ancestor."
+    log "Prepared level-$level-only delta: leaves=$leaf_count destination_ancestors=$ancestor_count path=$target"
+}
+
 reset_matrix_attempt_staging() {
     local resolved
 
@@ -580,7 +658,7 @@ append_merge_error() {
 
 preflight_started="$(date +%s)"
 log "Starting preflight started_at=$(date --iso-8601=seconds)"
-for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum sha256sum compare identify mktemp mkdir basename dirname stat df sleep cp mv; do
+for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum sha256sum compare identify mktemp mkdir basename dirname stat df sleep cp mv ln; do
     require_command "$command_name"
 done
 [[ -x "$SCRIPT_DIR/gradlew" ]] || die "Gradle wrapper is not executable: $SCRIPT_DIR/gradlew"
@@ -695,6 +773,12 @@ run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
     validate_export_log_and_pyramid "$module_32_log"
 
 delta="$MATRIX_DIR/pyramidalImage"
+if [[ -n "$merge_level_only" ]]; then
+    level_only_delta="$MATRIX_DIR/pyramidalImage-level-$merge_level_only"
+    run_timed_step "level_${merge_level_only}_delta_preparation_${attempt_suffix}" \
+        build_level_only_delta "$delta" "$level_only_delta" "$merge_level_only"
+    delta="$level_only_delta"
+fi
 module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
 phase_log "42 pyramidalImageMerger dry-run"
 if run_logged "42_pyramidalImageMerger_dry_run_${attempt_suffix}" \

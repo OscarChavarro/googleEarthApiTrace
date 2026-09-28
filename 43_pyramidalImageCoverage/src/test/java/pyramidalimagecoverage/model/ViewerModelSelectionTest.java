@@ -66,6 +66,22 @@ class ViewerModelSelectionTest {
     }
 
     @Test
+    void newPrimarySelectionReplacesThePreviousGreenSelection() {
+        PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
+        TileRecord first = add(catalog, "00");
+        TileRecord second = add(catalog, "01");
+        ViewerModel model = new ViewerModel(catalog);
+
+        model.toggleSelection(first.address());
+        model.toggleSelection(second.address());
+
+        assertFalse(first.selected());
+        assertTrue(second.selected());
+        assertEquals(second.address(), model.selectedAddress());
+        assertEquals(second.address(), model.lastSelectedAddress());
+    }
+
+    @Test
     void secondarySelectionIsIndependentFromPrimarySelection() {
         PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
         add(catalog, "0");

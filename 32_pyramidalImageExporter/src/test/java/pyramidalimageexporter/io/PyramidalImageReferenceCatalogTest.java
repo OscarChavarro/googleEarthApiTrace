@@ -106,7 +106,10 @@ final class PyramidalImageReferenceCatalogTest {
 
         catalog.readTopAndDeepestLevelSelection(tempDir, 1, 2);
         Path second = writeTile("0123");
-        Files.setLastModifiedTime(second.getParent(), FileTime.fromMillis(System.currentTimeMillis() + 2_000L));
+        Files.setLastModifiedTime(
+            second.getParent().getParent(),
+            FileTime.fromMillis(System.currentTimeMillis() + 2_000L)
+        );
         PyramidalImageReferenceCatalog.Selection updated =
             catalog.readTopAndDeepestLevelSelection(tempDir, 1, 2);
 

@@ -18,7 +18,7 @@ import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
  * Anchors an unresolved imported layer by comparing its native tiles with
  * quadrants of an already canonicalized imported layer from the same session.
  */
-final class ImportedLayerVisualAnchorResolver {
+public final class ImportedLayerVisualAnchorResolver {
     private static final int MAX_PROBES = 16;
     private static final int MAX_ANCESTOR_LEVEL_GAP = 3;
     private static final int MIN_ANCHOR_VOTES = 3;
@@ -26,13 +26,83 @@ final class ImportedLayerVisualAnchorResolver {
     private static final double MAX_BEST_TO_SECOND_RATIO = 0.75;
     private static final double MAX_ANCESTOR_BEST_TO_SECOND_RATIO = 0.90;
 
-    private final Map<String, BufferedImage> imageCache = new HashMap<>();
+    private final Map<String, SampledImage> imageCache = new HashMap<>();
 
     Map<String, String> resolve(
         List<MatrixLayer> layers,
         TileRootPathResolver.Resolution resolution
     ) {
         return resolve(layers, resolution, Map.of());
+    }
+
+    /**
+     * Validates already placed layers at the deepest reference level against
+     * the quadrants of the reference level immediately above them. This is
+     * deliberately independent of the layer's structural parent: it catches
+     * a rigid but geographically shifted descendant chain when the new area
+     * has no byte-identical destination tiles yet.
+     */
+    public Map<String, String> resolveDeepReferenceLayers(
+        List<MatrixLayer> layers,
+        TileRootPathResolver.Resolution resolution,
+        Map<String, String> referenceQuadPathsByImagePath
+    ) {
+        Map<String, String> anchors = new LinkedHashMap<>();
+        if (layers == null || resolution == null
+            || referenceQuadPathsByImagePath == null || referenceQuadPathsByImagePath.isEmpty()) {
+            return anchors;
+        }
+        int deepestLevel = deepestReferenceLevel(referenceQuadPathsByImagePath);
+        List<ParentTile> parents = referenceParentTiles(referenceQuadPathsByImagePath);
+        if (deepestLevel == Integer.MAX_VALUE || parents.isEmpty()) {
+            return anchors;
+        }
+        for (MatrixLayer layer : layers) {
+            if (layer == null || layer.getTiles() == null || layer.getTiles().isEmpty()
+                || !isPlacedAtLevel(layer, resolution, deepestLevel)) {
+                continue;
+            }
+            // Supplying only this layer prevents its structural parent from
+            // hiding the independent reference-parent candidates.
+            AnchorChoice choice = chooseAnchor(layer, List.of(layer), parents, deepestLevel);
+            if (choice == null || choice.anchor().level() != deepestLevel) {
+                continue;
+            }
+            int side = 1 << deepestLevel;
+            int assigned = 0;
+            for (MatrixLayerTile tile : layer.getTiles()) {
+                int row = tile.getI() + choice.anchor().rowOffset();
+                int col = Math.floorMod(tile.getJ() + choice.anchor().colOffset(), side);
+                if (row < 0 || row >= side || tile.getId() == null || tile.getId().isBlank()) {
+                    continue;
+                }
+                anchors.put(tile.getId(), encodeFullPath(deepestLevel, row, col));
+                assigned++;
+            }
+            System.out.println(
+                "ImportedLayerVisualAnchorResolver: independently reference-validated layer "
+                    + layer.getSourceFolderName() + " at [" + deepestLevel + ", "
+                    + choice.anchor().rowOffset() + ", " + choice.anchor().colOffset() + "]"
+                    + " from " + choice.votes() + "/" + choice.acceptedProbes()
+                    + " confident probes; assigned " + assigned + " tile(s)."
+            );
+        }
+        imageCache.clear();
+        return anchors;
+    }
+
+    private static boolean isPlacedAtLevel(
+        MatrixLayer layer,
+        TileRootPathResolver.Resolution resolution,
+        int expectedLevel
+    ) {
+        for (MatrixLayerTile tile : layer.getTiles()) {
+            String path = resolution.pathFor(layer, tile);
+            if (path != null && path.length() - 1 == expectedLevel) {
+                return true;
+            }
+        }
+        return false;
     }
 
     Map<String, String> resolve(
@@ -252,7 +322,7 @@ final class ImportedLayerVisualAnchorResolver {
         int maximumTargetLevel,
         int maximumLevelGap
     ) {
-        BufferedImage childImage = imageOf(child);
+        SampledImage childImage = imageOf(child, 16);
         if (childImage == null) {
             return null;
         }
@@ -262,7 +332,16 @@ final class ImportedLayerVisualAnchorResolver {
                 || (designatedParent != null && parent.layer() != designatedParent)) {
                 continue;
             }
-            BufferedImage parentImage = imageOf(parent.tile());
+            int minimumApplicableGap = Math.max(1, minimumTargetLevel - parent.level());
+            int maximumApplicableGap = Math.min(
+                maximumLevelGap,
+                maximumTargetLevel - parent.level()
+            );
+            if (maximumApplicableGap < minimumApplicableGap) {
+                continue;
+            }
+            int parentSampleStep = Math.max(1, 16 >> maximumApplicableGap);
+            SampledImage parentImage = imageOf(parent.tile(), parentSampleStep);
             if (parentImage == null) {
                 continue;
             }
@@ -406,13 +485,17 @@ final class ImportedLayerVisualAnchorResolver {
         return true;
     }
 
-    private BufferedImage imageOf(MatrixLayerTile tile) {
+    private SampledImage imageOf(MatrixLayerTile tile, int sampleStep) {
         String file = tile == null ? null : tile.getTextureFile();
         if (file == null || file.isBlank()) {
             return null;
         }
-        if (imageCache.containsKey(file)) {
-            return imageCache.get(file);
+        SampledImage cached = imageCache.get(file);
+        if (cached != null && cached.sampleStep() <= sampleStep) {
+            return cached;
+        }
+        if (cached == null && imageCache.containsKey(file)) {
+            return null;
         }
         BufferedImage image = null;
         try {
@@ -421,19 +504,25 @@ final class ImportedLayerVisualAnchorResolver {
         catch (IOException | RuntimeException ignored) {
             // An unreadable texture provides no visual anchor evidence.
         }
-        imageCache.put(file, image);
-        return image;
+        if (image == null) {
+            imageCache.put(file, null);
+            return null;
+        }
+        SampledImage sampled = SampledImage.from(image, sampleStep);
+        image.flush();
+        imageCache.put(file, sampled);
+        return sampled;
     }
 
     private static double rmse(
-        BufferedImage parent,
-        BufferedImage child,
+        SampledImage parent,
+        SampledImage child,
         int levelGap,
         int subRow,
         int subCol
     ) {
-        if (parent.getWidth() < 256 || parent.getHeight() < 256
-            || child.getWidth() < 256 || child.getHeight() < 256) {
+        if (parent.width() < 256 || parent.height() < 256
+            || child.width() < 256 || child.height() < 256) {
             return Double.POSITIVE_INFINITY;
         }
         int scale = 1 << levelGap;
@@ -445,8 +534,8 @@ final class ImportedLayerVisualAnchorResolver {
         long count = 0L;
         for (int y = 0; y < regionSize; y += step) {
             for (int x = 0; x < regionSize; x += step) {
-                int parentRgb = parent.getRGB(x0 + x, y0 + y);
-                int childRgb = child.getRGB(x * scale, y * scale);
+                int parentRgb = parent.rgbAt(x0 + x, y0 + y);
+                int childRgb = child.rgbAt(x * scale, y * scale);
                 for (int shift : new int[]{16, 8, 0}) {
                     int delta = ((parentRgb >> shift) & 0xff) - ((childRgb >> shift) & 0xff);
                     sum += delta * delta;
@@ -455,6 +544,32 @@ final class ImportedLayerVisualAnchorResolver {
             }
         }
         return Math.sqrt(sum / count);
+    }
+
+    private record SampledImage(int width, int height, int sampleStep, int columns, int[] pixels) {
+        private static SampledImage from(BufferedImage image, int sampleStep) {
+            int step = Math.max(1, sampleStep);
+            int columns = (image.getWidth() + step - 1) / step;
+            int rows = (image.getHeight() + step - 1) / step;
+            int[] pixels = new int[columns * rows];
+            for (int row = 0; row < rows; row++) {
+                int y = row * step;
+                for (int column = 0; column < columns; column++) {
+                    pixels[row * columns + column] = image.getRGB(column * step, y);
+                }
+            }
+            return new SampledImage(image.getWidth(), image.getHeight(), step, columns, pixels);
+        }
+
+        private int rgbAt(int x, int y) {
+            if (x < 0 || y < 0 || x >= width || y >= height
+                || x % sampleStep != 0 || y % sampleStep != 0) {
+                throw new IllegalArgumentException(
+                    "Pixel (" + x + ", " + y + ") is outside sampled grid step " + sampleStep
+                );
+            }
+            return pixels[(y / sampleStep) * columns + x / sampleStep];
+        }
     }
 
     private static boolean confident(MatchPair pair) {

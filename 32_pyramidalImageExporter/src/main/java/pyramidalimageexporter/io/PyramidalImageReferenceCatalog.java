@@ -12,6 +12,9 @@ import pyramidalimageexporter.diagnostics.PerformanceReport;
 
 /** Catalogues tiles from the deepest levels of an existing folder-based pyramidal image. */
 public final class PyramidalImageReferenceCatalog {
+    private static final String REFERENCE_PREFIXES_ENV =
+        "PYRAMIDAL_IMAGE_EXPORTER_REFERENCE_PREFIXES";
+
     public record Selection(Map<String, String> quadPathByImagePath, Map<String, String> sha256ByImagePath) {}
 
     public Map<String, String> readDeepestLevel(Path rootFolder) {
@@ -74,11 +77,15 @@ public final class PyramidalImageReferenceCatalog {
             .max()
             .orElse(-1);
         int shallowestDeepLevel = Math.max(0, deepestLevel - deepestLevelCount + 1);
+        List<String> referencePrefixes = configuredReferencePrefixes();
         Map<String, String> selected = new LinkedHashMap<>();
         Map<String, String> selectedHashes = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : valid.quadPathByImagePath().entrySet()) {
             int level = entry.getValue().length() - 1;
-            if (level <= highestTopLevel || level >= shallowestDeepLevel) {
+            boolean selectedDeepTile = level >= shallowestDeepLevel
+                && (referencePrefixes.isEmpty()
+                    || referencePrefixes.stream().anyMatch(entry.getValue()::startsWith));
+            if (level <= highestTopLevel || selectedDeepTile) {
                 selected.put(entry.getKey(), entry.getValue());
                 String hash = valid.sha256ByImagePath().get(entry.getKey());
                 if (hash != null) {
@@ -90,9 +97,29 @@ public final class PyramidalImageReferenceCatalog {
         System.out.println(
             "PyramidalImageReferenceCatalog: catalogued " + selected.size()
                 + " reference tile(s) at top level(s) 0.." + highestTopLevel
-                + " and deep level(s) " + shallowestDeepLevel + ".." + deepestLevel + "."
+                + " and deep level(s) " + shallowestDeepLevel + ".." + deepestLevel
+                + (referencePrefixes.isEmpty()
+                    ? "."
+                    : " within " + referencePrefixes.size() + " configured geographic prefix(es).")
         );
         return new Selection(Map.copyOf(selected), Map.copyOf(selectedHashes));
+    }
+
+    private static List<String> configuredReferencePrefixes() {
+        String value = System.getenv(REFERENCE_PREFIXES_ENV);
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        List<String> prefixes = Stream.of(value.split(","))
+            .map(String::trim)
+            .filter(prefix -> !prefix.isEmpty())
+            .toList();
+        if (prefixes.isEmpty() || prefixes.stream().anyMatch(prefix -> !prefix.matches("0[0-3]*"))) {
+            throw new IllegalArgumentException(
+                REFERENCE_PREFIXES_ENV + " must contain comma-separated full quad-path prefixes."
+            );
+        }
+        return prefixes;
     }
 
     private Map<String, String> readValidTiles(Path rootFolder) {

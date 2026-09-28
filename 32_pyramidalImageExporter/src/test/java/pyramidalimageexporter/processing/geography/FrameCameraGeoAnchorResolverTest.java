@@ -2,6 +2,7 @@ package pyramidalimageexporter.processing.geography;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -91,5 +92,52 @@ final class FrameCameraGeoAnchorResolverTest {
         assertTrue(FrameCameraGeoAnchorResolver.hasStrongExactCameraEvidence(72, 72, 68));
         assertFalse(FrameCameraGeoAnchorResolver.hasStrongExactCameraEvidence(72, 72, 2));
         assertFalse(FrameCameraGeoAnchorResolver.hasStrongExactCameraEvidence(40, 72, 35));
+    }
+
+    @Test
+    void onlyLetsExactCameraEvidenceOverrideStructureAtDetailedLevels() {
+        assertFalse(FrameCameraGeoAnchorResolver.canOverrideStructuralPlacement(5, 72, 72, 68));
+        assertFalse(FrameCameraGeoAnchorResolver.canOverrideStructuralPlacement(10, 72, 72, 68));
+        assertTrue(FrameCameraGeoAnchorResolver.canOverrideStructuralPlacement(11, 72, 72, 68));
+        assertTrue(FrameCameraGeoAnchorResolver.canOverrideStructuralPlacement(17, 72, 72, 68));
+    }
+
+    @Test
+    void preservesTheResolvedLevelForADisconnectedDeepLayer() {
+        MatrixLayer layer = layerWithTiles(
+            "matrix_8",
+            tile("09000_100", 0, 0),
+            tile("09000_101", 0, 1)
+        );
+        layer.setHierarchyLevel(1);
+        TileRootPathResolver.Resolution structure = new TileRootPathResolver.Resolution(
+            Map.of(
+                "09000_100", FrameCameraGeoAnchorResolver.quadPathForCell(17, 50900, 64100),
+                "09000_101", FrameCameraGeoAnchorResolver.quadPathForCell(17, 50900, 64101)
+            ),
+            Set.of(),
+            Map.of()
+        );
+
+        assertEquals(17, FrameCameraGeoAnchorResolver.consistentlyResolvedLevel(layer, structure));
+    }
+
+    @Test
+    void rejectsAMixedResolvedLevelAsAGeographicSeed() {
+        MatrixLayer layer = layerWithTiles(
+            "matrix_2",
+            tile("09000_100", 0, 0),
+            tile("09000_101", 0, 1)
+        );
+        TileRootPathResolver.Resolution structure = new TileRootPathResolver.Resolution(
+            Map.of(
+                "09000_100", FrameCameraGeoAnchorResolver.quadPathForCell(12, 1000, 2000),
+                "09000_101", FrameCameraGeoAnchorResolver.quadPathForCell(13, 2000, 4001)
+            ),
+            Set.of(),
+            Map.of()
+        );
+
+        assertNull(FrameCameraGeoAnchorResolver.consistentlyResolvedLevel(layer, structure));
     }
 }

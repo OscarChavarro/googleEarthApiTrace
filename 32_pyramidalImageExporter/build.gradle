@@ -17,6 +17,7 @@ application {
 
 tasks.withType(JavaExec).configureEach {
     workingDir = projectDir
+    maxHeapSize = System.getenv('PYRAMIDAL_IMAGE_EXPORTER_MAX_HEAP') ?: '16g'
 }
 
 repositories {

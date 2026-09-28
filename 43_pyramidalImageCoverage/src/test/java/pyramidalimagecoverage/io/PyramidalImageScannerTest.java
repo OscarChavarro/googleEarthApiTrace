@@ -1,8 +1,10 @@
 package pyramidalimagecoverage.io;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -86,5 +88,80 @@ class PyramidalImageScannerTest {
         assertNotNull(catalog.tileAt(1, 0, 1));
         assertNotNull(catalog.tileAt(2, 0, 2));
         assertNotNull(catalog.tileAt(3, 0, 5));
+    }
+
+    @Test
+    void writesOneSparseExistenceCacheFilePerPopulatedLevel() throws IOException {
+        Path root = temporaryFolder.resolve("cached-pyramid");
+        Path cache = temporaryFolder.resolve("ramdisk");
+        Files.createDirectories(root.resolve("3/0"));
+        Files.createFile(root.resolve("0.png"));
+        Files.createFile(root.resolve("3/03.png"));
+        Files.createFile(root.resolve("3/0/030.png"));
+
+        new PyramidalImageScanner(root, cache).scan(root);
+
+        assertTrue(Files.isRegularFile(cache.resolve(cacheFile(0))));
+        assertTrue(Files.isRegularFile(cache.resolve(cacheFile(1))));
+        assertTrue(Files.isRegularFile(cache.resolve(cacheFile(2))));
+        assertFalse(Files.exists(cache.resolve(cacheFile(3))));
+    }
+
+    @Test
+    void trustsCachedPositiveFlagsWithoutRecheckingDescendantImages() throws IOException {
+        Path root = temporaryFolder.resolve("monotonic-pyramid");
+        Path cache = temporaryFolder.resolve("ramdisk");
+        Files.createDirectories(root.resolve("3"));
+        Files.createFile(root.resolve("0.png"));
+        Path descendant = Files.createFile(root.resolve("3/03.png"));
+        PyramidalImageScanner scanner = new PyramidalImageScanner(root, cache);
+        scanner.scan(root);
+        Files.delete(descendant); // Simulates an impossible deletion in the production dataset.
+
+        PyramidCatalog loadedFromFlags = scanner.scanRoot(root);
+
+        assertEquals(2, loadedFromFlags.tileCount());
+        assertNotNull(loadedFromFlags.tileAt(1, 0, 1));
+    }
+
+    @Test
+    void addsNewTilesToAnExistingCache() throws IOException {
+        Path root = temporaryFolder.resolve("growing-pyramid");
+        Path cache = temporaryFolder.resolve("ramdisk");
+        Files.createDirectories(root.resolve("3/0"));
+        Files.createFile(root.resolve("0.png"));
+        Files.createFile(root.resolve("3/03.png"));
+        PyramidalImageScanner scanner = new PyramidalImageScanner(root, cache);
+        scanner.scan(root);
+
+        Files.createFile(root.resolve("3/0/030.png"));
+        PyramidCatalog updated = scanner.scan(root);
+        PyramidCatalog loadedFromFlags = scanner.scanRoot(root);
+
+        assertNotNull(updated.tileAt(2, 0, 2));
+        assertNotNull(loadedFromFlags.tileAt(2, 0, 2));
+    }
+
+    @Test
+    void neverUsesTheCacheForAnotherPyramid() throws IOException {
+        Path eligible = temporaryFolder.resolve("eligible");
+        Path other = temporaryFolder.resolve("other");
+        Path cache = temporaryFolder.resolve("ramdisk");
+        Files.createDirectories(eligible.resolve("3"));
+        Files.createFile(eligible.resolve("0.png"));
+        Files.createFile(eligible.resolve("3/03.png"));
+        PyramidalImageScanner scanner = new PyramidalImageScanner(eligible, cache);
+        scanner.scan(eligible);
+        Files.createDirectories(other);
+        Files.createFile(other.resolve("0.png"));
+
+        PyramidCatalog otherCatalog = scanner.scanRoot(other);
+
+        assertEquals(1, otherCatalog.tileCount());
+        assertNull(otherCatalog.tileAt(1, 0, 1));
+    }
+
+    private static String cacheFile(int level) {
+        return TileExistenceCache.FILE_PREFIX + level + ".flags";
     }
 }

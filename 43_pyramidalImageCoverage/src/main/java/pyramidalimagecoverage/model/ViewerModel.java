@@ -51,10 +51,18 @@ public final class ViewerModel {
             return;
         }
         TileRecord tile = catalog.tileAt(address.depth(), address.column(), address.southRow());
-        boolean selecting = tile == null
-            ? !address.equals(selectedAddress)
-            : !tile.selected();
-        boolean changed = tile != null && catalog.setSelectionRecursively(tile, selecting);
+        // There is one primary selection (the green marker and the preview).  Older
+        // code left previous primary tile flags set, so several green cells could
+        // remain while the preview represented only the most recent address.
+        boolean selecting = !address.equals(selectedAddress);
+        boolean changed = false;
+        if (selecting) {
+            changed |= catalog.clearSelection();
+            changed |= tile != null && catalog.setSelectionRecursively(tile, true);
+        }
+        else {
+            changed |= catalog.clearSelection();
+        }
         TileAddress newSelectedAddress = selecting ? address : null;
         if (!java.util.Objects.equals(selectedAddress, newSelectedAddress)) {
             selectedAddress = newSelectedAddress;

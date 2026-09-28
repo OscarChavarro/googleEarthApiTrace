@@ -82,11 +82,20 @@ centering the complete world matrix.
 AWT key events are converted through Vitral's `AwtSystem`. The command mapping itself
 operates on Vitral events and action interfaces, without depending on AWT or Swing.
 
-Startup reads only `0.png`, so the level-0 view appears without first walking a large
-tile tree. Descendant paths are indexed progressively by a small background worker pool
-and the UI refreshes in batches as new levels become available. Visible PNGs are also
-decoded lazily by background image-loader threads into a bounded LRU cache, keeping both
-initial display and navigation through cold folders responsive.
+For ordinary input folders, startup reads only `0.png`, so the level-0 view appears
+without first walking a large tile tree. Descendant paths are indexed progressively by a
+small background worker pool and the UI refreshes in batches as new levels become
+available. Visible PNGs are also decoded lazily by background image-loader threads into
+a bounded LRU cache, keeping both initial display and navigation through cold folders
+responsive.
+
+When the input is exactly `/samples/datasets/googleEarth/toplevel`, affirmative tile
+existence flags are persisted in `/media/ramdisk`, in one sparse `.flags` file per
+quadtree level. A later run builds its initial catalogue from those RAM-backed files and
+does not query the pyramid for tiles already known to exist. The background scan still
+examines unknown entries so newly produced tiles are discovered and added to the flags.
+Absence is never persisted because a missing tile may arrive later. Other input folders
+do not read or write this cache.
 
 ## Tests
 

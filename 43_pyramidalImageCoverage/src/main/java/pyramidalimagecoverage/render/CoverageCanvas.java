@@ -9,7 +9,6 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.nio.file.Files;
 import java.util.Locale;
 import javax.swing.JViewport;
 import pyramidalimagecoverage.io.TileImageRepository;
@@ -354,7 +353,7 @@ public final class CoverageCanvas extends Canvas {
     boolean selectedTileFileExists() {
         TileAddress selected = model.selectedAddress();
         return selected != null
-            && Files.isRegularFile(model.catalog().rootFolder().resolve(model.catalog().relativePathFor(selected)));
+            && model.catalog().tileAt(selected.depth(), selected.column(), selected.southRow()) != null;
     }
 
     private boolean isFullScreen() {

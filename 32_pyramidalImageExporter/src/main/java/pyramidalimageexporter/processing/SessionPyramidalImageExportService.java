@@ -33,6 +33,7 @@ import pyramidalimageexporter.model.MatrixLayer;
 import pyramidalimageexporter.model.MatrixLayerTile;
 import pyramidalimageexporter.model.state.PyramidalImageExporterState;
 import pyramidalimageexporter.processing.content.ContentHashCatalog;
+import pyramidalimageexporter.processing.toplevels.ImportedLayerVisualAnchorResolver;
 import pyramidalimageexporter.processing.content.ReferenceContentRigidAnchorResolver;
 import pyramidalimageexporter.processing.geography.FrameCameraGeoAnchorResolver;
 import pyramidalimageexporter.processing.uncles.ExternalUncleBridgeBuilder;
@@ -155,6 +156,20 @@ public final class SessionPyramidalImageExportService {
                 preliminaryResolution
             )
         );
+        Set<String> independentlyAnchoredLayers = new HashSet<>(referenceContentAnchors.anchoredLayerNames());
+        independentlyAnchoredLayers.addAll(geographicAnchors.anchoredLayerNames());
+        List<MatrixLayer> referenceVisualCandidates = model.getMatrixLayers().stream()
+            .filter(layer -> layer != null
+                && !independentlyAnchoredLayers.contains(layer.getSourceFolderName()))
+            .toList();
+        Map<String, String> referenceVisualAnchors = PerformanceReport.time(
+            "export.referenceVisualRigidAnchors",
+            () -> new ImportedLayerVisualAnchorResolver().resolveDeepReferenceLayers(
+                referenceVisualCandidates,
+                preliminaryResolution,
+                model.getReferenceQuadPathsByImagePath()
+            )
+        );
         Set<String> protectedLayers = new HashSet<>(structurallyAnchoredLayers);
         protectedLayers.addAll(referenceContentAnchors.anchoredLayerNames());
         protectedLayers.addAll(geographicAnchors.anchoredLayerNames());
@@ -185,8 +200,10 @@ public final class SessionPyramidalImageExportService {
             directlyPlacedLayerNames
         );
         directlyPlacedTileIds.forEach(externalFullPaths::remove);
+        referenceVisualAnchors.keySet().forEach(externalFullPaths::remove);
         externalFullPaths.putAll(geographicAnchors.fullPathByTileId());
         externalFullPaths.putAll(referenceContentAnchors.fullPathByTileId());
+        externalFullPaths.putAll(referenceVisualAnchors);
         System.out.println(
             "SessionPyramidalImageExportService: " + externalFullPaths.size()
                 + " externally anchored id(s) and " + bridge.aliasById().size()
@@ -201,7 +218,10 @@ public final class SessionPyramidalImageExportService {
 
         ExportManifest manifest;
         try {
-            manifest = PerformanceReport.time("export.buildManifest", () -> buildExportManifest(model, resolution));
+            manifest = PerformanceReport.time(
+                "export.buildManifest",
+                () -> buildExportManifest(model, resolution, independentlyAnchoredLayers)
+            );
         }
         catch (IllegalStateException ex) {
             reportStatus(model, "Export failed before writing: " + ex.getMessage());
@@ -535,6 +555,14 @@ public final class SessionPyramidalImageExportService {
         PyramidalImageExporterState model,
         TileRootPathResolver.Resolution resolution
     ) {
+        return buildExportManifest(model, resolution, Set.of());
+    }
+
+    private static ExportManifest buildExportManifest(
+        PyramidalImageExporterState model,
+        TileRootPathResolver.Resolution resolution,
+        Set<String> independentlyAnchoredLayerNames
+    ) {
         Map<String, ExportEntry> selectedByPath = new LinkedHashMap<>();
         Map<String, Boolean> nativeImageByPath = new HashMap<>();
         Map<Integer, Integer> rejectedByLevel = new TreeMap<>();
@@ -600,6 +628,20 @@ public final class SessionPyramidalImageExportService {
                 ExportEntry current = selectedByPath.get(fullPath);
                 if (current == null) {
                     selectedByPath.put(fullPath, candidate);
+                    continue;
+                }
+                boolean candidateIndependentlyAnchored = independentlyAnchoredLayerNames.contains(
+                    candidate.layer().getSourceFolderName()
+                );
+                boolean currentIndependentlyAnchored = independentlyAnchoredLayerNames.contains(
+                    current.layer().getSourceFolderName()
+                );
+                if (candidateIndependentlyAnchored && !currentIndependentlyAnchored) {
+                    selectedByPath.put(fullPath, candidate);
+                    replacements++;
+                    continue;
+                }
+                if (currentIndependentlyAnchored && !candidateIndependentlyAnchored) {
                     continue;
                 }
                 if (preferCandidateOverCurrent(candidate, current, resolution)) {

@@ -3,11 +3,13 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +38,11 @@ class CaptureSessionError(SuperPipelineError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Coordinate Google Earth batch pipeline jobs.")
-    parser.add_argument("--job-source", default="spain16", choices=("spain16", "world10"))
+    parser.add_argument(
+        "--job-source",
+        default="spain16",
+        choices=("spain16", "spain-madrid17", "spain-madrid18", "spain-madrid19", "world10"),
+    )
     parser.add_argument("--destination", default=str(DEFAULT_DESTINATION))
     parser.add_argument("--slot-a", default=str(DEFAULT_SLOT_A))
     parser.add_argument("--slot-b", default=str(DEFAULT_SLOT_B))
@@ -107,6 +113,9 @@ def acquire_lock() -> object:
 def load_jobs(job_source: str, start_from: int | None, limit: int | None) -> list[dict]:
     provider_scripts = {
         "spain16": SCRIPT_DIR / "runSpain16.sh",
+        "spain-madrid17": SCRIPT_DIR / "runSpainMadrid17.sh",
+        "spain-madrid18": SCRIPT_DIR / "runSpainMadrid18.sh",
+        "spain-madrid19": SCRIPT_DIR / "runMadridSpain19.sh",
         "world10": SCRIPT_DIR / "runWorld10.sh",
     }
     command = [str(provider_scripts[job_source]), "--emit-jobs"]
@@ -173,9 +182,10 @@ def write_slot_job(slot: Path, job: dict, state: str, extra: dict | None = None)
 
 
 def format_job_progress(job: dict, batch_total: int) -> str:
+    catalog_total = job.get("total", batch_total)
     return (
         f"{job['jobId']} "
-        f"(tile {job['sequence']}/{batch_total} "
+        f"(tile {job['sequence']}/{catalog_total} "
         f"lat={job['latitude']} lon={job['longitude']})"
     )
 
@@ -185,6 +195,110 @@ def read_slot_job(slot: Path) -> dict | None:
     if not descriptor.exists():
         return None
     return json.loads(descriptor.read_text(encoding="utf-8"))
+
+
+def job_identity(job: dict) -> tuple[str, str]:
+    center_quadkey = job.get("centerQuadkey")
+    if isinstance(center_quadkey, str) and center_quadkey:
+        return ("centerQuadkey", center_quadkey)
+    center_quadkey = job.get("centerLevel17Quadkey")
+    if isinstance(center_quadkey, str) and center_quadkey:
+        return ("centerLevel17Quadkey", center_quadkey)
+    route_command = job.get("routeCommand")
+    if isinstance(route_command, str) and route_command:
+        return ("routeCommand", route_command)
+    return ("jobId", str(job.get("jobId")))
+
+
+def quadkey_from_coordinates(level: int, column: int, south_row: int) -> str:
+    quadkey = "0"
+    for bit in range(level - 1, -1, -1):
+        east = (column >> bit) & 1
+        south = (south_row >> bit) & 1
+        quadkey += ("0", "1", "3", "2")[(south << 1) | east]
+    return quadkey
+
+
+def job_geographic_extent(job: dict) -> tuple[float, float, float, float] | None:
+    try:
+        south = float(job["latitude"])
+        west = float(job["longitude"])
+        latitude_span = float(job["latitudeSpan"])
+        longitude_span = float(job["longitudeSpan"])
+    except (KeyError, TypeError, ValueError):
+        try:
+            route = shlex.split(str(job["routeCommand"]))
+            south = float(job["latitude"])
+            west = float(job["longitude"])
+            latitude_span = float(route[-2])
+            longitude_span = float(route[-1])
+        except (KeyError, TypeError, ValueError, IndexError):
+            return None
+    if latitude_span <= 0 or longitude_span <= 0:
+        return None
+    return south, west, latitude_span, longitude_span
+
+
+def destination_contains_job_area(destination: Path, job: dict) -> bool:
+    completion_level = job.get("completionLevel")
+    if completion_level is not None:
+        if not isinstance(completion_level, int) or completion_level < 0:
+            return False
+        level = completion_level
+    else:
+        quadkey = job.get("centerQuadkey", job.get("centerLevel17Quadkey"))
+        if not isinstance(quadkey, str) or not quadkey.startswith("0"):
+            return False
+        level = len(quadkey) - 1
+    extent = job_geographic_extent(job)
+    if level < 0 or extent is None:
+        return False
+    south, west, latitude_span, longitude_span = extent
+    matrix_side = 1 << level
+    world_span = 360.0 / matrix_side
+    first_column = min(matrix_side - 1, max(0, math.floor((west + 180.0) / world_span)))
+    last_column = min(
+        matrix_side - 1,
+        math.floor((west + longitude_span + 180.0 - world_span / 1000.0) / world_span),
+    )
+    first_row = min(matrix_side - 1, max(0, math.floor((south + 180.0) / world_span)))
+    last_row = min(
+        matrix_side - 1,
+        math.floor((south + latitude_span + 180.0 - world_span / 1000.0) / world_span),
+    )
+    if first_column > last_column or first_row > last_row:
+        return False
+    for south_row in range(first_row, last_row + 1):
+        for column in range(first_column, last_column + 1):
+            candidate = quadkey_from_coordinates(level, column, south_row)
+            tile = destination.joinpath(*candidate[1:], f"{candidate}.png")
+            if not tile.is_file():
+                return False
+    return True
+
+
+def discard_completed_jobs(destination: Path, jobs: list[dict]) -> list[dict]:
+    """Keep only jobs whose declared geographic extent is not fully committed.
+
+    Providers without a completion-level contract deliberately remain untouched.  This
+    preserves the legacy Spain level-16 provider behaviour while allowing world10 and
+    newer geographic providers to resume from the production pyramid rather than from
+    an old sequence number.
+    """
+    pending = []
+    completed = 0
+    for job in jobs:
+        if destination_contains_job_area(destination, job):
+            completed += 1
+        else:
+            pending.append(job)
+    if completed:
+        print(
+            f"[superPipeline][INFO] Skipped {completed} job(s) already fully present "
+            "in the destination.",
+            flush=True,
+        )
+    return pending
 
 
 def clear_directory_contents(directory: Path) -> None:
@@ -366,6 +480,28 @@ def run_stage_a(
     return trace_metadata
 
 
+def run_stage_a_with_retries(
+    job: dict,
+    incoming_slot: Path,
+    log_root: Path,
+    logical_output_slot: Path,
+    attempts: int = 3,
+) -> dict:
+    for attempt in range(1, attempts + 1):
+        try:
+            return run_stage_a(job, incoming_slot, log_root, logical_output_slot)
+        except CaptureSessionError:
+            if attempt >= attempts:
+                raise
+            print(
+                f"[superPipeline][WARN] Capture session failed for {job['jobId']} "
+                f"on attempt {attempt}/{attempts}; retrying.",
+                flush=True,
+            )
+            time.sleep(5)
+    raise AssertionError("unreachable capture retry state")
+
+
 def run_stage_b(
     job: dict,
     output_slot: Path,
@@ -422,6 +558,13 @@ def run_stage_b(
         "--route-command",
         job["routeCommand"],
     ]
+    merge_level_only = job.get("mergeLevelOnly")
+    if merge_level_only is not None:
+        if not isinstance(merge_level_only, int) or merge_level_only < 0:
+            raise SuperPipelineError(
+                f"invalid mergeLevelOnly for {job['jobId']}: {merge_level_only!r}"
+            )
+        command.extend(["--merge-level-only", str(merge_level_only)])
     if dry_run:
         command.append("--dry-run")
     run_command(
@@ -444,7 +587,7 @@ def run_sequential_job(
     log_root: Path,
     dry_run: bool,
 ) -> None:
-    run_stage_a(job, incoming_slot, log_root, output_slot)
+    run_stage_a_with_retries(job, incoming_slot, log_root, output_slot)
     exchange_slots_sequential(output_slot, incoming_slot, job, log_root / job["jobId"])
     run_stage_b(job, output_slot, matrix_dir, destination, log_root, dry_run)
 
@@ -462,6 +605,119 @@ def validate_initial_slots(slot_a: Path, slot_b: Path) -> None:
             f"slot {slot} contains non-terminal job {descriptor.get('jobId')} in state {state}; "
             "recover it explicitly before starting new work"
         )
+
+
+def reconcile_initial_slots(
+    jobs: list[dict],
+    job_source: str,
+    slot_a: Path,
+    slot_b: Path,
+    matrix_dir: Path,
+    destination: Path,
+    log_root: Path,
+    dry_run: bool,
+) -> list[dict]:
+    terminal_states = {
+        "COMMITTED",
+        "DRY_RUN_COMPLETED",
+        "CAPTURE_FAILED",
+        "PROCESSING_FAILED",
+        "EMPTY",
+    }
+    pending_by_identity = {job_identity(job): job for job in jobs}
+    grouped_slots: dict[tuple[str, str], list[tuple[Path, dict]]] = {}
+
+    for slot in (slot_a, slot_b):
+        descriptor = read_slot_job(slot)
+        if descriptor is None or descriptor.get("state") in terminal_states:
+            continue
+        job_id = descriptor.get("jobId")
+        if not isinstance(job_id, str) or not job_id.startswith(f"{job_source}-"):
+            raise SuperPipelineError(
+                f"slot {slot} contains non-terminal job {job_id} from another job source"
+            )
+        grouped_slots.setdefault(job_identity(descriptor), []).append((slot, descriptor))
+
+    recovered_identities: set[tuple[str, str]] = set()
+    for identity, slot_records in grouped_slots.items():
+        pending_job = pending_by_identity.get(identity)
+        if pending_job is None:
+            if not all(
+                destination_contains_job_area(destination, descriptor)
+                for _, descriptor in slot_records
+            ):
+                slot, descriptor = slot_records[0]
+                raise SuperPipelineError(
+                    f"slot {slot} contains non-terminal job {descriptor.get('jobId')} "
+                    "which is outside the selected pending jobs and is not present in the destination"
+                )
+            for slot, descriptor in slot_records:
+                write_slot_job(
+                    slot,
+                    descriptor,
+                    "COMMITTED",
+                    {"recoveryNote": "every tile in the job extent is already present in destination"},
+                )
+            print(
+                f"[superPipeline][INFO] Reconciled {slot_records[0][1].get('jobId')}: "
+                "its complete geographic extent is already committed.",
+                flush=True,
+            )
+            continue
+
+        recoverable = []
+        for slot, descriptor in slot_records:
+            private_trace = slot / "_pipeline" / "capture.trace"
+            if (
+                descriptor.get("state") in {"CAPTURE_READY", "PROCESSING"}
+                and private_trace.is_file()
+                and private_trace.stat().st_size > 0
+            ):
+                recoverable.append((slot, descriptor))
+
+        if recoverable:
+            recovery_slot, descriptor = recoverable[0]
+            print(
+                f"[superPipeline][INFO] Recovering completed capture for "
+                f"{pending_job['jobId']} from {recovery_slot}.",
+                flush=True,
+            )
+            if descriptor.get("state") != "CAPTURE_READY":
+                write_slot_job(recovery_slot, pending_job, "CAPTURE_READY")
+            run_stage_b(
+                pending_job,
+                recovery_slot,
+                matrix_dir,
+                destination,
+                log_root,
+                dry_run,
+            )
+            recovered_identities.add(identity)
+            for slot, duplicate in slot_records:
+                if slot != recovery_slot:
+                    write_slot_job(
+                        slot,
+                        duplicate,
+                        "EMPTY",
+                        {"recoveryNote": f"duplicate of recovered slot {recovery_slot}"},
+                    )
+            continue
+
+        error = "non-terminal slot has no reusable private capture trace"
+        for slot, descriptor in slot_records:
+            failed_state = (
+                "CAPTURE_FAILED"
+                if descriptor.get("state") in {"CAPTURING", "CAPTURE_READY"}
+                else "PROCESSING_FAILED"
+            )
+            write_slot_job(slot, descriptor, failed_state, {"error": error})
+        print(
+            f"[superPipeline][WARN] {pending_job['jobId']} cannot be recovered from its "
+            "stale slot and will be captured again.",
+            flush=True,
+        )
+
+    return [job for job in jobs if job_identity(job) not in recovered_identities]
 
 
 def run_overlapped_jobs(
@@ -487,7 +743,7 @@ def run_overlapped_jobs(
                 flush=True,
             )
             try:
-                run_stage_a(job, incoming_slot, log_root, output_slot)
+                run_stage_a_with_retries(job, incoming_slot, log_root, output_slot)
             except Exception as exc:
                 record_failure(log_root, job, "A", exc, incoming_slot)
                 write_slot_job(incoming_slot, job, "CAPTURE_FAILED", {"error": str(exc)})
@@ -522,7 +778,7 @@ def run_overlapped_jobs(
                 dry_run,
             )
             stage_a_future: Future = executor.submit(
-                run_stage_a,
+                run_stage_a_with_retries,
                 job,
                 incoming_slot,
                 log_root,
@@ -603,6 +859,23 @@ def main() -> int:
 
         jobs = load_jobs(args.job_source, args.start_from, args.limit)
         print(f"[superPipeline][INFO] Loaded {len(jobs)} {args.job_source} job(s).", flush=True)
+        jobs = discard_completed_jobs(destination, jobs)
+        if not jobs:
+            print("[superPipeline][INFO] No pending jobs remain after destination inventory.", flush=True)
+            return 0
+        jobs = reconcile_initial_slots(
+            jobs,
+            args.job_source,
+            slot_a,
+            slot_b,
+            matrix_dir,
+            destination,
+            log_root,
+            args.dry_run,
+        )
+        if not jobs:
+            print("[superPipeline][INFO] No pending jobs remain after slot recovery.", flush=True)
+            return 0
         if args.sequential:
             validate_initial_slots(slot_a, slot_b)
             for job in jobs:
