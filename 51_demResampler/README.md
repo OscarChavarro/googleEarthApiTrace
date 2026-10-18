@@ -7,7 +7,7 @@ elevation rather than RGB: every `.bin` is a headerless `258x258` raster of sign
 `256x256` area contains the tile itself and the surrounding one-sample halo comes from
 its eight neighbours.
 
-The program uses Vitral 1.3 for parallel console progress and a small JNI bridge to the
+The program uses Vitral 1.4 for parallel console progress and a small JNI bridge to the
 system GDAL library. GDAL reads and bilinearly resamples one VRT mosaic; Java owns
 quadtree addressing, integer conversion, raw serialization, parallel scheduling, and
 construction of all coarser levels.

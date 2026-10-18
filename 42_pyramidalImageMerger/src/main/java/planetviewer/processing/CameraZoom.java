@@ -8,7 +8,7 @@ import vsdk.toolkit.environment.camera.Camera;
  * fixed from the old prototype's AquynzaScales z/Z key handlers (its own
  * mouse wheel handler was marked "not working" in a source comment, and its
  * Z-key branch never called setPosition() because the old Vector3D was
- * mutable; both bugs are fixed here since Vitral 1.3's Vector3Dd is
+ * mutable; both bugs are fixed here since Vitral 1.4's Vector3Dd is
  * immutable). The step shrinks as the camera nears z = 1 (never reaching
  * the plane in one step) and grows as it nears z = 10, so
  * PscUpdater#update can renormalize it smoothly across PSC boundaries every

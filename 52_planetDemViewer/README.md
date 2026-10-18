@@ -1,7 +1,7 @@
 # 52_planetDemViewer
 
 Visor interactivo Java 17 + Gradle basado funcionalmente en `41_planetViewer`, pero para
-pirámides DEM raw producidas por `51_demResampler`. Usa JOGL para dibujar y Vitral 1.3
+pirámides DEM raw producidas por `51_demResampler`. Usa JOGL para dibujar y Vitral 1.4
 para cámaras, exportación offline y lectura/evaluación de paletas GIMP.
 
 ## Entrada

@@ -40,7 +40,7 @@ final class QuadFrustumIntersector {
     }
 
     private static boolean isProjected(Camera camera, Vector3Dd point) {
-        return camera.projectPoint(point, new Vector3Dd());
+        return camera.projectPoint(point) != null;
     }
 
     private static boolean clipEdge(Camera camera, Vector3Dd a, Vector3Dd b) {
