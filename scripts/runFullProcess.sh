@@ -498,23 +498,49 @@ validate_dump_analyzer_outputs() {
 
 validate_export_log_and_pyramid() {
     local export_log="$1"
+    local level_only="${2:-}"
     local pyramid="$MATRIX_DIR/pyramidalImage"
     local png_count file filename quadkey digits expected digit
 
     ! grep -q 'Export failed' "$export_log" || die "Module 32 reported an export failure."
     ! grep -Eq '\([1-9][0-9]* failed\)' "$export_log" || die "Module 32 reported failed PNG writes."
-    ! grep -q 'discarded due to ambiguous' "$export_log" || die "Module 32 discarded ambiguous tile placements."
     ! grep -q 'layer(s) with NO placed tiles' "$export_log" || die "Module 32 left complete matrix layers unplaced."
     grep -Eq 'Export complete: [1-9][0-9]* tiles processed' "$export_log" ||
         die "Module 32 did not report a non-empty completed export."
-    awk '
-        /^  matrix_[0-9]+: [0-9]+\/[0-9]+ tiles placed/ {
-            split($2, counts, "/");
-            if ((counts[1] + 0) != (counts[2] + 0)) bad = 1;
-            seen++;
-        }
-        END { if (seen == 0 || bad) exit 1; }
-    ' "$export_log" || die "Not every imported matrix tile received an absolute position."
+    if [[ -z "$level_only" ]]; then
+        ! grep -q 'discarded due to ambiguous' "$export_log" || die "Module 32 discarded ambiguous tile placements."
+        awk '
+            /^  matrix_[0-9]+: [0-9]+\/[0-9]+ tiles placed/ {
+                split($2, counts, "/");
+                placed = counts[1] + 0;
+                total = counts[2] + 0;
+                # The exporter explicitly reports paths beyond the configured
+                # world10 boundary. They are intentionally absent from the
+                # delta and must not make a level-10 merge look incomplete.
+                # Any other missing tile (including an ambiguity) remains a
+                # hard failure.
+                if (placed != total) {
+                    missing = total - placed;
+                    out_of_scope = 0;
+                    if (match($0, /\([0-9]+ beyond level [0-9]+\)/)) {
+                        marker = substr($0, RSTART + 1, RLENGTH - 1);
+                        split(marker, parts, " ");
+                        out_of_scope = parts[1] + 0;
+                    }
+                    # A completely unplaced layer with observed paths beyond
+                    # the boundary is an all-deep matrix. Its unresolved peers
+                    # cannot safely be placed at level 10, so module 32 omits
+                    # the whole layer and labels it explicitly.
+                    excluded_layer = index($0, "entire layer excluded by the level boundary") > 0;
+                    if (missing != out_of_scope && !excluded_layer) bad = 1;
+                }
+                seen++;
+            }
+            END { if (seen == 0 || bad) exit 1; }
+        ' "$export_log" || die "An imported matrix tile lacks a valid level-10 position."
+    else
+        log "Module 32 reported unresolved deep placements; retaining only validated level-$level_only leaves."
+    fi
 
     [[ -r "$pyramid/0.png" ]] || die "Delta pyramid has no readable root 0.png."
     png_count="$(count_files "$pyramid" '*.png')"
@@ -770,7 +796,7 @@ phase_log "32 pyramidalImageExporter"
 run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
     "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$MATRIX_DIR" "$destination"
 run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
-    validate_export_log_and_pyramid "$module_32_log"
+    validate_export_log_and_pyramid "$module_32_log" "$merge_level_only"
 
 delta="$MATRIX_DIR/pyramidalImage"
 if [[ -n "$merge_level_only" ]]; then

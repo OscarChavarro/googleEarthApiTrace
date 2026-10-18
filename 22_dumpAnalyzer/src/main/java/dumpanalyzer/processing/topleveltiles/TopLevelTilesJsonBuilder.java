@@ -237,32 +237,23 @@ public final class TopLevelTilesJsonBuilder {
             }
         }
         candidates.sort((left, right) -> Integer.compare(right.size(), left.size()));
+        // A globe frame may contain thousands of small atlas batches.  Exploring
+        // every include/exclude combination turns this harmless catalogue lookup
+        // into an exponential search.  Candidates are sorted largest-first, so
+        // greedily retaining each whole batch that still fits chooses the fewest
+        // batches under the same preference as the old search.  A non-exact sum
+        // remains deliberately rejected rather than accepting a partial globe.
         List<TileInstance.TriangleStripGeometry> selected = new ArrayList<>(SPECIAL_TILE_TRIANGLE_STRIP_COUNT);
-        return selectGeometryBatches(candidates, 0, selected)
-            ? List.copyOf(selected)
-            : List.of();
-    }
-
-    private static boolean selectGeometryBatches(
-        List<List<TileInstance.TriangleStripGeometry>> candidates,
-        int candidateIndex,
-        List<TileInstance.TriangleStripGeometry> selected
-    ) {
-        if (selected.size() == SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
-            return true;
-        }
-        if (candidateIndex >= candidates.size() || selected.size() > SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
-            return false;
-        }
-        List<TileInstance.TriangleStripGeometry> candidate = candidates.get(candidateIndex);
-        if (selected.size() + candidate.size() <= SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
-            selected.addAll(candidate);
-            if (selectGeometryBatches(candidates, candidateIndex + 1, selected)) {
-                return true;
+        for (List<TileInstance.TriangleStripGeometry> candidate : candidates) {
+            if (selected.size() + candidate.size() > SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+                continue;
             }
-            selected.subList(selected.size() - candidate.size(), selected.size()).clear();
+            selected.addAll(candidate);
+            if (selected.size() == SPECIAL_TILE_TRIANGLE_STRIP_COUNT) {
+                return List.copyOf(selected);
+            }
         }
-        return selectGeometryBatches(candidates, candidateIndex + 1, selected);
+        return List.of();
     }
 
     private static boolean allCanonicalStrips(List<TileInstance.TriangleStripGeometry> geometries) {

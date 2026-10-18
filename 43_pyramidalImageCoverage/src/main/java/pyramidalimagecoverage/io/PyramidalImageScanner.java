@@ -116,6 +116,27 @@ public final class PyramidalImageScanner {
         }
     }
 
+    /** Adds tiles published after initial indexing at one requested depth. */
+    public void scanLevel(PyramidCatalog catalog, int depth, Runnable progressCallback) throws IOException {
+        if (catalog == null || depth < 0 || depth > PyramidCatalog.MAX_ADDRESSABLE_DEPTH) {
+            return;
+        }
+        TileExistenceCache cache = cacheFor(catalog.rootFolder());
+        AtomicInteger added = new AtomicInteger();
+        try (Stream<Path> paths = Files.walk(catalog.rootFolder(), depth + 1)) {
+            paths.filter(Files::isRegularFile).filter(this::isPng).forEach(path -> {
+                TileAddress address = tileAddress(catalog, path);
+                if (address != null && address.depth() == depth && addIfTile(catalog, cache, path)) {
+                    added.incrementAndGet();
+                }
+            });
+        }
+        if (added.get() > 0) {
+            cache.flush();
+            progressCallback.run();
+        }
+    }
+
     private boolean addIfTile(PyramidCatalog catalog, TileExistenceCache cache, Path path) {
         TileAddress address = tileAddress(catalog, path);
         if (address == null) {

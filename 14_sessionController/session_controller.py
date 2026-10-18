@@ -2,6 +2,7 @@
 
 import os
 import argparse
+import errno
 import fcntl
 import queue
 import re
@@ -21,6 +22,8 @@ CONTROLLER_RUNNER = PROJECT_ROOT / "13_googleEarthController" / "run.sh"
 CONTROLLER_DIR = CONTROLLER_RUNNER.parent
 GOOGLE_EARTH = Path("/opt/google/earth/pro/google-earth-pro")
 GOOGLE_EARTH_DIRECTORY = GOOGLE_EARTH.parent
+GOOGLE_EARTH_BINARY = GOOGLE_EARTH_DIRECTORY / "googleearth-bin"
+APITRACE = Path("/usr/local/bin/apitrace")
 GOOGLE_EARTH_TRACE_PATTERN = "googleearth-bin*trace"
 GOOGLE_EARTH_INSTANCE_LOCK = Path.home() / ".googleearth" / "instance-running-lock"
 DEFAULT_OUTPUT_DIRECTORY = Path(os.environ.get("PIPELINE_OUTPUT_DIRECTORY", "/media/ramdisk/output"))
@@ -221,9 +224,20 @@ class SessionController:
         google_earth_env = os.environ.copy()
         google_earth_env["TRACE_OUTPUT_DIRECTORY"] = str(output_directory)
         google_earth_env["TRACE_MANIFEST_OUTPUT_DIRECTORY"] = str(logical_output_directory)
+        # The installed Google Earth wrapper runs `apitrace trace` without an
+        # output argument.  Its binary directory may be read-only, so invoke
+        # apitrace directly and place the one trace for this capture in its
+        # physical pipeline slot.
+        google_earth_env["QT_LINUX_ACCESSIBILITY_ALWAYS_ON"] = "1"
         self.google_earth = ManagedProcess(
             "Google Earth",
-            [str(GOOGLE_EARTH)],
+            [
+                str(APITRACE),
+                "trace",
+                "--output",
+                str(output_directory / "googleearth-bin.trace"),
+                str(GOOGLE_EARTH_BINARY),
+            ],
             PROJECT_ROOT,
             self.google_earth_log,
             subprocess.DEVNULL,
@@ -272,7 +286,7 @@ class SessionController:
                 self.capture_lock.release()
 
     def validate_prerequisites(self) -> None:
-        required_executables = (DETECTOR, GOOGLE_EARTH, CONTROLLER_RUNNER)
+        required_executables = (DETECTOR, GOOGLE_EARTH, GOOGLE_EARTH_BINARY, APITRACE, CONTROLLER_RUNNER)
         for executable in required_executables:
             if not executable.is_file():
                 raise SessionFailure(f"required executable not found: {executable}")
@@ -309,6 +323,17 @@ class SessionController:
                     # A concurrent cleanup may have removed the same trace.
                     continue
         except OSError as error:
+            # apitrace in this project honours TRACE_OUTPUT_DIRECTORY, so the
+            # executable directory is only a legacy trace location.  Some
+            # installations bind it read-only; do not prevent a fresh trace
+            # from being written to the per-slot writable destination.
+            if error.errno == errno.EROFS and self.output_directory.is_dir():
+                print(
+                    "[SESSION] Legacy Google Earth trace directory is read-only; "
+                    "using TRACE_OUTPUT_DIRECTORY instead.",
+                    flush=True,
+                )
+                return
             raise SessionFailure(f"could not remove old Google Earth trace files: {error}") from error
 
         if removed_count == 0:

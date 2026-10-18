@@ -7,6 +7,7 @@ import math
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -23,9 +24,15 @@ DEFAULT_DESTINATION = Path("/samples/datasets/googleEarth/toplevel")
 DEFAULT_SLOT_A = Path("/media/ramdisk/output")
 DEFAULT_SLOT_B = Path("/media/ramdisk/output_incoming")
 DEFAULT_TMP_DIR = Path(os.environ.get("PIPELINE_TMP_DIR", "/media/ramdisk"))
+# A full capture and merge may be slow, but a block which emits no completion
+# within an hour is considered unhealthy.  It is recorded and the batch moves
+# on when --continue-on-errors is selected.
+JOB_TIMEOUT_SECONDS = int(os.environ.get("PIPELINE_JOB_TIMEOUT_SECONDS", "3600"))
 DEFAULT_MATRIX_DIR = DEFAULT_TMP_DIR / "matrix"
 DEFAULT_LOG_ROOT = Path("/media/ramdisk/logs/superPipeline")
 LOCK_PATH = DEFAULT_TMP_DIR / "google-earth-superpipeline.lock"
+COVERAGE_SNAPSHOT_PATH = os.environ.get("PIPELINE_COVERAGE_SNAPSHOT")
+COVERAGE_WINDOW_ID = os.environ.get("PIPELINE_COVERAGE_WINDOW_ID")
 
 
 class SuperPipelineError(RuntimeError):
@@ -41,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--job-source",
         default="spain16",
-        choices=("spain16", "spain-madrid17", "spain-madrid18", "spain-madrid19", "world10"),
+        choices=("spain16", "spain-madrid17", "spain-madrid18", "spain-madrid19", "world10", "world10-priority-americas", "world10-repair-52n84w", "world10-priority-eurasia", "world10-priority-africa", "world10-missing-eurasia-africa", "world10-named-gaps", "world10-remaining-continental"),
     )
     parser.add_argument("--destination", default=str(DEFAULT_DESTINATION))
     parser.add_argument("--slot-a", default=str(DEFAULT_SLOT_A))
@@ -117,6 +124,13 @@ def load_jobs(job_source: str, start_from: int | None, limit: int | None) -> lis
         "spain-madrid18": SCRIPT_DIR / "runSpainMadrid18.sh",
         "spain-madrid19": SCRIPT_DIR / "runMadridSpain19.sh",
         "world10": SCRIPT_DIR / "runWorld10.sh",
+        "world10-priority-americas": SCRIPT_DIR / "runWorld10PriorityAmericas.sh",
+        "world10-repair-52n84w": SCRIPT_DIR / "runWorld10Repair52N84W.sh",
+        "world10-priority-eurasia": SCRIPT_DIR / "runWorld10PriorityEurasia.sh",
+        "world10-priority-africa": SCRIPT_DIR / "runWorld10PriorityAfrica.sh",
+        "world10-missing-eurasia-africa": SCRIPT_DIR / "runWorld10PriorityMissingCoverage.py",
+        "world10-named-gaps": SCRIPT_DIR / "runWorld10NamedGaps.py",
+        "world10-remaining-continental": SCRIPT_DIR / "runWorld10RemainingContinental.py",
     }
     command = [str(provider_scripts[job_source]), "--emit-jobs"]
     if start_from is not None:
@@ -334,8 +348,37 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def select_completed_trace() -> Path:
-    trace_dir = Path("/opt/google/earth/pro")
+def capture_coverage_snapshot() -> None:
+    """Atomically refresh an optional image of the live coverage viewer.
+
+    Snapshotting is observational: a completed merge remains committed even when
+    a desktop capture is unavailable, and the warning is retained in the
+    controller log for an operator to inspect.
+    """
+    if not COVERAGE_SNAPSHOT_PATH or not COVERAGE_WINDOW_ID:
+        return
+    target = Path(COVERAGE_SNAPSHOT_PATH)
+    partial = target.with_name(target.stem + ".partial" + target.suffix)
+    try:
+        subprocess.run(
+            ["import", "-window", COVERAGE_WINDOW_ID, str(partial)],
+            check=True,
+            timeout=30,
+            env=os.environ.copy(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if not partial.is_file() or partial.stat().st_size == 0:
+            raise SuperPipelineError(f"coverage snapshot is empty: {partial}")
+        partial.replace(target)
+        print(f"[superPipeline][INFO] Updated coverage snapshot: {target}", flush=True)
+    except (OSError, subprocess.SubprocessError, SuperPipelineError) as exc:
+        partial.unlink(missing_ok=True)
+        print(f"[superPipeline][WARN] Coverage snapshot was not updated: {exc}", flush=True)
+
+
+def select_completed_trace(trace_dir: Path) -> Path:
     traces = sorted(trace_dir.glob("googleearth-bin*trace"))
     traces = [path for path in traces if path.is_file() and path.stat().st_size > 0]
     if len(traces) != 1:
@@ -344,7 +387,7 @@ def select_completed_trace() -> Path:
 
 
 def publish_private_trace(slot: Path) -> dict:
-    source = select_completed_trace()
+    source = select_completed_trace(slot)
     pipeline_dir = slot / "_pipeline"
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     partial = pipeline_dir / "capture.trace.partial"
@@ -415,22 +458,43 @@ def exchange_slots_sequential(output_slot: Path, incoming_slot: Path, job: dict,
     atomic_write_json(journal, journal_payload)
 
 
-def run_command(command: list[str], cwd: Path, log_file: Path, env: dict[str, str] | None = None) -> None:
+def begin_job_timeout(job: dict) -> None:
+    job.setdefault("_deadline_monotonic", time.monotonic() + JOB_TIMEOUT_SECONDS)
+
+
+def remaining_job_timeout(job: dict) -> float:
+    begin_job_timeout(job)
+    return max(0.0, job["_deadline_monotonic"] - time.monotonic())
+
+
+def run_command(
+    command: list[str],
+    cwd: Path,
+    log_file: Path,
+    env: dict[str, str] | None = None,
+    timeout_seconds: float | None = None,
+) -> None:
     with log_file.open("ab") as log:
         process = subprocess.Popen(
             command,
             cwd=cwd,
-            stdout=subprocess.PIPE,
+            stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
+            start_new_session=True,
         )
-        assert process.stdout is not None
-        for chunk in iter(lambda: process.stdout.read(4096), b""):
-            log.write(chunk)
-            log.flush()
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
-        status = process.wait()
+        try:
+            status = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            raise SuperPipelineError(
+                f"command exceeded the {JOB_TIMEOUT_SECONDS // 60}-minute tile deadline: {' '.join(command)}"
+            ) from exc
     if status != 0:
         raise SuperPipelineError(f"command failed with status {status}: {' '.join(command)}")
 
@@ -449,6 +513,7 @@ def run_stage_a(
     log_root: Path,
     logical_output_slot: Path,
 ) -> dict:
+    begin_job_timeout(job)
     job_log_root = log_root / job["jobId"]
     job_log_root.mkdir(parents=True, exist_ok=True)
     write_job_snapshot(job, job_log_root, "CAPTURING")
@@ -457,7 +522,12 @@ def run_stage_a(
 
     prepare_myplaces()
     route_parts = shlex.split(job["routeCommand"])
-    run_command(route_parts, PATH_PLANNER_DIR, job_log_root / "11_pathPlanner.log")
+    run_command(
+        route_parts,
+        PATH_PLANNER_DIR,
+        job_log_root / "11_pathPlanner.log",
+        timeout_seconds=remaining_job_timeout(job),
+    )
     try:
         run_command(
             [
@@ -471,6 +541,7 @@ def run_stage_a(
             ],
             PROJECT_ROOT,
             job_log_root / "14_sessionController.log",
+            timeout_seconds=remaining_job_timeout(job),
         )
     except SuperPipelineError as exc:
         raise CaptureSessionError(str(exc)) from exc
@@ -485,7 +556,10 @@ def run_stage_a_with_retries(
     incoming_slot: Path,
     log_root: Path,
     logical_output_slot: Path,
-    attempts: int = 3,
+    # A closed Google Earth session leaves an incomplete trace.  Retrying the
+    # same geographic block wastes a slot and can duplicate already-covered
+    # imagery, so record that failure and let --continue-on-errors advance.
+    attempts: int = 1,
 ) -> dict:
     for attempt in range(1, attempts + 1):
         try:
@@ -510,6 +584,9 @@ def run_stage_b(
     log_root: Path,
     dry_run: bool,
 ) -> None:
+    begin_job_timeout(job)
+    if remaining_job_timeout(job) <= 0:
+        raise SuperPipelineError(f"tile exceeded the {JOB_TIMEOUT_SECONDS // 60}-minute deadline before stage B")
     job_log_root = log_root / job["jobId"]
     job_log_root.mkdir(parents=True, exist_ok=True)
     descriptor = read_slot_job(output_slot)
@@ -572,10 +649,18 @@ def run_stage_b(
         PROJECT_ROOT,
         job_log_root / "runFullProcess.console.log",
         env,
+        remaining_job_timeout(job),
     )
+    if merge_level_only is not None and not dry_run and not destination_contains_job_area(destination, job):
+        raise SuperPipelineError(
+            f"merge completed but the declared level-{job.get('completionLevel')} "
+            f"coverage is still incomplete for {job['jobId']}"
+        )
     terminal_state = "DRY_RUN_COMPLETED" if dry_run else "COMMITTED"
     write_slot_job(output_slot, job, terminal_state, trace_metadata)
     write_job_snapshot(job, job_log_root, terminal_state)
+    if not dry_run:
+        capture_coverage_snapshot()
 
 
 def run_sequential_job(
@@ -677,6 +762,20 @@ def reconcile_initial_slots(
 
         if recoverable:
             recovery_slot, descriptor = recoverable[0]
+            # Stage A traces paths using slot_a as their logical root even
+            # while their bytes are being captured in slot_b.  A recovered
+            # CAPTURE_READY item still in slot_b must therefore be handed off
+            # before stage B; processing it in place makes module 22 look for
+            # frames under slot_b and produces an empty frame set.
+            if recovery_slot == slot_b:
+                exchange_slots_sequential(
+                    slot_a,
+                    slot_b,
+                    pending_job,
+                    log_root / pending_job["jobId"],
+                )
+                recovery_slot = slot_a
+                descriptor = read_slot_job(recovery_slot) or descriptor
             print(
                 f"[superPipeline][INFO] Recovering completed capture for "
                 f"{pending_job['jobId']} from {recovery_slot}.",
@@ -747,8 +846,6 @@ def run_overlapped_jobs(
             except Exception as exc:
                 record_failure(log_root, job, "A", exc, incoming_slot)
                 write_slot_job(incoming_slot, job, "CAPTURE_FAILED", {"error": str(exc)})
-                if isinstance(exc, CaptureSessionError):
-                    raise
                 if not continue_on_errors:
                     raise
                 print(
@@ -810,7 +907,7 @@ def run_overlapped_jobs(
                 flush=True,
             )
         if stage_a_error is not None:
-            if isinstance(stage_a_error, CaptureSessionError) or not continue_on_errors:
+            if not continue_on_errors:
                 raise SuperPipelineError(f"stage A failed for {job['jobId']}") from stage_a_error
             print(
                 f"[superPipeline][WARN] Stage A failed for {job['jobId']}; "
@@ -884,7 +981,29 @@ def main() -> int:
                     f"({job['sequence']}/{job['total']}).",
                     flush=True,
                 )
-                run_sequential_job(job, slot_a, slot_b, matrix_dir, destination, log_root, args.dry_run)
+                try:
+                    run_sequential_job(job, slot_a, slot_b, matrix_dir, destination, log_root, args.dry_run)
+                except Exception as exc:
+                    record_failure(log_root, job, "SEQUENTIAL", exc)
+                    for slot in (slot_a, slot_b):
+                        descriptor = read_slot_job(slot)
+                        if descriptor is None or descriptor.get("jobId") != job["jobId"]:
+                            continue
+                        state = descriptor.get("state")
+                        failed_state = (
+                            "CAPTURE_FAILED"
+                            if state in {"CAPTURING", "CAPTURE_READY"}
+                            else "PROCESSING_FAILED"
+                        )
+                        write_slot_job(slot, job, failed_state, {"error": str(exc)})
+                    if not args.continue_on_errors:
+                        raise
+                    print(
+                        f"[superPipeline][WARN] Sequential job {job['jobId']} failed; "
+                        "failure was recorded and the next tile will be attempted.",
+                        flush=True,
+                    )
+                    continue
                 print(f"[superPipeline][INFO] Finished {job['jobId']}.", flush=True)
         else:
             run_overlapped_jobs(

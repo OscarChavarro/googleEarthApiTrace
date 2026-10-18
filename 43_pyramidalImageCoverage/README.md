@@ -89,6 +89,9 @@ available. Visible PNGs are also decoded lazily by background image-loader threa
 a bounded LRU cache, keeping both initial display and navigation through cold folders
 responsive.
 
+Every ten minutes the viewer re-scans the currently selected depth and adds any newly
+published PNGs without changing the selected depth, scroll position, or tile selection.
+
 When the input is exactly `/samples/datasets/googleEarth/toplevel`, affirmative tile
 existence flags are persisted in `/media/ramdisk`, in one sparse `.flags` file per
 quadtree level. A later run builds its initial catalogue from those RAM-backed files and

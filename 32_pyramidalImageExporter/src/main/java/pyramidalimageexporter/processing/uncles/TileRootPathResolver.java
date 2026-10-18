@@ -37,6 +37,7 @@ public final class TileRootPathResolver {
     private static final int MIN_GRID_ANCHOR_VOTES = 3;
     private final UncleRmsAnalyzer rmsAnalyzer = new UncleRmsAnalyzer();
     private final int captureBoundaryLevel;
+    private final int maximumResolutionLevel;
 
     public TileRootPathResolver() {
         this(-1);
@@ -52,7 +53,16 @@ public final class TileRootPathResolver {
      *     level12-anchoring-pipeline project memory.
      */
     public TileRootPathResolver(int captureBoundaryLevel) {
+        this(captureBoundaryLevel, -1);
+    }
+
+    /**
+     * Limits absolute paths that may participate in placement. This is stronger
+     * than an export filter: a path beyond the boundary cannot anchor a grid.
+     */
+    public TileRootPathResolver(int captureBoundaryLevel, int maximumResolutionLevel) {
         this.captureBoundaryLevel = captureBoundaryLevel;
+        this.maximumResolutionLevel = maximumResolutionLevel;
     }
 
     public enum PathSource {
@@ -67,10 +77,12 @@ public final class TileRootPathResolver {
         Map<String, PathSource> sourceById,
         Map<String, String> pathByOccurrence,
         Set<String> discardedOccurrences,
-        Map<String, PathSource> sourceByOccurrence
+        Map<String, PathSource> sourceByOccurrence,
+        Set<String> outOfScopeIds,
+        Set<String> outOfScopeOccurrences
     ) {
         public Resolution(Map<String, String> pathById, Set<String> discardedIds, Map<String, PathSource> sourceById) {
-            this(pathById, discardedIds, sourceById, Map.of(), Set.of(), Map.of());
+            this(pathById, discardedIds, sourceById, Map.of(), Set.of(), Map.of(), Set.of(), Set.of());
         }
 
         public String pathFor(MatrixLayer layer, MatrixLayerTile tile) {
@@ -92,6 +104,11 @@ public final class TileRootPathResolver {
         public boolean isDiscarded(MatrixLayer layer, MatrixLayerTile tile) {
             return tile != null
                 && (discardedOccurrences.contains(occurrenceKey(layer, tile)) || discardedIds.contains(tile.getId()));
+        }
+
+        public boolean isOutOfScope(MatrixLayer layer, MatrixLayerTile tile) {
+            return tile != null
+                && (outOfScopeOccurrences.contains(occurrenceKey(layer, tile)) || outOfScopeIds.contains(tile.getId()));
         }
     }
 
@@ -123,16 +140,27 @@ public final class TileRootPathResolver {
 
         Map<String, String> resolvedPath = new HashMap<>();
         Map<String, PathSource> sourceById = new HashMap<>();
+        Set<String> outOfScope = new HashSet<>();
         for (TileOccurrence occurrence : occurrences) {
             if (isSeed(occurrence.id())) {
-                resolvedPath.put(occurrence.key(), occurrence.id());
-                sourceById.put(occurrence.key(), PathSource.DIRECT);
+                if (isWithinResolutionBoundary(occurrence.id())) {
+                    resolvedPath.put(occurrence.key(), occurrence.id());
+                    sourceById.put(occurrence.key(), PathSource.DIRECT);
+                }
+                else {
+                    outOfScope.add(occurrence.key());
+                }
             }
             else {
                 String externalPath = externalFullPaths.get(occurrence.id());
                 if (externalPath != null) {
-                    resolvedPath.put(occurrence.key(), externalPath);
-                    sourceById.put(occurrence.key(), PathSource.DIRECT);
+                    if (isWithinResolutionBoundary(externalPath)) {
+                        resolvedPath.put(occurrence.key(), externalPath);
+                        sourceById.put(occurrence.key(), PathSource.DIRECT);
+                    }
+                    else {
+                        outOfScope.add(occurrence.key());
+                    }
                 }
             }
         }
@@ -145,10 +173,10 @@ public final class TileRootPathResolver {
         // Canonicalize complete-world grids to a fixpoint before relative evidence
         // can escape into descendants. Grid propagation itself advances one layer
         // at a time so every newly completed parent gets a fresh uncle pass.
-        while (propagateByGridPosition(layers, resolvedPath, sourceById, discarded, true)) {
+        while (propagateByGridPosition(layers, resolvedPath, sourceById, discarded, outOfScope, true)) {
             // Deliberately empty.
         }
-        propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
+        propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded, outOfScope);
         Set<String> seenStates = new HashSet<>();
         seenStates.add(resolutionStateSignature(resolvedPath, sourceById, discarded));
         boolean progress = true;
@@ -164,7 +192,8 @@ public final class TileRootPathResolver {
                 occurrenceKeysById
             );
             for (TileOccurrence occurrence : occurrences) {
-                if (resolvedPath.containsKey(occurrence.key()) || discarded.contains(occurrence.key())) {
+                if (resolvedPath.containsKey(occurrence.key()) || discarded.contains(occurrence.key())
+                    || outOfScope.contains(occurrence.key())) {
                     continue;
                 }
                 Set<String> candidates =
@@ -176,6 +205,14 @@ public final class TileRootPathResolver {
                         occurrenceKeysById,
                         rmsAnalysis
                     );
+                if (!candidates.isEmpty() && maximumResolutionLevel >= 0) {
+                    candidates.removeIf(path -> !isWithinResolutionBoundary(path));
+                    if (candidates.isEmpty()) {
+                        outOfScope.add(occurrence.key());
+                        progress = true;
+                        continue;
+                    }
+                }
                 if (candidates.isEmpty()) {
                     continue;
                 }
@@ -188,8 +225,8 @@ public final class TileRootPathResolver {
                 }
                 progress = true;
             }
-            progress |= propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded);
-            progress |= propagateByGridPosition(layers, resolvedPath, sourceById, discarded, false);
+            progress |= propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded, outOfScope);
+            progress |= propagateByGridPosition(layers, resolvedPath, sourceById, discarded, outOfScope, false);
             String stateSignature = resolutionStateSignature(resolvedPath, sourceById, discarded);
             if (!seenStates.add(stateSignature)) {
                 System.out.println(
@@ -207,7 +244,9 @@ public final class TileRootPathResolver {
             Map.copyOf(collapseSourceById(occurrences, sourceById)),
             Map.copyOf(resolvedPath),
             Set.copyOf(discarded),
-            Map.copyOf(sourceById)
+            Map.copyOf(sourceById),
+            Set.copyOf(collapseDiscardedById(occurrences, outOfScope)),
+            Set.copyOf(outOfScope)
         );
     }
 
@@ -217,11 +256,12 @@ public final class TileRootPathResolver {
      * between a rigid matrix transform and an observed per-tile coarse-texture
      * quadrant relationship.
      */
-    private static boolean propagateByParentGridTransforms(
+    private boolean propagateByParentGridTransforms(
         List<MatrixLayer> layers,
         Map<String, String> resolvedPath,
         Map<String, PathSource> sourceById,
-        Set<String> discarded
+        Set<String> discarded,
+        Set<String> outOfScope
     ) {
         if (layers == null || layers.isEmpty()) {
             return false;
@@ -246,6 +286,14 @@ public final class TileRootPathResolver {
                 continue;
             }
             int childLevel = parentAnchor[0] + levelDelta;
+            if (maximumResolutionLevel >= 0 && childLevel > maximumResolutionLevel) {
+                for (MatrixLayerTile tile : child.getTiles()) {
+                    if (tile != null) {
+                        outOfScope.add(occurrenceKey(child, tile));
+                    }
+                }
+                continue;
+            }
             int side = 1 << childLevel;
             int scale = 1 << levelDelta;
             int rowOffset = scale * parentAnchor[1] + transform.rowOffset();
@@ -255,6 +303,9 @@ public final class TileRootPathResolver {
                     continue;
                 }
                 String key = occurrenceKey(child, tile);
+                if (outOfScope.contains(key)) {
+                    continue;
+                }
                 PathSource previousSource = sourceById.get(key);
                 if (previousSource == PathSource.DIRECT) {
                     continue;
@@ -293,11 +344,12 @@ public final class TileRootPathResolver {
      * anchors disagree, placement requires either a strict majority for the
      * complete anchor or strict majorities for each independent component.
      */
-    private static boolean propagateByGridPosition(
+    private boolean propagateByGridPosition(
         List<MatrixLayer> layers,
         Map<String, String> resolvedPath,
         Map<String, PathSource> sourceById,
         Set<String> discarded,
+        Set<String> outOfScope,
         boolean fullWorldOnly
     ) {
         boolean progress = false;
@@ -310,6 +362,14 @@ public final class TileRootPathResolver {
             }
             int[] anchor = consistentGridAnchor(layer, resolvedPath, sourceById);
             if (anchor == null || anchor[0] <= 0) {
+                continue;
+            }
+            if (maximumResolutionLevel >= 0 && anchor[0] > maximumResolutionLevel) {
+                for (MatrixLayerTile tile : layer.getTiles()) {
+                    if (tile != null) {
+                        outOfScope.add(occurrenceKey(layer, tile));
+                    }
+                }
                 continue;
             }
             int level = anchor[0];
@@ -333,6 +393,9 @@ public final class TileRootPathResolver {
                 }
                 String canonicalPath = "0" + encodeQuadtreeLabel(level, row, col);
                 String key = occurrenceKey(layer, tile);
+                if (outOfScope.contains(key)) {
+                    continue;
+                }
                 String previousPath = resolvedPath.put(key, canonicalPath);
                 if (!canonicalPath.equals(previousPath)) {
                     sourceById.put(key, PathSource.GRID);
@@ -353,6 +416,10 @@ public final class TileRootPathResolver {
             }
         }
         return progress;
+    }
+
+    private boolean isWithinResolutionBoundary(String fullPath) {
+        return maximumResolutionLevel < 0 || (fullPath != null && fullPath.length() - 1 <= maximumResolutionLevel);
     }
 
     /**

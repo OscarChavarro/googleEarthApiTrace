@@ -27,6 +27,20 @@ final class TopLevelTilesJsonBuilderTest {
         assertEquals(320, selected.size());
     }
 
+    @Test
+    void selectsManySmallAtlasBatchesWithoutCombinatorialBacktracking() {
+        List<TileInstance> tiles = new ArrayList<>();
+        for (int index = 0; index < 400; index++) {
+            tiles.add(tile("atlas-" + index, 1));
+        }
+        Frame frame = new Frame(12, tiles, List.of(), null, null, null);
+
+        List<TileInstance.TriangleStripGeometry> selected =
+            TopLevelTilesJsonBuilder.selectGlobeLevelGeometries(frame);
+
+        assertEquals(320, selected.size());
+    }
+
     private static TileInstance tile(String id, int stripCount) {
         List<List<Vector3Dd>> strips = new ArrayList<>(stripCount);
         List<List<Vector3Dd>> textureCoordinates = new ArrayList<>(stripCount);

@@ -68,13 +68,16 @@ public final class SessionPyramidalImageExportService {
     private static final int PROGRESS_REPORT_INTERVAL = 100;
     private static final double FULL_TEXTURE_RECT_TOLERANCE = 1.0e-9;
     private static final int HIGHEST_RECONSTRUCTED_TOP_LEVEL = 5;
+    // Captures currently target level 10. Paths beyond this boundary are known
+    // to be misplaced and must never be written into the export pyramid.
+    private static final int MAXIMUM_EXPORT_LEVEL = 10;
     private static final int DEFAULT_EXPORT_THREADS = Math.min(
         16,
         Math.max(2, Runtime.getRuntime().availableProcessors())
     );
 
     private final TileRootPathResolver rootPathResolver =
-        new TileRootPathResolver(Configuration.captureBoundaryLevel());
+        new TileRootPathResolver(Configuration.captureBoundaryLevel(), MAXIMUM_EXPORT_LEVEL);
 
     private record ExportEntry(MatrixLayer layer, MatrixLayerTile tile, String fullPath) {}
     private record ExportManifest(
@@ -398,6 +401,7 @@ public final class SessionPyramidalImageExportService {
             int total = 0;
             int placed = 0;
             int ambiguous = 0;
+            int outOfScope = 0;
             Set<Integer> levels = new TreeSet<>();
             List<String> unplacedSample = new ArrayList<>();
             for (MatrixLayerTile tile : layer.getTiles()) {
@@ -416,6 +420,9 @@ public final class SessionPyramidalImageExportService {
                     if (resolution.isDiscarded(layer, tile)) {
                         ambiguous++;
                     }
+                    if (resolution.isOutOfScope(layer, tile)) {
+                        outOfScope++;
+                    }
                     if (unplacedSample.size() < 3) {
                         unplacedSample.add(tile.getId());
                     }
@@ -432,10 +439,17 @@ public final class SessionPyramidalImageExportService {
                 if (ambiguous > 0) {
                     line.append(" (").append(ambiguous).append(" ambiguous)");
                 }
+                if (outOfScope > 0) {
+                    line.append(" (").append(outOfScope).append(" beyond level ")
+                        .append(MAXIMUM_EXPORT_LEVEL).append(")");
+                }
+                if (placed == 0 && outOfScope > 0) {
+                    line.append("; entire layer excluded by the level boundary");
+                }
                 line.append(", e.g. ").append(unplacedSample);
             }
             System.out.println(line);
-            if (placed == 0) {
+            if (placed == 0 && outOfScope == 0) {
                 unplacedLayers.add(layer.getSourceFolderName() + " (" + total + " tiles)");
             }
         }
@@ -452,6 +466,13 @@ public final class SessionPyramidalImageExportService {
             System.out.println(
                 "SessionPyramidalImageExportService: " + resolution.discardedIds().size()
                     + " tile(s) discarded due to ambiguous uncle relationships (inconsistent root paths): " + sample
+            );
+        }
+        if (!resolution.outOfScopeIds().isEmpty()) {
+            System.out.println(
+                "SessionPyramidalImageExportService: " + resolution.outOfScopeIds().size()
+                    + " tile(s) excluded because their inferred placement exceeds level "
+                    + MAXIMUM_EXPORT_LEVEL + "."
             );
         }
     }
@@ -574,7 +595,7 @@ public final class SessionPyramidalImageExportService {
         Map<String, String> nativeTopCatalog = new TreeMap<>(model.getCataloguedQuadPathsByImagePath());
         for (Map.Entry<String, String> catalogEntry : nativeTopCatalog.entrySet()) {
             String fullPath = catalogEntry.getValue();
-            if (!isQuadPath(fullPath)) {
+            if (!isExportableQuadPath(fullPath)) {
                 continue;
             }
             MatrixLayerTile nativeTile = new MatrixLayerTile();
@@ -595,7 +616,7 @@ public final class SessionPyramidalImageExportService {
         Map<String, String> referenceTopCatalog = new TreeMap<>(model.getReferenceQuadPathsByImagePath());
         for (Map.Entry<String, String> catalogEntry : referenceTopCatalog.entrySet()) {
             String fullPath = catalogEntry.getValue();
-            if (!isQuadPath(fullPath) || fullPath.length() - 1 > HIGHEST_RECONSTRUCTED_TOP_LEVEL) {
+            if (!isExportableQuadPath(fullPath) || fullPath.length() - 1 > HIGHEST_RECONSTRUCTED_TOP_LEVEL) {
                 continue;
             }
             MatrixLayerTile referenceTile = new MatrixLayerTile();
@@ -618,6 +639,9 @@ public final class SessionPyramidalImageExportService {
             for (MatrixLayerTile tile : layer.getTiles()) {
                 String fullPath = tile == null ? null : resolution.pathFor(layer, tile);
                 if (fullPath == null) {
+                    continue;
+                }
+                if (!isExportableQuadPath(fullPath)) {
                     continue;
                 }
                 if (!isNativeExportTile(tile, nativeImageByPath)) {
@@ -681,6 +705,10 @@ public final class SessionPyramidalImageExportService {
             identicalDuplicates,
             Map.copyOf(rejectedByLevel)
         );
+    }
+
+    private static boolean isExportableQuadPath(String fullPath) {
+        return isQuadPath(fullPath) && fullPath.length() - 1 <= MAXIMUM_EXPORT_LEVEL;
     }
 
     private static boolean sameTextureContent(MatrixLayerTile first, MatrixLayerTile second) {

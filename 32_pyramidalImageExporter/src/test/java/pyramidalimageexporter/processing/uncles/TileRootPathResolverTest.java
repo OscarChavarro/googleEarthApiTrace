@@ -2,7 +2,9 @@ package pyramidalimageexporter.processing.uncles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.List;
@@ -425,6 +427,23 @@ final class TileRootPathResolverTest {
         assertEquals(TileRootPathResolver.PathSource.DIRECT, resolution.sourceById().get("direct"));
         assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("relative-a"));
         assertEquals(TileRootPathResolver.PathSource.GRID, resolution.sourceById().get("relative-b"));
+    }
+
+    @Test
+    void excludesAnchorsBeyondTheConfiguredPlacementBoundary() {
+        MatrixLayerTile deep = tile("deep", 0, 0);
+        MatrixLayerTile sibling = tile("sibling", 0, 1);
+        MatrixLayer layer = layer(deep, sibling);
+
+        TileRootPathResolver.Resolution resolution = new TileRootPathResolver(-1, 10).resolve(
+            List.of(layer),
+            Map.of("deep", "0" + "0".repeat(11)),
+            Map.of()
+        );
+
+        assertNull(resolution.pathFor(layer, deep));
+        assertTrue(resolution.isOutOfScope(layer, deep));
+        assertNull(resolution.pathFor(layer, sibling));
     }
 
     @Test
