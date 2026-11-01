@@ -38,9 +38,13 @@ public class Main {
         String destinationFolder = folders.get(0);
         String deltaFolder = folders.get(1);
         PlanetViewerModel model = new PlanetViewerModel();
-        PyramidalImage destination = loadRequiredImage(destinationFolder, "destination");
         PyramidalImage delta = loadRequiredImage(deltaFolder, "delta");
-        if (destination == null || delta == null) {
+        if (delta == null) {
+            return 1;
+        }
+        PyramidalImage destination = loadRequiredImage(destinationFolder, "destination",
+            cliArguments.isOffline() ? delta.getRoot() : null);
+        if (destination == null) {
             return 1;
         }
 
@@ -100,9 +104,13 @@ public class Main {
     }
 
     private static PyramidalImage loadRequiredImage(String folder, String role) {
+        return loadRequiredImage(folder, role, null);
+    }
+
+    private static PyramidalImage loadRequiredImage(String folder, String role, QuadtreeNode footprint) {
         PyramidalImageFolderReader reader = new PyramidalImageFolderReader();
         Path path = Path.of(folder).toAbsolutePath().normalize();
-        Optional<PyramidalImage> image = reader.read(path);
+        Optional<PyramidalImage> image = reader.read(path, footprint);
         if (image.isEmpty()) {
             System.err.println("Invalid " + role + " pyramidal image folder (missing 0.png or unreadable tile tree): " + path);
             ArgumentParser.printUsage();

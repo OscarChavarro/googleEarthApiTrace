@@ -43,6 +43,12 @@ To inspect conflicts without modifying the destination tree, use `--dry-run`:
 ./run.sh --dry-run /samples/datasets/googleEarth/topLevel /tmp/matrix/pyramidalImage
 ```
 
+Offline validation loads the delta first, then reads only matching destination
+addresses, including the delta's ancestor paths. The post-merge scan uses the same
+footprint. Reported offline destination counts describe that footprint; unrelated
+branches and descendants below delta leaves are preserved without being scanned.
+Interactive viewing continues to load the complete destination tree.
+
 ## Interactive usage guide
 
 Program-specific keys (generic camera handling comes from Vitral's

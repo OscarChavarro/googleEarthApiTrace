@@ -23,6 +23,11 @@ public final class PyramidalImageFolderReader {
     private int maxDepth;
 
     public Optional<PyramidalImage> read(Path rootDirectory) {
+        return read(rootDirectory, null);
+    }
+
+    /** Reads only the addresses present in a delta when a footprint is supplied. */
+    public Optional<PyramidalImage> read(Path rootDirectory, QuadtreeNode footprint) {
         if (rootDirectory == null || !Files.isDirectory(rootDirectory)) {
             return Optional.empty();
         }
@@ -32,12 +37,12 @@ public final class PyramidalImageFolderReader {
         }
         tileCount = 0;
         maxDepth = 0;
-        QuadtreeNode root = scanNode("0", rootDirectory, null);
+        QuadtreeNode root = scanNode("0", rootDirectory, null, footprint);
         String sourceFolder = rootDirectory.toAbsolutePath().normalize().toString();
         return Optional.of(new PyramidalImage(sourceFolder, root, tileCount, maxDepth));
     }
 
-    private QuadtreeNode scanNode(String id, Path containerDirectory, QuadtreeNode parent) {
+    private QuadtreeNode scanNode(String id, Path containerDirectory, QuadtreeNode parent, QuadtreeNode footprint) {
         File tileImage = containerDirectory.resolve(id + ".png").toFile();
         boolean hasOwnTile = tileImage.isFile();
         QuadtreeNode node = new QuadtreeNode(id, parent, hasOwnTile ? tileImage : null);
@@ -49,10 +54,13 @@ public final class PyramidalImageFolderReader {
         QuadtreeNode[] children = new QuadtreeNode[4];
         boolean anyChild = false;
         for (int digit = 0; digit < 4; digit++) {
+            if (footprint != null && (!footprint.hasChildren() || footprint.getChildren()[digit] == null)) {
+                continue;
+            }
             String childId = id + digit;
             Path childDirectory = childDirectoryFor(containerDirectory, childId, digit);
             if (Files.isDirectory(childDirectory)) {
-                children[digit] = scanNode(childId, childDirectory, node);
+                children[digit] = scanNode(childId, childDirectory, node, footprint == null ? null : footprint.getChildren()[digit]);
                 anyChild = true;
             }
         }

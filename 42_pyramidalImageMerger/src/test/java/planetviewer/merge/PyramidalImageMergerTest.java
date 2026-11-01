@@ -21,6 +21,34 @@ class PyramidalImageMergerTest {
     Path temporaryFolder;
 
     @Test
+    void scopedValidationMatchesFullValidationAndPreservesDeeperAndUnrelatedTiles() throws IOException {
+        Path destinationRoot = temporaryFolder.resolve("scoped-destination");
+        Path deltaRoot = temporaryFolder.resolve("scoped-delta");
+        for (String id : new String[]{"0", "03", "030123", "02", "02222"}) {
+            writePerDigitTile(destinationRoot, id, Color.GRAY);
+        }
+        writePerDigitTile(deltaRoot, "0", Color.GRAY);
+        writePerDigitTile(deltaRoot, "03", Color.GRAY);
+        writePerDigitTile(deltaRoot, "030", Color.BLUE);
+        PyramidalImage delta = read(deltaRoot);
+        PyramidalImage full = read(destinationRoot);
+        PyramidalImage scoped = new PyramidalImageFolderReader()
+            .read(destinationRoot, delta.getRoot()).orElseThrow();
+        assertEquals(2, scoped.getTileCount());
+        assertEquals(2, scoped.getHeight());
+        PyramidalImageMergeService service = new PyramidalImageMergeService();
+        assertEquals(service.validate(full, delta).summary(), service.validate(scoped, delta).summary());
+        var result = service.validateAndMerge(scoped, delta);
+        assertTrue(result.analysis().isMergePossible());
+        assertTrue(result.missingTileIds().isEmpty());
+        assertEquals(6, read(destinationRoot).getTileCount());
+        assertTrue(Files.isRegularFile(destinationRoot.resolve("3/0/1/2/3/030123.png")));
+        assertTrue(Files.isRegularFile(destinationRoot.resolve("2/2/2/2/02222.png")));
+        assertEquals(service.validate(read(destinationRoot), delta).summary(),
+            service.validate(new PyramidalImageFolderReader().read(destinationRoot, delta.getRoot()).orElseThrow(), delta).summary());
+    }
+
+    @Test
     void writesNewTilesUsingPerDigitLayout() throws IOException {
         Path destinationRoot = temporaryFolder.resolve("destination");
         Path deltaRoot = temporaryFolder.resolve("delta");

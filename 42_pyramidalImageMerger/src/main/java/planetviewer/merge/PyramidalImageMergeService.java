@@ -27,7 +27,7 @@ public final class PyramidalImageMergeService {
             analysis.getHigherResolutionDeltaNodeIds()
         );
         PyramidalImage refreshedDestination = folderReader
-            .read(Path.of(destination.getSourceFolder()))
+            .read(Path.of(destination.getSourceFolder()), delta.getRoot())
             .orElse(destination);
         List<String> missingTileIds = merger.findMissingDeltaTileIds(refreshedDestination, delta);
         if (!missingTileIds.isEmpty()) {

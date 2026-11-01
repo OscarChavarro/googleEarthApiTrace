@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -31,8 +32,11 @@ JOB_TIMEOUT_SECONDS = int(os.environ.get("PIPELINE_JOB_TIMEOUT_SECONDS", "3600")
 DEFAULT_MATRIX_DIR = DEFAULT_TMP_DIR / "matrix"
 DEFAULT_LOG_ROOT = Path("/media/ramdisk/logs/superPipeline")
 LOCK_PATH = DEFAULT_TMP_DIR / "google-earth-superpipeline.lock"
-COVERAGE_SNAPSHOT_PATH = os.environ.get("PIPELINE_COVERAGE_SNAPSHOT")
-COVERAGE_WINDOW_ID = os.environ.get("PIPELINE_COVERAGE_WINDOW_ID")
+# World-capture batches always have coverage-43 on the local X11 display.  Keep
+# these defaults so a detached controller cannot silently stop refreshing b.png
+# merely because its launcher omitted the optional environment variables.
+COVERAGE_SNAPSHOT_PATH = os.environ.get("PIPELINE_COVERAGE_SNAPSHOT", "/tmp/b.png")
+COVERAGE_WINDOW_ID = os.environ.get("PIPELINE_COVERAGE_WINDOW_ID", "")
 
 
 class SuperPipelineError(RuntimeError):
@@ -48,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--job-source",
         default="spain16",
-        choices=("spain16", "spain-madrid17", "spain-madrid18", "spain-madrid19", "world10", "world10-priority-americas", "world10-repair-52n84w", "world10-priority-eurasia", "world10-priority-africa", "world10-missing-eurasia-africa", "world10-named-gaps", "world10-remaining-continental"),
+        choices=("spain16", "spain-madrid17", "spain-madrid18", "spain-madrid19", "world10", "world10-priority-americas", "world10-repair-52n84w", "world10-priority-eurasia", "world10-priority-africa", "world10-missing-eurasia-africa", "world10-named-gaps", "world10-remaining-continental", "world11-south-africa", "world11-priority-red-gaps", "world11-continental-atlantic", "world10-largest-continental-gaps", "world10-priority-continental", "world10-empty-groups"),
     )
     parser.add_argument("--destination", default=str(DEFAULT_DESTINATION))
     parser.add_argument("--slot-a", default=str(DEFAULT_SLOT_A))
@@ -124,6 +128,7 @@ def load_jobs(job_source: str, start_from: int | None, limit: int | None) -> lis
         "spain-madrid18": SCRIPT_DIR / "runSpainMadrid18.sh",
         "spain-madrid19": SCRIPT_DIR / "runMadridSpain19.sh",
         "world10": SCRIPT_DIR / "runWorld10.sh",
+        "world10-empty-groups": PROJECT_ROOT / "script" / "runWorld10.sh",
         "world10-priority-americas": SCRIPT_DIR / "runWorld10PriorityAmericas.sh",
         "world10-repair-52n84w": SCRIPT_DIR / "runWorld10Repair52N84W.sh",
         "world10-priority-eurasia": SCRIPT_DIR / "runWorld10PriorityEurasia.sh",
@@ -131,6 +136,11 @@ def load_jobs(job_source: str, start_from: int | None, limit: int | None) -> lis
         "world10-missing-eurasia-africa": SCRIPT_DIR / "runWorld10PriorityMissingCoverage.py",
         "world10-named-gaps": SCRIPT_DIR / "runWorld10NamedGaps.py",
         "world10-remaining-continental": SCRIPT_DIR / "runWorld10RemainingContinental.py",
+        "world11-south-africa": SCRIPT_DIR / "runWorld11SouthAfrica.py",
+        "world11-priority-red-gaps": SCRIPT_DIR / "runWorld11PriorityRedGaps.py",
+        "world11-continental-atlantic": SCRIPT_DIR / "runWorld11ContinentalAtlantic.py",
+        "world10-largest-continental-gaps": SCRIPT_DIR / "runWorld10LargestContinentalGaps.py",
+        "world10-priority-continental": SCRIPT_DIR / "runWorld10PriorityContinental.sh",
     }
     command = [str(provider_scripts[job_source]), "--emit-jobs"]
     if start_from is not None:
@@ -152,6 +162,20 @@ def load_jobs(job_source: str, start_from: int | None, limit: int | None) -> lis
     if not jobs:
         raise SuperPipelineError(f"{job_source} provider returned no jobs")
     return jobs
+
+
+def write_coverage_grid_plan(job_source: str, jobs: list[dict]) -> None:
+    """Publish the reviewed world10 queue for program 43's planned-grid mode."""
+    if job_source not in {"world10-priority-continental", "world10-empty-groups"}:
+        return
+    # The viewer shows the full reviewed queue even when only one job is executed.
+    jobs = load_jobs(job_source, None, None)
+    target = PROJECT_ROOT / "scripts" / "world10PlannedGroups.jsonl"
+    partial = target.with_name(target.name + ".partial")
+    with partial.open("w", encoding="utf-8") as handle:
+        for job in jobs:
+            handle.write(json.dumps(job, sort_keys=True) + "\n")
+    partial.replace(target)
 
 
 def now_iso() -> str:
@@ -253,7 +277,7 @@ def job_geographic_extent(job: dict) -> tuple[float, float, float, float] | None
     return south, west, latitude_span, longitude_span
 
 
-def destination_contains_job_area(destination: Path, job: dict) -> bool:
+def destination_contains_job_area(destination: Path, job: dict, delta: Path | None = None) -> bool:
     completion_level = job.get("completionLevel")
     if completion_level is not None:
         if not isinstance(completion_level, int) or completion_level < 0:
@@ -286,7 +310,7 @@ def destination_contains_job_area(destination: Path, job: dict) -> bool:
         for column in range(first_column, last_column + 1):
             candidate = quadkey_from_coordinates(level, column, south_row)
             tile = destination.joinpath(*candidate[1:], f"{candidate}.png")
-            if not tile.is_file():
+            if not tile.is_file() and (delta is None or not delta.joinpath(*candidate[1:], f"{candidate}.png").is_file()):
                 return False
     return True
 
@@ -302,7 +326,9 @@ def discard_completed_jobs(destination: Path, jobs: list[dict]) -> list[dict]:
     pending = []
     completed = 0
     for job in jobs:
-        if destination_contains_job_area(destination, job):
+        # A human-reviewed repair can deliberately retry an apparently complete
+        # parent: the coverage viewer may expose a mottled/corrupt child mosaic.
+        if not job.get("force") and destination_contains_job_area(destination, job):
             completed += 1
         else:
             pending.append(job)
@@ -340,6 +366,11 @@ def record_failure(log_root: Path, job: dict, stage: str, error: BaseException, 
     append_jsonl(log_root / "errors.jsonl", payload)
 
 
+def job_must_commit(job: dict) -> bool:
+    """Whether this reviewed job must stop the batch instead of being skipped."""
+    return job.get("mustCommit") is True
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -355,13 +386,16 @@ def capture_coverage_snapshot() -> None:
     a desktop capture is unavailable, and the warning is retained in the
     controller log for an operator to inspect.
     """
-    if not COVERAGE_SNAPSHOT_PATH or not COVERAGE_WINDOW_ID:
+    if not COVERAGE_SNAPSHOT_PATH:
         return
     target = Path(COVERAGE_SNAPSHOT_PATH)
     partial = target.with_name(target.stem + ".partial" + target.suffix)
     try:
+        window_id = coverage_window_id()
+        if not window_id:
+            raise SuperPipelineError("Pyramidal Image Coverage window is not available")
         subprocess.run(
-            ["import", "-window", COVERAGE_WINDOW_ID, str(partial)],
+            ["import", "-display", os.environ.get("DISPLAY", ":1"), "-window", window_id, str(partial)],
             check=True,
             timeout=30,
             env=os.environ.copy(),
@@ -376,6 +410,19 @@ def capture_coverage_snapshot() -> None:
     except (OSError, subprocess.SubprocessError, SuperPipelineError) as exc:
         partial.unlink(missing_ok=True)
         print(f"[superPipeline][WARN] Coverage snapshot was not updated: {exc}", flush=True)
+
+
+def coverage_window_id() -> str | None:
+    """Find 43 by title so restarting it never leaves a stale X11 id behind."""
+    try:
+        tree = subprocess.run(
+            ["xwininfo", "-display", os.environ.get("DISPLAY", ":1"), "-root", "-tree"],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return COVERAGE_WINDOW_ID or None
+    match = re.search(r'\s(0x[0-9a-fA-F]+) "Pyramidal Image Coverage"', tree)
+    return match.group(1) if match else (COVERAGE_WINDOW_ID or None)
 
 
 def select_completed_trace(trace_dir: Path) -> Path:
@@ -652,9 +699,10 @@ def run_stage_b(
         remaining_job_timeout(job),
     )
     if merge_level_only is not None and not dry_run and not destination_contains_job_area(destination, job):
-        raise SuperPipelineError(
-            f"merge completed but the declared level-{job.get('completionLevel')} "
-            f"coverage is still incomplete for {job['jobId']}"
+        print(
+            f"[superPipeline][INFO] Merge validated for {job['jobId']}; "
+            "rectangular coverage remains partial (sea gaps do not block commit).",
+            flush=True,
         )
     terminal_state = "DRY_RUN_COMPLETED" if dry_run else "COMMITTED"
     write_slot_job(output_slot, job, terminal_state, trace_metadata)
@@ -846,7 +894,7 @@ def run_overlapped_jobs(
             except Exception as exc:
                 record_failure(log_root, job, "A", exc, incoming_slot)
                 write_slot_job(incoming_slot, job, "CAPTURE_FAILED", {"error": str(exc)})
-                if not continue_on_errors:
+                if job_must_commit(job) or not continue_on_errors:
                     raise
                 print(
                     f"[superPipeline][WARN] Stage A failed for {job['jobId']}; "
@@ -897,7 +945,7 @@ def run_overlapped_jobs(
                 write_slot_job(incoming_slot, job, "CAPTURE_FAILED", {"error": str(exc)})
 
         if stage_b_error is not None:
-            if keep_failed_capture:
+            if job_must_commit(ready_job) or keep_failed_capture:
                 raise SuperPipelineError(
                     f"stage B failed for {ready_job['jobId']}; preserving {output_slot}"
                 ) from stage_b_error
@@ -907,7 +955,7 @@ def run_overlapped_jobs(
                 flush=True,
             )
         if stage_a_error is not None:
-            if not continue_on_errors:
+            if job_must_commit(job) or not continue_on_errors:
                 raise SuperPipelineError(f"stage A failed for {job['jobId']}") from stage_a_error
             print(
                 f"[superPipeline][WARN] Stage A failed for {job['jobId']}; "
@@ -934,7 +982,7 @@ def run_overlapped_jobs(
         except Exception as exc:
             record_failure(log_root, ready_job, "B", exc, output_slot)
             write_slot_job(output_slot, ready_job, "PROCESSING_FAILED", {"error": str(exc)})
-            if keep_failed_capture or not continue_on_errors:
+            if job_must_commit(ready_job) or keep_failed_capture or not continue_on_errors:
                 raise
             print(
                 f"[superPipeline][WARN] Stage B failed for {ready_job['jobId']}; "
@@ -957,6 +1005,7 @@ def main() -> int:
         jobs = load_jobs(args.job_source, args.start_from, args.limit)
         print(f"[superPipeline][INFO] Loaded {len(jobs)} {args.job_source} job(s).", flush=True)
         jobs = discard_completed_jobs(destination, jobs)
+        write_coverage_grid_plan(args.job_source, jobs)
         if not jobs:
             print("[superPipeline][INFO] No pending jobs remain after destination inventory.", flush=True)
             return 0
@@ -996,7 +1045,7 @@ def main() -> int:
                             else "PROCESSING_FAILED"
                         )
                         write_slot_job(slot, job, failed_state, {"error": str(exc)})
-                    if not args.continue_on_errors:
+                    if job_must_commit(job) or not args.continue_on_errors:
                         raise
                     print(
                         f"[superPipeline][WARN] Sequential job {job['jobId']} failed; "

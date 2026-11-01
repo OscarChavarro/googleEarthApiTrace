@@ -110,7 +110,7 @@ Options:
   --dry-run           Build and validate the delta, but do not merge it
   --keep-work         Preserve staging when the script exits
   --merge-level-only N
-                      Merge only exported leaves at level N, using the
+                      Merge only complete tiles at level N, using the
                       destination's existing tiles as their ancestors
   --route-command CMD Record the module-11 command that prepared the current KML
   --capture-root PATH Read/write the capture dataset from PATH
@@ -396,6 +396,14 @@ select_completed_trace() {
         return 0
     fi
 
+    # Module 14 writes directly into the configured capture slot.
+    local slot_trace="$CAPTURE_ROOT/googleearth-bin.trace"
+    if [[ -r "$slot_trace" && -s "$slot_trace" ]]; then
+        sync "$slot_trace"
+        printf '%s\n' "$slot_trace"
+        return 0
+    fi
+
     local -a traces=()
     mapfile -d '' traces < <(
         find "$TRACE_DIRECTORY" -maxdepth 1 -type f -name "$TRACE_PATTERN" -print0 | sort -z
@@ -411,7 +419,7 @@ select_completed_trace() {
 
 publish_private_trace() {
     local trace_file pipeline_dir partial private_trace sha_file source_sha private_sha
-    trace_file="$(select_completed_trace)"
+    trace_file="$(select_completed_trace)" || return 1
     [[ "$trace_file" != "$CAPTURE_ROOT/_pipeline/capture.trace" ]] || return 0
 
     pipeline_dir="$CAPTURE_ROOT/_pipeline"
@@ -420,12 +428,16 @@ publish_private_trace() {
     sha_file="$pipeline_dir/capture.trace.sha256"
 
     mkdir -p "$pipeline_dir"
-    cp -- "$trace_file" "$partial"
+    source_sha="$(sha256sum "$trace_file" | awk '{print $1}')" || return 1
+    if [[ "$trace_file" == "$CAPTURE_ROOT/"* ]]; then
+        mv -- "$trace_file" "$partial" || return 1
+    else
+        cp -- "$trace_file" "$partial" || return 1
+    fi
     sync "$partial"
     mv -- "$partial" "$private_trace"
     sync "$private_trace"
 
-    source_sha="$(sha256sum "$trace_file" | awk '{print $1}')"
     private_sha="$(sha256sum "$private_trace" | awk '{print $1}')"
     [[ "$source_sha" == "$private_sha" ]] ||
         die "Private trace SHA-256 mismatch after copy from $trace_file to $private_trace."
@@ -504,10 +516,10 @@ validate_export_log_and_pyramid() {
 
     ! grep -q 'Export failed' "$export_log" || die "Module 32 reported an export failure."
     ! grep -Eq '\([1-9][0-9]* failed\)' "$export_log" || die "Module 32 reported failed PNG writes."
-    ! grep -q 'layer(s) with NO placed tiles' "$export_log" || die "Module 32 left complete matrix layers unplaced."
     grep -Eq 'Export complete: [1-9][0-9]* tiles processed' "$export_log" ||
         die "Module 32 did not report a non-empty completed export."
     if [[ -z "$level_only" ]]; then
+        ! grep -q 'layer(s) with NO placed tiles' "$export_log" || die "Module 32 left complete matrix layers unplaced."
         ! grep -q 'discarded due to ambiguous' "$export_log" || die "Module 32 discarded ambiguous tile placements."
         awk '
             /^  matrix_[0-9]+: [0-9]+\/[0-9]+ tiles placed/ {
@@ -515,8 +527,8 @@ validate_export_log_and_pyramid() {
                 placed = counts[1] + 0;
                 total = counts[2] + 0;
                 # The exporter explicitly reports paths beyond the configured
-                # world10 boundary. They are intentionally absent from the
-                # delta and must not make a level-10 merge look incomplete.
+                # world11 boundary. They are intentionally absent from the
+                # delta and must not make a level-11 merge look incomplete.
                 # Any other missing tile (including an ambiguity) remains a
                 # hard failure.
                 if (placed != total) {
@@ -529,7 +541,7 @@ validate_export_log_and_pyramid() {
                     }
                     # A completely unplaced layer with observed paths beyond
                     # the boundary is an all-deep matrix. Its unresolved peers
-                    # cannot safely be placed at level 10, so module 32 omits
+                    # cannot safely be placed at level 11, so module 32 omits
                     # the whole layer and labels it explicitly.
                     excluded_layer = index($0, "entire layer excluded by the level boundary") > 0;
                     if (missing != out_of_scope && !excluded_layer) bad = 1;
@@ -537,9 +549,12 @@ validate_export_log_and_pyramid() {
                 seen++;
             }
             END { if (seen == 0 || bad) exit 1; }
-        ' "$export_log" || die "An imported matrix tile lacks a valid level-10 position."
+        ' "$export_log" || die "An imported matrix tile lacks a valid level-11 position."
     else
-        log "Module 32 reported unresolved deep placements; retaining only validated level-$level_only leaves."
+        if grep -q 'layer(s) with NO placed tiles' "$export_log"; then
+            log "Some matrix layers remain unresolved; retaining only geographically placed complete level-$level_only tiles. Capture and matrix inputs are preserved."
+        fi
+        log "Preparing complete level-$level_only tiles from the module-32 export."
     fi
 
     [[ -r "$pyramid/0.png" ]] || die "Delta pyramid has no readable root 0.png."
@@ -583,53 +598,7 @@ quadkey_file_path() {
 }
 
 build_level_only_delta() {
-    local source="$1"
-    local target="$2"
-    local level="$3"
-    local leaf_pattern leaf relative quadkey target_leaf
-    local prefix_length ancestor_quadkey source_ancestor target_ancestor
-    local leaf_count=0 ancestor_count=0
-    local -A required_ancestors=()
-
-    [[ -d "$source" ]] || die "Full delta does not exist: $source"
-    [[ ! -e "$target" && ! -L "$target" ]] ||
-        die "Level-only delta path already exists: $target"
-    mkdir -- "$target"
-
-    printf -v leaf_pattern '%*s.png' "$((level + 1))" ''
-    leaf_pattern="${leaf_pattern// /?}"
-
-    while IFS= read -r -d '' leaf; do
-        relative="${leaf#"$source"/}"
-        quadkey="$(basename "$leaf" .png)"
-        target_leaf="$target/$relative"
-        mkdir -p -- "$(dirname "$target_leaf")"
-        ln -- "$leaf" "$target_leaf"
-        leaf_count=$((leaf_count + 1))
-
-        for ((prefix_length = 1; prefix_length <= level; prefix_length++)); do
-            ancestor_quadkey="${quadkey:0:prefix_length}"
-            required_ancestors["$ancestor_quadkey"]="$quadkey"
-        done
-    done < <(find "$source" -type f -name "$leaf_pattern" -print0)
-
-    ((leaf_count > 0)) || die "Full delta contains no level-$level leaves."
-
-    # Thousands of leaves share almost all ancestors. Resolve and copy each
-    # unique ancestor once instead of repeating the filesystem checks for
-    # every leaf/prefix pair.
-    for ancestor_quadkey in "${!required_ancestors[@]}"; do
-        source_ancestor="$(quadkey_file_path "$destination" "$ancestor_quadkey")"
-        target_ancestor="$(quadkey_file_path "$target" "$ancestor_quadkey")"
-        [[ -r "$source_ancestor" ]] ||
-            die "Destination lacks ancestor $ancestor_quadkey required by ${required_ancestors[$ancestor_quadkey]}"
-        mkdir -p -- "$(dirname "$target_ancestor")"
-        cp -- "$source_ancestor" "$target_ancestor"
-        ancestor_count=$((ancestor_count + 1))
-    done
-
-    [[ -r "$target/0.png" ]] || die "Level-only delta has no root ancestor."
-    log "Prepared level-$level-only delta: leaves=$leaf_count destination_ancestors=$ancestor_count path=$target"
+    python3 "$SCRIPT_DIR/scripts/buildLevelOnlyDelta.py" "$1" "$2" "$destination" "$3"
 }
 
 reset_matrix_attempt_staging() {
@@ -684,13 +653,19 @@ append_merge_error() {
 
 preflight_started="$(date +%s)"
 log "Starting preflight started_at=$(date --iso-8601=seconds)"
-for command_name in java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum sha256sum compare identify mktemp mkdir basename dirname stat df sleep cp mv ln; do
+for command_name in python3 java cmake apitrace realpath find jq awk sed sort grep tee flock sync rmdir cksum sha256sum compare identify mktemp mkdir basename dirname stat df sleep cp mv ln; do
     require_command "$command_name"
 done
 [[ -x "$SCRIPT_DIR/gradlew" ]] || die "Gradle wrapper is not executable: $SCRIPT_DIR/gradlew"
+if [[ -n "$merge_level_only" ]]; then
+    python3 -c "from PIL import Image" || die "Level-only deltas require Python Pillow."
+fi
 
 destination="$(canonical_directory "$destination")"
 [[ -r "$destination/0.png" ]] || die "Destination is not a pyramidal image (missing 0.png): $destination"
+reference_pyramid="${PIPELINE_REFERENCE_PYRAMID:-$destination}"
+reference_pyramid="$(canonical_directory "$reference_pyramid")"
+[[ -r "$reference_pyramid/0.png" ]] || die "Reference pyramid has no readable root 0.png: $reference_pyramid"
 [[ -w "$destination" ]] || die "Destination is not writable: $destination"
 
 capture_resolved="$(canonical_directory "$CAPTURE_ROOT")"
@@ -788,13 +763,13 @@ run_timed_step "matrix_staging_reset_${attempt_suffix}" reset_matrix_attempt_sta
 
 phase_log "31 matrixMerger"
 run_logged "31_matrixMerger_${attempt_suffix}" \
-    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$MATRIX_DIR"
+    "$SCRIPT_DIR/31_matrixMerger/runOffline.sh" "$MATRIX_DIR" "${PIPELINE_MINIMUM_TILE_COUNT:-10}"
 log "Automatic offline module 31 completed."
 
 module_32_log="$run_dir/logs/32_pyramidalImageExporter_${attempt_suffix}.log"
 phase_log "32 pyramidalImageExporter"
 run_logged "32_pyramidalImageExporter_${attempt_suffix}" \
-    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$MATRIX_DIR" "$destination"
+    "$SCRIPT_DIR/32_pyramidalImageExporter/runOffline.sh" "$MATRIX_DIR" "$reference_pyramid"
 run_timed_step "32_pyramidalImageExporter_validation_${attempt_suffix}" \
     validate_export_log_and_pyramid "$module_32_log" "$merge_level_only"
 
@@ -804,6 +779,20 @@ if [[ -n "$merge_level_only" ]]; then
     run_timed_step "level_${merge_level_only}_delta_preparation_${attempt_suffix}" \
         build_level_only_delta "$delta" "$level_only_delta" "$merge_level_only"
     delta="$level_only_delta"
+fi
+# Report rectangular coverage without blocking coastal captures: sea cells may
+# have no native imagery. The merger still validates every tile in the delta.
+if [[ -n "$merge_level_only" && -f "$CAPTURE_ROOT/_pipeline/job.json" ]]; then
+    python3 - "$SCRIPT_DIR/scripts" "$CAPTURE_ROOT/_pipeline/job.json" "$destination" "$delta" <<'PYTHON'
+import json
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+from superPipelineController import destination_contains_job_area
+job = json.loads(Path(sys.argv[2]).read_text())
+if not destination_contains_job_area(Path(sys.argv[3]), job, Path(sys.argv[4])):
+    print("Coverage is partial; proceeding with validated available tiles (sea cells may remain empty)")
+PYTHON
 fi
 module_42_log="$run_dir/logs/42_pyramidalImageMerger_dry_run_${attempt_suffix}.log"
 phase_log "42 pyramidalImageMerger dry-run"
