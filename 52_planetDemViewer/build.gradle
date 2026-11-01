@@ -17,6 +17,8 @@ application {
 
 tasks.withType(JavaExec).configureEach {
     workingDir = projectDir
+    // JOGL's AWT bridge reflects on AppContext when attaching a GLCanvas.
+    jvmArgs '--add-opens=java.desktop/sun.awt=ALL-UNNAMED'
     def configuredHeap = System.getenv('PLANET_DEM_MAX_HEAP')
     if (configuredHeap != null && !configuredHeap.isBlank()) {
         maxHeapSize = configuredHeap

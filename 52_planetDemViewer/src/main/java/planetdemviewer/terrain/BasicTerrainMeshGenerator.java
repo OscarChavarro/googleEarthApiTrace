@@ -1,5 +1,6 @@
 package planetdemviewer.terrain;
 
+import java.util.EnumSet;
 import java.util.List;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.model.DemTile;
@@ -8,11 +9,22 @@ import vsdk.toolkit.environment.geometry.surface.TriangleMesh;
 
 /**
  * Builds the regular two-triangles-per-cell DEM mesh.  The core owns the
- * 256x256 rendered vertices; the one-sample halo participates only in the
- * angle-weighted vertex-normal calculation.
+ * 256x256 rendered vertices.  A published 258x258 tile has a one-sample
+ * halo: its west/north halo is the last core sample of the adjacent tile.
+ * Consequently the first rendered row/column comes from that halo, whereas
+ * the remaining vertices come from the tile core.  This makes both sides of
+ * a same-resolution boundary use the exact same elevation sample.
  */
 public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<TriangleMesh> {
     private static final int CORE = DemTile.CORE_SIZE;
+    /**
+     * A fine edge is extended by one of its own grid steps into a coarser
+     * neighbour.  The edge height is already snapped to that neighbour, so
+     * this is a coverage apron rather than a vertical skirt.  It prevents a
+     * rasterization crack at a T-junction, where mathematically coincident
+     * edges otherwise arrive at GL as independently rounded vertices.
+     */
+    private static final double STITCHED_EDGE_OVERLAP_STEPS = 1.0;
 
     @Override
     public TriangleMesh generate(QuadtreeNode node, DemTile elevationsWithHalo) {
@@ -25,6 +37,7 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
             throw new IllegalArgumentException("A quadtree node and DEM tile are required");
         }
         HeightField heightField = new HeightField(node, elevationsWithHalo, seamConstraints);
+        EnumSet<TerrainEdge> stitchedEdges = stitchedEdges(seamConstraints);
 
         TriangleMesh mesh = new TriangleMesh();
         mesh.setName("DEM " + node.getId());
@@ -42,17 +55,22 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
                 int p = vertex * 3;
                 positions[p] = node.getX0() - 0.5 + column * stepX;
                 positions[p + 1] = node.getY1() - 0.5 - row * stepY;
-                positions[p + 2] = heightField.elevation(row + 1, column + 1);
+                extendStitchedBoundary(positions, p, row, column, stepX, stepY, stitchedEdges);
+                int storedRow = renderedStoredCoordinate(row);
+                int storedColumn = renderedStoredCoordinate(column);
+                positions[p + 2] = heightField.elevation(storedRow, storedColumn);
 
-                double[] normal = angleWeightedNormal(
-                    heightField, row + 1, column + 1, stepX, stepY);
+                double[] normal = heightField.stitchedNormal(storedRow, storedColumn);
+                if (normal == null) {
+                    normal = angleWeightedNormal(heightField, storedRow, storedColumn, stepX, stepY);
+                }
                 normals[p] = normal[0];
                 normals[p + 1] = normal[1];
                 normals[p + 2] = normal[2];
             }
         }
 
-        int triangleCount = countValidTriangles(elevationsWithHalo);
+        int triangleCount = countValidTriangles(heightField);
         mesh.initTriangleArrays(triangleCount);
         int[] indices = mesh.getTriangleIndexes();
         int out = 0;
@@ -62,16 +80,16 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
                 int b = vertexIndex(row + 1, column);
                 int c = vertexIndex(row, column + 1);
                 int d = vertexIndex(row + 1, column + 1);
-                if (valid(elevationsWithHalo, row + 1, column + 1)
-                    && valid(elevationsWithHalo, row + 2, column + 1)
-                    && valid(elevationsWithHalo, row + 1, column + 2)) {
+                if (validRendered(heightField, row, column)
+                    && validRendered(heightField, row + 1, column)
+                    && validRendered(heightField, row, column + 1)) {
                     indices[out++] = a;
                     indices[out++] = b;
                     indices[out++] = c;
                 }
-                if (valid(elevationsWithHalo, row + 1, column + 2)
-                    && valid(elevationsWithHalo, row + 2, column + 1)
-                    && valid(elevationsWithHalo, row + 2, column + 2)) {
+                if (validRendered(heightField, row, column + 1)
+                    && validRendered(heightField, row + 1, column)
+                    && validRendered(heightField, row + 1, column + 1)) {
                     indices[out++] = c;
                     indices[out++] = b;
                     indices[out++] = d;
@@ -81,18 +99,48 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
         return mesh;
     }
 
-    private static int countValidTriangles(DemTile tile) {
+    private static EnumSet<TerrainEdge> stitchedEdges(List<TerrainSeamConstraint> constraints) {
+        EnumSet<TerrainEdge> result = EnumSet.noneOf(TerrainEdge.class);
+        if (constraints != null) {
+            for (TerrainSeamConstraint constraint : constraints) {
+                if (constraint != null) {
+                    result.add(constraint.fineEdge());
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Extends only the constrained outer row/column, never an ordinary tile edge. */
+    private static void extendStitchedBoundary(double[] positions, int offset, int row, int column,
+                                               double stepX, double stepY,
+                                               EnumSet<TerrainEdge> stitchedEdges) {
+        if (column == 0 && stitchedEdges.contains(TerrainEdge.WEST)) {
+            positions[offset] -= stepX * STITCHED_EDGE_OVERLAP_STEPS;
+        }
+        if (column == CORE - 1 && stitchedEdges.contains(TerrainEdge.EAST)) {
+            positions[offset] += stepX * STITCHED_EDGE_OVERLAP_STEPS;
+        }
+        if (row == 0 && stitchedEdges.contains(TerrainEdge.NORTH)) {
+            positions[offset + 1] += stepY * STITCHED_EDGE_OVERLAP_STEPS;
+        }
+        if (row == CORE - 1 && stitchedEdges.contains(TerrainEdge.SOUTH)) {
+            positions[offset + 1] -= stepY * STITCHED_EDGE_OVERLAP_STEPS;
+        }
+    }
+
+    private static int countValidTriangles(HeightField field) {
         int count = 0;
-        for (int row = 1; row < CORE; row++) {
-            for (int column = 1; column < CORE; column++) {
-                if (valid(tile, row, column)
-                    && valid(tile, row + 1, column)
-                    && valid(tile, row, column + 1)) {
+        for (int row = 0; row < CORE - 1; row++) {
+            for (int column = 0; column < CORE - 1; column++) {
+                if (validRendered(field, row, column)
+                    && validRendered(field, row + 1, column)
+                    && validRendered(field, row, column + 1)) {
                     count++;
                 }
-                if (valid(tile, row, column + 1)
-                    && valid(tile, row + 1, column)
-                    && valid(tile, row + 1, column + 1)) {
+                if (validRendered(field, row, column + 1)
+                    && validRendered(field, row + 1, column)
+                    && validRendered(field, row + 1, column + 1)) {
                     count++;
                 }
             }
@@ -181,12 +229,24 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
             && column >= 0 && column < DemTile.STORED_SIZE;
     }
 
-    private static boolean valid(DemTile tile, int row, int column) {
-        return insideStored(row, column) && tile.elevation(row, column) != DemTile.NO_DATA;
+    private static boolean validRendered(HeightField field, int row, int column) {
+        return field.valid(renderedStoredCoordinate(row), renderedStoredCoordinate(column));
     }
 
-    private static double normalizedElevation(short elevation) {
-        return elevation == DemTile.NO_DATA ? 0.0 : elevation / Configuration.WORLD_WIDTH_METRES;
+    /**
+     * The 258 raster is [west/north halo, 256 core samples, east/south halo].
+     * The shared edge is owned by the west/north halo of the tile on its
+     * east/south side, so it is the same sample as the core edge of the other
+     * tile.  Keeping the mesh at 256 vertices requires omitting core index 1
+     * on those two edges rather than rendering two unequal samples at one
+     * world-space edge.
+     */
+    private static int renderedStoredCoordinate(int renderedCoordinate) {
+        return renderedCoordinate == 0 ? 0 : renderedCoordinate + 1;
+    }
+
+    private static double normalizedElevation(double elevationMetres) {
+        return Double.isFinite(elevationMetres) ? elevationMetres / Configuration.WORLD_WIDTH_METRES : 0.0;
     }
 
     private static int vertexIndex(int row, int column) {
@@ -218,15 +278,18 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
         private static final double WEIGHT_EPSILON = 1e-12;
         private final double[] values = new double[DemTile.SAMPLE_COUNT];
         private final boolean[] valid = new boolean[DemTile.SAMPLE_COUNT];
+        private final double[] normalX = new double[DemTile.SAMPLE_COUNT];
+        private final double[] normalY = new double[DemTile.SAMPLE_COUNT];
+        private final double[] normalZ = new double[DemTile.SAMPLE_COUNT];
+        private final int[] normalCounts = new int[DemTile.SAMPLE_COUNT];
 
         HeightField(QuadtreeNode fineNode, DemTile fineTile,
                     List<TerrainSeamConstraint> constraints) {
             for (int row = 0; row < DemTile.STORED_SIZE; row++) {
                 for (int column = 0; column < DemTile.STORED_SIZE; column++) {
                     int index = index(row, column);
-                    short elevation = fineTile.elevation(row, column);
-                    valid[index] = elevation != DemTile.NO_DATA;
-                    values[index] = normalizedElevation(elevation);
+                    valid[index] = fineTile.elevation(row, column) != DemTile.NO_DATA;
+                    values[index] = normalizedElevation(fineTile.elevationMetres(row, column));
                 }
             }
             if (constraints == null || constraints.isEmpty()) {
@@ -238,6 +301,8 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
             double stepX = (fineNode.getX1() - fineNode.getX0()) / (CORE - 1.0);
             double stepY = (fineNode.getY1() - fineNode.getY0()) / (CORE - 1.0);
             for (TerrainSeamConstraint constraint : constraints) {
+                HeightField coarseField = new HeightField(
+                    constraint.coarseNode(), constraint.coarseElevations(), List.of());
                 for (int row = 0; row < DemTile.STORED_SIZE; row++) {
                     for (int column = 0; column < DemTile.STORED_SIZE; column++) {
                         if (!affected(constraint.fineEdge(), row, column)) {
@@ -245,13 +310,31 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
                         }
                         double x = fineNode.getX0() + (column - 1) * stepX;
                         double y = fineNode.getY1() - (row - 1) * stepY;
-                        Sample sample = sampleCoarse(constraint, x, y);
+                        Sample sample = sampleCoarse(constraint, coarseField, x, y);
                         if (sample.valid) {
                             int index = index(row, column);
                             stitchedSums[index] += sample.elevation;
                             stitchedCounts[index]++;
+                            if (isRenderedBoundaryVertex(constraint.fineEdge(), row, column)) {
+                                normalX[index] += sample.normalX;
+                                normalY[index] += sample.normalY;
+                                normalZ[index] += sample.normalZ;
+                                normalCounts[index]++;
+                            }
                         }
                     }
+                }
+            }
+            for (int i = 0; i < normalCounts.length; i++) {
+                if (normalCounts[i] == 0) {
+                    continue;
+                }
+                double length = Math.sqrt(normalX[i] * normalX[i]
+                    + normalY[i] * normalY[i] + normalZ[i] * normalZ[i]);
+                if (length > 0.0) {
+                    normalX[i] /= length;
+                    normalY[i] /= length;
+                    normalZ[i] /= length;
                 }
             }
             for (int i = 0; i < values.length; i++) {
@@ -270,6 +353,14 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
             return insideStored(row, column) && valid[index(row, column)];
         }
 
+        double[] stitchedNormal(int row, int column) {
+            int index = index(row, column);
+            if (normalCounts[index] == 0) {
+                return null;
+            }
+            return new double[] {normalX[index], normalY[index], normalZ[index]};
+        }
+
         private static boolean affected(TerrainEdge edge, int row, int column) {
             return switch (edge) {
                 case NORTH -> row <= 1;
@@ -279,7 +370,21 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
             };
         }
 
-        private static Sample sampleCoarse(TerrainSeamConstraint constraint, double x, double y) {
+        private static boolean isRenderedBoundaryVertex(TerrainEdge edge, int row, int column) {
+            return switch (edge) {
+                case NORTH -> row == 0 && isRenderedStoredCoordinate(column);
+                case SOUTH -> row == CORE && isRenderedStoredCoordinate(column);
+                case WEST -> column == 0 && isRenderedStoredCoordinate(row);
+                case EAST -> column == CORE && isRenderedStoredCoordinate(row);
+            };
+        }
+
+        private static boolean isRenderedStoredCoordinate(int coordinate) {
+            return coordinate == 0 || (coordinate >= 2 && coordinate <= CORE);
+        }
+
+        private static Sample sampleCoarse(TerrainSeamConstraint constraint, HeightField coarseField,
+                                           double x, double y) {
             QuadtreeNode coarse = constraint.coarseNode();
             double columnPosition = (x - coarse.getX0()) / (coarse.getX1() - coarse.getX0()) * (CORE - 1.0);
             double rowPosition = (coarse.getY1() - y) / (coarse.getY1() - coarse.getY0()) * (CORE - 1.0);
@@ -299,25 +404,41 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
             int[] columns = {c0, c1, c0, c1};
             double[] weights = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
             double result = 0.0;
+            double[] normal = new double[3];
+            double stepX = (coarse.getX1() - coarse.getX0()) / (CORE - 1.0);
+            double stepY = (coarse.getY1() - coarse.getY0()) / (CORE - 1.0);
             for (int i = 0; i < weights.length; i++) {
                 if (weights[i] <= WEIGHT_EPSILON) {
                     continue;
                 }
-                short elevation = constraint.coarseElevations().elevation(rows[i] + 1, columns[i] + 1);
-                if (elevation == DemTile.NO_DATA) {
+                int storedRow = renderedStoredCoordinate(rows[i]);
+                int storedColumn = renderedStoredCoordinate(columns[i]);
+                if (!coarseField.valid(storedRow, storedColumn)) {
                     return Sample.INVALID;
                 }
-                result += weights[i] * normalizedElevation(elevation);
+                result += weights[i] * coarseField.elevation(storedRow, storedColumn);
+                double[] vertexNormal = angleWeightedNormal(
+                    coarseField, storedRow, storedColumn, stepX, stepY);
+                normal[0] += weights[i] * vertexNormal[0];
+                normal[1] += weights[i] * vertexNormal[1];
+                normal[2] += weights[i] * vertexNormal[2];
             }
-            return new Sample(true, result);
+            double normalLength = Math.sqrt(normal[0] * normal[0]
+                + normal[1] * normal[1] + normal[2] * normal[2]);
+            if (!(normalLength > 0.0)) {
+                return Sample.INVALID;
+            }
+            return new Sample(true, result, normal[0] / normalLength,
+                normal[1] / normalLength, normal[2] / normalLength);
         }
 
         private static int index(int row, int column) {
             return row * DemTile.STORED_SIZE + column;
         }
 
-        private record Sample(boolean valid, double elevation) {
-            private static final Sample INVALID = new Sample(false, 0.0);
+        private record Sample(boolean valid, double elevation,
+                              double normalX, double normalY, double normalZ) {
+            private static final Sample INVALID = new Sample(false, 0.0, 0.0, 0.0, 1.0);
         }
     }
 }

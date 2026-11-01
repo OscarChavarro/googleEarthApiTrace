@@ -1,13 +1,23 @@
 package planetdemviewer.model;
 
+import java.nio.file.Path;
+import planetdemviewer.scene.LayerDescriptor;
+import planetdemviewer.scene.ElevationLayer;
+import planetdemviewer.scene.LayerId;
+import planetdemviewer.spatial.FabdemQuadkeyTileScheme;
+import planetdemviewer.spatial.TileScheme;
+
 /**
+ * Current FABDEM-backed implementation of the backend-neutral TerrainLayer.
  * One placement of a PyramidalImage in the scene: world translation, a PSC
  * ("Powers of Ten") level analogous to the old prototype's
  * CachedPyramidalImage#setUniversalExtent, a z stacking offset and an
  * opacity, so several images can be stacked on top of one another.
  */
-public final class PyramidalImageInstance {
+public final class PyramidalImageInstance implements ElevationLayer {
     private final PyramidalImage image;
+    private final LayerId layerId;
+    private final LayerDescriptor descriptor;
     private double offsetX;
     private double offsetY;
     private int psc;
@@ -17,6 +27,15 @@ public final class PyramidalImageInstance {
 
     public PyramidalImageInstance(PyramidalImage image) {
         this.image = image;
+        String sourceFolder = image == null ? null : image.getSourceFolder();
+        if (sourceFolder == null || sourceFolder.isBlank()) {
+            throw new IllegalArgumentException("A pyramidal image source is required");
+        }
+        Path sourcePath = Path.of(sourceFolder).toAbsolutePath().normalize();
+        String displayName = sourcePath.getFileName() == null ? sourcePath.toString() : sourcePath.getFileName().toString();
+        this.layerId = LayerId.source(sourcePath.toString());
+        this.descriptor = new LayerDescriptor(displayName, "FABDEM DEM", true,
+            "planetdem-equirectangular-v1", "EGM2008-orthometric", "WGS84-ellipsoidal");
         this.offsetX = 0.0;
         this.offsetY = 0.0;
         // relativeScale(psc) = 10^(psc - currentPSC - 1): psc = 1 renders at
@@ -30,6 +49,31 @@ public final class PyramidalImageInstance {
 
     public PyramidalImage getImage() {
         return image;
+    }
+
+    @Override
+    public LayerId layerId() {
+        return layerId;
+    }
+
+    @Override
+    public LayerDescriptor descriptor() {
+        return descriptor;
+    }
+
+    @Override
+    public TileScheme tileScheme() {
+        return FabdemQuadkeyTileScheme.INSTANCE;
+    }
+
+    @Override
+    public String sourceVerticalDatumId() {
+        return descriptor.sourceVerticalDatumId();
+    }
+
+    @Override
+    public String canonicalVerticalDatumId() {
+        return descriptor.canonicalVerticalDatumId();
     }
 
     public double getOffsetX() {
@@ -72,6 +116,7 @@ public final class PyramidalImageInstance {
         this.opacity = Math.max(0.0001, Math.min(1.0, opacity));
     }
 
+    @Override
     public boolean isVisible() {
         return visible;
     }

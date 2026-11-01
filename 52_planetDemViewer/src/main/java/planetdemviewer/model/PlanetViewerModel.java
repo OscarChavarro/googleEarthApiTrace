@@ -3,9 +3,17 @@ package planetdemviewer.model;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.config.StorageProfile;
 import planetdemviewer.palette.PaletteCatalog;
+import planetdemviewer.scene.CameraSnapshot;
+import planetdemviewer.scene.LayerSnapshot;
+import planetdemviewer.scene.SceneSnapshot;
+import planetdemviewer.scene.ProjectionType;
+import planetdemviewer.scene.TerrainSurfaceSelection;
+import planetdemviewer.spatial.WorldPosition;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
@@ -23,6 +31,8 @@ import vsdk.toolkit.environment.material.SimpleMaterial;
  * arbitrarily deep zoom never loses floating-point precision.
  */
 public final class PlanetViewerModel {
+    /** The single critical section shared by animation, input, I/O callbacks and JOGL rendering. */
+    private final ReentrantReadWriteLock accessLock = new ReentrantReadWriteLock(true);
     private final List<PyramidalImageInstance> stack = new ArrayList<>();
     private final Camera viewingCamera = new Camera();
     private final RendererConfiguration renderingConfiguration = new RendererConfiguration();
@@ -39,6 +49,7 @@ public final class PlanetViewerModel {
     private final StorageProfile storageProfile;
     private OperationModes operationMode = OperationModes.PALETTE_BASED_IMAGE;
     private double heightExagerationFactor = 1.0;
+    private TerrainSurfaceSelection terrainSurfaceSelection;
 
     public PlanetViewerModel() {
         this(StorageProfile.SLOW);
@@ -65,6 +76,72 @@ public final class PlanetViewerModel {
         material = material.withDiffuse(new ColorRgb(0.55, 0.68, 0.38));
         material = material.withSpecular(new ColorRgb(0.25, 0.25, 0.25));
         terrainMaterial = material.withPhongExponent(24.0);
+    }
+
+    public void writeLocked(Runnable action) {
+        accessLock.writeLock().lock();
+        try {
+            action.run();
+        }
+        finally {
+            accessLock.writeLock().unlock();
+        }
+    }
+
+    public <T> T readLocked(Supplier<T> action) {
+        accessLock.readLock().lock();
+        try {
+            return action.get();
+        }
+        finally {
+            accessLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Copies all planner-relevant state while holding the model read lock.
+     * Consumers must use this outside the lock rather than retaining mutable
+     * Camera or PyramidalImageInstance objects.
+     */
+    public SceneSnapshot snapshot() {
+        return readLocked(this::snapshotLocked);
+    }
+
+    private SceneSnapshot snapshotLocked() {
+        CameraSnapshot camera = new CameraSnapshot(
+            worldPosition(viewingCamera.getPosition()),
+            worldPosition(viewingCamera.getFocusedPosition()),
+            worldPosition(viewingCamera.getUp()),
+            viewingCamera.getFov(),
+            viewingCamera.getNearPlaneDistance(),
+            viewingCamera.getFarPlaneDistance(),
+            viewingCamera.getProjectionMode() == Camera.PROJECTION_MODE_ORTHOGONAL
+                ? ProjectionType.ORTHOGRAPHIC : ProjectionType.PERSPECTIVE,
+            viewingCamera.getOrthogonalZoom(),
+            viewingCamera.getViewportXSize(),
+            viewingCamera.getViewportYSize(),
+            viewingCamera.getModificationVersion()
+        );
+        List<LayerSnapshot> layers = new ArrayList<>(stack.size());
+        for (PyramidalImageInstance instance : stack) {
+            layers.add(new LayerSnapshot(
+                instance.layerId(),
+                instance.descriptor(),
+                instance.getImage().getSourceFolder(),
+                instance.isVisible(),
+                instance.getOffsetX(),
+                instance.getOffsetY(),
+                instance.getPsc(),
+                instance.getZOffset(),
+                instance.getOpacity()
+            ));
+        }
+        return new SceneSnapshot(camera, layers, selectedIndex, currentPSC,
+            operationMode, heightExagerationFactor, hudStatus, terrainSurfaceSelection);
+    }
+
+    private static WorldPosition worldPosition(Vector3Dd vector) {
+        return new WorldPosition(vector.x(), vector.y(), vector.z());
     }
 
     public StorageProfile getStorageProfile() {
@@ -106,8 +183,16 @@ public final class PlanetViewerModel {
         operationMode = operationMode.next();
     }
 
+    public void setOperationMode(OperationModes operationMode) {
+        this.operationMode = operationMode == null ? OperationModes.PALETTE_BASED_IMAGE : operationMode;
+    }
+
     public double getHeightExagerationFactor() {
         return heightExagerationFactor;
+    }
+
+    public void setHeightExagerationFactor(double factor) {
+        heightExagerationFactor = Math.max(1.0 / 1024.0, Math.min(1024.0, factor));
     }
 
     public void decreaseHeightExagerationFactor() {
@@ -187,5 +272,14 @@ public final class PlanetViewerModel {
 
     public void setHudStatus(String hudStatus) {
         this.hudStatus = hudStatus;
+    }
+
+    public TerrainSurfaceSelection getTerrainSurfaceSelection() {
+        return terrainSurfaceSelection;
+    }
+
+    /** Null clears the marker after a sky click or when its source becomes unavailable. */
+    public void setTerrainSurfaceSelection(TerrainSurfaceSelection terrainSurfaceSelection) {
+        this.terrainSurfaceSelection = terrainSurfaceSelection;
     }
 }

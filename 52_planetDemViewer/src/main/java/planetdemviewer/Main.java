@@ -1,14 +1,17 @@
 package planetdemviewer;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import planetdemviewer.io.PyramidalImageFolderReader;
 import planetdemviewer.logger.Logger;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImage;
+import planetdemviewer.mcp.ViewerMcpServer;
 import planetdemviewer.options.ArgumentParser;
 import planetdemviewer.options.CliArguments;
 import planetdemviewer.render.Jogl4PlanetViewerRenderer;
+import planetdemviewer.state.ApplicationStateStore;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public class Main {
@@ -16,8 +19,12 @@ public class Main {
         CliArguments cliArguments = ArgumentParser.parse(args);
 
         PlanetViewerModel model = new PlanetViewerModel(cliArguments.getStorageProfile());
-        int loadedCount = loadInitialImages(model, cliArguments);
-        if (loadedCount == 0 && cliArguments.getPyramidalImageFolders().isEmpty()) {
+        List<String> folders = cliArguments.getPyramidalImageFolders().isEmpty()
+            ? ApplicationStateStore.sourceFolders(ApplicationStateStore.DEFAULT_PATH)
+            : cliArguments.getPyramidalImageFolders();
+        List<String> demFolders = cliArguments.getImageryFolder() == null ? folders : folders.subList(0, 1);
+        int loadedCount = loadInitialImages(model, demFolders);
+        if (loadedCount == 0 && folders.isEmpty()) {
             Logger.info("starting with an empty scene. Press 'l' to load a DEM pyramid, or pass folders as arguments.");
         }
 
@@ -35,15 +42,32 @@ public class Main {
             return;
         }
 
-        Jogl4PlanetViewerRenderer renderer = new Jogl4PlanetViewerRenderer(model);
+        var restoredRendererState = ApplicationStateStore.restoreModel(ApplicationStateStore.DEFAULT_PATH, model);
+        Jogl4PlanetViewerRenderer renderer = new Jogl4PlanetViewerRenderer(model,
+            cliArguments.getImageryFolder() == null ? null : Path.of(cliArguments.getImageryFolder()));
+        restoredRendererState.ifPresent(state -> {
+            renderer.setTerrainTileBoundsVisible(state.tileBounds());
+            renderer.setUniformLodVisible(state.uniformLod());
+            Logger.info("restored state.json");
+        });
         InteractiveViewer interactiveViewer = new InteractiveViewer(model, renderer);
         interactiveViewer.launchDesktop();
+        if (cliArguments.getMcpPort() > 0) {
+            try {
+                ViewerMcpServer server = new ViewerMcpServer(interactiveViewer, cliArguments.getMcpPort());
+                server.start();
+                interactiveViewer.setMcpServer(server);
+            }
+            catch (Exception e) {
+                System.out.println("Could not start PlanetDemViewer MCP: " + e.getMessage());
+            }
+        }
     }
 
-    private static int loadInitialImages(PlanetViewerModel model, CliArguments cliArguments) {
+    private static int loadInitialImages(PlanetViewerModel model, List<String> folders) {
         int loaded = 0;
         PyramidalImageFolderReader reader = new PyramidalImageFolderReader();
-        for (String folder : cliArguments.getPyramidalImageFolders()) {
+        for (String folder : folders) {
             Path path = Path.of(folder).toAbsolutePath().normalize();
             Optional<PyramidalImage> image = reader.read(path);
             if (image.isEmpty()) {

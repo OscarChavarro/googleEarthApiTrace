@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "camera": {"position": {"x": -1025.3999999997561, "y": 11197.800000000489, "z": 4.697877078962609},"focus": {"x": -1025.5607978508954, "y": 11201.482878064642, "z": 1.3199260408831446},"up": {"x": -0.029468837796132342, "y": 0.6749471951383496, "z": 0.7372773368101179}, "projectionMode": 5},
+  "model": {"operationMode": "BASIC_TRIANGULATION", "heightExaggeration": 1.0, "currentPSC": -5},
+  "renderer": {"tileBounds": false, "uniformLod": false},
+  "sources": ["/Volumes/FABDEM"],
+  "instances": [
+    {"index": 0, "offsetX": 0.0, "offsetY": 0.0, "psc": 1, "zOffset": 0.0, "opacity": 1.0, "visible": true}
+  ]
+}

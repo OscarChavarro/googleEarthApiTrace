@@ -1,40 +1,46 @@
 package planetdemviewer.render;
 
 import com.jogamp.opengl.GL;
-import com.jogamp.opengl.GL2;
+import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.util.texture.Texture;
 import com.jogamp.opengl.util.texture.awt.AWTTextureIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.io.TileImageLoader;
 
 /**
- * GPU-resident tile textures, keyed by tile file path, with a FIFO eviction
- * policy bounded by Configuration.MAX_GPU_TEXTURE_MEMORY (like
- * 32_pyramidalImageExporter's Jogl4MatrixLayerRenderer#acquireTexture).
+ * GPU-resident tile textures, keyed by tile file path, with an access-ordered
+ * LRU eviction policy bounded by Configuration.MAX_GPU_TEXTURE_MEMORY.
+ * Acquiring a resident texture renews its last-viewed timestamp.
  * Interactive rendering acquires asynchronously through a TileImageLoader
  * (returns null and enqueues a background decode while a tile is not ready
  * yet, so the caller keeps using an ancestor's texture meanwhile); the
  * offline snapshot mode acquires synchronously instead.
  */
 public final class TextureCache {
-    private final Map<String, Texture> textureByPath = new HashMap<>();
+    private final LinkedHashMap<String, Texture> textureByPath = new LinkedHashMap<>(64, 0.75f, true);
     private final Map<String, Long> bytesByPath = new HashMap<>();
-    private final ArrayDeque<String> residentFifo = new ArrayDeque<>();
+    private final Map<String, Long> lastViewedNanosByPath = new HashMap<>();
     private long bytesAssigned;
 
-    public Texture acquire(GL2 gl2, File tileFile, TileImageLoader loader, boolean synchronous) {
+    public Texture acquire(GL4 gl, File tileFile, TileImageLoader loader, boolean synchronous) {
         if (tileFile == null) {
             return null;
+        }
+        // Keep the source DEM page recent too when its derived texture is displayed.
+        if (loader != null) {
+            loader.peekElevation(tileFile);
         }
         String path = tileFile.getAbsolutePath();
         Texture cached = textureByPath.get(path);
         if (cached != null) {
+            lastViewedNanosByPath.put(path, System.nanoTime());
             return cached;
         }
         Texture texture;
@@ -44,7 +50,7 @@ public final class TextureCache {
         if (synchronous) {
             try {
                 BufferedImage decoded = loader.loadSynchronously(tileFile);
-                texture = AWTTextureIO.newTexture(gl2.getGLProfile(), decoded, false);
+                texture = AWTTextureIO.newTexture(gl.getGLProfile(), decoded, false);
             }
             catch (IOException ex) {
                 return null;
@@ -56,13 +62,13 @@ public final class TextureCache {
                 loader.requestLoad(tileFile);
                 return null;
             }
-            texture = AWTTextureIO.newTexture(gl2.getGLProfile(), decoded, false);
+            texture = AWTTextureIO.newTexture(gl.getGLProfile(), decoded, false);
         }
-        texture.bind(gl2);
-        gl2.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
-        gl2.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
-        gl2.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL2.GL_CLAMP_TO_EDGE);
-        gl2.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL2.GL_CLAMP_TO_EDGE);
+        texture.bind(gl);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE);
 
         long bytes = texture.getEstimatedMemorySize();
         if (bytes <= 0L) {
@@ -70,20 +76,24 @@ public final class TextureCache {
         }
         textureByPath.put(path, texture);
         bytesByPath.put(path, bytes);
-        residentFifo.addLast(path);
+        lastViewedNanosByPath.put(path, System.nanoTime());
         bytesAssigned += bytes;
 
-        enforceBudget(gl2);
+        enforceBudget(gl);
         return texture;
     }
 
-    private void enforceBudget(GL2 gl2) {
-        while (bytesAssigned > Configuration.MAX_GPU_TEXTURE_MEMORY && !residentFifo.isEmpty()) {
-            String oldest = residentFifo.pollFirst();
-            Texture texture = textureByPath.remove(oldest);
-            Long bytes = bytesByPath.remove(oldest);
+    private void enforceBudget(GL4 gl) {
+        Iterator<Map.Entry<String, Texture>> iterator = textureByPath.entrySet().iterator();
+        while (bytesAssigned > Configuration.MAX_GPU_TEXTURE_MEMORY && iterator.hasNext()) {
+            Map.Entry<String, Texture> oldest = iterator.next();
+            String path = oldest.getKey();
+            Texture texture = oldest.getValue();
+            iterator.remove();
+            Long bytes = bytesByPath.remove(path);
+            lastViewedNanosByPath.remove(path);
             if (texture != null) {
-                texture.destroy(gl2);
+                texture.destroy(gl);
             }
             if (bytes != null) {
                 bytesAssigned = Math.max(0L, bytesAssigned - bytes);
@@ -96,7 +106,12 @@ public final class TextureCache {
         if (tileFile == null) {
             return null;
         }
-        return textureByPath.get(tileFile.getAbsolutePath());
+        String path = tileFile.getAbsolutePath();
+        Texture texture = textureByPath.get(path);
+        if (texture != null) {
+            lastViewedNanosByPath.put(path, System.nanoTime());
+        }
+        return texture;
     }
 
     public long getBytesAssigned() {
@@ -107,13 +122,13 @@ public final class TextureCache {
         return textureByPath.size();
     }
 
-    public void dispose(GL2 gl2) {
+    public void dispose(GL4 gl) {
         for (Texture texture : textureByPath.values()) {
-            texture.destroy(gl2);
+            texture.destroy(gl);
         }
         textureByPath.clear();
         bytesByPath.clear();
-        residentFifo.clear();
+        lastViewedNanosByPath.clear();
         bytesAssigned = 0L;
     }
 }

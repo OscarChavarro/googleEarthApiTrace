@@ -26,15 +26,15 @@ class TerrainSeamStitcherTest {
 
         TerrainSeamStitcher stitcher = new TerrainSeamStitcher();
         try {
-            List<TerrainTilePlan> first = stitcher.plan(commands);
-            TerrainTilePlan finePlan = first.stream()
+            List<TerrainMeshPlan> first = stitcher.plan(commands);
+            TerrainMeshPlan finePlan = first.stream()
                 .filter(plan -> plan.command().node() == fineNorthEast)
                 .findFirst().orElseThrow();
             assertEquals(1, finePlan.coarseNeighbours().size());
             assertEquals(TerrainEdge.EAST, finePlan.coarseNeighbours().get(0).fineEdge());
             assertSame(coarseSouthEast, finePlan.coarseNeighbours().get(0).coarseNode());
 
-            List<TerrainTilePlan> cached = stitcher.plan(commands);
+            List<TerrainMeshPlan> cached = stitcher.plan(commands);
             assertSame(first, cached);
             assertEquals(1, stitcher.relationCacheSize());
 

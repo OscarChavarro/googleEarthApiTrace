@@ -15,7 +15,7 @@ public final class ArgumentParser {
     private static final int DEFAULT_OFFLINE_WIDTH = 1024;
     private static final int DEFAULT_OFFLINE_HEIGHT = 1024;
     private static final String DEFAULT_OFFLINE_OUTPUT = "/tmp/planetDemViewer_offline.png";
-    private static final String[] VALUE_FLAGS = {"--width", "--height", "--output", "--storage-profile"};
+    private static final String[] VALUE_FLAGS = {"--width", "--height", "--output", "--storage-profile", "--mcp-port"};
 
     private ArgumentParser() {
     }
@@ -27,15 +27,16 @@ public final class ArgumentParser {
         int height = intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT);
         String output = stringArgValue(args, "--output", DEFAULT_OFFLINE_OUTPUT);
         StorageProfile storageProfile = StorageProfile.parse(stringArgValue(args, "--storage-profile", "slow"));
+        int mcpPort = intArgValue(args, "--mcp-port", 0);
         List<String> folders = parsePositionalArgs(args);
-        return new CliArguments(folders, offline, wires, width, height, output, storageProfile);
+        return new CliArguments(folders, offline, wires, width, height, output, storageProfile, mcpPort);
     }
 
     public static void printUsage() {
         System.err.println(
             "Usage: gradle run --args=\"[<pyramidalDemFolder> ...] "
                 + "[--offline] [--width <px>] [--height <px>] [--output <path>] [--wires] "
-                + "[--storage-profile slow|fast]\""
+                + "[--storage-profile slow|fast] [--mcp-port <port>]\""
         );
         System.err.println("  --storage-profile: slow (default, serialized I/O) or fast.");
         System.err.println(

@@ -5,12 +5,12 @@ import planetdemviewer.model.QuadtreeNode;
 import planetdemviewer.processing.DrawCommand;
 
 /** One post-culling tile and the coarse neighbours that constrain its edges. */
-public record TerrainTilePlan(
+public record TerrainMeshPlan(
     DrawCommand command,
     List<Neighbour> coarseNeighbours,
     String variantKey
 ) {
-    public TerrainTilePlan {
+    public TerrainMeshPlan {
         coarseNeighbours = List.copyOf(coarseNeighbours);
     }
 

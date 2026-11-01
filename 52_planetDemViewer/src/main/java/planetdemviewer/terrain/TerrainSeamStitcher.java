@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import planetdemviewer.io.TileImageLoader;
+import planetdemviewer.io.elevation.ElevationTileSource;
 import planetdemviewer.model.DemTile;
 import planetdemviewer.model.QuadtreeNode;
 import planetdemviewer.processing.DrawCommand;
@@ -28,10 +28,10 @@ public final class TerrainSeamStitcher {
 
     private final BasicTerrainMeshGenerator meshGenerator = new BasicTerrainMeshGenerator();
     private final ExecutorService workers;
-    private final Map<String, List<TerrainTilePlan>> relationCache =
+    private final Map<String, List<TerrainMeshPlan>> relationCache =
         new LinkedHashMap<>(32, 0.75f, true) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, List<TerrainTilePlan>> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<String, List<TerrainMeshPlan>> eldest) {
                 return size() > RELATION_CACHE_ENTRIES;
             }
         };
@@ -55,19 +55,19 @@ public final class TerrainSeamStitcher {
         });
     }
 
-    public List<TerrainTilePlan> plan(List<DrawCommand> commands) {
+    public List<TerrainMeshPlan> plan(List<DrawCommand> commands) {
         List<DrawCommand> drawable = commands.stream()
             .filter(command -> command.node().getTileFile() != null)
             .toList();
         String topologyKey = topologyKey(drawable);
         synchronized (relationCache) {
-            List<TerrainTilePlan> cached = relationCache.get(topologyKey);
+            List<TerrainMeshPlan> cached = relationCache.get(topologyKey);
             if (cached != null) {
                 return cached;
             }
         }
 
-        List<TerrainTilePlan> result = CompletableFuture
+        List<TerrainMeshPlan> result = CompletableFuture
             .supplyAsync(() -> buildPlan(drawable), workers)
             .join();
         synchronized (relationCache) {
@@ -76,8 +76,8 @@ public final class TerrainSeamStitcher {
         return result;
     }
 
-    private List<TerrainTilePlan> buildPlan(List<DrawCommand> drawable) {
-        Map<QuadtreeNode, List<TerrainTilePlan.Neighbour>> neighbours = new LinkedHashMap<>();
+    private List<TerrainMeshPlan> buildPlan(List<DrawCommand> drawable) {
+        Map<QuadtreeNode, List<TerrainMeshPlan.Neighbour>> neighbours = new LinkedHashMap<>();
         for (DrawCommand command : drawable) {
             neighbours.put(command.node(), new ArrayList<>());
         }
@@ -92,18 +92,18 @@ public final class TerrainSeamStitcher {
                 QuadtreeNode coarse = fine == a ? b : a;
                 TerrainEdge fineEdge = cachedTouchingEdge(fine, coarse);
                 if (fineEdge != null) {
-                    neighbours.get(fine).add(new TerrainTilePlan.Neighbour(fineEdge, coarse));
+                    neighbours.get(fine).add(new TerrainMeshPlan.Neighbour(fineEdge, coarse));
                 }
             }
         }
 
-        List<TerrainTilePlan> result = new ArrayList<>(drawable.size());
+        List<TerrainMeshPlan> result = new ArrayList<>(drawable.size());
         for (DrawCommand command : drawable) {
-            List<TerrainTilePlan.Neighbour> constraints = neighbours.get(command.node());
+            List<TerrainMeshPlan.Neighbour> constraints = neighbours.get(command.node());
             constraints.sort(Comparator
-                .comparing((TerrainTilePlan.Neighbour n) -> n.fineEdge().ordinal())
+                .comparing((TerrainMeshPlan.Neighbour n) -> n.fineEdge().ordinal())
                 .thenComparing(n -> n.coarseNode().getId()));
-            result.add(new TerrainTilePlan(command, constraints, variantKey(command.node(), constraints)));
+            result.add(new TerrainMeshPlan(command, constraints, variantKey(command.node(), constraints)));
         }
         result = List.copyOf(result);
         return result;
@@ -127,7 +127,7 @@ public final class TerrainSeamStitcher {
     }
 
     /** Returns null while any required DEM is still being loaded. */
-    public CompletableFuture<TriangleMesh> prepare(TerrainTilePlan plan, TileImageLoader loader) {
+    public CompletableFuture<TriangleMesh> prepare(TerrainMeshPlan plan, ElevationTileSource loader) {
         File fineFile = plan.command().node().getTileFile();
         DemTile fineTile = loader.peekElevation(fineFile);
         boolean missingElevation = fineTile == null;
@@ -135,7 +135,7 @@ public final class TerrainSeamStitcher {
             loader.requestElevation(fineFile);
         }
         List<TerrainSeamConstraint> constraints = new ArrayList<>();
-        for (TerrainTilePlan.Neighbour neighbour : plan.coarseNeighbours()) {
+        for (TerrainMeshPlan.Neighbour neighbour : plan.coarseNeighbours()) {
             File coarseFile = neighbour.coarseNode().getTileFile();
             DemTile coarseTile = loader.peekElevation(coarseFile);
             if (coarseTile == null) {
@@ -226,9 +226,9 @@ public final class TerrainSeamStitcher {
         return key.toString();
     }
 
-    private static String variantKey(QuadtreeNode node, List<TerrainTilePlan.Neighbour> neighbours) {
+    private static String variantKey(QuadtreeNode node, List<TerrainMeshPlan.Neighbour> neighbours) {
         StringBuilder key = new StringBuilder(node.getTileFile().getAbsolutePath());
-        for (TerrainTilePlan.Neighbour neighbour : neighbours) {
+        for (TerrainMeshPlan.Neighbour neighbour : neighbours) {
             key.append('|').append(neighbour.fineEdge()).append(':')
                 .append(neighbour.coarseNode().getTileFile().getAbsolutePath()).append('#')
                 .append(neighbour.coarseNode().getId());

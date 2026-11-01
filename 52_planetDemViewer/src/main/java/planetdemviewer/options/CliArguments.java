@@ -11,8 +11,10 @@ public final class CliArguments {
     private final int height;
     private final String output;
     private final StorageProfile storageProfile;
+    private final int mcpPort;
+    private final String imageryFolder;
 
-    public CliArguments(List<String> pyramidalImageFolders, boolean offline, boolean wires, int width, int height, String output, StorageProfile storageProfile) {
+    public CliArguments(List<String> pyramidalImageFolders, boolean offline, boolean wires, int width, int height, String output, StorageProfile storageProfile, int mcpPort) {
         this.pyramidalImageFolders = pyramidalImageFolders;
         this.offline = offline;
         this.wires = wires;
@@ -20,6 +22,8 @@ public final class CliArguments {
         this.height = height;
         this.output = output;
         this.storageProfile = storageProfile;
+        this.mcpPort = mcpPort;
+        this.imageryFolder = pyramidalImageFolders.size() > 1 ? pyramidalImageFolders.get(1) : null;
     }
 
     public List<String> getPyramidalImageFolders() {
@@ -49,4 +53,10 @@ public final class CliArguments {
     public StorageProfile getStorageProfile() {
         return storageProfile;
     }
+
+    /** A positive port enables the local Streamable-HTTP MCP endpoint. */
+    public int getMcpPort() {
+        return mcpPort;
+    }
+    public String getImageryFolder() { return imageryFolder; }
 }

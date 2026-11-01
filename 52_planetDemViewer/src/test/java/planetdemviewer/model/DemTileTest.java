@@ -39,4 +39,22 @@ class DemTileTest {
         assertEquals(256, image.getWidth());
         assertEquals(palettes.snapshot().argbFor((short) 1_234), image.getRGB(0, 0));
     }
+
+    @Test
+    void retainsSourceHeightAndExposesCanonicalNormalizedHeight() throws Exception {
+        short[] values = new short[DemTile.SAMPLE_COUNT];
+        values[DemTile.STORED_SIZE + 1] = 1_000;
+        ByteBuffer bytes = ByteBuffer.allocate(DemTile.BYTE_COUNT).order(ByteOrder.LITTLE_ENDIAN);
+        for (short value : values) {
+            bytes.putShort(value);
+        }
+        Path file = temporaryDirectory.resolve("normalized.bin");
+        Files.write(file, bytes.array());
+
+        DemTile tile = DemTile.read(file, (row, column, source) -> source + 23.75f);
+
+        assertEquals(1_000, tile.elevation(1, 1));
+        assertEquals(1_023.75, tile.elevationMetres(1, 1), 1e-6);
+        assertEquals(1_023.75, tile.canonicalCoreElevationRange().maximumMetres(), 1e-6);
+    }
 }

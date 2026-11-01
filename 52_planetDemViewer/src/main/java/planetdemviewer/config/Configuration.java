@@ -15,9 +15,12 @@ public final class Configuration {
     // Fraction of the viewport a tile quad must project to before its
     // children are drawn instead of the tile itself (ported from the old
     // prototype's drawCuadtreeNode area > 0.8 test).
-    public static final double SCREEN_AREA_SUBDIVISION_THRESHOLD = 0.8;
+    /** Hysteresis keeps a tile refined until it has become materially smaller on screen. */
+    public static final double SCREEN_AREA_REFINE_THRESHOLD = 0.75;
+    public static final double SCREEN_AREA_COARSEN_THRESHOLD = 0.55;
     public static final String DEFAULT_DATASET_DIRECTORY = "/media/extra/FABDEM/02_rawPyramidal";
     public static final Path PALETTE_DIRECTORY = Path.of("../etc/palettes");
+    public static final Path EGM2008_GRID = Path.of("etc/wgs/globalDeltaHeightsMatrix.json");
     public static final int MINIMUM_ELEVATION_METRES = 0;
     public static final int MAXIMUM_ELEVATION_METRES = 12_000;
     /** The normalized world domain is 360 degrees wide, i.e. one equatorial circumference. */

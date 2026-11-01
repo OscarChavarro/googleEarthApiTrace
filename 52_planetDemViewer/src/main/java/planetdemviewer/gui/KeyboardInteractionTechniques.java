@@ -21,6 +21,12 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final RendererConfigurationController renderingConfigurationController;
     private final ViewActions viewActions;
     private final IntConsumer paletteCycleAction;
+    private final Runnable toggleTileBoundsAction;
+    private final Runnable toggleUniformLodAction;
+    private final Runnable saveStateAction;
+    private final Runnable clearStateAction;
+    private final Runnable toggleImageryAction;
+    private final Runnable deleteSelectedTileAction;
 
     public KeyboardInteractionTechniques(
         PlanetViewerModel model,
@@ -29,7 +35,11 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         Runnable repaintAction,
         Runnable loadImageAction,
         ViewActions viewActions,
-        IntConsumer paletteCycleAction
+        IntConsumer paletteCycleAction,
+        Runnable toggleTileBoundsAction,
+        Runnable toggleUniformLodAction,
+        Runnable saveStateAction,
+        Runnable clearStateAction, Runnable toggleImageryAction, Runnable deleteSelectedTileAction
     ) {
         this.model = model;
         this.closeAction = closeAction;
@@ -38,6 +48,12 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         this.loadImageAction = loadImageAction;
         this.viewActions = viewActions;
         this.paletteCycleAction = paletteCycleAction;
+        this.toggleTileBoundsAction = toggleTileBoundsAction;
+        this.toggleUniformLodAction = toggleUniformLodAction;
+        this.saveStateAction = saveStateAction;
+        this.clearStateAction = clearStateAction;
+        this.toggleImageryAction = toggleImageryAction;
+        this.deleteSelectedTileAction = deleteSelectedTileAction;
         this.renderingConfigurationController = model == null
             ? null
             : new RendererConfigurationController();
@@ -45,13 +61,17 @@ public final class KeyboardInteractionTechniques implements KeyListener {
 
     @Override
     public void keyPressed(java.awt.event.KeyEvent e) {
+        if (model == null) {
+            return;
+        }
+        model.writeLocked(() -> keyPressedLocked(e));
+    }
+
+    private void keyPressedLocked(java.awt.event.KeyEvent e) {
         KeyEvent event = AwtSystem.awt2vsdkEvent(e);
 
         if (event.keycode == KeyEvent.KEY_ESC && closeAction != null) {
             closeAction.run();
-            return;
-        }
-        if (model == null) {
             return;
         }
         if (event.keycode == KeyEvent.KEY_r || event.keycode == KeyEvent.KEY_R) {
@@ -66,6 +86,32 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (event.keycode == KeyEvent.KEY_l && loadImageAction != null) {
             loadImageAction.run();
+            return;
+        }
+        if (event.keycode == KeyEvent.KEY_e && saveStateAction != null) {
+            saveStateAction.run();
+            return;
+        }
+        if (event.keycode == KeyEvent.KEY_E && clearStateAction != null) {
+            clearStateAction.run();
+            return;
+        }
+        if (event.keycode == KeyEvent.KEY_0 && toggleTileBoundsAction != null) {
+            toggleTileBoundsAction.run();
+            repaintAction.run();
+            return;
+        }
+        if (event.keycode == KeyEvent.KEY_9 && toggleUniformLodAction != null) {
+            toggleUniformLodAction.run();
+            repaintAction.run();
+            return;
+        }
+        if ((event.keycode == KeyEvent.KEY_t || event.keycode == KeyEvent.KEY_T) && toggleImageryAction != null) {
+            toggleImageryAction.run(); repaintAction.run(); return;
+        }
+        if (e.getKeyCode() == java.awt.event.KeyEvent.VK_DELETE && deleteSelectedTileAction != null) {
+            deleteSelectedTileAction.run();
+            repaintAction.run();
             return;
         }
         if (event.keycode == KeyEvent.KEY_1) {
@@ -160,9 +206,13 @@ public final class KeyboardInteractionTechniques implements KeyListener {
 
     @Override
     public void keyReleased(java.awt.event.KeyEvent e) {
-        if (cameraController != null
-            && cameraController.processKeyReleasedEvent(AwtSystem.awt2vsdkEvent(e))) {
-            repaintAction.run();
+        if (model != null) {
+            model.writeLocked(() -> {
+                if (cameraController != null
+                    && cameraController.processKeyReleasedEvent(AwtSystem.awt2vsdkEvent(e))) {
+                    repaintAction.run();
+                }
+            });
         }
     }
 

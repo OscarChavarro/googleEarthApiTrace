@@ -1,19 +1,28 @@
 package planetdemviewer;
 
 import com.jogamp.opengl.awt.GLCanvas;
+import com.jogamp.opengl.util.Animator;
 import java.applet.Applet;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.GraphicsEnvironment;
+import java.awt.Rectangle;
+import java.awt.event.KeyEvent;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
-import planetdemviewer.animation.RepaintScheduler;
 import planetdemviewer.gui.KeyboardInteractionTechniques;
 import planetdemviewer.gui.LoadPyramidalImageDialog;
 import planetdemviewer.gui.MouseInteractionTechnique;
 import planetdemviewer.gui.ViewActions;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.render.Jogl4PlanetViewerRenderer;
+import planetdemviewer.state.ApplicationStateStore;
+import vsdk.toolkit.animation.AnimationEvent;
+import vsdk.toolkit.animation.AnimationEventGenerator;
+import vsdk.toolkit.animation.AnimationListener;
 
 @SuppressWarnings("removal")
 public class InteractiveViewer extends Applet {
@@ -25,6 +34,9 @@ public class InteractiveViewer extends Applet {
     private MouseInteractionTechnique mouseInteraction;
     private GLCanvas canvas;
     private JFrame frame;
+    private AutoCloseable mcpServer;
+    private Thread animatorThread;
+    private Animator joglAnimator;
 
     public InteractiveViewer(PlanetViewerModel model, Jogl4PlanetViewerRenderer renderer) {
         this.model = model;
@@ -39,7 +51,10 @@ public class InteractiveViewer extends Applet {
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         Dimension size = new Dimension(960, 600);
         frame.setMinimumSize(size);
-        frame.setSize(new Dimension(1280, 720));
+        // Fill the usable desktop session without entering OS fullscreen mode.
+        Rectangle availableScreen = GraphicsEnvironment.getLocalGraphicsEnvironment()
+            .getMaximumWindowBounds();
+        frame.setBounds(availableScreen);
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
@@ -47,6 +62,7 @@ public class InteractiveViewer extends Applet {
             }
         });
         frame.setVisible(true);
+        startJoglAnimator();
         canvas.requestFocusInWindow();
     }
 
@@ -59,12 +75,14 @@ public class InteractiveViewer extends Applet {
 
     private void fillGuiWithCanvas() {
         canvas = renderer.createCanvas();
-        RepaintScheduler repaintScheduler = new RepaintScheduler(canvas::repaint);
-        renderer.setRepaintOnTileReady(repaintScheduler::requestRepaint);
+        // JOGL owns its GL context on its animator thread. Tile I/O only updates caches.
+        renderer.setRepaintOnTileReady(() -> { });
         mouseInteraction = new MouseInteractionTechnique(
+            model,
             renderer.getCameraController(),
             renderer::selectViewAtPixel,
-            canvas::repaint,
+            renderer::selectTerrainAtPixel,
+            () -> { },
             canvas::requestFocusInWindow
         );
         canvas.addMouseListener(mouseInteraction);
@@ -82,13 +100,122 @@ public class InteractiveViewer extends Applet {
             model,
             this::requestClose,
             renderer.getCameraController(),
-            canvas::repaint,
+            () -> { },
             () -> LoadPyramidalImageDialog.showAndLoad(canvas, model, canvas::repaint),
             viewActions,
-            renderer::cyclePalette
+            renderer::cyclePalette,
+            renderer::toggleTerrainTileBoundsVisible,
+            renderer::toggleUniformLodVisible,
+            this::saveState,
+            this::clearState,
+            renderer::toggleImageryVisible,
+            renderer::deleteSelectedImageryTile
         );
         canvas.addKeyListener(keyboardInteraction);
         canvas.setFocusable(true);
+        startAnimator();
+    }
+
+    /** Keeps a stable animation/render cadence even while there is no user input or tile I/O. */
+    private void startAnimator() {
+        if (animatorThread != null) {
+            return;
+        }
+        AnimationEventGenerator animator = new AnimationEventGenerator();
+        animator.addAnimationListener(new AnimationListener() {
+            @Override
+            public void tick(AnimationEvent event) {
+                // Reserved for simulation/game updates. The JOGL animator renders independently.
+            }
+        });
+        animatorThread = new Thread(animator, "planet-dem-animator");
+        animatorThread.setDaemon(true);
+        animatorThread.start();
+    }
+
+    private void startJoglAnimator() {
+        if (joglAnimator != null) {
+            return;
+        }
+        joglAnimator = new Animator(canvas);
+        joglAnimator.setRunAsFastAsPossible(false);
+        joglAnimator.start();
+    }
+
+    /** Accepts any java.awt.event.KeyEvent key code through the local MCP endpoint. */
+    public void pressKeyFromMcp(int keyCode) throws Exception {
+        runOnEventThread(() -> keyboardInteraction.keyPressed(new KeyEvent(
+            canvas, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, keyCode, KeyEvent.CHAR_UNDEFINED)));
+    }
+
+    public void setGeometryModeFromMcp(boolean enabled) throws Exception {
+        runOnEventThread(() -> {
+            renderer.setGeometryMode(enabled);
+            canvas.repaint();
+        });
+    }
+
+    public void setTileBoundsFromMcp(boolean enabled) throws Exception {
+        runOnEventThread(() -> {
+            renderer.setTerrainTileBoundsVisible(enabled);
+            canvas.repaint();
+        });
+    }
+
+    /** Sends a top-left-origin physical capture pixel to terrain selection through the local MCP endpoint. */
+    public void clickViewportFromMcp(int xPixel, int yPixelFromTop) throws Exception {
+        runOnEventThread(() -> model.writeLocked(() -> renderer.selectTerrainAtSurfacePixel(
+            xPixel, yPixelFromTop)));
+    }
+
+    public String cameraModelJsonFromMcp() throws Exception {
+        final String[] response = new String[1];
+        runOnEventThread(() -> response[0] = renderer.selectedCameraModelJson());
+        return response[0];
+    }
+
+    public Path captureSnapshotFromMcp() throws Exception {
+        Path output = Files.createTempFile("planetdemviewer-mcp-", ".png");
+        canvas.invoke(true, drawable -> {
+            renderer.captureSnapshot(drawable, drawable.getGL().getGL4(), output);
+            return true;
+        });
+        return output.toAbsolutePath();
+    }
+
+    public void setMcpServer(AutoCloseable server) {
+        mcpServer = server;
+    }
+
+    private void saveState() {
+        try {
+            ApplicationStateStore.save(ApplicationStateStore.DEFAULT_PATH, model, renderer);
+            model.setHudStatus("Saved state.json");
+        }
+        catch (Exception e) {
+            model.setHudStatus("Could not save state.json: " + e.getMessage());
+        }
+        canvas.repaint();
+    }
+
+    private void clearState() {
+        try {
+            boolean removed = ApplicationStateStore.delete(ApplicationStateStore.DEFAULT_PATH);
+            model.setHudStatus(removed ? "Deleted state.json" : "state.json did not exist");
+        }
+        catch (Exception e) {
+            model.setHudStatus("Could not delete state.json: " + e.getMessage());
+        }
+        canvas.repaint();
+    }
+
+    private static void runOnEventThread(Runnable action) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            action.run();
+        }
+        else {
+            SwingUtilities.invokeAndWait(action);
+        }
     }
 
     private void requestClose() {
@@ -99,6 +226,9 @@ public class InteractiveViewer extends Applet {
         Runnable closeTask = () -> {
             try {
                 if (canvas != null) {
+                    if (joglAnimator != null) {
+                        joglAnimator.stop();
+                    }
                     canvas.setVisible(false);
                     canvas.removeMouseListener(mouseInteraction);
                     canvas.removeMouseMotionListener(mouseInteraction);
@@ -111,6 +241,14 @@ public class InteractiveViewer extends Applet {
                 System.out.println("InteractiveViewer: error while destroying canvas: " + t.getMessage());
             }
             finally {
+                if (mcpServer != null) {
+                    try {
+                        mcpServer.close();
+                    }
+                    catch (Exception ignored) {
+                        // Closing the window must not be blocked by the diagnostic endpoint.
+                    }
+                }
                 if (frame != null) {
                     frame.dispose();
                 }

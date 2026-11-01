@@ -80,6 +80,89 @@ class BasicTerrainMeshGeneratorTest {
             mesh.getVertexPositions()[eastVertexOnSecondRow + 2], 1e-15);
     }
 
+    @Test
+    void stitchedFineEdgeOverlapsTheCoarseTileByOneFineGridStep() throws Exception {
+        short[] elevations = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(elevations, (short) 1_000);
+        DemTile fineTile = writeAndRead(temporaryDirectory.resolve("overlap-fine.bin"), elevations);
+        DemTile coarseTile = writeAndRead(temporaryDirectory.resolve("overlap-coarse.bin"), elevations);
+        QuadtreeNode root = new QuadtreeNode("0", null, temporaryDirectory.resolve("root.bin").toFile());
+        QuadtreeNode fine = new QuadtreeNode("00", root, temporaryDirectory.resolve("fine.bin").toFile());
+        QuadtreeNode coarse = new QuadtreeNode("01", root, temporaryDirectory.resolve("coarse.bin").toFile());
+
+        TriangleMesh unstiched = new BasicTerrainMeshGenerator().generate(fine, fineTile);
+        TriangleMesh stitched = new BasicTerrainMeshGenerator().generate(fine, fineTile,
+            List.of(new TerrainSeamConstraint(TerrainEdge.EAST, coarse, coarseTile)));
+
+        int eastVertex = DemTile.CORE_SIZE - 1;
+        double fineStep = (fine.getX1() - fine.getX0()) / (DemTile.CORE_SIZE - 1.0);
+        assertEquals(fineStep, stitched.getVertexPositions()[eastVertex * 3]
+            - unstiched.getVertexPositions()[eastVertex * 3], 1e-15);
+        assertEquals(unstiched.getVertexPositions()[0], stitched.getVertexPositions()[0], 0.0);
+    }
+
+    @Test
+    void fineEdgeUsesTheInterpolatedCoarseVertexNormal() throws Exception {
+        short[] fineElevations = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(fineElevations, (short) 1_000);
+        short[] coarseElevations = new short[DemTile.SAMPLE_COUNT];
+        for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+            for (int column = 0; column < DemTile.STORED_SIZE; column++) {
+                coarseElevations[row * DemTile.STORED_SIZE + column] =
+                    (short) ((row - 1) * 6 + (column - 1) * 4);
+            }
+        }
+
+        Path fineFile = temporaryDirectory.resolve("normal-fine.bin");
+        Path coarseFile = temporaryDirectory.resolve("normal-coarse.bin");
+        DemTile fineTile = writeAndRead(fineFile, fineElevations);
+        DemTile coarseTile = writeAndRead(coarseFile, coarseElevations);
+        QuadtreeNode root = new QuadtreeNode("0", null, temporaryDirectory.resolve("root.bin").toFile());
+        QuadtreeNode southWest = new QuadtreeNode("00", root, temporaryDirectory.resolve("sw.bin").toFile());
+        QuadtreeNode fine = new QuadtreeNode("002", southWest, fineFile.toFile());
+        QuadtreeNode coarse = new QuadtreeNode("01", root, coarseFile.toFile());
+        BasicTerrainMeshGenerator generator = new BasicTerrainMeshGenerator();
+        TriangleMesh coarseMesh = generator.generate(coarse, coarseTile);
+        TriangleMesh fineMesh = generator.generate(fine, fineTile,
+            List.of(new TerrainSeamConstraint(TerrainEdge.EAST, coarse, coarseTile)));
+
+        double[] coarseNormals = coarseMesh.getVertexNormals();
+        double[] expected = normalize(
+            coarseNormals[0] + coarseNormals[DemTile.CORE_SIZE * 3] ,
+            coarseNormals[1] + coarseNormals[DemTile.CORE_SIZE * 3 + 1],
+            coarseNormals[2] + coarseNormals[DemTile.CORE_SIZE * 3 + 2]);
+        int fineEdge = (DemTile.CORE_SIZE + DemTile.CORE_SIZE - 1) * 3;
+        assertEquals(expected[0], fineMesh.getVertexNormals()[fineEdge], 1e-12);
+        assertEquals(expected[1], fineMesh.getVertexNormals()[fineEdge + 1], 1e-12);
+        assertEquals(expected[2], fineMesh.getVertexNormals()[fineEdge + 2], 1e-12);
+    }
+
+    @Test
+    void sameResolutionNeighboursShareExactlyTheRenderedC0Edge() throws Exception {
+        short[] westSamples = new short[DemTile.SAMPLE_COUNT];
+        short[] eastSamples = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(westSamples, (short) 100);
+        Arrays.fill(eastSamples, (short) 200);
+        for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+            westSamples[row * DemTile.STORED_SIZE + DemTile.CORE_SIZE] = (short) (1_000 + row);
+            eastSamples[row * DemTile.STORED_SIZE] = (short) (1_000 + row);
+        }
+
+        DemTile westTile = writeAndRead(temporaryDirectory.resolve("west.bin"), westSamples);
+        DemTile eastTile = writeAndRead(temporaryDirectory.resolve("east.bin"), eastSamples);
+        QuadtreeNode root = new QuadtreeNode("0", null, temporaryDirectory.resolve("root.bin").toFile());
+        QuadtreeNode west = new QuadtreeNode("00", root, temporaryDirectory.resolve("west.bin").toFile());
+        QuadtreeNode east = new QuadtreeNode("01", root, temporaryDirectory.resolve("east.bin").toFile());
+
+        TriangleMesh westMesh = new BasicTerrainMeshGenerator().generate(west, westTile);
+        TriangleMesh eastMesh = new BasicTerrainMeshGenerator().generate(east, eastTile);
+        for (int row = 0; row < DemTile.CORE_SIZE; row++) {
+            int westEdge = (row * DemTile.CORE_SIZE + DemTile.CORE_SIZE - 1) * 3 + 2;
+            int eastEdge = row * DemTile.CORE_SIZE * 3 + 2;
+            assertEquals(westMesh.getVertexPositions()[westEdge], eastMesh.getVertexPositions()[eastEdge], 0.0);
+        }
+    }
+
     private TriangleMesh generate(short[] elevations) throws Exception {
         ByteBuffer bytes = ByteBuffer.allocate(DemTile.BYTE_COUNT).order(ByteOrder.LITTLE_ENDIAN);
         for (short elevation : elevations) {
@@ -99,5 +182,10 @@ class BasicTerrainMeshGeneratorTest {
         }
         Files.write(file, bytes.array());
         return DemTile.read(file);
+    }
+
+    private static double[] normalize(double x, double y, double z) {
+        double length = Math.sqrt(x * x + y * y + z * z);
+        return new double[] {x / length, y / length, z / length};
     }
 }
