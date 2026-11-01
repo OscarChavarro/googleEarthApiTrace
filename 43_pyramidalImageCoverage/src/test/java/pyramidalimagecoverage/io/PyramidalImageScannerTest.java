@@ -18,6 +18,21 @@ class PyramidalImageScannerTest {
     Path temporaryFolder;
 
     @Test
+    void refreshDiscoversNewLevelTenPngsForTheExistingCatalog() throws IOException {
+        Files.createFile(temporaryFolder.resolve("0.png"));
+        PyramidalImageScanner scanner = new PyramidalImageScanner();
+        PyramidCatalog catalog = scanner.scanRoot(temporaryFolder);
+        Path path = temporaryFolder;
+        for (int digit = 0; digit < 10; digit++) path = path.resolve("0");
+        Files.createDirectories(path);
+        Files.createFile(path.resolve("00000000000.png"));
+        int[] notifications = {0};
+        scanner.scanLevel(catalog, 10, () -> notifications[0]++);
+        assertNotNull(catalog.tileAt(10, 0, 0));
+        assertEquals(1, notifications[0]);
+    }
+
+    @Test
     void rootScanDoesNotTraverseDescendantFolders() throws IOException {
         Path root = temporaryFolder.resolve("lazy-layout");
         Files.createDirectories(root.resolve("0/2"));

@@ -13,6 +13,8 @@ import java.nio.file.Path;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import pyramidalimagecoverage.io.TileImageRepository;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.PyramidCatalog;
@@ -25,6 +27,67 @@ import pyramidalimagecoverage.processing.LevelLayout;
 class CoverageCanvasTest {
     @TempDir
     Path temporaryFolder;
+
+    @ParameterizedTest
+    @CsvSource({"0, true", "28, true", "29, false", "575, false"})
+    void northernGroupsCover59To68AndUseTheSame95PercentThreshold(
+        int presentTiles, boolean outlined
+    ) throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        Path rootPath = temporaryFolder.resolve("0.png");
+        // Centers in [-180,-172) x [59,68): 23 columns x 25 rows.
+        for (int index = 0; index < presentTiles; index++) {
+            catalog.add(new TileRecord(
+                TileAddress.fromCoordinates(10, index % 23, 680 + index / 23), rootPath
+            ));
+        }
+        ViewerModel model = new ViewerModel(catalog);
+        model.cycleGridMode();
+        model.cycleGridMode();
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(1024, 1024);
+        canvas.setLayoutDescription(LevelLayout.choose(10, new PixelSize(1024, 1024)));
+        BufferedImage result = new BufferedImage(1024, 1024, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D graphics = result.createGraphics();
+        canvas.paint(graphics);
+        graphics.dispose();
+        Color edge = new Color(result.getRGB(0, 330));
+        assertEquals(outlined, edge.getGreen() > 150 && edge.getRed() > 200);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0, true", "26, true", "27, false", "529, false"})
+    void mostlyEmptyGroupsCountMissingLevelTenPngsDespiteAvailableAncestors(
+        int presentTiles, boolean outlined
+    ) throws IOException {
+        PyramidCatalog catalog = catalogWithBlueRootAndSouthWestChild();
+        Path rootPath = temporaryFolder.resolve("0.png");
+        // The group [-180,-172) x [-60,-52) contains 23 x 23 cell centers.
+        // 26 present PNGs leave 95.09% missing; 27 leave only 94.90%.
+        for (int index = 0; index < presentTiles; index++) {
+            catalog.add(new TileRecord(
+                TileAddress.fromCoordinates(10, index % 23, 341 + index / 23), rootPath
+            ));
+        }
+        // Descendants also must not turn an absent level-10 PNG into coverage.
+        catalog.add(new TileRecord(TileAddress.fromCoordinates(11, 44, 726), rootPath));
+        ViewerModel model = new ViewerModel(catalog);
+        model.cycleGridMode();
+        model.cycleGridMode();
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
+        canvas.setSize(1024, 1024);
+        canvas.setLayoutDescription(LevelLayout.choose(10, new PixelSize(1024, 1024)));
+        BufferedImage result = new BufferedImage(1024, 1024, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D graphics = result.createGraphics();
+        canvas.paint(graphics);
+        graphics.dispose();
+
+        // Left outline, away from adjacent groups' horizontal borders.
+        Color edge = new Color(result.getRGB(0, 670));
+        assertEquals(outlined, edge.getGreen() > 150 && edge.getRed() > 200);
+        assertEquals(presentTiles == 529 ? Color.BLUE.getRGB() : Color.RED.getRGB(),
+            result.getRGB(22, 661));
+    }
 
     @Test
     void nativeImageKeepsItsPixelsAndLeavesOneBlackBorderPixelPerSide() throws IOException {
@@ -39,7 +102,9 @@ class CoverageCanvasTest {
         PyramidCatalog catalog = new PyramidCatalog(temporaryFolder);
         TileAddress root = TileAddress.fromQuadKey("0");
         catalog.add(new TileRecord(root, tilePath));
-        CoverageCanvas canvas = new CoverageCanvas(new ViewerModel(catalog), new TileImageRepository());
+        ViewerModel model = new ViewerModel(catalog);
+        model.previousDepth();
+        CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
         canvas.setSize(258, 258);
         canvas.setLayoutDescription(LevelLayout.choose(0, new PixelSize(258, 258)));
 
@@ -66,16 +131,18 @@ class CoverageCanvasTest {
         TileRecord rootTile = new TileRecord(TileAddress.fromQuadKey("0"), tilePath);
         catalog.add(rootTile);
         ViewerModel model = new ViewerModel(catalog);
+        model.previousDepth();
         model.toggleSelection(rootTile);
         CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
-        canvas.setSize(258, 258);
+        // Leave room for the enlarged HUD above the tile pixels under test.
+        canvas.setSize(258, 1200);
         canvas.setLayoutDescription(LevelLayout.choose(0, new PixelSize(258, 258)));
 
-        BufferedImage result = new BufferedImage(258, 258, BufferedImage.TYPE_INT_RGB);
+        BufferedImage result = new BufferedImage(258, 1200, BufferedImage.TYPE_INT_RGB);
         canvas.paint(result.createGraphics());
 
-        assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(0, 200));
-        assertEquals(Color.BLUE.getRGB(), result.getRGB(1, 200));
+        assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(0, 671));
+        assertEquals(Color.BLUE.getRGB(), result.getRGB(1, 671));
     }
 
     @Test
@@ -124,14 +191,15 @@ class CoverageCanvasTest {
         model.nextDepth();
         model.toggleSelection(TileAddress.fromCoordinates(1, 1, 1));
         CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
-        canvas.setSize(516, 516);
+        // Leave room for the enlarged HUD above the tile pixels under test.
+        canvas.setSize(516, 1200);
         canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(516, 516)));
 
-        BufferedImage result = new BufferedImage(516, 516, BufferedImage.TYPE_INT_RGB);
+        BufferedImage result = new BufferedImage(516, 1200, BufferedImage.TYPE_INT_RGB);
         canvas.paint(result.createGraphics());
 
-        assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(258, 200));
-        assertEquals(Color.RED.getRGB(), result.getRGB(259, 200));
+        assertEquals(new Color(0, 255, 0).getRGB(), result.getRGB(258, 542));
+        assertEquals(Color.RED.getRGB(), result.getRGB(259, 542));
         assertTrue(java.util.Arrays.asList(canvas.hudLines()).contains("lat: 45.00000000"));
         assertTrue(java.util.Arrays.asList(canvas.hudLines()).contains("lon: 90.00000000"));
     }
@@ -144,14 +212,15 @@ class CoverageCanvasTest {
         model.toggleSelection(TileAddress.fromCoordinates(1, 0, 0));
         model.toggleSecondarySelection(TileAddress.fromCoordinates(1, 1, 1));
         CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
-        canvas.setSize(516, 516);
+        // Leave room for the enlarged HUD above the tile pixels under test.
+        canvas.setSize(516, 1200);
         canvas.setLayoutDescription(LevelLayout.choose(1, new PixelSize(516, 516)));
 
-        BufferedImage result = new BufferedImage(516, 516, BufferedImage.TYPE_INT_RGB);
+        BufferedImage result = new BufferedImage(516, 1200, BufferedImage.TYPE_INT_RGB);
         canvas.paint(result.createGraphics());
         java.util.List<String> hud = java.util.Arrays.asList(canvas.hudLines());
 
-        assertEquals(new Color(255, 255, 0).getRGB(), result.getRGB(258, 250));
+        assertEquals(new Color(255, 255, 0).getRGB(), result.getRGB(258, 592));
         assertTrue(hud.contains("secondary lat: 45.00000000"));
         assertTrue(hud.contains("secondary lon: 90.00000000"));
         assertTrue(hud.contains("deltaLat (2-1): +90.00000000 deg"));
@@ -273,17 +342,18 @@ class CoverageCanvasTest {
         PixelSize viewport = new PixelSize(520, 260);
         LevelLayout layout = LevelLayout.choose(10, viewport, catalog.tileBoundsAt(10).orElseThrow());
         CoverageCanvas canvas = new CoverageCanvas(model, new TileImageRepository());
-        canvas.setSize(520, 260);
+        // Leave room for the enlarged HUD above the tile pixels under test.
+        canvas.setSize(520, 1200);
         canvas.setLayoutDescription(layout);
 
-        BufferedImage result = new BufferedImage(520, 260, BufferedImage.TYPE_INT_RGB);
+        BufferedImage result = new BufferedImage(520, 1200, BufferedImage.TYPE_INT_RGB);
         canvas.paint(result.createGraphics());
 
         assertEquals(RenderMode.SCALED, layout.mode());
-        assertEquals(Color.BLUE.getRGB(), result.getRGB(10, 140));
-        assertEquals(Color.RED.getRGB(), result.getRGB(200, 140));
-        assertEquals(TileAddress.fromCoordinates(10, 480, 600), canvas.tileAddressAtCanvasPosition(10, 140));
-        assertEquals(TileAddress.fromCoordinates(10, 483, 601), canvas.tileAddressAtCanvasPosition(500, 10));
+        assertEquals(Color.BLUE.getRGB(), result.getRGB(10, 610));
+        assertEquals(Color.RED.getRGB(), result.getRGB(200, 610));
+        assertEquals(TileAddress.fromCoordinates(10, 480, 600), canvas.tileAddressAtCanvasPosition(10, 610));
+        assertEquals(TileAddress.fromCoordinates(10, 483, 601), canvas.tileAddressAtCanvasPosition(500, 480));
     }
 
     private PyramidCatalog catalogWithBlueRootAndSouthWestChild() throws IOException {

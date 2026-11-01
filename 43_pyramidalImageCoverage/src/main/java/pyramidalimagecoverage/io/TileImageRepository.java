@@ -27,6 +27,14 @@ public final class TileImageRepository {
     private final Set<Path> failed = ConcurrentHashMap.newKeySet();
     private final boolean asynchronous;
     private final ExecutorService loaders;
+    private long generation;
+
+    /** Drop decoded images and failed reads after a disk refresh. */
+    public synchronized void invalidateAll() {
+        generation++;
+        cache.clear();
+        failed.clear();
+    }
 
     /** Creates a deterministic synchronous repository for off-screen rendering and tests. */
     public TileImageRepository() {
@@ -58,18 +66,19 @@ public final class TileImageRepository {
             return cached;
         }
         if (!failed.contains(path) && pending.add(path)) {
+            long requestedGeneration = generation();
             loaders.execute(() -> {
                 try {
                     BufferedImage image = ImageIO.read(path.toFile());
                     if (image != null) {
-                        put(path, image);
+                        putIfCurrent(path, image, requestedGeneration);
                     }
                     else {
-                        failed.add(path);
+                        failIfCurrent(path, requestedGeneration);
                     }
                 }
                 catch (IOException ex) {
-                    failed.add(path);
+                    failIfCurrent(path, requestedGeneration);
                     System.err.println(
                         "WARNING: Could not read tile image " + path + ": " + ex.getMessage()
                     );
@@ -91,8 +100,16 @@ public final class TileImageRepository {
         return cache.get(path);
     }
 
-    private synchronized void put(Path path, BufferedImage image) {
-        cache.put(path, image);
+    private synchronized long generation() {
+        return generation;
+    }
+
+    private synchronized void putIfCurrent(Path path, BufferedImage image, long requestedGeneration) {
+        if (generation == requestedGeneration) cache.put(path, image);
+    }
+
+    private synchronized void failIfCurrent(Path path, long requestedGeneration) {
+        if (generation == requestedGeneration) failed.add(path);
     }
 
     /** Synchronous compatibility helper, primarily useful to non-GUI callers. */

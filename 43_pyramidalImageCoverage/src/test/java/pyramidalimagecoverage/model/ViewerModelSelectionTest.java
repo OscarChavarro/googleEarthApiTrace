@@ -10,6 +10,31 @@ import org.junit.jupiter.api.Test;
 
 class ViewerModelSelectionTest {
     @Test
+    void startsAtLevelTenAndCyclesGridOnlyAtThatLevel() {
+        PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
+        add(catalog, "0");
+        add(catalog, TileAddress.fromCoordinates(10, 512, 512).quadKey());
+        ViewerModel model = new ViewerModel(catalog);
+
+        assertEquals(10, model.selectedDepth());
+        assertEquals(GridModes.SHOW_NOTHING, model.gridMode());
+        model.cycleGridMode();
+        assertEquals(GridModes.SHOW_ALL_GROUPS, model.gridMode());
+        model.cycleGridMode();
+        assertEquals(GridModes.SHOW_MOSTLY_EMPTY_GROUPS, model.gridMode());
+        model.cycleGridMode();
+        assertEquals(GridModes.SHOW_GROUPS_BEING_DOWNLOADED, model.gridMode());
+        model.cycleGridMode();
+        assertEquals(GridModes.SHOW_NOTHING, model.gridMode());
+        model.cycleGridMode();
+        assertEquals(GridModes.SHOW_ALL_GROUPS, model.gridMode());
+
+        model.previousDepth();
+        assertEquals(9, model.selectedDepth());
+        model.cycleGridMode();
+        assertEquals(GridModes.SHOW_ALL_GROUPS, model.gridMode());
+    }
+    @Test
     void togglesSelectionRecursivelyAcrossDescendants() {
         PyramidCatalog catalog = new PyramidCatalog(Path.of("."));
         TileRecord root = add(catalog, "0");

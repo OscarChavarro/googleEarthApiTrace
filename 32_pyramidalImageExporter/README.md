@@ -126,6 +126,101 @@ This replaces the earlier `matrix_<n>/matrixLayer.json` copy-based layout used b
 `31_matrixMerger`'s `MatrixLayerExportWriter`: the pyramidal image is written directly as a
 quadtree of images, with no JSON manifest.
 
+### Recovering incomplete continental L10 groups
+
+A successful export or a `COMMITTED` log alone does not establish coverage. For
+reviewed repairs, count physical PNGs using
+`scripts/superPipelineController.py::destination_contains_job_area`, require a
+successful program-42 dry-run and commit, repeat the physical check, and inspect
+program 43 at depth 10 in `SHOW_GROUPS_BEING_DOWNLOADED`. The yellow rectangle
+must lose its red/mottled interior. Refresh the viewer before taking `/tmp/b.png`;
+a screenshot of a stale catalogue is not evidence of a failed or successful merge.
+Never delete production tiles to force a repair. Preserve failed slots and logs.
+
+The Canada `(52,-116)` recovery demonstrated two distinct failure modes:
+
+- Program 31's `absoluteLevel` diagnostic is inferred from its configured maximum;
+  it is not an independently measured geographic level. Its apparent L9–L14 chain
+  was actually L5–L10. Program 32 previously assigned disconnected descendants to
+  L21/L22 by using unrelated deepest reference islands. Use resolved session
+  hierarchy offsets and parent/child evidence instead. Diagnose from isolated
+  matrix staging and inspect the exporter's per-layer placement report before
+  changing capture parameters or publishing a delta.
+- After correcting placement, the original capture exported 840 native L10 tiles,
+  but destination plus delta covered only 437 of the rectangle's 552 cells. Five
+  northern rows remained at L9. Recapturing only the north strip at 70,000 m,
+  with 70,000 m between path points, supplied the missing L10 images. Selecting
+  the reviewed rectangle then added 529 tiles, retained 23 existing tiles, and
+  produced 552/552 physical coverage. The yellow rectangle's red interior
+  disappeared in 43. Logs and before/after images are preserved under
+  `/media/ramdisk/logs/superPipeline/world10-priority-continental-000642-52--116/hardPlan-recovery`.
+
+A later offline rerun of Hudson Bay `(52,-92)` showed a different limit: 31
+with minimum tile count 1 and 32 exported 726 native L10 images, but only 370
+of the rectangle's 576 cells had native L10 coverage. Auditing all 13,669 frame
+files found no native L10 source for the remaining 206 cells; 178 have captured
+L9 parents and 28 have L8 parents. Their original pixels could supply geographic
+L10 crops at 128×128 and 64×64, respectively, but those are lower-resolution
+derived tiles and must not be represented as native 256×256 imagery. Under the
+native-only contract the merge remains blocked.
+
+The next `(52,-92)` trial halves the height parameter from 77,000 m to 38,500 m
+and spacing from 70,000 m to 35,000 m. `KmlPersistence` writes three times that
+height to `LookAt.altitude`, so this changes the camera altitude from 231,000 m
+to 115,500 m. Other reviewed groups retain the previous pattern. Compare the
+370/576 baseline with both direct L10 images and complete L10 parents rebuilt
+from finer children; counting only direct L10 images can miss a genuine
+improvement from native L11 capture. `PIPELINE_MINIMUM_TILE_COUNT=1` keeps the
+same program-31 threshold as the diagnostic rerun. Keep the earlier capture
+and cleanup backup; do not use lower-resolution ancestor crops for this trial.
+
+The structural L10 anchor `[10,338,242]` in that capture was confirmed against
+frame vertices. Its rejected camera cluster `[10,337,245]` was displaced by one
+row and three columns. A high count of "exact" centre-tile observations does
+not remove the four-cell clustering tolerance: do not lower the coarse-layer
+camera override threshold merely to force completeness. Rebuilding 31 also
+need not produce one consecutive hierarchy chain; inspect measured geographic
+levels rather than deleting matrices because their inferred absolute levels repeat.
+Evidence is in
+`/media/data/samples/datasets/googleEarth/canada-52--92-reprocess-20261026`.
+
+The path-planner argument order matters:
+
+```text
+./run.sh zigzag latitude longitude step_m max_distance_m altitude_m lat_span lon_span
+```
+
+For example, `180000 3200 100000 8 8` means **180,000 m point spacing and
+100,000 m altitude**. Changing `180000` to `162000` does not change camera height.
+In a parsed route including `./run.sh`, spacing is index 4 and altitude is index 6.
+Move the camera farther away only when measured detail is too deep; a region
+still supplied at L9 may require a closer camera to obtain native L10. Inspect the
+actual layer levels and the coordinates of missing cells before choosing a retry.
+Do not assume that more raw PNGs imply complete coverage.
+
+`scripts/buildLevelOnlyDelta.py` selects existing L10 parents even when deeper
+tiles are also present. If a parent is absent, it can reconstruct it from four
+complete child quadrants, recursively, with the project's quadrant orientation.
+An incomplete child set cannot manufacture coverage, and L9 tiles must not be
+upscaled and labelled as native L10. Ancestors below the selected merge level
+are copied from the existing destination. This helper requires Python Pillow.
+The expected count depends on quadtree alignment: an 8×8-degree group is not
+always 529 cells; the reviewed rectangles below require 552 or 576 cells.
+
+The current reviewed batch is exactly `(52,-100)`, `(52,-92)`, `(44,-76)`,
+`(36,44)`, and `(36,52)`, provided by `scripts/runWorld10PriorityContinental.sh`.
+All five have `mustCommit=true`, `mergeLevelOnly=10`, and explicit capture spacing
+and altitude metadata. The controller stops on failure; the level-only pipeline
+rejects an incomplete destination-plus-delta rectangle before invoking program 42.
+The verified `(52,-116)` and `(52,-108)` groups and Australia are excluded.
+The current pattern uses 70,000 m spacing and 77,000 m altitude (10% farther away).
+`PIPELINE_REFERENCE_PYRAMID` can point to an isolated geographic reference snapshot
+for module 32, avoiding a full scan of unrelated deep islands. The actual merge
+destination and the L10 completeness checks still use `--destination`. Use sequential capture
+and adequate disk staging for full rectangles; retain the earlier recovery evidence.
+Program 42's offline mode reads only the delta footprint and checks that same
+footprint after committing, while preserving unrelated branches and descendants.
+
 ### Which tiles are exported
 
 A tile is exportable only if `pyramidalimageexporter.processing.uncles.TileRootPathResolver`
@@ -165,7 +260,7 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   s*c + columnOffset)` at the deeper level. Offsets may lie outside `[0,s)`, which
   represents cousins across a border and lets level-13 islands link directly to a
   level-11 reference when level-12 sea tiles are absent.
-- When a reference pyramid establishes the deepest absolute level but a hierarchy root has
+- When session placements establish the scale of an imported hierarchy but a hierarchy root has
   only an ambiguous visual placement, frame camera vectors provide a geographic rigid-grid
   anchor. The quadtree uses the project's square 360-degree latitude model, not Web Mercator:
   longitude maps to columns, latitude maps to south-origin rows over `[-180,180]`, and only
@@ -176,6 +271,10 @@ can anchor it to a full path from the root (a string of quadrant digits, e.g. `"
   are suppressed and every descendant with sufficient camera evidence receives its own
   rigid-grid anchor. This prevents unrelated continental imagery from outvoting an island
   across missing level-11/12 sea tiles.
+- The absolute hierarchy scale uses a strict majority of resolved session layer offsets
+  (`absoluteLevel - hierarchyLevel`). Unrelated deepest reference islands cannot assign
+  an absolute level to an unresolved layer. Without a session scale, that layer remains
+  unanchored rather than inheriting the reference maximum.
 - Camera anchors below level 11 require at least three exact center-tile votes. Approximate
   per-frame fallback votes remain available for deep isolated components, but cannot move
   coarse continental layers when only weak geographic evidence is available.
@@ -346,3 +445,24 @@ In `pyramidalimageexporter.config.Configuration`:
 - `processing`: session-local pyramidal image export (`SessionPyramidalImageExportService`).
 - `render`: JOGL renderer, culling, LOD and HUD.
 - `gui`: keyboard/mouse handling.
+
+
+For a newly captured region, the destination may lack intermediate ancestors.
+The level-only delta helper preserves destination ancestors and supplies missing
+ones from native 256×256 exported tiles. A missing ancestor can also be reconstructed from four complete finer children.
+If neither native imagery nor a complete reconstruction exists, delta preparation
+still fails. This avoids rejecting new northern coverage just
+because its L9 parents have not previously been published.
+
+
+Individual visual anchors reject tied best matches, including perfect zero-error
+ties. Flat textures shared by multiple positions are ambiguous and must not be
+accepted just because a guarded 0/0 ratio evaluates to zero. Whole-layer rigid
+majority checks remain available; unrelated external textures cannot bypass this
+by contributing several tied plausible matches.
+
+
+Repeated flat-color visual comparisons reuse results only with identical parent
+candidates, excluded layer, designated parent, level limits, dimensions and color.
+The cache is cleared after each resolve call. Hit/miss counts are included in
+the performance report; the geographic matching and tie rejection rules stay the same.

@@ -379,6 +379,7 @@ final class TopLevelVisualAnchorResolver {
 
     private static boolean confident(MatchPair pair) {
         return pair != null
+            && pair.best().rmse() < pair.second().rmse()
             && pair.best().rmse() <= MAX_RMSE
             && pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse()) <= MAX_BEST_TO_SECOND_RATIO;
     }

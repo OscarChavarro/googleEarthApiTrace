@@ -156,19 +156,22 @@ final class SessionPyramidalImageExportServiceTest {
     }
 
     @Test
-    void ignoresTilesAboveTheHardCodedLevelTenExportLimit() throws Exception {
+    void preservesLevelElevenTilesAndIgnoresDeeperTiles() throws Exception {
         String rootImage = nativeImage("limit-root.png", 256, 256);
         String levelTenImage = nativeImage("limit-level-ten.png", 256, 256);
         String levelElevenImage = nativeImage("limit-level-eleven.png", 256, 256);
+        String levelTwelveImage = nativeImage("limit-level-twelve.png", 256, 256);
         String levelTenPath = "0" + "0".repeat(10);
         String levelElevenPath = "0" + "0".repeat(11);
+        String levelTwelvePath = "0" + "0".repeat(12);
 
         PyramidalImageExporterState model = new PyramidalImageExporterState();
         model.setMatrixLayers(List.of());
         model.setCataloguedQuadPathsByImagePath(Map.of(
             rootImage, "0",
             levelTenImage, levelTenPath,
-            levelElevenImage, levelElevenPath
+            levelElevenImage, levelElevenPath,
+            levelTwelveImage, levelTwelvePath
         ));
 
         List<?> entries = manifestEntries(
@@ -176,7 +179,7 @@ final class SessionPyramidalImageExportServiceTest {
             new TileRootPathResolver().resolve(model.getMatrixLayers(), Map.of(), Map.of())
         );
 
-        assertEquals(2, entries.size());
+        assertEquals(3, entries.size());
     }
 
     @Test

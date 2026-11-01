@@ -27,6 +27,7 @@ public final class ImportedLayerVisualAnchorResolver {
     private static final double MAX_ANCESTOR_BEST_TO_SECOND_RATIO = 0.90;
 
     private final Map<String, SampledImage> imageCache = new HashMap<>();
+    private final Map<FlatMatchKey, MatchPair> flatMatchCache = new HashMap<>();
 
     Map<String, String> resolve(
         List<MatrixLayer> layers,
@@ -88,6 +89,7 @@ public final class ImportedLayerVisualAnchorResolver {
             );
         }
         imageCache.clear();
+        flatMatchCache.clear();
         return anchors;
     }
 
@@ -158,6 +160,7 @@ public final class ImportedLayerVisualAnchorResolver {
             );
         }
         imageCache.clear();
+        flatMatchCache.clear();
         return anchors;
     }
 
@@ -203,7 +206,8 @@ public final class ImportedLayerVisualAnchorResolver {
                 maximumTargetLevel,
                 1
             );
-            if (pair != null && pair.best().rmse() <= MAX_RMSE) {
+            if (pair != null && pair.best().rmse() < pair.second().rmse()
+                && pair.best().rmse() <= MAX_RMSE) {
                 Anchor candidate = anchorFor(external, pair.best());
                 plausibleAnchors.put(
                     entry.getKey(),
@@ -230,6 +234,7 @@ public final class ImportedLayerVisualAnchorResolver {
             );
         }
         imageCache.clear();
+        flatMatchCache.clear();
         return anchors;
     }
 
@@ -326,6 +331,15 @@ public final class ImportedLayerVisualAnchorResolver {
         if (childImage == null) {
             return null;
         }
+        FlatMatchKey flatKey = flatMatchKey(childImage, childLayer, designatedParent,
+            parents, minimumTargetLevel, maximumTargetLevel, maximumLevelGap);
+        if (flatKey != null && flatMatchCache.containsKey(flatKey)) {
+            PerformanceReport.increment("importedVisualAnchor.flatMatchCache.hit");
+            return flatMatchCache.get(flatKey);
+        }
+        if (flatKey != null) {
+            PerformanceReport.increment("importedVisualAnchor.flatMatchCache.miss");
+        }
         Map<CandidateCell, Match> bestMatchByCell = new HashMap<>();
         for (ParentTile parent : parents) {
             if (parent.layer() == childLayer
@@ -383,6 +397,9 @@ public final class ImportedLayerVisualAnchorResolver {
             }
         }
         if (best == null) {
+            if (flatKey != null) {
+                flatMatchCache.put(flatKey, null);
+            }
             return null;
         }
         int bestTargetLevel = best.parent().level() + best.levelGap();
@@ -395,8 +412,37 @@ public final class ImportedLayerVisualAnchorResolver {
                 second = candidate;
             }
         }
-        return best == null || second == null ? null : new MatchPair(best, second);
+        MatchPair result = second == null ? null : new MatchPair(best, second);
+        if (flatKey != null) {
+            flatMatchCache.put(flatKey, result);
+        }
+        return result;
     }
+
+    private static FlatMatchKey flatMatchKey(
+        SampledImage image, MatrixLayer childLayer, MatrixLayer designatedParent,
+        List<ParentTile> parents, int minimumLevel, int maximumLevel, int maximumGap
+    ) {
+        int color = image.pixels()[0];
+        for (int pixel : image.pixels()) {
+            if (pixel != color) {
+                return null;
+            }
+        }
+        MatrixLayer excluded = parents.stream().anyMatch(parent -> parent.layer() == childLayer)
+            ? childLayer : null;
+        // Parent lists are fixed during each resolve call. Include all candidate
+        // restrictions so sharing a flat color never shares a geographic answer
+        // across different reference sets or structural parents.
+        return new FlatMatchKey(parents, excluded, childLayer == null, designatedParent,
+            minimumLevel, maximumLevel, maximumGap, image.width(), image.height(), color);
+    }
+
+    private record FlatMatchKey(
+        List<ParentTile> parents, MatrixLayer excludedLayer, boolean excludeNullParents,
+        MatrixLayer designatedParent, int minimumLevel, int maximumLevel,
+        int maximumGap, int width, int height, int color
+    ) {}
 
     private static MatrixLayer designatedParentOf(MatrixLayer child, List<MatrixLayer> layers) {
         Integer parentIndex = child.getParentMatrixIndex();
@@ -577,6 +623,7 @@ public final class ImportedLayerVisualAnchorResolver {
             ? MAX_ANCESTOR_BEST_TO_SECOND_RATIO
             : MAX_BEST_TO_SECOND_RATIO;
         return pair != null
+            && pair.best().rmse() < pair.second().rmse()
             && pair.best().rmse() <= MAX_RMSE
             && pair.best().rmse() / Math.max(1.0e-9, pair.second().rmse()) <= maxRatio;
     }

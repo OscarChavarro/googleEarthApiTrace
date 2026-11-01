@@ -14,10 +14,14 @@ class KeyboardCommandProcessorTest {
 
         assertTrue(processor.process(event(KeyEvent.KEY_1)));
         assertTrue(processor.process(event(KeyEvent.KEY_2)));
+        assertTrue(processor.process(event(KeyEvent.KEY_g)));
+        assertTrue(processor.process(event(KeyEvent.KEY_G)));
+        assertTrue(processor.process(event(KeyEvent.KEY_r)));
+        assertTrue(processor.process(event(KeyEvent.KEY_R)));
         assertTrue(processor.process(event(KeyEvent.KEY_f)));
         assertTrue(processor.process(event(KeyEvent.KEY_ESC)));
         assertFalse(processor.process(event(KeyEvent.KEY_a)));
-        assertTrue(actions.previous && actions.next && actions.fullscreen && actions.exit);
+        assertTrue(actions.previous && actions.next && actions.grid && actions.refresh && actions.fullscreen && actions.exit);
     }
 
     private static KeyEvent event(int keycode) {
@@ -29,11 +33,15 @@ class KeyboardCommandProcessorTest {
     private static final class RecordingActions implements ViewerActions {
         private boolean previous;
         private boolean next;
+        private boolean grid;
+        private boolean refresh;
         private boolean fullscreen;
         private boolean exit;
 
         @Override public void previousDepth() { previous = true; }
         @Override public void nextDepth() { next = true; }
+        @Override public void cycleGridMode() { grid = true; }
+        @Override public void refreshCoverage() { refresh = true; }
         @Override public void toggleFullscreen() { fullscreen = true; }
         @Override public void exit() { exit = true; }
     }

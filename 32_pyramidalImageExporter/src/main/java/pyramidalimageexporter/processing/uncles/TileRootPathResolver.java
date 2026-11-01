@@ -228,7 +228,7 @@ public final class TileRootPathResolver {
             progress |= propagateByParentGridTransforms(layers, resolvedPath, sourceById, discarded, outOfScope);
             progress |= propagateByGridPosition(layers, resolvedPath, sourceById, discarded, outOfScope, false);
             String stateSignature = resolutionStateSignature(resolvedPath, sourceById, discarded);
-            if (!seenStates.add(stateSignature)) {
+            if (progress && !seenStates.add(stateSignature)) {
                 System.out.println(
                     "TileRootPathResolver: repeated resolution state detected after "
                         + seenStates.size()

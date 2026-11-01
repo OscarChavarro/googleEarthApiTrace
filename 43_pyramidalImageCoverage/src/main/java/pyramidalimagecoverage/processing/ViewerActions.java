@@ -5,6 +5,10 @@ public interface ViewerActions {
 
     void nextDepth();
 
+    void cycleGridMode();
+
+    void refreshCoverage();
+
     void toggleFullscreen();
 
     void exit();

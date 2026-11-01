@@ -6,6 +6,8 @@ import javax.swing.JScrollPane;
 import pyramidalimagecoverage.model.ViewerModel;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.ViewPosition;
+import pyramidalimagecoverage.model.TileBounds;
+import pyramidalimagecoverage.model.GridModes;
 import pyramidalimagecoverage.processing.LevelLayout;
 import pyramidalimagecoverage.processing.ScrollCenterCalculator;
 import pyramidalimagecoverage.render.CoverageCanvas;
@@ -27,10 +29,18 @@ public final class CanvasLayoutController {
         if (extent.width <= 0 || extent.height <= 0) {
             return;
         }
+        TileBounds bounds = model.catalog().tileBoundsAt(model.selectedDepth()).orElse(null);
+        if (bounds != null && model.selectedDepth() == ViewerModel.GRID_DEPTH
+            && model.gridMode() != GridModes.SHOW_NOTHING) {
+            // Include empty northern rectangles in the focused viewport.
+            int northernRow = (int) Math.ceil((68 + 180) / 360.0 * (1 << ViewerModel.GRID_DEPTH)) - 1;
+            bounds = new TileBounds(0, bounds.minimumSouthRow(), (1 << ViewerModel.GRID_DEPTH) - 1,
+                Math.max(bounds.maximumSouthRow(), northernRow));
+        }
         LevelLayout layout = LevelLayout.choose(
             model.selectedDepth(),
             sizeOf(extent),
-            model.catalog().tileBoundsAt(model.selectedDepth()).orElse(null)
+            bounds
         );
         boolean centerActiveTiles = layout.scrollable() && centeredScrollableDepth != model.selectedDepth();
         if (!layout.scrollable()) {

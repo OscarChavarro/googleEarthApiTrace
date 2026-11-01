@@ -13,6 +13,7 @@ import java.util.Locale;
 import javax.swing.JViewport;
 import pyramidalimagecoverage.io.TileImageRepository;
 import pyramidalimagecoverage.model.PyramidCatalog;
+import pyramidalimagecoverage.model.GridModes;
 import pyramidalimagecoverage.model.PixelSize;
 import pyramidalimagecoverage.model.RenderMode;
 import pyramidalimagecoverage.model.TileAddress;
@@ -29,9 +30,11 @@ public final class CoverageCanvas extends Canvas {
     private static final Color UNSELECTED_BORDER = Color.BLACK;
     private static final Color SELECTED_BORDER = new Color(0, 255, 0);
     private static final Color SECONDARY_SELECTED_BORDER = new Color(255, 255, 0);
+    private static final Color GRID_COLOR = new Color(255, 230, 0, 220);
+    private static final int WORLD10_GROUP_DEGREES = 8;
     private static final Color HUD_BACKGROUND = new Color(0, 0, 0, 190);
     private static final Color PREVIEW_BORDER = Color.WHITE;
-    private static final Font HUD_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 14);
+    private static final Font HUD_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 28);
     private static final int HUD_MARGIN = 12;
     private static final int PREVIEW_FRAME = 2;
 
@@ -109,6 +112,7 @@ public final class CoverageCanvas extends Canvas {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             drawTiles(g, visible);
+            drawWorld10Grid(g, visible);
             drawHud(g, visible);
             drawSelectedTileFileHud(g, visible);
             drawLastSelectedTilePreview(g, visible);
@@ -117,6 +121,95 @@ public final class CoverageCanvas extends Canvas {
             g.dispose();
         }
     }
+
+    private void drawWorld10Grid(Graphics2D g, Rectangle visible) {
+        if (model.selectedDepth() != ViewerModel.GRID_DEPTH || model.gridMode() == GridModes.SHOW_NOTHING) {
+            return;
+        }
+        g.setColor(GRID_COLOR);
+        g.setStroke(new java.awt.BasicStroke(model.gridMode() == GridModes.SHOW_GROUPS_BEING_DOWNLOADED ? 2f : 1f));
+        switch (model.gridMode()) {
+            case SHOW_ALL_GROUPS -> forEachWorld10Group(group -> drawGroup(g, group, visible));
+            case SHOW_MOSTLY_EMPTY_GROUPS -> forEachWorld10Group(group -> {
+                if (atLeastNinetyFivePercentOfGroupTilesAreEmpty(group)) {
+                    drawGroup(g, group, visible);
+                }
+            });
+            case SHOW_GROUPS_BEING_DOWNLOADED -> ActiveWorld10Groups.read().forEach(group ->
+                drawGroup(g, new World10Group(group.latitude(), group.longitude(), group.latitudeSpan(), group.longitudeSpan()), visible)
+            );
+            case SHOW_NOTHING -> { }
+        }
+    }
+
+    private void forEachWorld10Group(java.util.function.Consumer<World10Group> consumer) {
+        // Baseline lattice plus a northern band overlapping the 60 N boundary.
+        for (int latitude = -60; latitude < 60; latitude += WORLD10_GROUP_DEGREES) {
+            for (int longitude = -180; longitude < 180; longitude += WORLD10_GROUP_DEGREES) {
+                consumer.accept(new World10Group(latitude, longitude, WORLD10_GROUP_DEGREES, WORLD10_GROUP_DEGREES));
+            }
+        }
+        for (int longitude = -180; longitude < 180; longitude += WORLD10_GROUP_DEGREES) {
+            consumer.accept(new World10Group(59, longitude, 9, WORLD10_GROUP_DEGREES));
+        }
+    }
+
+    private boolean atLeastNinetyFivePercentOfGroupTilesAreEmpty(World10Group group) {
+        // Inspect every level-10 cell whose centre lies in the group. Missing
+        // PNGs are painted red by drawTiles even when an ancestor is available;
+        // ancestor images supply LOD colors only for cells present at this level.
+        double minLongitude = group.longitude();
+        double maxLongitude = group.longitude() + group.longitudeSpan();
+        double minLatitude = group.latitude();
+        double maxLatitude = group.latitude() + group.latitudeSpan();
+        double tileSpan = 360.0 / (1 << ViewerModel.GRID_DEPTH);
+        int firstColumn = (int) Math.ceil((minLongitude + 180.0) / tileSpan - 0.5);
+        int lastColumn = (int) Math.floor((maxLongitude + 180.0) / tileSpan - 0.5);
+        int firstSouthRow = (int) Math.ceil((minLatitude + 180.0) / tileSpan - 0.5);
+        int lastSouthRow = (int) Math.floor((maxLatitude + 180.0) / tileSpan - 0.5);
+        int checkedTiles = 0;
+        int emptyTiles = 0;
+        for (int southRow = firstSouthRow; southRow <= lastSouthRow; southRow++) {
+            for (int column = firstColumn; column <= lastColumn; column++) {
+                checkedTiles++;
+                if (model.catalog().tileAt(ViewerModel.GRID_DEPTH, column, southRow) == null) {
+                    emptyTiles++;
+                }
+            }
+        }
+        return checkedTiles > 0 && emptyTiles * 100 >= checkedTiles * 95;
+    }
+
+    private void drawGroup(Graphics2D g, World10Group group, Rectangle visible) {
+        int x0 = worldLongitudeToCanvasX(group.longitude());
+        int x1 = worldLongitudeToCanvasX(group.longitude() + group.longitudeSpan());
+        int y0 = worldLatitudeToCanvasY(group.latitude() + group.latitudeSpan());
+        int y1 = worldLatitudeToCanvasY(group.latitude());
+        Rectangle rectangle = new Rectangle(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        if (rectangle.intersects(visible)) {
+            g.drawRect(rectangle.x, rectangle.y, Math.max(1, rectangle.width), Math.max(1, rectangle.height));
+        }
+    }
+
+    private int worldLongitudeToCanvasX(double longitude) {
+        return originX() + (int) Math.round(((longitude + 180.0) / 360.0 * layout.matrixSide()
+            - layout.visibleTiles().minimumColumn()) * layout.pixelsPerTile());
+    }
+
+    private int worldLatitudeToCanvasY(double latitude) {
+        return originY() + (int) Math.round((layout.visibleTiles().maximumSouthRow() + 1
+            - (latitude + 180.0) / 360.0 * layout.matrixSide()) * layout.pixelsPerTile());
+    }
+
+    private int originX() {
+        return Math.max(0, (getWidth() - layout.contentWidth()) / 2);
+    }
+
+    private int originY() {
+        return Math.max(0, (getHeight() - layout.contentHeight()) / 2);
+    }
+
+    private record World10Group(double latitude, double longitude, double latitudeSpan, double longitudeSpan) {}
 
     private void drawTiles(Graphics2D g, Rectangle visible) {
         int pixelsPerTile = layout.pixelsPerTile();
@@ -322,6 +415,9 @@ public final class CoverageCanvas extends Canvas {
                 + " x " + layout.visibleTiles().rowCount());
         }
         lines.add("LOD: " + layout.description());
+        if (model.selectedDepth() == ViewerModel.GRID_DEPTH) {
+            lines.add("Grid [G]: " + model.gridMode());
+        }
         TileAddress selected = model.selectedAddress();
         if (selected != null) {
             lines.add(String.format(Locale.US, "lat: %.8f", selected.centerLatitude()));
@@ -338,6 +434,7 @@ public final class CoverageCanvas extends Canvas {
             lines.add(String.format(Locale.US, "deltaLon (2-1): %+.8f deg", delta.longitudeDegrees()));
             lines.add(String.format(Locale.US, "distance (1-2): %.3f km", delta.distanceKilometers()));
         }
+        lines.add("Refresh coverage [R]");
         lines.add("Fullscreen [F]: " + (isFullScreen() ? "on" : "off"));
         return lines.toArray(String[]::new);
     }

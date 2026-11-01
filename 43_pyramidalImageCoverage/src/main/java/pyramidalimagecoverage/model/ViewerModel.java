@@ -4,9 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class ViewerModel {
+    public static final int GRID_DEPTH = 10;
     private final PyramidCatalog catalog;
     private final List<Runnable> listeners = new ArrayList<>();
-    private int selectedDepth;
+    private int selectedDepth = GRID_DEPTH;
+    private GridModes gridMode = GridModes.SHOW_NOTHING;
     private TileAddress selectedAddress;
     private TileAddress secondarySelectedAddress;
     private TileAddress lastSelectedAddress;
@@ -21,6 +23,24 @@ public final class ViewerModel {
 
     public int selectedDepth() {
         return selectedDepth;
+    }
+
+    public GridModes gridMode() {
+        return gridMode;
+    }
+
+    /** Used only by startup to retain SHOW_NOTHING as the cycle's first mode. */
+    public void showPlannedGroupsAtStartup() {
+        gridMode = GridModes.SHOW_GROUPS_BEING_DOWNLOADED;
+    }
+
+    /** Cycles diagnostics only at the level at which world10 groups are defined. */
+    public void cycleGridMode() {
+        if (selectedDepth != GRID_DEPTH) {
+            return;
+        }
+        gridMode = gridMode.next();
+        notifyListeners();
     }
 
     public void previousDepth() {

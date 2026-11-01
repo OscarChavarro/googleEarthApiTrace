@@ -30,11 +30,10 @@ public final class FrameCameraGeoAnchorResolver {
         Map<String, String> referencePathsByImage,
         TileRootPathResolver.Resolution preliminaryResolution
     ) {
-        int deepestReferenceLevel = deepestLevel(referencePathsByImage);
-        int deepestHierarchyLevel = deepestHierarchyLevel(layers);
-        if (deepestReferenceLevel < 0 || deepestHierarchyLevel < 0 || !Files.isDirectory(frameRoot)) {
+        if (layers == null || !Files.isDirectory(frameRoot)) {
             return new Anchors(Map.of(), Set.of());
         }
+        Integer hierarchyBaseLevel = hierarchyBaseLevel(layers, preliminaryResolution);
 
         Map<Integer, CameraAnchor> byFrameId = new HashMap<>();
         Map<String, String> paths = new LinkedHashMap<>();
@@ -45,9 +44,8 @@ public final class FrameCameraGeoAnchorResolver {
                 continue;
             }
             Integer preliminaryLevel = consistentlyResolvedLevel(layer, preliminaryResolution);
-            int hierarchyLevel = layer.getHierarchyLevel() == null
-                ? -1
-                : deepestReferenceLevel - (deepestHierarchyLevel - layer.getHierarchyLevel());
+            int hierarchyLevel = layer.getHierarchyLevel() == null || hierarchyBaseLevel == null
+                ? -1 : hierarchyBaseLevel + layer.getHierarchyLevel();
             int absoluteLevel = preliminaryLevel == null ? hierarchyLevel : preliminaryLevel;
             if (absoluteLevel < 0 || absoluteLevel >= 30) {
                 continue;
@@ -73,12 +71,14 @@ public final class FrameCameraGeoAnchorResolver {
                 continue;
             }
             Integer preliminaryLevel = consistentlyResolvedLevel(layer, preliminaryResolution);
-            int hierarchyLevel = deepestReferenceLevel
-                - (deepestHierarchyLevel - layer.getHierarchyLevel());
+            int hierarchyLevel = hierarchyBaseLevel == null ? -1 : hierarchyBaseLevel + layer.getHierarchyLevel();
             int absoluteLevel = absoluteLevelByLayerName.getOrDefault(
                 layer.getSourceFolderName(),
                 preliminaryLevel == null ? hierarchyLevel : preliminaryLevel
             );
+            if (absoluteLevel < 0 || absoluteLevel >= 30) {
+                continue;
+            }
             CameraGridAnchor cameraAnchor = cameraGridAnchor(layer, absoluteLevel, frameRoot, byFrameId);
             if (cameraAnchor == null) {
                 continue;
@@ -488,28 +488,22 @@ public final class FrameCameraGeoAnchorResolver {
         return resolvedLevel;
     }
 
-    private static int deepestLevel(Map<String, String> pathsByImage) {
-        int deepest = -1;
-        if (pathsByImage != null) {
-            for (String path : pathsByImage.values()) {
-                if (path != null && path.matches("0[0-3]*")) {
-                    deepest = Math.max(deepest, path.length() - 1);
-                }
+    // Only session evidence establishes the absolute level of a hierarchy.
+    // A reference pyramid may contain unrelated islands at arbitrarily deep levels.
+    static Integer hierarchyBaseLevel(List<MatrixLayer> layers, TileRootPathResolver.Resolution resolution) {
+        Map<Integer, Integer> votes = new LinkedHashMap<>();
+        for (MatrixLayer layer : layers) {
+            if (!isImportedLayer(layer) || layer.getHierarchyLevel() == null) {
+                continue;
+            }
+            Integer level = consistentlyResolvedLevel(layer, resolution);
+            if (level != null) {
+                votes.merge(level - layer.getHierarchyLevel(), 1, Integer::sum);
             }
         }
-        return deepest;
-    }
-
-    private static int deepestHierarchyLevel(List<MatrixLayer> layers) {
-        int deepest = -1;
-        if (layers != null) {
-            for (MatrixLayer layer : layers) {
-                if (isImportedLayer(layer) && layer.getHierarchyLevel() != null) {
-                    deepest = Math.max(deepest, layer.getHierarchyLevel());
-                }
-            }
-        }
-        return deepest;
+        int total = votes.values().stream().mapToInt(Integer::intValue).sum();
+        return votes.entrySet().stream().filter(entry -> entry.getValue() * 2 > total)
+            .map(Map.Entry::getKey).findFirst().orElse(null);
     }
 
     private static boolean isImportedLayer(MatrixLayer layer) {

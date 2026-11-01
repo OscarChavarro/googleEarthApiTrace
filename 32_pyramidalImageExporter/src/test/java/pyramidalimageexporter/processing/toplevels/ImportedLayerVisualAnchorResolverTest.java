@@ -22,6 +22,33 @@ final class ImportedLayerVisualAnchorResolverTest {
     Path tempDir;
 
     @Test
+    void rejectsPerfectlyTiedParentQuadrantsForAnExternalTexture() throws IOException {
+        MatrixLayerTile parent = child("parent", 0, 0, Color.WHITE, "flat-parent.png");
+        MatrixLayerTile external = child("external", 0, 0, Color.WHITE, "flat-external.png");
+        var resolution = new TileRootPathResolver.Resolution(
+            Map.of("parent", quadPath(2, 1, 1)), Set.of(),
+            Map.of("parent", TileRootPathResolver.PathSource.GRID)
+        );
+        assertEquals(Map.of(), new ImportedLayerVisualAnchorResolver().resolveExternalTextures(
+            Map.of("external", external.getTextureFile(), "another-external", external.getTextureFile()),
+            List.of(layer("parent", parent)),
+            resolution, 3
+        ));
+    }
+
+    @Test
+    void rejectsPerfectlyTiedTopLevelLocationsForAnExternalTexture() throws IOException {
+        MatrixLayerTile first = child("00", 0, 0, Color.WHITE, "flat-first.png");
+        MatrixLayerTile second = child("01", 0, 1, Color.WHITE, "flat-second.png");
+        MatrixLayerTile external = child("external", 0, 0, Color.WHITE, "flat-probe.png");
+        assertEquals(Map.of(), new TopLevelVisualAnchorResolver().resolveExternalTextures(
+            List.of(layer("top", first, second)),
+            Map.of("external", external.getTextureFile()),
+            Map.of("external", Set.of("00", "01"))
+        ));
+    }
+
+    @Test
     void anchorsAChildGridFromStrictParentQuadrantMatches() throws IOException {
         Path parentTexture = tempDir.resolve("parent.png");
         writeParent(parentTexture);
@@ -112,7 +139,8 @@ final class ImportedLayerVisualAnchorResolverTest {
             Map.of("parent", TileRootPathResolver.PathSource.GRID)
         );
 
-        Map<String, String> anchors = new ImportedLayerVisualAnchorResolver().resolveExternalTextures(
+        ImportedLayerVisualAnchorResolver resolver = new ImportedLayerVisualAnchorResolver();
+        Map<String, String> anchors = resolver.resolveExternalTextures(
             Map.of("external-id", externalTexture.toString()),
             List.of(parentLayer),
             resolution,
@@ -120,6 +148,15 @@ final class ImportedLayerVisualAnchorResolverTest {
         );
 
         assertEquals(quadPath(3, 2, 3), anchors.get("external-id"));
+        var relocatedResolution = new TileRootPathResolver.Resolution(
+            Map.of("parent", quadPath(2, 2, 2)), Set.of(),
+            Map.of("parent", TileRootPathResolver.PathSource.GRID)
+        );
+        Map<String, String> relocated = resolver.resolveExternalTextures(
+            Map.of("external-id", externalTexture.toString()),
+            List.of(parentLayer), relocatedResolution, 3
+        );
+        assertEquals(quadPath(3, 4, 5), relocated.get("external-id"));
     }
 
     private MatrixLayerTile child(String id, int i, int j, Color color, String fileName) throws IOException {

@@ -29,6 +29,7 @@ gradle run --args="/samples/datasets/googleEarth/sesion1Madrid"
 | `1` | Previous quadtree depth |
 | `2` | Next available quadtree depth |
 | `F` | Toggle borderless full screen |
+| `R` | Re-scan the current depth, reload decoded images and recalculate groups |
 | `ESC` | Exit |
 
 Left-clicking any matrix cell selects it as the primary tile, including a red cell with
@@ -42,9 +43,31 @@ The HUD shows both centers in decimal degrees. When both tiles are selected it a
 kilometers. These values can be used directly to derive a region of interest expressed
 as `(x0, y0), (dx, dy)`.
 
-The selected depth starts at `0` and is clamped to the deepest level containing data.
+The selected depth starts at `10`, with the reviewed pending groups visible.
 The English HUD in the upper-right corner reports depth, matrix dimensions and active
 LOD mode.
+
+## Reviewed download queue
+
+The yellow pending rectangles are read from `scripts/world10PlannedGroups.jsonl`,
+published by the superpipeline. The current northern recapture covers every
+longitude in 45 rectangles spanning 59–68 N, each 8 degrees wide and 9 degrees
+high. It overlaps the previous coverage southward by one degree and repeats
+already captured Alaska/Canada regions. Northern jobs use route parameters
+`180000 3200 90000 9 8` and are forced even when PNGs already exist.
+
+The all-groups and mostly-empty grids include the baseline [-60,60) lattice
+and this northern band. The focused grid view extends to 68 N even where
+there are no PNGs yet. The mostly-empty filter still requires at least 95%
+missing level-10 PNGs; the forced recapture queue includes every northern group.
+
+Press `G` to cycle nothing, all groups, mostly empty groups, and pending groups.
+Mostly empty groups receive a yellow outline when at least 95% of the level-10
+cells whose centers lie in the group have no level-10 PNG (the red cells).
+Available ancestor images do not count as level-10 coverage.
+To restore the selected PNG after restarting, supply the JVM property
+`-Dpyramidalimagecoverage.selectedQuadkey=03130113021`. The selected file and its
+coordinates then appear in the HUD even if the PNG is missing.
 
 ## Pixel LOD modes
 
@@ -91,6 +114,11 @@ responsive.
 
 Every ten minutes the viewer re-scans the currently selected depth and adds any newly
 published PNGs without changing the selected depth, scroll position, or tile selection.
+Press `R` to request this refresh immediately in the background. Both automatic and
+manual refreshes clear decoded images and failed image reads, so overwritten PNGs
+are reloaded even if no new tile paths appeared. Mostly empty groups are recalculated
+from the updated catalogue on repaint. A successful merge can still leave a group
+yellow if at least 95% of its level-10 PNG cells remain missing (for example at sea).
 
 When the input is exactly `/samples/datasets/googleEarth/toplevel`, affirmative tile
 existence flags are persisted in `/media/ramdisk`, in one sparse `.flags` file per

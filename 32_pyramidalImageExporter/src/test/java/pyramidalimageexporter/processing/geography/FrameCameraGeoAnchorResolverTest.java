@@ -16,6 +16,53 @@ import pyramidalimageexporter.processing.uncles.TileRootPathResolver;
 
 final class FrameCameraGeoAnchorResolverTest {
     @Test
+    void resolvesL9ThroughL14WithoutFollowingAnUnrelatedL22Reference(
+        @org.junit.jupiter.api.io.TempDir java.nio.file.Path frames
+    ) throws java.io.IOException {
+        List<MatrixLayer> layers = new ArrayList<>();
+        Map<String, String> paths = new java.util.HashMap<>();
+        for (int i = 0; i < 6; i++) {
+            String id = String.format("%05d_1", 100 + i);
+            MatrixLayer layer = layerWithTiles("matrix_" + i, tile(id, 0, 0));
+            layer.setHierarchyLevel(i);
+            layer.setFrameId(100 + i);
+            layers.add(layer);
+            java.nio.file.Path frame = frames.resolve(String.format("%05d", 100 + i));
+            java.nio.file.Files.createDirectories(frame);
+            java.nio.file.Files.writeString(frame.resolve("frame.json"),
+                "{\"camera\":{\"googleCamera\":{\"frontX\":0,\"frontY\":0,\"frontZ\":-1}},\"tiles\":[]}");
+            if (i < 4) {
+                paths.put(id, FrameCameraGeoAnchorResolver.quadPath(0, 0, 9 + i));
+            }
+        }
+        var anchors = new FrameCameraGeoAnchorResolver().resolve(layers, frames,
+            Map.of("unrelated.png", "0" + "3".repeat(22)),
+            new TileRootPathResolver.Resolution(paths, Set.of(), Map.of()));
+        assertEquals(FrameCameraGeoAnchorResolver.quadPath(0, 0, 13), anchors.fullPathByTileId().get("00104_1"));
+        assertEquals(FrameCameraGeoAnchorResolver.quadPath(0, 0, 14), anchors.fullPathByTileId().get("00105_1"));
+        var unanchored = new FrameCameraGeoAnchorResolver().resolve(layers, frames,
+            Map.of("unrelated.png", "0" + "3".repeat(22)),
+            new TileRootPathResolver.Resolution(Map.of(), Set.of(), Map.of()));
+        assertTrue(unanchored.fullPathByTileId().isEmpty());
+    }
+
+    @Test
+    void infersSessionScaleWithoutUsingUnrelatedDeepReferenceIslands() {
+        List<MatrixLayer> layers = new ArrayList<>();
+        Map<String, String> paths = new java.util.HashMap<>();
+        for (int i = 0; i < 6; i++) {
+            MatrixLayer layer = layerWithTiles("matrix_" + i, tile("09000_" + i, 0, 0));
+            layer.setHierarchyLevel(i);
+            layers.add(layer);
+            if (i < 4) {
+                paths.put("09000_" + i, FrameCameraGeoAnchorResolver.quadPathForCell(9 + i, 0, 0));
+            }
+        }
+        assertEquals(9, FrameCameraGeoAnchorResolver.hierarchyBaseLevel(layers,
+            new TileRootPathResolver.Resolution(paths, Set.of(), Map.of())));
+    }
+
+    @Test
     void mapsIbizaCameraToTheSquareGeographicQuadtree() {
         assertEquals(
             "02003303203323",

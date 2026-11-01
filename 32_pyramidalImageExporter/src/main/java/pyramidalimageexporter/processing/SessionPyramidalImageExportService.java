@@ -68,9 +68,12 @@ public final class SessionPyramidalImageExportService {
     private static final int PROGRESS_REPORT_INTERVAL = 100;
     private static final double FULL_TEXTURE_RECT_TOLERANCE = 1.0e-9;
     private static final int HIGHEST_RECONSTRUCTED_TOP_LEVEL = 5;
-    // Captures currently target level 10. Paths beyond this boundary are known
-    // to be misplaced and must never be written into the export pyramid.
-    private static final int MAXIMUM_EXPORT_LEVEL = 10;
+    // Preserve the next native level as well.  At the level-10/11 transition
+    // TileRootPathResolver needs the level-11 "uncle" relationships to anchor
+    // their level-10 parents; discarding those leaves here made a partially
+    // captured level-10 area look permanently empty to the coverage viewer.
+    // Level 11 remains the hard safety ceiling for this world-capture mode.
+    private static final int MAXIMUM_EXPORT_LEVEL = 11;
     private static final int DEFAULT_EXPORT_THREADS = Math.min(
         16,
         Math.max(2, Runtime.getRuntime().availableProcessors())

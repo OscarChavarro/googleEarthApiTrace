@@ -1,0 +1,27 @@
+{
+  "createdAt": "2026-10-30T14:24:31.112665+00:00",
+  "batchId": "north59-68-95-20261030T142431Z",
+  "pyramid": "/samples/datasets/googleEarth/toplevel",
+  "selection": "NORTHERN_RECAPTURE",
+  "depth": 10,
+  "minimumMissingPercent": 95,
+  "groupDegrees": 8,
+  "latitudeRange": [
+    59,
+    68
+  ],
+  "northernBand": {
+    "latitude": 59,
+    "latitudeSpan": 9,
+    "longitudeSpan": 8,
+    "forced": true
+  },
+  "longitudeRange": [
+    -180,
+    180
+  ],
+  "source": "Level-10 PNG index plus affirmative viewer-43 cache; ancestors excluded",
+  "presentLevel10Pngs": 203176,
+  "selectedGroups": 45,
+  "criterion": "Forced northern recapture, including existing PNGs"
+}
