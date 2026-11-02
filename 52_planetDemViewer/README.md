@@ -126,14 +126,16 @@ The project uses JOGL and Vitral 1.4.
 ## Run the viewer
 
 ```bash
-./run.sh /Volumes/FABDEM/02_rawPyramidal
+./run.sh /Volumes/FABDEM/02_rawPyramidal /Volumes/googleEarth/toplevel
 ```
 
-Without arguments, `run.sh` uses its configured default dataset path. You may
-also pass one or more pyramid-root directories directly to Gradle:
+Both folders are required, in this order: the elevation (DEM) pyramid and the
+color imagery pyramid. There are no default locations. If a folder is missing or
+the DEM pyramid has no valid `0.bin`, the program prints the error and exits
+without opening a window. You may also pass the folders directly to Gradle:
 
 ```bash
-gradle run --args="/Volumes/FABDEM/02_rawPyramidal"
+gradle run --args="/Volumes/FABDEM/02_rawPyramidal /Volumes/googleEarth/toplevel"
 ```
 
 ### Storage profiles
@@ -143,7 +145,7 @@ appropriate for slow or removable storage. Use `fast` on storage that tolerates
 parallel I/O:
 
 ```bash
-./run.sh --storage-profile fast /Volumes/FABDEM/02_rawPyramidal
+./run.sh --storage-profile fast /Volumes/FABDEM/02_rawPyramidal /Volumes/googleEarth/toplevel
 ```
 
 ### Memory configuration
@@ -151,22 +153,23 @@ parallel I/O:
 Increase the JVM heap when the dataset and available RAM justify it:
 
 ```bash
-PLANET_DEM_MAX_HEAP=32g ./run.sh /Volumes/FABDEM/02_rawPyramidal
+PLANET_DEM_MAX_HEAP=32g ./run.sh /Volumes/FABDEM/02_rawPyramidal /Volumes/googleEarth/toplevel
 ```
 
 Set a specific RAM cache budget in bytes if required:
 
 ```bash
-PLANET_DEM_RAM_CACHE_BYTES=8589934592 ./run.sh /Volumes/FABDEM/02_rawPyramidal
+PLANET_DEM_RAM_CACHE_BYTES=8589934592 ./run.sh /Volumes/FABDEM/02_rawPyramidal /Volumes/googleEarth/toplevel
 ```
 
 ## Offline export
 
 Offline rendering first discovers all leaves, then renders to a PNG. Unlike the
-interactive viewer, this intentionally performs a complete pyramid traversal.
+interactive viewer, this intentionally performs a complete pyramid traversal. It
+draws the elevation palette only: the imagery folder is required but not drawn.
 
 ```bash
-./run.sh --offline /Volumes/FABDEM/02_rawPyramidal \\
+./run.sh --offline /Volumes/FABDEM/02_rawPyramidal /Volumes/googleEarth/toplevel \\
   --output /tmp/planet-dem.png --width 2048 --height 2048 --wires
 ```
 
@@ -221,6 +224,21 @@ box is drawn in yellow.
 | `e` / `E` | Save / clear saved viewer state |
 | `Ctrl` + `f` | Toggle full screen (hides the menu bar and layer panel) |
 | `Escape` | Close the viewer |
+
+## MCP tools
+
+With `--mcp-port <port>` (`run.sh` uses 42817) the viewer exposes these tools to
+agents at `http://127.0.0.1:<port>/mcp`:
+
+| Tool | Purpose |
+| --- | --- |
+| `set_geometry_mode` | Switch between the 3D terrain and the 2D palette image |
+| `set_subdivision_scheme` | Select `TRIANGLE_EDGE` or `DIAMOND_SQUARE`; 3D terrain mode only |
+| `set_tile_bounds` | Show or hide tile bounds |
+| `click_viewport` | Select the terrain under a pixel of `capture_view` |
+| `key_event` | Send a key code, without modifiers |
+| `capture_view` | Save the canvas to a local PNG and return its path |
+| `get_camera_model` | Return the camera and the rendering options as JSON |
 
 ## Palettes
 

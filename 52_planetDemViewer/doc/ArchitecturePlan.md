@@ -182,8 +182,7 @@ are source representation details, not global planner rules.
 
 ### Secondary imagery pyramid
 
-`ImageryLayer` will initially read
-`/Users/ochavarro/spool/samples/googleEarth/toplevel`. Its adapter reports
+`ImageryLayer` reads the imagery folder given on the command line. Its adapter reports
 tile scheme, CRS, coverage, maximum level, and its transformation relative to
 the elevation layer.
 
@@ -288,9 +287,21 @@ interface FrameEncoder {
 }
 ```
 
-`Jogl4PlanetViewerRenderer`, `Jogl4TerrainRenderer`, `TextureCache`, and
+`Jogl4PlanetViewerRenderer`, `Jogl4TerrainRenderer`, `Jogl4TextureCacheHelper`, and
 current shaders make up the present OpenGL implementation; the flat shader
 remains for bounds/HUD and lit shaders remain for surface rendering.
+
+`Jogl4PlanetViewerRenderer` only orchestrates a frame: it owns the GL lifecycle
+and the drawing order, and delegates to these collaborators:
+
+| Class | Responsibility | Uses OpenGL |
+| --- | --- | --- |
+| `ViewportLayout` | The 1 to 4 views, their layout, and which one the camera controller drives | No |
+| `TerrainPicker` | From a pixel to the selected surface point and tile | No |
+| `Jogl4HudRenderer`, `FrameRateCounter` | Status text, frame statistics and selected point | Only to draw |
+| `Jogl4TileLabelRenderer` | Name and center of each drawn tile | Only to draw |
+| `Jogl4ViewOverlayRenderer` | Other cameras' frustums, selection marker, view border | Yes |
+| `Jogl4OfflineStackRenderer`, `Jogl4FramebufferCaptureRenderer` | Windowless rendering and PNG capture | Yes |
 
 `BackendCapabilities` remains a backend-neutral architecture boundary. Native
 Vulkan and Metal renderers, if adopted, will be implemented in a separate C++
@@ -393,7 +404,7 @@ planetdemviewer
   scheduler/    priorities, cancellation, budgets, executors
   acceleration/ BLAS, TLAS, rays, picking
   render/       backend-neutral contracts and caches
-  render/jogl/  existing OpenGL 4 implementation
+  render/jogl4/ existing OpenGL 4 implementation
   bridge/       future native C++ packet/ABI boundary; no native renderer here
   ui/           AWT/Swing, HUD, input, MCP, persistence
 ```

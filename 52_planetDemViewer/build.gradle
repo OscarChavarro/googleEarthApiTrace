@@ -11,6 +11,19 @@ java {
     }
 }
 
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test']
+        }
+    }
+}
+
 application {
     mainClass = 'planetdemviewer.Main'
 }

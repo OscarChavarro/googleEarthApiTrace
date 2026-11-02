@@ -4,9 +4,4 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-DEFAULT_DEM="/media/extra/FABDEM/02_rawPyramidal"
-if [ "$#" -eq 0 ]; then
-    set -- "$DEFAULT_DEM"
-fi
-
 gradle --console=plain run --quiet --args="$* --mcp-port 42817"
