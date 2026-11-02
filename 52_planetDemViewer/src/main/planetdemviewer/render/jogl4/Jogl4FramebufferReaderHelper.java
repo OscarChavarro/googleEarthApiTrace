@@ -4,18 +4,15 @@ import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL4;
 import com.jogamp.opengl.GLAutoDrawable;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import vsdk.toolkit.io.image.ImagePersistence;
 import vsdk.toolkit.media.RGBImageUncompressed;
 
-/** Saves what is on a drawable's framebuffer as a PNG file. */
-final class Jogl4FramebufferCaptureRenderer {
-    private Jogl4FramebufferCaptureRenderer() {
+/** Reads a drawable's color buffer into a Vitral image. */
+final class Jogl4FramebufferReaderHelper {
+    private Jogl4FramebufferReaderHelper() {
     }
 
     /** Must run with the GL context current (for example through GLCanvas.invoke). */
-    static Path writePng(GLAutoDrawable drawable, GL4 gl, Path output) {
+    static RGBImageUncompressed readColorBuffer(GLAutoDrawable drawable, GL4 gl) {
         int width = Math.max(1, drawable.getSurfaceWidth());
         int height = Math.max(1, drawable.getSurfaceHeight());
         ByteBuffer pixels = ByteBuffer.allocateDirect(3 * width * height);
@@ -30,16 +27,6 @@ final class Jogl4FramebufferCaptureRenderer {
                 image.putPixel(x, y, pixels.get(k++), pixels.get(k++), pixels.get(k++));
             }
         }
-        try {
-            Path parent = output.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            ImagePersistence.exportPNG(output.toFile(), image);
-            return output.toAbsolutePath();
-        }
-        catch (Exception e) {
-            throw new IllegalStateException("Could not write viewer snapshot: " + e.getMessage(), e);
-        }
+        return image;
     }
 }

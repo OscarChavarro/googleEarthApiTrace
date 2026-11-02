@@ -77,7 +77,7 @@ setting. It starts on triangle edge and is not saved in `state.json`.
 
 | | Triangle edge | Diamond-square |
 | --- | --- | --- |
-| Reference | Miller 1986, figure 1 | Miller 1986, figure 2 |
+| Reference | Figure [MILL1986a].1 | Figure [MILL1986a].2 |
 | Traversal | Row by row, same diagonal in every cell | Recursive bisection from the tile's four quadrants |
 | Vertices per tile | 256 x 256 | 257 x 257 (stored samples 0 to 256) |
 | Triangles per tile | 130,050 | 131,072 |
@@ -86,7 +86,7 @@ setting. It starts on triangle edge and is not saved in `state.json`.
 Each tile still draws the PNG of its own level in both schemes, so color deeper
 than the geometry is not used yet.
 
-The diamond-square traversal is the triangulation of Lindstrom et al. 1996. An
+The diamond-square traversal is the triangulation of [LIND1996]. An
 implementation of that algorithm would supply a `TerrainVertexSelection`, which
 decides which vertices are in the mesh. Today all of them are: projected error
 metrics, vertex dependencies and per-frame refinement are not implemented.
@@ -98,10 +98,9 @@ Tiles are the cache pages in this viewer: elevation rasters, palette images,
 memory budgets allow. This lets camera movement reuse nearby pages and load
 new detail in the background.
 
-All tile caches use access-ordered LRU eviction. Rendering a tile renews a
-monotonic `System.nanoTime()` access timestamp for its resident DEM page and
-for its derived GPU resource. When a budget is exceeded, the least recently
-viewed page is evicted first. The RAM cache has one shared LRU order for DEM
+All tile caches use access-ordered LRU eviction. Rendering a tile renews both
+its resident DEM page and its derived GPU resource in their LRU orders. When a
+budget is exceeded, the least recently viewed page is evicted first. The RAM cache has one shared LRU order for DEM
 rasters and transient palette images; the 2D texture cache and terrain-mesh
 cache maintain their own GPU LRU orders.
 
@@ -115,6 +114,50 @@ The RAM budget defaults to 80% of the JVM maximum heap. `PLANET_DEM_RAM_CACHE_BY
 can request a smaller explicit byte budget (still capped at that safe heap
 fraction). Texture and terrain-mesh GPU budgets are each configured at 512 MiB.
 
+## Graphics backend layering
+
+The package `planetdemviewer.render.jogl4` is a thin layer whose only job is to
+control the GPU: shaders, buffers, textures, draw calls and reading the color
+buffer. Every method in it depends directly or indirectly on OpenGL. Everything
+else is in `planetdemviewer.render`, which uses no graphics API:
+
+- which tiles a frame shows, and which texture or mesh each one uses;
+- cache and memory budget policies;
+- picking, geometry, and the content and layout of text;
+- the state of the viewer, which the application reaches through
+  `PlanetViewerSession`.
+
+The backend does no input/output either. It returns a captured image as a Vitral
+image, and the application decides whether to save it. Images are Vitral images
+throughout, so that `render`, its backend and the loaders do not depend on AWT.
+Text goes through the `TextRasterizer` interface. Because Vitral has no font
+rasterizer that works without AWT, the application gives the renderer
+`gui.awt.AwtTextRasterizerHelper`.
+
+There are three reasons to keep this separation:
+
+- **Portability.** Moving to another API, such as Vulkan or Metal, should mean
+  replacing `render/jogl4` and not rewriting the viewer's behavior.
+- **Testability.** Logic in `render` runs in unit tests without a GL context or a
+  display.
+- **Clarity.** Algorithms read as algorithms, without graphics API calls mixed in,
+  and GPU code is easy to find and review.
+
+`RenderBackendBoundaryTest` checks part of this rule. The application classes
+`Main` and `InteractiveViewer` still use JOGL directly to create the canvas and its
+animator.
+
+## Bibliography
+
+The folder `doc/references` at the repository root (`../doc/references` from this
+project) contains the papers that guide the implementation of this system.
+
+The code keeps the terminology of these papers, so that a person can easily
+recognize the concepts of the literature in it. As far as possible, code that
+implements a specific algorithm cites the work it comes from, down to the equation,
+section or figure, with keys such as `[MILL1986a]` that match the names of the PDF
+files. `AGENTS.md` describes the citation format.
+
 ## Requirements
 
 - Java 17
@@ -122,6 +165,12 @@ fraction). Texture and terrain-mesh GPU budgets are each configured at 512 MiB.
 - An OpenGL 4-capable environment for interactive or offscreen rendering
 
 The project uses JOGL and Vitral 1.4.
+
+PNG files load faster with Vitral's native reader, which is optional and needs
+libpng. Build it from Vitral's `pkgs/NativeImageReader` project. `run.sh` looks for
+it in `$HOME/VITRAL/vitral/pkgs/NativeImageReader/build`, and the
+`VSDK_NATIVE_LIB_PATH` environment variable selects another folder. Without it,
+Vitral reads them through AWT.
 
 ## Run the viewer
 

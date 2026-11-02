@@ -15,19 +15,23 @@ import planetdemviewer.gui.LoadPyramidalImageDialog;
 import planetdemviewer.gui.MouseInteractionTechnique;
 import planetdemviewer.gui.ViewActions;
 import planetdemviewer.gui.awt.AwtMainWindow;
+import planetdemviewer.io.ViewerSnapshotWriter;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.dialog.LayerTreePresenter;
+import planetdemviewer.render.PlanetViewerSession;
 import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
 import planetdemviewer.state.ApplicationStateStore;
 import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.animation.AnimationEvent;
 import vsdk.toolkit.animation.AnimationEventGenerator;
 import vsdk.toolkit.animation.AnimationListener;
+import vsdk.toolkit.media.RGBImageUncompressed;
 
 @SuppressWarnings("removal")
 public class InteractiveViewer extends Applet {
     private final PlanetViewerModel model;
+    private final PlanetViewerSession session;
     private final Jogl4PlanetViewerRenderer renderer;
 
     private boolean closing;
@@ -40,8 +44,9 @@ public class InteractiveViewer extends Applet {
     private Thread animatorThread;
     private Animator joglAnimator;
 
-    public InteractiveViewer(PlanetViewerModel model, Jogl4PlanetViewerRenderer renderer) {
-        this.model = model;
+    public InteractiveViewer(PlanetViewerSession session, Jogl4PlanetViewerRenderer renderer) {
+        this.model = session.model();
+        this.session = session;
         this.renderer = renderer;
     }
 
@@ -66,12 +71,12 @@ public class InteractiveViewer extends Applet {
             Configuration.GUI_DIRECTORY, Configuration.DEFAULT_GUI_LANGUAGE, this::requestClose, model);
         canvas = renderer.createCanvas();
         // JOGL owns its GL context on its animator thread. Tile I/O only updates caches.
-        renderer.setRepaintOnTileReady(() -> { });
+        session.setRepaintOnTileReady(() -> { });
         mouseInteraction = new MouseInteractionTechnique(
             model,
-            renderer.getCameraController(),
-            renderer::selectViewAtPixel,
-            renderer::selectTerrainAtPixel,
+            session.getCameraController(),
+            session::selectViewAtPixel,
+            session::selectTerrainAtPixel,
             () -> { },
             canvas::requestFocusInWindow
         );
@@ -79,27 +84,27 @@ public class InteractiveViewer extends Applet {
         canvas.addMouseMotionListener(mouseInteraction);
         canvas.addMouseWheelListener(mouseInteraction);
         ViewActions viewActions = new ViewActions(
-            renderer::cycleSelectedView,
-            renderer::cycleLayoutStyle,
-            renderer::toggleCameraFrustumsVisible,
-            renderer::addView,
-            renderer::removeView,
-            renderer::getSelectedViewRenderingConfiguration
+            session::cycleSelectedView,
+            session::cycleLayoutStyle,
+            session::toggleCameraFrustumsVisible,
+            session::addView,
+            session::removeView,
+            session::getSelectedViewRenderingConfiguration
         );
         keyboardInteraction = new KeyboardInteractionTechniques(
             model,
             this::requestClose,
-            renderer.getCameraController(),
+            session.getCameraController(),
             () -> { },
             () -> LoadPyramidalImageDialog.showAndLoad(canvas, model, canvas::repaint),
             viewActions,
-            renderer::cyclePalette,
-            renderer::toggleTerrainTileBoundsVisible,
-            renderer::toggleUniformLodVisible,
+            session::cyclePalette,
+            session::toggleTerrainTileBoundsVisible,
+            session::toggleUniformLodVisible,
             this::saveState,
             this::clearState,
-            renderer::toggleImageryVisible,
-            renderer::deleteSelectedImageryTile,
+            session::toggleImageryVisible,
+            session::deleteSelectedImageryTile,
             this::requestFullScreenToggle
         );
         canvas.addKeyListener(keyboardInteraction);
@@ -150,14 +155,14 @@ public class InteractiveViewer extends Applet {
 
     public void setGeometryModeFromMcp(boolean enabled) throws Exception {
         runOnEventThread(() -> {
-            renderer.setGeometryMode(enabled);
+            session.setGeometryMode(enabled);
             canvas.repaint();
         });
     }
 
     public void setTileBoundsFromMcp(boolean enabled) throws Exception {
         runOnEventThread(() -> {
-            renderer.setTerrainTileBoundsVisible(enabled);
+            session.setTerrainTileBoundsVisible(enabled);
             canvas.repaint();
         });
     }
@@ -179,23 +184,24 @@ public class InteractiveViewer extends Applet {
 
     /** Sends a top-left-origin physical capture pixel to terrain selection through the local MCP endpoint. */
     public void clickViewportFromMcp(int xPixel, int yPixelFromTop) throws Exception {
-        runOnEventThread(() -> model.writeLocked(() -> renderer.selectTerrainAtSurfacePixel(
+        runOnEventThread(() -> model.writeLocked(() -> session.selectTerrainAtSurfacePixel(
             xPixel, yPixelFromTop)));
     }
 
     public String cameraModelJsonFromMcp() throws Exception {
         final String[] response = new String[1];
-        runOnEventThread(() -> response[0] = renderer.selectedCameraModelJson());
+        runOnEventThread(() -> response[0] = session.selectedCameraModelJson());
         return response[0];
     }
 
     public Path captureSnapshotFromMcp() throws Exception {
         Path output = Files.createTempFile("planetdemviewer-mcp-", ".png");
+        RGBImageUncompressed[] image = new RGBImageUncompressed[1];
         canvas.invoke(true, drawable -> {
-            renderer.captureSnapshot(drawable, drawable.getGL().getGL4(), output);
+            image[0] = renderer.readColorBuffer(drawable);
             return true;
         });
-        return output.toAbsolutePath();
+        return ViewerSnapshotWriter.writePng(image[0], output);
     }
 
     public void setMcpServer(AutoCloseable server) {
@@ -204,7 +210,7 @@ public class InteractiveViewer extends Applet {
 
     private void saveState() {
         try {
-            ApplicationStateStore.save(ApplicationStateStore.DEFAULT_PATH, model, renderer);
+            ApplicationStateStore.save(ApplicationStateStore.DEFAULT_PATH, model, session);
             model.setHudStatus("Saved state.json");
         }
         catch (Exception e) {

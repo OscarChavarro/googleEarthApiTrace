@@ -1,72 +1,65 @@
-package planetdemviewer.render.jogl4;
+package planetdemviewer.render;
 
-import com.jogamp.opengl.GL;
-import com.jogamp.opengl.GL4;
-import java.awt.Color;
-import java.awt.Font;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
-import planetdemviewer.render.FrameRateCounter;
-import planetdemviewer.render.HudFrameStats;
-import planetdemviewer.render.View;
-import planetdemviewer.render.ViewportLayout;
 import planetdemviewer.scene.TerrainSurfaceSelection;
 import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import vsdk.toolkit.common.color.ColorRgb;
 
-/** Writes the localized status text, the frame statistics and the selected surface point over the canvas. */
-final class Jogl4HudRenderer {
+/** Composes the localized status text, the frame statistics and the selected surface point. */
+public final class HudContent {
     private static final long BYTES_PER_MB = 1024L * 1024L;
-    private static final Color SELECTION_COLOR = new Color(45, 125, 205);
+    private static final ColorRgb SELECTION_COLOR = new ColorRgb(45 / 255.0, 125 / 255.0, 205 / 255.0);
     private static final int STATUS_LEFT = 16;
     private static final int STATUS_TOP_MARGIN = 24;
     private static final int STATUS_LINE_HEIGHT = 22;
+    private static final int PERFORMANCE_RIGHT_MARGIN = 18;
 
     private final PlanetViewerModel model;
     private final ViewportLayout viewports;
     private final FrameRateCounter frameRate = new FrameRateCounter(System.nanoTime());
-    private Jogl4TextRenderer statusText;
-    private Jogl4TextRenderer selectionText;
-    private Jogl4TextRenderer performanceText;
 
-    Jogl4HudRenderer(PlanetViewerModel model, ViewportLayout viewports) {
+    HudContent(PlanetViewerModel model, ViewportLayout viewports) {
         this.model = model;
         this.viewports = viewports;
     }
 
-    void init() {
-        statusText = new Jogl4TextRenderer(new Font("SansSerif", Font.BOLD, 16));
-        selectionText = new Jogl4TextRenderer(new Font("Arial", Font.PLAIN, 32));
-        performanceText = new Jogl4TextRenderer(new Font("Arial", Font.BOLD, 32));
-    }
-
-    void dispose(GL4 gl) {
-        if (statusText == null) {
-            return;
-        }
-        statusText.dispose(gl);
-        selectionText.dispose(gl);
-        performanceText.dispose(gl);
-        statusText = null;
-        selectionText = null;
-        performanceText = null;
-    }
-
-    void draw(GL4 gl, int canvasWidth, int canvasHeight, HudFrameStats stats) {
+    void frameRendered() {
         frameRate.frameRendered(System.nanoTime());
-        if (statusText == null) {
-            return;
-        }
-        gl.glDisable(GL.GL_DEPTH_TEST);
+    }
+
+    List<TextLabel> labels(int canvasWidth, int canvasHeight, HudFrameStats stats) {
+        List<TextLabel> labels = new ArrayList<>();
         int baseline = canvasHeight - STATUS_TOP_MARGIN;
         for (String line : statusLines(stats)) {
-            statusText.draw(gl, line, STATUS_LEFT, baseline, canvasWidth, canvasHeight);
+            labels.add(TextLabel.left(line, TextStyle.STATUS, STATUS_LEFT, baseline, TextLabel.WHITE));
             baseline -= STATUS_LINE_HEIGHT;
         }
-        drawPerformance(gl, canvasWidth, canvasHeight, stats);
-        drawSelection(gl, canvasWidth, canvasHeight);
+        int right = canvasWidth - PERFORMANCE_RIGHT_MARGIN;
+        labels.add(TextLabel.rightAligned(model.text("IDM_HUD_FPS", frameRate.framesPerSecond()),
+            TextStyle.PERFORMANCE, right, 94, TextLabel.YELLOW));
+        labels.add(TextLabel.rightAligned(model.text("IDM_HUD_TILE_RAM", formatBytes(stats.tileRamBytes())),
+            TextStyle.PERFORMANCE, right, 58, TextLabel.YELLOW));
+        labels.add(TextLabel.rightAligned(model.text("IDM_HUD_TILE_GPU", formatBytes(stats.totalGpuBytes())),
+            TextStyle.PERFORMANCE, right, 22, TextLabel.YELLOW));
+        TerrainSurfaceSelection selection = model.getTerrainSurfaceSelection();
+        if (selection != null) {
+            labels.add(TextLabel.left(model.text("IDM_HUD_SURFACE",
+                String.format(Locale.ROOT, "%.6f", selection.position().longitude()),
+                String.format(Locale.ROOT, "%.6f", selection.position().latitude()),
+                String.format(Locale.ROOT, "%.2f", selection.heightAboveMeanSeaLevelMetres())),
+                TextStyle.SELECTION, 16, 76, SELECTION_COLOR));
+            labels.add(TextLabel.left(model.text("IDM_HUD_SELECTED_TILE",
+                selection.tile().quadkey(), selection.tile().level(),
+                String.format(Locale.ROOT, "%.2f", selection.geoidXMetres()),
+                String.format(Locale.ROOT, "%.2f", selection.geoidYMetres())),
+                TextStyle.SELECTION, 16, 38, SELECTION_COLOR));
+        }
+        return labels;
     }
 
     List<String> statusLines(HudFrameStats stats) {
@@ -86,33 +79,6 @@ final class Jogl4HudRenderer {
             model.text("IDM_HUD_PALETTE", model.getPalettes().selectedName(),
                 model.getPalettes().minimumElevation(), model.getPalettes().maximumElevation()),
             model.text("IDM_HUD_KEYS"));
-    }
-
-    private void drawPerformance(GL4 gl, int canvasWidth, int canvasHeight, HudFrameStats stats) {
-        int right = canvasWidth - 18;
-        performanceText.drawRightAligned(gl, model.text("IDM_HUD_FPS", frameRate.framesPerSecond()),
-            right, 94, canvasWidth, canvasHeight, Color.YELLOW);
-        performanceText.drawRightAligned(gl, model.text("IDM_HUD_TILE_RAM", formatBytes(stats.tileRamBytes())),
-            right, 58, canvasWidth, canvasHeight, Color.YELLOW);
-        performanceText.drawRightAligned(gl, model.text("IDM_HUD_TILE_GPU", formatBytes(stats.totalGpuBytes())),
-            right, 22, canvasWidth, canvasHeight, Color.YELLOW);
-    }
-
-    private void drawSelection(GL4 gl, int canvasWidth, int canvasHeight) {
-        TerrainSurfaceSelection selection = model.getTerrainSurfaceSelection();
-        if (selection == null) {
-            return;
-        }
-        selectionText.draw(gl, model.text("IDM_HUD_SURFACE",
-            String.format(Locale.ROOT, "%.6f", selection.position().longitude()),
-            String.format(Locale.ROOT, "%.6f", selection.position().latitude()),
-            String.format(Locale.ROOT, "%.2f", selection.heightAboveMeanSeaLevelMetres())),
-            16, 76, canvasWidth, canvasHeight, SELECTION_COLOR);
-        selectionText.draw(gl, model.text("IDM_HUD_SELECTED_TILE",
-            selection.tile().quadkey(), selection.tile().level(),
-            String.format(Locale.ROOT, "%.2f", selection.geoidXMetres()),
-            String.format(Locale.ROOT, "%.2f", selection.geoidYMetres())),
-            16, 38, canvasWidth, canvasHeight, SELECTION_COLOR);
     }
 
     private String viewSummary() {

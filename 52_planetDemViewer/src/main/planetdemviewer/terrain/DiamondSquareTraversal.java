@@ -3,15 +3,23 @@ package planetdemviewer.terrain;
 import planetdemviewer.model.DemTile;
 
 /**
- * Diamond-square subdivision (Miller 1986, figure 2) as a recursive walk over
- * the 2^8+1 samples between stored coordinates 0 and 256. The last sample of a
+ * Diamond-square subdivision as a recursive walk over the 2^8+1 samples between stored coordinates 0 and 256. The last sample of a
  * tile is the first sample of its east or south neighbour, so all of them can
  * be rendered without skipping any.
  *
- * <p>The walk starts from the tile's four quadrants, each with its apex on the
- * tile center, and bisects each triangle at the midpoint of its hypotenuse.
- * That is the triangulation and quadrant layout of Lindstrom et al. (1996,
- * figure 2), so their algorithm only has to supply a {@link TerrainVertexSelection}.</p>
+ * <p>References:</p>
+ * <ul>
+ * <li>[MILL1986a] Miller, G. S. P. "The Definition and Rendering of Terrain Maps",
+ * SIGGRAPH 1986.</li>
+ * <li>[LIND1996] Lindstrom, P. et al. "Real-Time, Continuous Level of Detail
+ * Rendering of Height Fields", SIGGRAPH 1996.</li>
+ * </ul>
+ *
+ * <p>This is the subdivision of figure [MILL1986a].2 at the DEM spacing; subdividing
+ * below that spacing is not implemented. The walk starts from the tile's four
+ * quadrants, each with its apex on the tile center, and bisects each triangle at the
+ * midpoint of its hypotenuse. That is the triangulation and quadrant layout of figure
+ * [LIND1996].2, so that algorithm only has to supply a {@link TerrainVertexSelection}.</p>
  */
 public final class DiamondSquareTraversal implements TerrainGridTraversal {
     private static final int LAST = DemTile.CORE_SIZE;

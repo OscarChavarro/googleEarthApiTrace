@@ -1,7 +1,6 @@
 package planetdemviewer.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import java.awt.image.BufferedImage;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
@@ -10,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.palette.PaletteCatalog;
+import vsdk.toolkit.media.RGBAImageUncompressed;
+import vsdk.toolkit.media.RGBAPixel;
 
 class DemTileTest {
     @TempDir Path temporaryDirectory;
@@ -32,12 +33,14 @@ class DemTileTest {
             Configuration.MINIMUM_ELEVATION_METRES,
             Configuration.MAXIMUM_ELEVATION_METRES
         );
-        BufferedImage image = tile.colorizeCore(palettes);
+        RGBAImageUncompressed image = tile.colorizeCore(palettes);
 
         assertEquals(12_000, tile.elevation(0, 0));
         assertEquals(1_234, tile.elevation(1, 1));
-        assertEquals(256, image.getWidth());
-        assertEquals(palettes.snapshot().argbFor((short) 1_234), image.getRGB(0, 0));
+        assertEquals(256, image.getXSize());
+        RGBAPixel northWest = image.getPixel(0, 0);
+        int argb = (northWest.a & 255) << 24 | (northWest.r & 255) << 16 | (northWest.g & 255) << 8 | northWest.b & 255;
+        assertEquals(palettes.snapshot().argbFor((short) 1_234), argb);
     }
 
     @Test

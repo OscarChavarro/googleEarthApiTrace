@@ -28,6 +28,9 @@ public final class ArgumentParser {
         int width = intArgValue(args, "--width", DEFAULT_OFFLINE_WIDTH);
         int height = intArgValue(args, "--height", DEFAULT_OFFLINE_HEIGHT);
         String output = stringArgValue(args, "--output", DEFAULT_OFFLINE_OUTPUT);
+        if (output.isBlank()) {
+            output = DEFAULT_OFFLINE_OUTPUT;
+        }
         StorageProfile storageProfile = StorageProfile.parse(stringArgValue(args, "--storage-profile", "slow"));
         int mcpPort = intArgValue(args, "--mcp-port", 0);
         List<String> folders = parsePositionalArgs(args);

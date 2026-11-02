@@ -3,17 +3,14 @@ package planetdemviewer.render.jogl4;
 import com.jogamp.common.nio.Buffers;
 import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL4;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
+import java.util.List;
+import planetdemviewer.render.RasterizedText;
+import planetdemviewer.render.TextLabel;
+import planetdemviewer.render.TextRasterizer;
 import vsdk.toolkit.render.jogl.Jogl4ShaderProgramUtil;
 
-/** Renders Java2D glyphs as a textured screen-space quad on a GL4 core context. */
+/** Shows rasterized text as a textured screen-space quad on a GL4 core context. */
 final class Jogl4TextRenderer {
     private static final String VERTEX_SHADER = """
         #version 410 core
@@ -35,77 +32,29 @@ final class Jogl4TextRenderer {
         }
         """;
 
-    private final Font font;
+    private final TextRasterizer rasterizer;
     private int program;
     private int vao;
     private int vbo;
     private int texture;
 
-    Jogl4TextRenderer(Font font) {
-        this.font = font;
+    Jogl4TextRenderer(TextRasterizer rasterizer) {
+        this.rasterizer = rasterizer;
     }
 
-    /** x and baselineY are window pixel coordinates with a bottom-left origin. */
-    void draw(GL4 gl, String text, int x, int baselineY, int canvasWidth, int canvasHeight) {
-        draw(gl, text, x, baselineY, canvasWidth, canvasHeight, Color.WHITE);
+    void draw(GL4 gl, List<TextLabel> labels, int canvasWidth, int canvasHeight) {
+        for (TextLabel label : labels) {
+            draw(gl, label, canvasWidth, canvasHeight);
+        }
     }
 
-    void drawCentered(GL4 gl, String text, int centerX, int baselineY, int canvasWidth, int canvasHeight,
-                      Color color) {
-        draw(gl, text, centerX - textWidth(text) / 2, baselineY, canvasWidth, canvasHeight, color);
-    }
-
-    void drawRightAligned(GL4 gl, String text, int rightX, int baselineY,
-                          int canvasWidth, int canvasHeight, Color color) {
-        draw(gl, text, rightX - textWidth(text), baselineY, canvasWidth, canvasHeight, color);
-    }
-
-    /** x and baselineY are window pixel coordinates with a bottom-left origin. */
-    void draw(GL4 gl, String text, int x, int baselineY, int canvasWidth, int canvasHeight, Color color) {
-        if (text == null || text.isEmpty()) {
+    void draw(GL4 gl, TextLabel label, int canvasWidth, int canvasHeight) {
+        RasterizedText text = rasterizer.rasterize(label, canvasWidth, canvasHeight);
+        if (text == null) {
             return;
         }
         ensureInitialized(gl);
-        BufferedImage measure = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D measureGraphics = measure.createGraphics();
-        measureGraphics.setFont(font);
-        FontMetrics metrics = measureGraphics.getFontMetrics();
-        int width = Math.max(1, metrics.stringWidth(text) + 2);
-        int height = Math.max(1, metrics.getHeight() + 2);
-        int descent = metrics.getDescent();
-        measureGraphics.dispose();
-
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = image.createGraphics();
-        graphics.setFont(font);
-        graphics.setColor(color == null ? Color.WHITE : color);
-        graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-            RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        graphics.drawString(text, 1, metrics.getAscent());
-        graphics.dispose();
-
-        ByteBuffer pixels = Buffers.newDirectByteBuffer(width * height * 4);
-        for (int row = height - 1; row >= 0; row--) {
-            for (int col = 0; col < width; col++) {
-                int argb = image.getRGB(col, row);
-                pixels.put((byte) (argb >>> 16));
-                pixels.put((byte) (argb >>> 8));
-                pixels.put((byte) argb);
-                pixels.put((byte) (argb >>> 24));
-            }
-        }
-        pixels.flip();
-
-        float left = 2.0f * x / canvasWidth - 1.0f;
-        float right = 2.0f * (x + width) / canvasWidth - 1.0f;
-        float bottom = 2.0f * (baselineY - descent - 2) / canvasHeight - 1.0f;
-        float top = 2.0f * (baselineY - descent - 2 + height) / canvasHeight - 1.0f;
-        FloatBuffer vertices = Buffers.newDirectFloatBuffer(new float[] {
-            left, bottom, 0, 0,
-            right, bottom, 1, 0,
-            left, top, 0, 1,
-            right, top, 1, 1
-        });
+        FloatBuffer vertices = Buffers.newDirectFloatBuffer(text.quadVertices());
 
         gl.glEnable(GL.GL_BLEND);
         gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
@@ -113,8 +62,8 @@ final class Jogl4TextRenderer {
         gl.glActiveTexture(GL.GL_TEXTURE0);
         gl.glBindTexture(GL.GL_TEXTURE_2D, texture);
         gl.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1);
-        gl.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL4.GL_RGBA8, width, height, 0,
-            GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixels);
+        gl.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL4.GL_RGBA8, text.image().getXSize(), text.image().getYSize(), 0,
+            GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, text.image().getRawImageDirectBuffer());
         gl.glBindVertexArray(vao);
         gl.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo);
         gl.glBufferSubData(GL.GL_ARRAY_BUFFER, 0, 16L * Float.BYTES, vertices);
@@ -122,15 +71,6 @@ final class Jogl4TextRenderer {
         gl.glBindVertexArray(0);
         gl.glBindTexture(GL.GL_TEXTURE_2D, 0);
         gl.glUseProgram(0);
-    }
-
-    private int textWidth(String text) {
-        BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = image.createGraphics();
-        graphics.setFont(font);
-        int width = graphics.getFontMetrics().stringWidth(text) + 2;
-        graphics.dispose();
-        return width;
     }
 
     private void ensureInitialized(GL4 gl) {

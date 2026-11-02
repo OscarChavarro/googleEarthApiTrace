@@ -1,9 +1,5 @@
-package planetdemviewer.render.jogl4;
+package planetdemviewer.render;
 
-import com.jogamp.opengl.GL;
-import com.jogamp.opengl.GL4;
-import java.awt.Color;
-import java.awt.Font;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,28 +11,15 @@ import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.common.linealAlgebra.Vector4Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
-/** Writes each drawn tile's name and geographic center on the part of the tile that is on screen. */
-final class Jogl4TileLabelRenderer {
-    private Jogl4TextRenderer text;
-
-    void init() {
-        text = new Jogl4TextRenderer(new Font("Arial", Font.PLAIN, 12));
+/** Places each drawn tile's name and geographic center on the part of the tile that is on screen. */
+public final class TileLabelLayout {
+    private TileLabelLayout() {
     }
 
-    void dispose(GL4 gl) {
-        if (text != null) {
-            text.dispose(gl);
-            text = null;
-        }
-    }
-
-    void draw(GL4 gl, List<DrawCommand> commands, Camera camera, int[] viewport, int canvasWidth, int canvasHeight) {
-        if (text == null || commands.isEmpty()) {
-            return;
-        }
+    /** The viewport is {x, y, width, height} in window pixels. */
+    public static List<TextLabel> labels(List<DrawCommand> commands, Camera camera, int[] viewport) {
         Matrix4x4d projection = camera.calculateProjectionMatrix();
-        gl.glViewport(0, 0, canvasWidth, canvasHeight);
-        gl.glDisable(GL.GL_DEPTH_TEST);
+        List<TextLabel> labels = new ArrayList<>();
         for (DrawCommand command : commands) {
             NdcPoint center = visibleViewportCenter(command.corners(), projection);
             if (center == null) {
@@ -44,10 +27,10 @@ final class Jogl4TileLabelRenderer {
             }
             int x = viewport[0] + (int) Math.round((center.x + 1.0) * viewport[2] * 0.5);
             int y = viewport[1] + (int) Math.round((center.y + 1.0) * viewport[3] * 0.5);
-            text.drawCentered(gl, tileName(command), x, y + 6, canvasWidth, canvasHeight, Color.YELLOW);
-            text.drawCentered(gl, geographicCenter(command), x, y - 9, canvasWidth, canvasHeight, Color.YELLOW);
+            labels.add(TextLabel.centered(tileName(command), TextStyle.TILE_LABEL, x, y + 6, TextLabel.YELLOW));
+            labels.add(TextLabel.centered(geographicCenter(command), TextStyle.TILE_LABEL, x, y - 9, TextLabel.YELLOW));
         }
-        gl.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        return labels;
     }
 
     /** Center of the tile portion clipped to the current viewport in NDC, or null if none of it is visible. */

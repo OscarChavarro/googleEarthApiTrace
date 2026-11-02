@@ -2,7 +2,9 @@ package planetdemviewer;
 
 import java.nio.file.Path;
 import java.util.Optional;
+import planetdemviewer.gui.awt.AwtTextRasterizerHelper;
 import planetdemviewer.io.PyramidalImageFolderReader;
+import planetdemviewer.io.ViewerSnapshotWriter;
 import planetdemviewer.logger.Logger;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
@@ -10,8 +12,10 @@ import planetdemviewer.model.PyramidalImage;
 import planetdemviewer.mcp.ViewerMcpServer;
 import planetdemviewer.options.ArgumentParser;
 import planetdemviewer.options.CliArguments;
+import planetdemviewer.render.PlanetViewerSession;
 import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
 import planetdemviewer.state.ApplicationStateStore;
+import vsdk.toolkit.media.RGBImageUncompressed;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
 public class Main {
@@ -52,14 +56,14 @@ public class Main {
         }
 
         var restoredRendererState = ApplicationStateStore.restoreModel(ApplicationStateStore.DEFAULT_PATH, model);
-        Jogl4PlanetViewerRenderer renderer = new Jogl4PlanetViewerRenderer(model,
-            Path.of(cliArguments.getImageryFolder()));
+        PlanetViewerSession session = new PlanetViewerSession(model, Path.of(cliArguments.getImageryFolder()));
         restoredRendererState.ifPresent(state -> {
-            renderer.setTerrainTileBoundsVisible(state.tileBounds());
-            renderer.setUniformLodVisible(state.uniformLod());
+            session.setTerrainTileBoundsVisible(state.tileBounds());
+            session.setUniformLodVisible(state.uniformLod());
             Logger.info("restored state.json");
         });
-        InteractiveViewer interactiveViewer = new InteractiveViewer(model, renderer);
+        InteractiveViewer interactiveViewer = new InteractiveViewer(session,
+            new Jogl4PlanetViewerRenderer(session, new AwtTextRasterizerHelper()));
         interactiveViewer.launchDesktop();
         if (cliArguments.getMcpPort() > 0) {
             try {
@@ -88,8 +92,14 @@ public class Main {
 
     private static void renderOffline(PlanetViewerModel model, CliArguments cliArguments) {
         try {
-            Jogl4PlanetViewerRenderer renderer = new Jogl4PlanetViewerRenderer(model);
-            renderer.startOffscreen(cliArguments.getOutput(), cliArguments.getWidth(), cliArguments.getHeight());
+            Jogl4PlanetViewerRenderer renderer = new Jogl4PlanetViewerRenderer(
+                new PlanetViewerSession(model), new AwtTextRasterizerHelper());
+            RGBImageUncompressed image = renderer.renderOffscreen(cliArguments.getWidth(), cliArguments.getHeight());
+            if (image == null) {
+                System.out.println("Can not start OpenGL/JOGL renderer.");
+                return;
+            }
+            ViewerSnapshotWriter.writePng(image, Path.of(cliArguments.getOutput()));
         }
         catch (Throwable t) {
             System.out.println(

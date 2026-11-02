@@ -1,4 +1,4 @@
-package planetdemviewer.render.jogl4;
+package planetdemviewer.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,18 +9,16 @@ import planetdemviewer.config.Configuration;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
-import planetdemviewer.render.HudFrameStats;
-import planetdemviewer.render.ViewportLayout;
 import planetdemviewer.terrain.TerrainSubdivisionScheme;
 
-class Jogl4HudRendererTest {
+class HudContentTest {
     private static final long MB = 1024L * 1024L;
 
     private final PlanetViewerModel model = new PlanetViewerModel();
     private final GuiController gui = new GuiController(
         Configuration.GUI_DIRECTORY, Configuration.DEFAULT_GUI_LANGUAGE, () -> { }, model);
     private final ViewportLayout viewports = new ViewportLayout(model.getViewingCamera());
-    private final Jogl4HudRenderer hud = new Jogl4HudRenderer(model, viewports);
+    private final HudContent hud = new HudContent(model, viewports);
 
     private List<String> lines(boolean uniformLod) {
         return hud.statusLines(new HudFrameStats(7, 3 * MB, 11, 5 * MB, 0L, 0, uniformLod));
@@ -59,7 +57,7 @@ class Jogl4HudRendererTest {
         String camera = lines(false).get(1);
         assertTrue(camera.contains(model.text("IDM_HUD_VIEW_TITLE", 2)), camera);
         assertEquals(model.text("IDM_HUD_VIEW_TITLE", 1),
-            Jogl4HudRenderer.viewTitle(model, viewports, viewports.mainView()));
+            HudContent.viewTitle(model, viewports, viewports.mainView()));
     }
 
     @Test
@@ -69,10 +67,10 @@ class Jogl4HudRendererTest {
 
     @Test
     void formatsBytesInTheLargestFittingUnit() {
-        assertEquals("0 B", Jogl4HudRenderer.formatBytes(0));
-        assertEquals("1023 B", Jogl4HudRenderer.formatBytes(1023));
-        assertEquals("1.0 KiB", Jogl4HudRenderer.formatBytes(1024));
-        assertEquals("1.5 MiB", Jogl4HudRenderer.formatBytes(MB + MB / 2));
-        assertEquals("2048.0 TiB", Jogl4HudRenderer.formatBytes(2048L * 1024L * 1024L * 1024L * 1024L));
+        assertEquals("0 B", HudContent.formatBytes(0));
+        assertEquals("1023 B", HudContent.formatBytes(1023));
+        assertEquals("1.0 KiB", HudContent.formatBytes(1024));
+        assertEquals("1.5 MiB", HudContent.formatBytes(MB + MB / 2));
+        assertEquals("2048.0 TiB", HudContent.formatBytes(2048L * 1024L * 1024L * 1024L * 1024L));
     }
 }

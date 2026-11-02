@@ -3,30 +3,20 @@ package planetdemviewer.render.jogl4;
 import com.jogamp.common.nio.Buffers;
 import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL4;
-import com.jogamp.opengl.util.texture.Texture;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.Iterator;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import planetdemviewer.config.Configuration;
-import planetdemviewer.io.TileImageLoader;
-import planetdemviewer.io.TileTreeDiscoveryService;
-import planetdemviewer.io.imagery.ImageryTileLoader;
 import planetdemviewer.model.PyramidalImageInstance;
-import planetdemviewer.model.QuadtreeNode;
 import planetdemviewer.processing.DrawCommand;
-import planetdemviewer.render.TerrainPickHit;
-import planetdemviewer.spatial.Ray3;
+import planetdemviewer.render.PlanetViewerSession;
+import planetdemviewer.render.RenderStyles;
+import planetdemviewer.render.TerrainDrawItem;
+import planetdemviewer.render.TerrainFramePlanner;
+import planetdemviewer.render.TerrainFrameSettings;
+import planetdemviewer.render.TerrainMeshBuffers;
+import planetdemviewer.render.TerrainPickFrame;
 import planetdemviewer.spatial.TileAddress;
-import planetdemviewer.spatial.WorldPosition;
-import planetdemviewer.processing.QuadtreeDrawPlanner;
-import planetdemviewer.terrain.TerrainSeamStitcher;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
-import planetdemviewer.terrain.TerrainMeshPlan;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
@@ -40,7 +30,7 @@ import vsdk.toolkit.render.jogl.Jogl4RendererConfigurationShaderSelector;
 import vsdk.toolkit.render.jogl.Jogl4ShaderProgramUtil;
 
 /** Shader-based renderer for regular DEM triangle meshes. */
-public final class Jogl4TerrainRenderer {
+final class Jogl4TerrainRenderer {
     private static final float SURFACE_OFFSET_FACTOR = 1.0f;
     private static final float SURFACE_OFFSET_UNITS = 1.0f;
     private static final float LINE_OFFSET_FACTOR = -1.0f;
@@ -108,190 +98,53 @@ public final class Jogl4TerrainRenderer {
         }
         """;
 
-    private final TerrainSeamStitcher seamStitcher = new TerrainSeamStitcher();
-    /**
-     * Access-order LRU keyed by the complete seam variant, not just the tile.
-     * A border stitched against a coarse neighbour must never replace a mesh
-     * generated for the same tile under a different LOD neighbourhood.
-     */
-    private final Map<String, GpuMesh> meshes = new LinkedHashMap<>(64, 0.75f, true);
-    private final Map<String, Long> meshLastViewedNanos = new LinkedHashMap<>();
-    private final QuadtreeDrawPlanner.LodState lodState = new QuadtreeDrawPlanner.LodState();
+    private final TerrainFramePlanner<Integer, GpuMesh> planner;
+    private final TerrainPickFrame pickFrame;
     private int boundsProgram;
     private int boundsMvpLocation;
     private int boundsColorLocation;
     private int textureProgram;
     private int textureMvpLocation;
-    private long gpuBytes;
-    private final List<PickableMesh> pickableMeshes = new ArrayList<>();
 
-    /** Starts a new visible-terrain snapshot for CPU picking on the next frame. */
-    public void beginPickFrame() {
-        pickableMeshes.clear();
+    Jogl4TerrainRenderer(PlanetViewerSession session) {
+        this.planner = session.newTerrainFramePlanner();
+        this.pickFrame = session.pickFrame();
     }
 
-    public List<DrawCommand> draw(
-        GL4 gl,
-        PyramidalImageInstance instance,
-        Camera cullingCamera,
-        Camera renderingCamera,
-        double relativeScale,
-        double heightExagerationFactor,
-        RendererConfiguration quality,
-        Light light,
-        SimpleMaterial material,
-        TileImageLoader loader,
-        TileTreeDiscoveryService discoveryService,
-        boolean tileBoundsVisible,
-        boolean uniformLod, ImageryTileLoader imageryLoader, boolean imageryEnabled,
-        TileAddress selectedTile,
-        TerrainSubdivisionScheme subdivisionScheme
-    ) {
-        List<DrawCommand> commands = uniformLod
-            ? QuadtreeDrawPlanner.selectUniformLod(instance, cullingCamera, relativeScale)
-            : QuadtreeDrawPlanner.selectTerrain(instance, cullingCamera, relativeScale,
-                heightExagerationFactor, loader, lodState);
-        for (DrawCommand command : commands) {
-            if (discoveryService != null) {
-                discoveryService.requestVisible(instance.getImage(),
-                    command.node().nearestSelfOrAncestorWithTile());
-            }
-        }
-
-        List<TerrainMeshPlan> plans = seamStitcher.plan(commands, subdivisionScheme);
+    List<DrawCommand> draw(GL4 gl, PyramidalImageInstance instance, TerrainFrameSettings settings,
+                           Camera renderingCamera, RendererConfiguration quality, Light light,
+                           SimpleMaterial material) {
+        Jogl4TextureCacheHelper gpu = new Jogl4TextureCacheHelper(gl);
         List<DrawCommand> drawnCommands = new ArrayList<>();
-        Map<String, CompletableFuture<TriangleMesh>> preparations = new LinkedHashMap<>();
-        for (TerrainMeshPlan plan : plans) {
-            if (!meshes.containsKey(plan.variantKey())) {
-                CompletableFuture<TriangleMesh> preparation = seamStitcher.prepare(plan, loader);
-                if (preparation != null) {
-                    preparations.put(plan.variantKey(), preparation);
-                }
-            }
-        }
-
-        for (TerrainMeshPlan plan : plans) {
-            // A resident GPU mesh still represents a visible DEM page. Renew the
-            // source page's LRU timestamp even when no mesh preparation is needed.
-            if (loader != null) {
-                loader.peekElevation(plan.command().node().getTileFile());
-            }
-            GpuMesh mesh = meshes.get(plan.variantKey());
-            if (mesh != null) {
-                meshLastViewedNanos.put(plan.variantKey(), System.nanoTime());
-            }
+        for (TerrainDrawItem item : planner.plan(instance, settings)) {
+            GpuMesh mesh = planner.residentMesh(item.variantKey());
             if (mesh == null) {
-                CompletableFuture<TriangleMesh> preparation = preparations.get(plan.variantKey());
-                if (preparation == null) {
+                if (item.preparation() == null) {
                     continue;
                 }
                 try {
-                    mesh = acquire(gl, plan.variantKey(), preparation.join(), plan.command().node());
+                    mesh = acquire(gl, item);
                 }
                 catch (RuntimeException ignored) {
                     // Keep rendering other tiles; a later frame may retry after cache eviction.
-                    seamStitcher.releasePreparedMesh(plan.variantKey());
                     continue;
                 }
-                seamStitcher.releasePreparedMesh(plan.variantKey());
+                finally {
+                    planner.releasePreparedMesh(item.variantKey());
+                }
             }
-            Matrix4x4d modelMatrix = new Matrix4x4d()
-                .translation(instance.getOffsetX(), instance.getOffsetY(), instance.getZOffset() * 1e-4)
-                .multiply(new Matrix4x4d().scale(
-                    relativeScale,
-                    relativeScale,
-                    relativeScale * heightExagerationFactor));
-            Texture imagery = imageryEnabled && imageryLoader != null
-                ? imageryTextureCache.acquire(gl, TileAddress.fabdem(plan.command().node().getId()), imageryLoader) : null;
+            Matrix4x4d modelMatrix = item.modelMatrix();
+            Integer imagery = planner.acquireImagery(item, gpu);
             drawMesh(gl, mesh, renderingCamera, modelMatrix, quality, light, material, imagery);
-            drawnCommands.add(plan.command());
-            pickableMeshes.add(new PickableMesh(plan.command(), mesh.cpuMesh, modelMatrix,
-                instance.getOffsetX(), instance.getOffsetY(), instance.getZOffset() * 1e-4,
-                relativeScale, heightExagerationFactor));
-            boolean selected = selectedTile != null
-                && selectedTile.quadkey().equals(plan.command().node().getId());
-            if (tileBoundsVisible || selected) {
+            drawnCommands.add(item.command());
+            pickFrame.meshDrawn(item, mesh.cpuMesh);
+            float[] color = item.boundsColor();
+            if (color != null) {
                 drawBounds(gl, mesh.bounds, renderingCamera.calculateProjectionMatrix().multiply(modelMatrix),
-                    1.0f, 1.0f, selected ? 0.0f : 1.0f);
+                    color[0], color[1], color[2]);
             }
         }
         return List.copyOf(drawnCommands);
-    }
-
-    /** Intersects the last rendered terrain frontier using its actual triangle meshes. */
-    public TerrainPickHit intersectVisibleTerrain(Ray3 ray) {
-        TerrainPickHit closest = null;
-        for (PickableMesh pickable : pickableMeshes) {
-            double[] positions = pickable.mesh.getVertexPositions();
-            int[] indices = pickable.mesh.getTriangleIndexes();
-            for (int offset = 0; offset < indices.length; offset += 3) {
-                WorldPosition a = transformed(positions, indices[offset], pickable.modelMatrix);
-                WorldPosition b = transformed(positions, indices[offset + 1], pickable.modelMatrix);
-                WorldPosition c = transformed(positions, indices[offset + 2], pickable.modelMatrix);
-                double distance = rayTriangleDistance(ray, a, b, c);
-                if (Double.isFinite(distance) && (closest == null || distance < closest.distanceMetres())) {
-                    WorldPosition world = pointOnRay(ray, distance);
-                    double localX = (world.x() - pickable.offsetX) / pickable.relativeScale + 0.5;
-                    double localY = (world.y() - pickable.offsetY) / pickable.relativeScale + 0.5;
-                    double elevationMetres = (world.z() - pickable.offsetZ)
-                        / (pickable.relativeScale * pickable.heightExaggeration)
-                        * Configuration.WORLD_WIDTH_METRES;
-                    closest = new TerrainPickHit(pickable.command, world, distance, localX, localY,
-                        elevationMetres);
-                }
-            }
-        }
-        return closest;
-    }
-
-    private static WorldPosition transformed(double[] positions, int vertex, Matrix4x4d matrix) {
-        int offset = vertex * 3;
-        Vector3Dd result = matrix.multiply(new Vector3Dd(
-            positions[offset], positions[offset + 1], positions[offset + 2]));
-        return new WorldPosition(result.x(), result.y(), result.z());
-    }
-
-    private static double rayTriangleDistance(Ray3 ray, WorldPosition a, WorldPosition b, WorldPosition c) {
-        WorldPosition edge1 = subtract(b, a);
-        WorldPosition edge2 = subtract(c, a);
-        WorldPosition p = cross(ray.direction(), edge2);
-        double determinant = dot(edge1, p);
-        if (Math.abs(determinant) < 1e-12) {
-            return Double.NaN;
-        }
-        double inverse = 1.0 / determinant;
-        WorldPosition t = subtract(ray.origin(), a);
-        double u = dot(t, p) * inverse;
-        if (u < 0.0 || u > 1.0) {
-            return Double.NaN;
-        }
-        WorldPosition q = cross(t, edge1);
-        double v = dot(ray.direction(), q) * inverse;
-        if (v < 0.0 || u + v > 1.0) {
-            return Double.NaN;
-        }
-        double distance = dot(edge2, q) * inverse;
-        return distance >= 0.0 ? distance : Double.NaN;
-    }
-
-    private static WorldPosition pointOnRay(Ray3 ray, double distance) {
-        return new WorldPosition(ray.origin().x() + ray.direction().x() * distance,
-            ray.origin().y() + ray.direction().y() * distance,
-            ray.origin().z() + ray.direction().z() * distance);
-    }
-
-    private static WorldPosition subtract(WorldPosition first, WorldPosition second) {
-        return new WorldPosition(first.x() - second.x(), first.y() - second.y(), first.z() - second.z());
-    }
-
-    private static WorldPosition cross(WorldPosition first, WorldPosition second) {
-        return new WorldPosition(first.y() * second.z() - first.z() * second.y(),
-            first.z() * second.x() - first.x() * second.z(),
-            first.x() * second.y() - first.y() * second.x());
-    }
-
-    private static double dot(WorldPosition first, WorldPosition second) {
-        return first.x() * second.x() + first.y() * second.y() + first.z() * second.z();
     }
 
     /** Draws a pre-uploaded min/max box with a constant flat color. */
@@ -306,19 +159,17 @@ public final class Jogl4TerrainRenderer {
         gl.glUniform3f(boundsColorLocation, red, green, blue);
         gl.glBindVertexArray(bounds.vaoId);
         gl.glLineWidth(1.0f);
-        gl.glDrawArrays(GL.GL_LINES, 0, 24);
+        gl.glDrawArrays(GL.GL_LINES, 0, TerrainMeshBuffers.BOUNDS_LINE_VERTICES);
         gl.glBindVertexArray(0);
         gl.glUseProgram(0);
     }
 
-    private final Jogl4ImageryTextureCacheHelper imageryTextureCache = new Jogl4ImageryTextureCacheHelper();
-
-    public void releaseImagerySubtree(GL4 gl, TileAddress subtree) {
-        imageryTextureCache.release(gl, subtree);
+    void releaseImagerySubtree(GL4 gl, TileAddress subtree) {
+        planner.releaseImagerySubtree(subtree, new Jogl4TextureCacheHelper(gl));
     }
 
     private void drawMesh(GL4 gl, GpuMesh mesh, Camera camera, Matrix4x4d modelMatrix,
-                          RendererConfiguration quality, Light light, SimpleMaterial material, Texture imagery) {
+                          RendererConfiguration quality, Light light, SimpleMaterial material, Integer imagery) {
         if (mesh.indexCount == 0) {
             return;
         }
@@ -341,7 +192,7 @@ public final class Jogl4TerrainRenderer {
             setVector3(gl, textureProgram, "cameraPosition", camera.getPosition());
             setVector3(gl, textureProgram, "specularColor", material.getSpecular());
             setFloat(gl, textureProgram, "phongExponent", (float) material.getPhongExponent());
-            gl.glActiveTexture(GL.GL_TEXTURE0); imagery.bind(gl);
+            gl.glActiveTexture(GL.GL_TEXTURE0); gl.glBindTexture(GL.GL_TEXTURE_2D, imagery);
             int sampler = gl.glGetUniformLocation(textureProgram, "tileTexture"); if (sampler >= 0) gl.glUniform1i(sampler, 0);
             renderTriangles(gl, mesh); gl.glUseProgram(0);
         }
@@ -359,11 +210,11 @@ public final class Jogl4TerrainRenderer {
         }
 
         if (quality.isWiresSet()) {
-            RendererConfiguration wireQuality = noLightConfiguration();
+            RendererConfiguration wireQuality = RenderStyles.noLightConfiguration();
             int program = Jogl4RendererConfigurationShaderSelector.selectSurfaceShaderProgram(
                 gl, wireQuality, false, false);
             configureProgram(gl, program, mvp, modelMatrix, modelIt, camera, light,
-                wireMaterial(quality.getWireColor()), wireQuality);
+                RenderStyles.wireMaterial(quality.getWireColor()), wireQuality);
             gl.glEnable(GL4.GL_POLYGON_OFFSET_LINE);
             gl.glPolygonOffset(LINE_OFFSET_FACTOR, LINE_OFFSET_UNITS);
             gl.glPolygonMode(GL.GL_FRONT_AND_BACK, GL4.GL_LINE);
@@ -375,11 +226,11 @@ public final class Jogl4TerrainRenderer {
         }
 
         if (quality.isPointsSet()) {
-            RendererConfiguration pointQuality = noLightConfiguration();
+            RendererConfiguration pointQuality = RenderStyles.noLightConfiguration();
             int program = Jogl4RendererConfigurationShaderSelector.selectSurfaceShaderProgram(
                 gl, pointQuality, false, false);
             configureProgram(gl, program, mvp, modelMatrix, modelIt, camera, light,
-                pointMaterial(), pointQuality);
+                RenderStyles.pointMaterial(), pointQuality);
             gl.glPolygonMode(GL.GL_FRONT_AND_BACK, GL4.GL_FILL);
             gl.glPointSize(3.0f);
             gl.glDepthMask(false);
@@ -422,29 +273,23 @@ public final class Jogl4TerrainRenderer {
         setInt(gl, program, "withBumpMap", 0);
     }
 
-    private GpuMesh acquire(GL4 gl, String key, TriangleMesh generated, QuadtreeNode node) {
-        GpuMesh cached = meshes.get(key);
-        if (cached != null) {
-            meshLastViewedNanos.put(key, System.nanoTime());
-            return cached;
+    private GpuMesh acquire(GL4 gl, TerrainDrawItem item) {
+        TriangleMesh generated = item.preparation().join();
+        TerrainMeshBuffers source = TerrainMeshBuffers.of(generated, item.command().node());
+        GpuMesh uploaded = upload(gl, source, generated);
+        for (GpuMesh evicted : planner.meshUploaded(item.variantKey(), uploaded, source.byteSize())) {
+            delete(gl, evicted);
         }
-        GpuMesh uploaded = upload(gl, generated, node);
-        meshes.put(key, uploaded);
-        meshLastViewedNanos.put(key, System.nanoTime());
-        gpuBytes += uploaded.byteCount;
-        evictToBudget(gl);
         return uploaded;
     }
 
-    private static GpuMesh upload(GL4 gl, TriangleMesh mesh, QuadtreeNode node) {
-        double[] sourcePositions = mesh.getVertexPositions();
-        double[] sourceNormals = mesh.getVertexNormals();
-        int[] indices = mesh.getTriangleIndexes();
-        float[] positions = toFloatArray(sourcePositions);
-        float[] normals = toFloatArray(sourceNormals);
+    private static GpuMesh upload(GL4 gl, TerrainMeshBuffers source, TriangleMesh mesh) {
+        float[] positions = source.positions();
+        float[] normals = source.normals();
+        float[] uvs = source.textureCoordinates();
+        int[] indices = source.indices();
 
         int[] vao = new int[1];
-        float[] uvs = textureCoordinatesFor(sourcePositions, node);
         int[] buffers = new int[4];
         gl.glGenVertexArrays(1, vao, 0);
         gl.glGenBuffers(4, buffers, 0);
@@ -473,43 +318,13 @@ public final class Jogl4TerrainRenderer {
 
         gl.glBindVertexArray(0);
         gl.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
-        GpuBounds bounds = uploadBounds(gl, Bounds.fromPositions(sourcePositions));
-        long bytes = (long) (positions.length + normals.length + uvs.length) * Float.BYTES
-            + (long) indices.length * Integer.BYTES + bounds.byteCount;
+        GpuBounds bounds = uploadBounds(gl, source.boundsLines());
         return new GpuMesh(vao[0], buffers[0], buffers[1], buffers[2], buffers[3],
-            sourcePositions.length / 3, indices.length, bytes,
+            source.vertexCount(), indices.length,
             bounds, mesh);
     }
 
-    /**
-     * Maps the exact square terrain vertex grid to the corresponding PNG.
-     * Edge vertices have s/t values 0 and 1 exactly.  This must not be
-     * reconstructed from global positions: LOD edge stitching can move those
-     * positions beyond the logical tile.  PNG row zero is its top edge.
-     */
-    static float[] textureCoordinatesFor(double[] positions, QuadtreeNode node) {
-        if (positions == null || positions.length % 3 != 0 || node == null) {
-            throw new IllegalArgumentException("Mesh positions and tile node are required");
-        }
-        int vertexCount = positions.length / 3;
-        int gridSize = (int) Math.round(Math.sqrt(vertexCount));
-        if (gridSize < 2 || gridSize * gridSize != vertexCount) {
-            throw new IllegalArgumentException("Terrain imagery requires a square vertex grid");
-        }
-        float[] uvs = new float[vertexCount * 2];
-        for (int vertex = 0; vertex < vertexCount; vertex++) {
-            int row = vertex / gridSize;
-            int column = vertex % gridSize;
-            int uvOffset = vertex * 2;
-            uvs[uvOffset] = (float) column / (gridSize - 1);
-            uvs[uvOffset + 1] = (float) row / (gridSize - 1);
-        }
-        return uvs;
-    }
-
-    /** Computes a tile's min/max strictly from its vertex array, before GPU upload. */
-    private static GpuBounds uploadBounds(GL4 gl, Bounds bounds) {
-        float[] positions = bounds.linePositions();
+    private static GpuBounds uploadBounds(GL4 gl, float[] positions) {
         int[] vao = new int[1];
         int[] vbo = new int[1];
         gl.glGenVertexArrays(1, vao, 0);
@@ -522,45 +337,20 @@ public final class Jogl4TerrainRenderer {
         gl.glVertexAttribPointer(0, 3, GL.GL_FLOAT, false, 0, 0L);
         gl.glBindVertexArray(0);
         gl.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
-        return new GpuBounds(vao[0], vbo[0], (long) positions.length * Float.BYTES);
+        return new GpuBounds(vao[0], vbo[0]);
     }
 
-    private void evictToBudget(GL4 gl) {
-        Iterator<Map.Entry<String, GpuMesh>> iterator = meshes.entrySet().iterator();
-        while (gpuBytes > Configuration.MAX_GPU_TEXTURE_MEMORY && meshes.size() > 1 && iterator.hasNext()) {
-            Map.Entry<String, GpuMesh> oldestEntry = iterator.next();
-            GpuMesh oldest = oldestEntry.getValue();
-            iterator.remove();
-            meshLastViewedNanos.remove(oldestEntry.getKey());
-            delete(gl, oldest);
-            gpuBytes -= oldest.byteCount;
-        }
-    }
-
-    public void dispose(GL4 gl) {
-        for (GpuMesh mesh : meshes.values()) {
-            delete(gl, mesh);
-        }
-        meshes.clear();
-        meshLastViewedNanos.clear();
-        gpuBytes = 0L;
-        seamStitcher.shutdown();
+    void dispose(GL4 gl) {
+        planner.clearMeshes().forEach(mesh -> delete(gl, mesh));
+        planner.shutdown();
         if (boundsProgram != 0) {
             gl.glDeleteProgram(boundsProgram);
             boundsProgram = 0;
             boundsMvpLocation = -1;
         }
         if (textureProgram != 0) { gl.glDeleteProgram(textureProgram); textureProgram = 0; }
-        imageryTextureCache.dispose(gl);
+        planner.clearImagery(new Jogl4TextureCacheHelper(gl));
         Jogl4RendererConfigurationShaderSelector.dispose(gl);
-    }
-
-    public int getResidentMeshCount() {
-        return meshes.size();
-    }
-
-    public long getGpuBytesAssigned() {
-        return gpuBytes;
     }
 
     private static void delete(GL4 gl, GpuMesh mesh) {
@@ -583,36 +373,6 @@ public final class Jogl4TerrainRenderer {
         if (textureProgram != 0) return;
         textureProgram = Jogl4ShaderProgramUtil.createProgramFromSources(gl, TEXTURE_VERTEX_SHADER, TEXTURE_FRAGMENT_SHADER);
         textureMvpLocation = gl.glGetUniformLocation(textureProgram, "mvp");
-    }
-
-    private static RendererConfiguration noLightConfiguration() {
-        RendererConfiguration configuration = new RendererConfiguration();
-        configuration.setTexture(false);
-        configuration.setBumpMap(false);
-        configuration.setShadingType(RendererConfiguration.SHADING_TYPE_NOLIGHT);
-        return configuration;
-    }
-
-    private static SimpleMaterial wireMaterial(ColorRgb color) {
-        SimpleMaterial material = new SimpleMaterial();
-        material = material.withAmbient(new ColorRgb(0.0, 0.0, 0.0));
-        material = material.withDiffuse(color == null ? new ColorRgb(1.0, 1.0, 1.0) : color);
-        return material.withSpecular(new ColorRgb(0.0, 0.0, 0.0));
-    }
-
-    private static SimpleMaterial pointMaterial() {
-        SimpleMaterial material = new SimpleMaterial();
-        material = material.withAmbient(new ColorRgb(0.0, 0.0, 0.0));
-        material = material.withDiffuse(new ColorRgb(1.0, 0.1, 0.1));
-        return material.withSpecular(new ColorRgb(0.0, 0.0, 0.0));
-    }
-
-    private static float[] toFloatArray(double[] source) {
-        float[] result = new float[source.length];
-        for (int i = 0; i < source.length; i++) {
-            result[i] = (float) source[i];
-        }
-        return result;
     }
 
     private static FloatBuffer floatBuffer(float[] data) {
@@ -664,59 +424,10 @@ public final class Jogl4TerrainRenderer {
     }
 
     private record GpuMesh(int vaoId, int positionVboId, int normalVboId, int uvVboId,
-                           int indexBufferId, int vertexCount, int indexCount, long byteCount,
+                           int indexBufferId, int vertexCount, int indexCount,
                            GpuBounds bounds, TriangleMesh cpuMesh) {
     }
 
-    private record PickableMesh(DrawCommand command, TriangleMesh mesh, Matrix4x4d modelMatrix,
-                                double offsetX, double offsetY, double offsetZ,
-                                double relativeScale, double heightExaggeration) {
-    }
-
-    private record GpuBounds(int vaoId, int vboId, long byteCount) {
-    }
-
-    /** Bounds include every tile vertex, independently of its triangle topology. */
-    private record Bounds(double minX, double minY, double minZ,
-                          double maxX, double maxY, double maxZ) {
-        private static Bounds fromPositions(double[] positions) {
-            if (positions.length == 0 || positions.length % 3 != 0) {
-                throw new IllegalArgumentException("Expected complete xyz vertex positions");
-            }
-            double minX = Double.POSITIVE_INFINITY;
-            double minY = Double.POSITIVE_INFINITY;
-            double minZ = Double.POSITIVE_INFINITY;
-            double maxX = Double.NEGATIVE_INFINITY;
-            double maxY = Double.NEGATIVE_INFINITY;
-            double maxZ = Double.NEGATIVE_INFINITY;
-            for (int offset = 0; offset < positions.length; offset += 3) {
-                minX = Math.min(minX, positions[offset]);
-                minY = Math.min(minY, positions[offset + 1]);
-                minZ = Math.min(minZ, positions[offset + 2]);
-                maxX = Math.max(maxX, positions[offset]);
-                maxY = Math.max(maxY, positions[offset + 1]);
-                maxZ = Math.max(maxZ, positions[offset + 2]);
-            }
-            return new Bounds(minX, minY, minZ, maxX, maxY, maxZ);
-        }
-
-        private float[] linePositions() {
-            float[] corners = {
-                (float) minX, (float) minY, (float) minZ,
-                (float) maxX, (float) minY, (float) minZ,
-                (float) maxX, (float) maxY, (float) minZ,
-                (float) minX, (float) maxY, (float) minZ,
-                (float) minX, (float) minY, (float) maxZ,
-                (float) maxX, (float) minY, (float) maxZ,
-                (float) maxX, (float) maxY, (float) maxZ,
-                (float) minX, (float) maxY, (float) maxZ
-            };
-            int[] edges = {0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7};
-            float[] lines = new float[edges.length * 3];
-            for (int vertex = 0; vertex < edges.length; vertex++) {
-                System.arraycopy(corners, edges[vertex] * 3, lines, vertex * 3, 3);
-            }
-            return lines;
-        }
+    private record GpuBounds(int vaoId, int vboId) {
     }
 }

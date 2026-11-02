@@ -1,6 +1,5 @@
 package planetdemviewer.io.imagery;
 
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Set;
@@ -8,15 +7,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import javax.imageio.ImageIO;
 import planetdemviewer.scheduler.LatestRequestQueue;
 import planetdemviewer.spatial.TileAddress;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBAImageUncompressed;
 
 /** Dedicated PNG decoding thread; imagery remains completely idle until requested. */
 public final class ImageryTileLoader {
     private final ImageryTileResolver resolver;
     private final LatestRequestQueue<String, Request> requests = new LatestRequestQueue<>();
-    private final ConcurrentHashMap<TileAddress, BufferedImage> ready = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<TileAddress, RGBAImageUncompressed> ready = new ConcurrentHashMap<>();
     /** Subtrees deleted this session; they stay hidden even while their files are still going away. */
     private final Set<TileAddress> deletedSubtrees = ConcurrentHashMap.newKeySet();
     private final ExecutorService deleter = Executors.newSingleThreadExecutor(task -> {
@@ -37,7 +37,7 @@ public final class ImageryTileLoader {
         if (isDeleted(address)) return;
         resolver.resolve(address).ifPresent(path -> requests.submit(path.toString(), new Request(address, path), 100));
     }
-    public BufferedImage takeReady(TileAddress address) {
+    public RGBAImageUncompressed takeReady(TileAddress address) {
         return isDeleted(address) ? null : ready.remove(address);
     }
 
@@ -61,7 +61,7 @@ public final class ImageryTileLoader {
         while (running) try {
             Request request = requests.take();
             if (isDeleted(request.address)) continue;
-            BufferedImage image = ImageIO.read(request.path.toFile());
+            RGBAImageUncompressed image = ImagePersistence.importRGBA(request.path.toFile());
             if (image != null) {
                 ready.put(request.address, image);
                 // Pairs with deleteSubtree's add-then-purge: one of the two sees the other.
@@ -69,7 +69,7 @@ public final class ImageryTileLoader {
                 Runnable callback = onReady; if (callback != null) callback.run();
             }
         } catch (InterruptedException ex) { Thread.currentThread().interrupt(); return; }
-          catch (IOException ignored) { }
+          catch (Exception ignored) { }
     }
     public void shutdown() { running = false; requests.clear(); ready.clear(); deleter.shutdown(); }
     private record Request(TileAddress address, Path path) { }

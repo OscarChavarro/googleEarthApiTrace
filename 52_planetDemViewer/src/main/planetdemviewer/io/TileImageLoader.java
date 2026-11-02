@@ -1,6 +1,5 @@
 package planetdemviewer.io;
 
-import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
@@ -19,6 +18,7 @@ import planetdemviewer.spatial.TileAddress;
 import planetdemviewer.scheduler.LatestRequestQueue;
 import planetdemviewer.scheduler.ResourceTelemetry;
 import planetdemviewer.scheduler.ResourceType;
+import vsdk.toolkit.media.RGBAImageUncompressed;
 
 /**
  * Asynchronously reads complete 258x258 DEMs, retains their halos in a bounded
@@ -35,7 +35,7 @@ public final class TileImageLoader implements planetdemviewer.io.elevation.Eleva
     private final FabdemElevationNormalizer elevationNormalizer;
     private final ConcurrentHashMap<String, DemTile> elevations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<DemTile>> pendingElevationRequests = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, BufferedImage> readyImages = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, RGBAImageUncompressed> readyImages = new ConcurrentHashMap<>();
     private final Object cacheLock = new Object();
     /** One LRU order across source DEM pages and their transient colour pages. */
     private final LinkedHashMap<CacheKey, Long> residentLru = new LinkedHashMap<>(256, 0.75f, true);
@@ -162,7 +162,7 @@ public final class TileImageLoader implements planetdemviewer.io.elevation.Eleva
         }
     }
 
-    public BufferedImage loadSynchronously(File tileFile) throws IOException {
+    public RGBAImageUncompressed loadSynchronously(File tileFile) throws IOException {
         return getOrRead(tileFile).colorizeCore(palettes);
     }
 
@@ -172,10 +172,10 @@ public final class TileImageLoader implements planetdemviewer.io.elevation.Eleva
         return getOrRead(tileFile);
     }
 
-    public BufferedImage takeReady(File tileFile) {
+    public RGBAImageUncompressed takeReady(File tileFile) {
         String path = tileFile.getAbsolutePath();
         synchronized (cacheLock) {
-            BufferedImage image = readyImages.remove(path);
+            RGBAImageUncompressed image = readyImages.remove(path);
             if (image != null) {
                 residentLru.remove(CacheKey.image(path));
                 imageBytes -= imageBytes(image);
@@ -220,9 +220,9 @@ public final class TileImageLoader implements planetdemviewer.io.elevation.Eleva
         return loaded;
     }
 
-    private void registerReadyImage(String path, BufferedImage image) {
+    private void registerReadyImage(String path, RGBAImageUncompressed image) {
         synchronized (cacheLock) {
-            BufferedImage old = readyImages.put(path, image);
+            RGBAImageUncompressed old = readyImages.put(path, image);
             if (old != null) {
                 residentLru.remove(CacheKey.image(path));
                 imageBytes -= imageBytes(old);
@@ -245,7 +245,7 @@ public final class TileImageLoader implements planetdemviewer.io.elevation.Eleva
                 }
             }
             else {
-                BufferedImage evicted = readyImages.remove(oldest.path());
+                RGBAImageUncompressed evicted = readyImages.remove(oldest.path());
                 if (evicted != null) {
                     imageBytes -= imageBytes(evicted);
                 }
@@ -259,8 +259,8 @@ public final class TileImageLoader implements planetdemviewer.io.elevation.Eleva
         residentLru.put(key, System.nanoTime());
     }
 
-    private static long imageBytes(BufferedImage image) {
-        return (long) image.getWidth() * image.getHeight() * Integer.BYTES;
+    private static long imageBytes(RGBAImageUncompressed image) {
+        return image.getRawImageSizeInBytes();
     }
 
     private static TileAddress addressFor(File tileFile) throws IOException {

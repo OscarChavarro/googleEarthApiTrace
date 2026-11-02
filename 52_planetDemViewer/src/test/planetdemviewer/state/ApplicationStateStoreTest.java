@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import planetdemviewer.model.PlanetViewerModel;
-import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
+import planetdemviewer.render.PlanetViewerSession;
 
 class ApplicationStateStoreTest {
     @TempDir
@@ -19,7 +19,7 @@ class ApplicationStateStoreTest {
         Path file = directory.resolve("state.json");
         PlanetViewerModel saved = new PlanetViewerModel();
         saved.setImageryEnabled(false);
-        ApplicationStateStore.save(file, saved, new Jogl4PlanetViewerRenderer(saved));
+        ApplicationStateStore.save(file, saved, new PlanetViewerSession(saved));
 
         PlanetViewerModel restored = new PlanetViewerModel();
         assertTrue(ApplicationStateStore.restoreModel(file, restored).isPresent());
@@ -30,7 +30,7 @@ class ApplicationStateStoreTest {
     void stateFilesWithoutTheImageryChoiceKeepItOn() throws Exception {
         Path file = directory.resolve("state.json");
         PlanetViewerModel saved = new PlanetViewerModel();
-        ApplicationStateStore.save(file, saved, new Jogl4PlanetViewerRenderer(saved));
+        ApplicationStateStore.save(file, saved, new PlanetViewerSession(saved));
         Files.writeString(file, Files.readString(file).replace(", \"imageryEnabled\": true", ""));
         assertFalse(Files.readString(file).contains("imageryEnabled"));
 

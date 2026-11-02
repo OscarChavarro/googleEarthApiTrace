@@ -1,12 +1,12 @@
 package planetdemviewer.model;
 
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import planetdemviewer.palette.PaletteCatalog;
+import vsdk.toolkit.media.RGBAImageUncompressed;
 
 /**
  * Complete DEM tile including halo. Source samples remain available in their
@@ -138,21 +138,27 @@ public final class DemTile {
     }
 
     /** Colorizes only core samples; palette uses canonical WGS84 values rounded to metres. */
-    public BufferedImage colorizeCore(PaletteCatalog palette) {
+    public RGBAImageUncompressed colorizeCore(PaletteCatalog palette) {
         PaletteCatalog.PaletteSnapshot snapshot = palette.snapshot();
-        BufferedImage image = new BufferedImage(CORE_SIZE, CORE_SIZE, BufferedImage.TYPE_INT_ARGB);
-        int[] argb = new int[CORE_SIZE * CORE_SIZE];
+        byte[] rgba = new byte[CORE_SIZE * CORE_SIZE * 4];
         for (int row = 0; row < CORE_SIZE; row++) {
             int storedBase = (row + 1) * STORED_SIZE + 1;
-            int imageBase = row * CORE_SIZE;
+            // Row zero is the north edge, and a Vitral image keeps its bottom row first in memory.
+            int imageBase = (CORE_SIZE - 1 - row) * CORE_SIZE * 4;
             for (int column = 0; column < CORE_SIZE; column++) {
                 int storedIndex = storedBase + column;
-                argb[imageBase + column] = sourceElevations[storedIndex] == NO_DATA
+                int argb = sourceElevations[storedIndex] == NO_DATA
                     ? snapshot.argbFor(NO_DATA)
                     : snapshot.argbFor(toPaletteMetres(canonicalElevations[storedIndex]));
+                int imageIndex = imageBase + column * 4;
+                rgba[imageIndex] = (byte) (argb >>> 16);
+                rgba[imageIndex + 1] = (byte) (argb >>> 8);
+                rgba[imageIndex + 2] = (byte) argb;
+                rgba[imageIndex + 3] = (byte) (argb >>> 24);
             }
         }
-        image.setRGB(0, 0, CORE_SIZE, CORE_SIZE, argb, 0, CORE_SIZE);
+        RGBAImageUncompressed image = new RGBAImageUncompressed();
+        image.setRawImage(CORE_SIZE, CORE_SIZE, rgba);
         return image;
     }
 

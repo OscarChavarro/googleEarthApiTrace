@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
-import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
+import planetdemviewer.render.PlanetViewerSession;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
 
@@ -23,7 +23,7 @@ public final class ApplicationStateStore {
     private ApplicationStateStore() {
     }
 
-    public static void save(Path path, PlanetViewerModel model, Jogl4PlanetViewerRenderer renderer)
+    public static void save(Path path, PlanetViewerModel model, PlanetViewerSession session)
         throws IOException {
         Camera camera = model.getViewingCamera();
         StringBuilder json = new StringBuilder("{\n  \"version\": 1,");
@@ -38,8 +38,8 @@ public final class ApplicationStateStore {
             .append(model.getCurrentPSC()).append(", \"imageryEnabled\": ")
             .append(model.isImageryEnabled()).append("},");
         json.append("\n  \"renderer\": {\"tileBounds\": ")
-            .append(renderer.isTerrainTileBoundsVisible()).append(", \"uniformLod\": ")
-            .append(renderer.isUniformLodVisible()).append("},");
+            .append(session.isTerrainTileBoundsVisible()).append(", \"uniformLod\": ")
+            .append(session.isUniformLodVisible()).append("},");
         json.append("\n  \"instances\": [");
         List<PyramidalImageInstance> instances = model.getStack();
         for (int i = 0; i < instances.size(); i++) {

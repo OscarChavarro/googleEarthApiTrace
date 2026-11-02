@@ -287,21 +287,28 @@ interface FrameEncoder {
 }
 ```
 
-`Jogl4PlanetViewerRenderer`, `Jogl4TerrainRenderer`, `Jogl4TextureCacheHelper`, and
-current shaders make up the present OpenGL implementation; the flat shader
-remains for bounds/HUD and lit shaders remain for surface rendering.
+The package `render/jogl4` is the present OpenGL implementation, and it only
+controls the GPU: shaders, buffers, textures, draw calls and reading the color
+buffer. Every method in it depends directly or indirectly on OpenGL, and it does
+no input/output. Everything else lives in `render`, which does not depend on any
+graphics API, so that another backend only has to replace `render/jogl4`.
 
-`Jogl4PlanetViewerRenderer` only orchestrates a frame: it owns the GL lifecycle
-and the drawing order, and delegates to these collaborators:
+The application talks to `PlanetViewerSession`, and exports the images it obtains
+from `Jogl4PlanetViewerRenderer` through `ViewerSnapshotWriter`.
 
-| Class | Responsibility | Uses OpenGL |
+| In `render` (no graphics API) | Responsibility | Used by, in `render/jogl4` |
 | --- | --- | --- |
-| `ViewportLayout` | The 1 to 4 views, their layout, and which one the camera controller drives | No |
-| `TerrainPicker` | From a pixel to the selected surface point and tile | No |
-| `Jogl4HudRenderer`, `FrameRateCounter` | Status text, frame statistics and selected point | Only to draw |
-| `Jogl4TileLabelRenderer` | Name and center of each drawn tile | Only to draw |
-| `Jogl4ViewOverlayRenderer` | Other cameras' frustums, selection marker, view border | Yes |
-| `Jogl4OfflineStackRenderer`, `Jogl4FramebufferCaptureRenderer` | Windowless rendering and PNG capture | Yes |
+| `PlanetViewerSession` | Loaders, views, selection, user choices; composes each frame's inputs | `Jogl4PlanetViewerRenderer` |
+| `ViewportLayout` | The 1 to 4 views, their layout, and which one the camera controller drives | Through the session |
+| `TerrainPicker`, `TerrainPickFrame` | From a pixel to the selected surface point and tile, on the CPU | `Jogl4TerrainRenderer` reports drawn meshes |
+| `TerrainFramePlanner`, `TerrainMeshBuffers` | LOD selection, seam variants, placement, imagery; arrays to upload | `Jogl4TerrainRenderer` |
+| `PaletteFramePlanner`, `TileQuadGeometry` | LOD selection, texture or ancestor fallback; quad and outline vertices | `Jogl4QuadtreeRenderer` |
+| `GpuResourceCache`, `TileTextureCache`, `TextureUploader`, `GpuResourceUsage` | LRU, memory budget and usage counters; the backend only creates and destroys | `Jogl4TerrainRenderer`, `Jogl4TextureCacheHelper` |
+| `HudContent`, `TileLabelLayout`, `TextLabel`, `TextRasterizer` | What text goes where; its pixels come from `gui.awt.AwtTextRasterizerHelper`, which the application injects | `Jogl4TextRenderer` |
+| `ViewOverlayPlanner` | Which frustums, marker placement, view border | `Jogl4ViewOverlayRenderer` |
+
+`Jogl4OfflineStackRenderer` drives a frame on an offscreen surface, and
+`Jogl4FramebufferReaderHelper` reads the color buffer into a Vitral image.
 
 `BackendCapabilities` remains a backend-neutral architecture boundary. Native
 Vulkan and Metal renderers, if adopted, will be implemented in a separate C++

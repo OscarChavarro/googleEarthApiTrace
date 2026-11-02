@@ -3,8 +3,14 @@ package planetdemviewer.terrain;
 import planetdemviewer.model.DemTile;
 
 /**
- * Triangle edge subdivision (Miller 1986, figure 1) at full resolution: a row
+ * Triangle edge subdivision (figure [MILL1986a].1) at full resolution: a row
  * by row walk that splits every cell along the same diagonal.
+ *
+ * <p>References:</p>
+ * <ul>
+ * <li>[MILL1986a] Miller, G. S. P. "The Definition and Rendering of Terrain Maps",
+ * SIGGRAPH 1986.</li>
+ * </ul>
  *
  * <p>The 258 raster is [west/north halo, 256 core samples, east/south halo].
  * The shared edge is owned by the west/north halo of the tile on its

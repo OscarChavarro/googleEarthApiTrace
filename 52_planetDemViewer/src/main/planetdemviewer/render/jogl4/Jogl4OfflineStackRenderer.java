@@ -7,29 +7,23 @@ import com.jogamp.opengl.GLDrawableFactory;
 import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLOffscreenAutoDrawable;
 import com.jogamp.opengl.GLProfile;
-import java.nio.file.Path;
 import java.util.List;
-import planetdemviewer.io.TileImageLoader;
 import planetdemviewer.model.PyramidalImageInstance;
-import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import planetdemviewer.render.PlanetViewerSession;
+import vsdk.toolkit.media.RGBImageUncompressed;
 import vsdk.toolkit.render.jogl.Jogl4Renderer;
 
-/** Renders the whole stack, top view, to an image file without opening a window. */
+/** Renders the whole stack, top view, on an offscreen surface without opening a window. */
 final class Jogl4OfflineStackRenderer {
-    private static final String DEFAULT_OUTPUT = "/tmp/planetDemViewer_offline.png";
+    private RGBImageUncompressed captured;
 
-    private final String outputPath;
-    private boolean captured;
-
-    Jogl4OfflineStackRenderer(String outputPath) {
-        this.outputPath = outputPath;
-    }
-
-    /** Drives one frame of the listener on an offscreen surface, whose display() calls {@link #drawFrame}. */
-    void run(GLEventListener listener, int width, int height) {
+    /**
+     * Drives one frame of the listener on an offscreen surface, whose display() calls
+     * {@link #drawFrame}. Returns that frame's image, or null when OpenGL is not available.
+     */
+    RGBImageUncompressed run(GLEventListener listener, int width, int height) {
         if (!Jogl4Renderer.verifyOpenGLAvailability()) {
-            System.out.println("Can not start OpenGL/JOGL renderer.");
-            return;
+            return null;
         }
         GLProfile profile = GLProfile.get(GLProfile.GL4);
         GLCapabilities caps = new GLCapabilities(profile);
@@ -55,26 +49,18 @@ final class Jogl4OfflineStackRenderer {
             catch (Exception ignored) {
             }
         }
+        return captured;
     }
 
     void drawFrame(GLAutoDrawable drawable, GL4 gl, List<PyramidalImageInstance> stack,
-                   Jogl4QuadtreeRenderer quadtreeRenderer, boolean wires, TileImageLoader tileImageLoader) {
-        Matrix4x4d projection = topProjection(drawable);
+                   Jogl4QuadtreeRenderer quadtreeRenderer, boolean wires) {
+        var projection = PlanetViewerSession.offlineTopProjection(
+            drawable.getSurfaceWidth(), drawable.getSurfaceHeight());
         for (PyramidalImageInstance instance : stack) {
-            quadtreeRenderer.drawAll(gl, instance, 1.0, projection, wires, tileImageLoader);
+            quadtreeRenderer.drawAll(gl, instance, 1.0, projection, wires);
         }
-        if (!captured) {
-            captured = true;
-            Jogl4FramebufferCaptureRenderer.writePng(drawable, gl, Path.of(outputPath == null || outputPath.isBlank()
-                ? DEFAULT_OUTPUT : outputPath));
+        if (captured == null) {
+            captured = Jogl4FramebufferReaderHelper.readColorBuffer(drawable, gl);
         }
-    }
-
-    private static Matrix4x4d topProjection(GLAutoDrawable drawable) {
-        double aspect = (double) Math.max(1, drawable.getSurfaceWidth()) / Math.max(1, drawable.getSurfaceHeight());
-        double halfHeight = 0.55;
-        double halfWidth = halfHeight * aspect;
-        return new Matrix4x4d().orthogonalProjection(
-            -halfWidth, halfWidth, -halfHeight, halfHeight, -10.0, 10.0);
     }
 }

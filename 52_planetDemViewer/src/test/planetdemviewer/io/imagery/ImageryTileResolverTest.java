@@ -5,15 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import planetdemviewer.spatial.TileAddress;
+import vsdk.toolkit.io.image.ImagePersistence;
+import vsdk.toolkit.media.RGBImageUncompressed;
 
 class ImageryTileResolverTest {
     @TempDir Path temporaryDirectory;
@@ -129,11 +129,12 @@ class ImageryTileResolverTest {
     @Test
     void aDeletedSubtreeIsNoLongerServedButItsSiblingsAre() throws Exception {
         Path pyramid = temporaryDirectory.resolve("toplevel");
-        BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+        RGBImageUncompressed image = new RGBImageUncompressed();
+        image.init(1, 1);
         Files.createDirectories(pyramid.resolve("2/0"));
         Files.createDirectories(pyramid.resolve("3"));
-        ImageIO.write(image, "png", pyramid.resolve("2/0/020.png").toFile());
-        ImageIO.write(image, "png", pyramid.resolve("3/03.png").toFile());
+        ImagePersistence.exportPNG(pyramid.resolve("2/0/020.png").toFile(), image);
+        ImagePersistence.exportPNG(pyramid.resolve("3/03.png").toFile(), image);
         ImageryTileLoader loader = new ImageryTileLoader(pyramid);
         TileAddress child = TileAddress.fabdem("020");
         TileAddress sibling = TileAddress.fabdem("03");
