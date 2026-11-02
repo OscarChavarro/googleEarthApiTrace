@@ -1,27 +1,22 @@
 package planetdemviewer.render.jogl4;
 
-import com.jogamp.common.nio.Buffers;
 import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL4;
-import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
-import java.util.ArrayList;
 import java.util.List;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.render.PlanetViewerSession;
 import planetdemviewer.render.RenderStyles;
-import planetdemviewer.render.TerrainDrawItem;
 import planetdemviewer.render.TerrainFramePlanner;
 import planetdemviewer.render.TerrainFrameSettings;
 import planetdemviewer.render.TerrainMeshBuffers;
-import planetdemviewer.render.TerrainPickFrame;
+import planetdemviewer.render.TerrainMeshDraw;
+import planetdemviewer.render.jogl4.Jogl4TerrainMeshHelper.GpuMesh;
 import planetdemviewer.spatial.TileAddress;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
-import vsdk.toolkit.environment.geometry.surface.TriangleMesh;
 import vsdk.toolkit.environment.light.Light;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 import vsdk.toolkit.environment.material.SimpleMaterial;
@@ -99,74 +94,34 @@ final class Jogl4TerrainRenderer {
         """;
 
     private final TerrainFramePlanner<Integer, GpuMesh> planner;
-    private final TerrainPickFrame pickFrame;
     private int boundsProgram;
     private int boundsMvpLocation;
     private int boundsColorLocation;
     private int textureProgram;
     private int textureMvpLocation;
-    private IntBuffer indexScratch;
 
     Jogl4TerrainRenderer(PlanetViewerSession session) {
         this.planner = session.newTerrainFramePlanner();
-        this.pickFrame = session.pickFrame();
     }
 
     List<DrawCommand> draw(GL4 gl, PyramidalImageInstance instance, TerrainFrameSettings settings,
                            Camera renderingCamera, RendererConfiguration quality, Light light,
                            SimpleMaterial material) {
-        Jogl4TextureCacheHelper gpu = new Jogl4TextureCacheHelper(gl);
-        List<DrawCommand> drawnCommands = new ArrayList<>();
-        List<TerrainDrawItem> items = planner.plan(instance, settings);
-        for (TerrainDrawItem item : items) {
-            if (planner.residentMesh(item.variantKey()) == null && item.preparation() != null) {
-                try {
-                    acquire(gl, item);
-                }
-                catch (RuntimeException ignored) {
-                    // Keep rendering other tiles; a later frame may retry after cache eviction.
-                }
-                finally {
-                    planner.releasePreparedMesh(item.variantKey());
-                }
-            }
-        }
-        // Looked up after every upload, since an upload may evict a mesh of this same frame.
-        List<TerrainDrawItem> drawnItems = new ArrayList<>(items.size());
-        List<GpuMesh> drawnMeshes = new ArrayList<>(items.size());
-        List<TriangleMesh> cpuMeshes = new ArrayList<>(items.size());
-        for (TerrainDrawItem item : items) {
-            GpuMesh mesh = planner.residentMesh(item.variantKey());
-            if (mesh != null) {
-                drawnItems.add(item);
-                drawnMeshes.add(mesh);
-                cpuMeshes.add(mesh.cpuMesh);
-            }
-        }
-        planner.updateTriangles(drawnItems, cpuMeshes, settings, renderingCamera);
-        for (int i = 0; i < drawnItems.size(); i++) {
-            TerrainDrawItem item = drawnItems.get(i);
-            GpuMesh mesh = drawnMeshes.get(i);
-            int[] changedTriangles = planner.trianglesToUpload(mesh.cpuMesh);
-            if (changedTriangles != null) {
-                replaceTriangles(gl, mesh, changedTriangles);
-            }
-            Matrix4x4d modelMatrix = item.modelMatrix();
-            Integer imagery = planner.acquireImagery(item, gpu);
-            drawMesh(gl, mesh, renderingCamera, modelMatrix, quality, light, material, imagery);
-            drawnCommands.add(item.command());
-            pickFrame.meshDrawn(item, mesh.cpuMesh);
-            float[] color = item.boundsColor();
+        List<TerrainMeshDraw<Integer, GpuMesh>> draws = planner.prepareFrame(instance, settings, renderingCamera,
+            new Jogl4TerrainMeshHelper(gl), new Jogl4TextureCacheHelper(gl));
+        for (TerrainMeshDraw<Integer, GpuMesh> draw : draws) {
+            drawMesh(gl, draw, renderingCamera, quality, light, material);
+            float[] color = draw.item().boundsColor();
             if (color != null) {
-                drawBounds(gl, mesh.bounds, renderingCamera.calculateProjectionMatrix().multiply(modelMatrix),
-                    color[0], color[1], color[2]);
+                drawBounds(gl, draw.mesh().bounds, draw.modelViewProjection(), color[0], color[1], color[2]);
             }
         }
-        return List.copyOf(drawnCommands);
+        return TerrainMeshDraw.commands(draws);
     }
 
     /** Draws a pre-uploaded min/max box with a constant flat color. */
-    private void drawBounds(GL4 gl, GpuBounds bounds, Matrix4x4d mvp, float red, float green, float blue) {
+    private void drawBounds(GL4 gl, Jogl4TerrainMeshHelper.GpuBounds bounds, Matrix4x4d mvp,
+                            float red, float green, float blue) {
         if (bounds == null) {
             return;
         }
@@ -175,7 +130,7 @@ final class Jogl4TerrainRenderer {
         gl.glUniformMatrix4fv(boundsMvpLocation, 1, false,
             Jogl4MatrixRenderer.toColumnMajorFloatArray(mvp), 0);
         gl.glUniform3f(boundsColorLocation, red, green, blue);
-        gl.glBindVertexArray(bounds.vaoId);
+        gl.glBindVertexArray(bounds.vaoId());
         gl.glLineWidth(1.0f);
         gl.glDrawArrays(GL.GL_LINES, 0, TerrainMeshBuffers.BOUNDS_LINE_VERTICES);
         gl.glBindVertexArray(0);
@@ -186,13 +141,16 @@ final class Jogl4TerrainRenderer {
         planner.releaseImagerySubtree(subtree, new Jogl4TextureCacheHelper(gl));
     }
 
-    private void drawMesh(GL4 gl, GpuMesh mesh, Camera camera, Matrix4x4d modelMatrix,
-                          RendererConfiguration quality, Light light, SimpleMaterial material, Integer imagery) {
+    private void drawMesh(GL4 gl, TerrainMeshDraw<Integer, GpuMesh> draw, Camera camera,
+                          RendererConfiguration quality, Light light, SimpleMaterial material) {
+        GpuMesh mesh = draw.mesh();
         if (mesh.indexCount == 0) {
             return;
         }
-        Matrix4x4d mvp = camera.calculateProjectionMatrix().multiply(modelMatrix);
-        Matrix4x4d modelIt = modelMatrix.invert().transpose();
+        Integer imagery = draw.imagery();
+        Matrix4x4d modelMatrix = draw.item().modelMatrix();
+        Matrix4x4d mvp = draw.modelViewProjection();
+        Matrix4x4d modelIt = draw.modelInverseTranspose();
 
         gl.glEnable(GL.GL_DEPTH_TEST);
         gl.glDepthFunc(GL.GL_LESS);
@@ -291,87 +249,8 @@ final class Jogl4TerrainRenderer {
         setInt(gl, program, "withBumpMap", 0);
     }
 
-    private GpuMesh acquire(GL4 gl, TerrainDrawItem item) {
-        TriangleMesh generated = item.preparation().join();
-        TerrainMeshBuffers source = TerrainMeshBuffers.of(generated, item.command().node());
-        GpuMesh uploaded = upload(gl, source, generated);
-        for (GpuMesh evicted : planner.meshUploaded(item.variantKey(), uploaded, source.byteSize())) {
-            delete(gl, evicted);
-        }
-        return uploaded;
-    }
-
-    private void replaceTriangles(GL4 gl, GpuMesh mesh, int[] indices) {
-        if (indexScratch == null || indexScratch.capacity() < indices.length) {
-            indexScratch = Buffers.newDirectIntBuffer(indices.length);
-        }
-        indexScratch.clear();
-        indexScratch.put(indices).flip();
-        gl.glBindVertexArray(mesh.vaoId);
-        gl.glBufferData(GL.GL_ELEMENT_ARRAY_BUFFER, (long) indices.length * Integer.BYTES,
-            indexScratch, GL.GL_DYNAMIC_DRAW);
-        gl.glBindVertexArray(0);
-        mesh.indexCount = indices.length;
-    }
-
-    private static GpuMesh upload(GL4 gl, TerrainMeshBuffers source, TriangleMesh mesh) {
-        float[] positions = source.positions();
-        float[] normals = source.normals();
-        float[] uvs = source.textureCoordinates();
-        int[] indices = source.indices();
-
-        int[] vao = new int[1];
-        int[] buffers = new int[4];
-        gl.glGenVertexArrays(1, vao, 0);
-        gl.glGenBuffers(4, buffers, 0);
-        gl.glBindVertexArray(vao[0]);
-
-        gl.glBindBuffer(GL.GL_ARRAY_BUFFER, buffers[0]);
-        gl.glBufferData(GL.GL_ARRAY_BUFFER, (long) positions.length * Float.BYTES,
-            floatBuffer(positions), GL.GL_STATIC_DRAW);
-        gl.glEnableVertexAttribArray(0);
-        gl.glVertexAttribPointer(0, 3, GL.GL_FLOAT, false, 0, 0L);
-
-        gl.glBindBuffer(GL.GL_ARRAY_BUFFER, buffers[1]);
-        gl.glBufferData(GL.GL_ARRAY_BUFFER, (long) normals.length * Float.BYTES,
-            floatBuffer(normals), GL.GL_STATIC_DRAW);
-        gl.glEnableVertexAttribArray(1);
-        gl.glVertexAttribPointer(1, 3, GL.GL_FLOAT, false, 0, 0L);
-
-        gl.glBindBuffer(GL.GL_ARRAY_BUFFER, buffers[2]);
-        gl.glBufferData(GL.GL_ARRAY_BUFFER, (long) uvs.length * Float.BYTES, floatBuffer(uvs), GL.GL_STATIC_DRAW);
-        gl.glEnableVertexAttribArray(2);
-        gl.glVertexAttribPointer(2, 2, GL.GL_FLOAT, false, 0, 0L);
-
-        gl.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, buffers[3]);
-        gl.glBufferData(GL.GL_ELEMENT_ARRAY_BUFFER, (long) indices.length * Integer.BYTES,
-            intBuffer(indices), GL.GL_STATIC_DRAW);
-
-        gl.glBindVertexArray(0);
-        gl.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
-        GpuBounds bounds = uploadBounds(gl, source.boundsLines());
-        return new GpuMesh(vao[0], buffers[0], buffers[1], buffers[2], buffers[3],
-            indices.length, bounds, mesh);
-    }
-
-    private static GpuBounds uploadBounds(GL4 gl, float[] positions) {
-        int[] vao = new int[1];
-        int[] vbo = new int[1];
-        gl.glGenVertexArrays(1, vao, 0);
-        gl.glGenBuffers(1, vbo, 0);
-        gl.glBindVertexArray(vao[0]);
-        gl.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo[0]);
-        gl.glBufferData(GL.GL_ARRAY_BUFFER, (long) positions.length * Float.BYTES,
-            floatBuffer(positions), GL.GL_STATIC_DRAW);
-        gl.glEnableVertexAttribArray(0);
-        gl.glVertexAttribPointer(0, 3, GL.GL_FLOAT, false, 0, 0L);
-        gl.glBindVertexArray(0);
-        gl.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
-        return new GpuBounds(vao[0], vbo[0]);
-    }
-
     void dispose(GL4 gl) {
-        planner.clearMeshes().forEach(mesh -> delete(gl, mesh));
+        planner.clearMeshes(new Jogl4TerrainMeshHelper(gl));
         planner.shutdown();
         if (boundsProgram != 0) {
             gl.glDeleteProgram(boundsProgram);
@@ -381,13 +260,6 @@ final class Jogl4TerrainRenderer {
         if (textureProgram != 0) { gl.glDeleteProgram(textureProgram); textureProgram = 0; }
         planner.clearImagery(new Jogl4TextureCacheHelper(gl));
         Jogl4RendererConfigurationShaderSelector.dispose(gl);
-    }
-
-    private static void delete(GL4 gl, GpuMesh mesh) {
-        gl.glDeleteBuffers(4, new int[] {mesh.positionVboId, mesh.normalVboId, mesh.uvVboId, mesh.indexBufferId}, 0);
-        gl.glDeleteVertexArrays(1, new int[] {mesh.vaoId}, 0);
-        gl.glDeleteBuffers(1, new int[] {mesh.bounds.vboId}, 0);
-        gl.glDeleteVertexArrays(1, new int[] {mesh.bounds.vaoId}, 0);
     }
 
     private void ensureBoundsProgram(GL4 gl) {
@@ -403,18 +275,6 @@ final class Jogl4TerrainRenderer {
         if (textureProgram != 0) return;
         textureProgram = Jogl4ShaderProgramUtil.createProgramFromSources(gl, TEXTURE_VERTEX_SHADER, TEXTURE_FRAGMENT_SHADER);
         textureMvpLocation = gl.glGetUniformLocation(textureProgram, "mvp");
-    }
-
-    private static FloatBuffer floatBuffer(float[] data) {
-        FloatBuffer buffer = Buffers.newDirectFloatBuffer(data.length);
-        buffer.put(data).flip();
-        return buffer;
-    }
-
-    private static IntBuffer intBuffer(int[] data) {
-        IntBuffer buffer = Buffers.newDirectIntBuffer(data.length);
-        buffer.put(data).flip();
-        return buffer;
     }
 
     private static void setMatrix(GL4 gl, int program, String name, Matrix4x4d value) {
@@ -451,31 +311,5 @@ final class Jogl4TerrainRenderer {
         if (location >= 0) {
             gl.glUniform1f(location, value);
         }
-    }
-
-    private static final class GpuMesh {
-        private final int vaoId;
-        private final int positionVboId;
-        private final int normalVboId;
-        private final int uvVboId;
-        private final int indexBufferId;
-        private int indexCount;
-        private final GpuBounds bounds;
-        private final TriangleMesh cpuMesh;
-
-        private GpuMesh(int vaoId, int positionVboId, int normalVboId, int uvVboId, int indexBufferId,
-                        int indexCount, GpuBounds bounds, TriangleMesh cpuMesh) {
-            this.vaoId = vaoId;
-            this.positionVboId = positionVboId;
-            this.normalVboId = normalVboId;
-            this.uvVboId = uvVboId;
-            this.indexBufferId = indexBufferId;
-            this.indexCount = indexCount;
-            this.bounds = bounds;
-            this.cpuMesh = cpuMesh;
-        }
-    }
-
-    private record GpuBounds(int vaoId, int vboId) {
     }
 }

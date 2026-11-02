@@ -1,5 +1,6 @@
 package planetdemviewer.render;
 
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,19 +42,88 @@ public final class TerrainFramePlanner<T, M> {
     private final TerrainSeamStitcher seamStitcher = new TerrainSeamStitcher();
     private final QuadtreeDrawPlanner.LodState lodState = new QuadtreeDrawPlanner.LodState();
     private final TileTextureCache<TileAddress, T> imageryTextures = new TileTextureCache<>(Long.MAX_VALUE);
-    private final GpuResourceCache<String, M> meshes =
+    private final GpuResourceCache<String, ResidentMesh<M>> meshes =
         new GpuResourceCache<>(Configuration.MAX_GPU_TEXTURE_MEMORY, 1);
+    private final TerrainPickFrame pickFrame;
+    private IntBuffer indexScratch;
 
     TerrainFramePlanner(TileImageLoader loader, TileTreeDiscoveryService discoveryService,
-                        ImageryTileLoader imageryLoader, TerrainSimplificationStatistics simplificationStatistics) {
+                        ImageryTileLoader imageryLoader, TerrainSimplificationStatistics simplificationStatistics,
+                        TerrainPickFrame pickFrame) {
         this.simplificationStatistics = simplificationStatistics;
         this.loader = loader;
         this.discoveryService = discoveryService;
         this.imageryLoader = imageryLoader;
+        this.pickFrame = pickFrame;
+    }
+
+    /**
+     * Leaves on the GPU everything the terrain needs to draw an instance from a camera, and
+     * returns what to draw, which also becomes what picking sees.
+     */
+    public List<TerrainMeshDraw<T, M>> prepareFrame(PyramidalImageInstance instance, TerrainFrameSettings settings,
+                                                    Camera renderingCamera, TerrainMeshUploader<M> meshGpu,
+                                                    TextureUploader<T> textureGpu) {
+        return prepareItems(plan(instance, settings), settings, renderingCamera, meshGpu, textureGpu);
+    }
+
+    List<TerrainMeshDraw<T, M>> prepareItems(List<TerrainDrawItem> items, TerrainFrameSettings settings,
+                                             Camera renderingCamera, TerrainMeshUploader<M> meshGpu,
+                                             TextureUploader<T> textureGpu) {
+        for (TerrainDrawItem item : items) {
+            if (meshes.get(item.variantKey()) == null && item.preparation() != null) {
+                try {
+                    upload(item, meshGpu);
+                }
+                catch (RuntimeException ignored) {
+                    // Keep rendering other tiles; a later frame may retry after cache eviction.
+                }
+                finally {
+                    seamStitcher.releasePreparedMesh(item.variantKey());
+                }
+            }
+        }
+        // Looked up after every upload, since an upload may evict a mesh of this same frame.
+        List<TerrainDrawItem> drawnItems = new ArrayList<>(items.size());
+        List<ResidentMesh<M>> residentMeshes = new ArrayList<>(items.size());
+        List<TriangleMesh> cpuMeshes = new ArrayList<>(items.size());
+        for (TerrainDrawItem item : items) {
+            ResidentMesh<M> mesh = meshes.get(item.variantKey());
+            if (mesh != null) {
+                drawnItems.add(item);
+                residentMeshes.add(mesh);
+                cpuMeshes.add(mesh.cpuMesh());
+            }
+        }
+        updateTriangles(drawnItems, cpuMeshes, settings, renderingCamera);
+        Matrix4x4d projection = renderingCamera.calculateProjectionMatrix();
+        List<TerrainMeshDraw<T, M>> draws = new ArrayList<>(drawnItems.size());
+        for (int i = 0; i < drawnItems.size(); i++) {
+            TerrainDrawItem item = drawnItems.get(i);
+            ResidentMesh<M> mesh = residentMeshes.get(i);
+            int[] changedTriangles = trianglesToUpload(mesh.cpuMesh());
+            if (changedTriangles != null) {
+                indexScratch = DirectBuffers.ints(changedTriangles, indexScratch);
+                meshGpu.replaceTriangles(mesh.gpuMesh(), indexScratch);
+            }
+            pickFrame.meshDrawn(item, mesh.cpuMesh());
+            draws.add(new TerrainMeshDraw<>(item, mesh.gpuMesh(), acquireImagery(item, textureGpu),
+                projection.multiply(item.modelMatrix()), item.modelMatrix().invert().transpose()));
+        }
+        return draws;
+    }
+
+    private void upload(TerrainDrawItem item, TerrainMeshUploader<M> gpu) {
+        TriangleMesh generated = item.preparation().join();
+        TerrainMeshBuffers source = TerrainMeshBuffers.of(generated, item.command().node());
+        M uploaded = gpu.upload(source);
+        for (M evicted : meshUploaded(item.variantKey(), uploaded, generated, source.byteSize())) {
+            gpu.destroy(evicted);
+        }
     }
 
     /** Starts generating the meshes that are not resident. */
-    public List<TerrainDrawItem> plan(PyramidalImageInstance instance, TerrainFrameSettings settings) {
+    private List<TerrainDrawItem> plan(PyramidalImageInstance instance, TerrainFrameSettings settings) {
         List<DrawCommand> commands = settings.uniformLod()
             ? QuadtreeDrawPlanner.selectUniformLod(instance, settings.cullingCamera(), settings.relativeScale())
             : QuadtreeDrawPlanner.selectTerrain(instance, settings.cullingCamera(), settings.relativeScale(),
@@ -113,8 +183,8 @@ public final class TerrainFramePlanner<T, M> {
      * @param items the items that will be drawn
      * @param meshes the mesh of each item
      */
-    public void updateTriangles(List<TerrainDrawItem> items, List<TriangleMesh> meshes,
-                                TerrainFrameSettings settings, Camera renderingCamera) {
+    private void updateTriangles(List<TerrainDrawItem> items, List<TriangleMesh> meshes,
+                                 TerrainFrameSettings settings, Camera renderingCamera) {
         ProjectedDeltaCriterion criterion = ProjectedDeltaCriterion.of(
             settings.cullingCamera(), settings.screenErrorThresholdPixels());
         List<BlockBoundaryConstraints.Block> blocks = new ArrayList<>();
@@ -145,35 +215,27 @@ public final class TerrainFramePlanner<T, M> {
     }
 
     /** Returns the triangles the backend must upload, or null when it already has them. */
-    public int[] trianglesToUpload(TriangleMesh mesh) {
+    private int[] trianglesToUpload(TriangleMesh mesh) {
         return mesh instanceof AdaptiveTerrainMesh adaptive ? adaptive.takeTrianglesToUpload() : null;
     }
 
-    /** Counts as a use of the mesh, which renews it in the LRU. */
-    public M residentMesh(String variantKey) {
-        return meshes.get(variantKey);
+    /** Returns the meshes evicted to stay within the budget. */
+    List<M> meshUploaded(String variantKey, M gpuMesh, TriangleMesh cpuMesh, long bytes) {
+        return meshes.put(variantKey, new ResidentMesh<>(gpuMesh, cpuMesh), bytes).stream()
+            .map(ResidentMesh::gpuMesh).toList();
     }
 
-    /** Returns the meshes evicted to stay within the budget, which the backend must destroy. */
-    public List<M> meshUploaded(String variantKey, M mesh, long bytes) {
-        return meshes.put(variantKey, mesh, bytes);
-    }
-
-    /** Returns every mesh, which the backend must destroy. */
-    public List<M> clearMeshes() {
-        return meshes.clear();
+    /** Destroys every mesh. */
+    public void clearMeshes(TerrainMeshUploader<M> gpu) {
+        meshes.clear().forEach(mesh -> gpu.destroy(mesh.gpuMesh()));
     }
 
     GpuResourceUsage meshUsage() {
         return meshes;
     }
 
-    public void releasePreparedMesh(String variantKey) {
-        seamStitcher.releasePreparedMesh(variantKey);
-    }
-
     /** Returns null while the item shows no imagery, or its page is not decoded yet. */
-    public T acquireImagery(TerrainDrawItem item, TextureUploader<T> gpu) {
+    private T acquireImagery(TerrainDrawItem item, TextureUploader<T> gpu) {
         if (!item.imageryVisible()) {
             return null;
         }
@@ -200,5 +262,9 @@ public final class TerrainFramePlanner<T, M> {
 
     public void shutdown() {
         seamStitcher.shutdown();
+    }
+
+    /** The CPU mesh stays available for picking and for view-dependent simplification. */
+    private record ResidentMesh<M>(M gpuMesh, TriangleMesh cpuMesh) {
     }
 }

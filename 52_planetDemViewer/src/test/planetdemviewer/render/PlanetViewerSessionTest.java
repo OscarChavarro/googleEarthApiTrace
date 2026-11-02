@@ -19,7 +19,7 @@ class PlanetViewerSessionTest {
         PlanetViewerSession session = new PlanetViewerSession(model);
         TerrainFramePlanner<Object, String> terrain = session.newTerrainFramePlanner();
         try {
-            assertEquals(List.of(), terrain.meshUploaded("variant", "mesh", 5 * MB));
+            assertEquals(List.of(), terrain.meshUploaded("variant", "mesh", null, 5 * MB));
             String modeLine = session.finishFrame(800, 600).get(2).text();
             assertTrue(modeLine.contains("1 (5 MB)"), modeLine);
         }

@@ -11,10 +11,12 @@ import java.util.List;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.render.PlanetViewerSession;
+import planetdemviewer.render.RenderStyles;
+import planetdemviewer.render.TextLabel;
 import planetdemviewer.render.TextRasterizer;
-import planetdemviewer.render.TileLabelLayout;
 import planetdemviewer.render.View;
 import planetdemviewer.spatial.TileAddress;
+import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.environment.light.Light;
 import vsdk.toolkit.media.RGBImageUncompressed;
 import vsdk.toolkit.render.jogl.Jogl4CameraRenderer;
@@ -97,7 +99,8 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         int canvasHeight = Math.max(1, drawable.getSurfaceHeight());
         session.surfaceRendered(canvasWidth, canvasHeight);
         gl.glViewport(0, 0, canvasWidth, canvasHeight);
-        gl.glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
+        ColorRgb background = RenderStyles.backgroundColor();
+        gl.glClearColor((float) background.r(), (float) background.g(), (float) background.b(), 1.0f);
         gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
         gl.glDisable(GL.GL_DEPTH_TEST);
 
@@ -111,10 +114,8 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         }
 
         session.beginFrame();
-        for (View view : session.views()) {
-            if (view.isActive()) {
-                drawView(gl, view, canvasWidth, canvasHeight);
-            }
+        for (View view : session.activeViews()) {
+            drawView(gl, view, canvasWidth, canvasHeight);
         }
         gl.glViewport(0, 0, canvasWidth, canvasHeight);
         gl.glEnable(GL.GL_DEPTH_TEST);
@@ -134,16 +135,16 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
     }
 
     private void drawView(GL4 gl, View view, int canvasWidth, int canvasHeight) {
-        int[] viewport = view.viewportInPixels(canvasWidth, canvasHeight);
+        int[] viewport = view.fitToCanvas(canvasWidth, canvasHeight);
         gl.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-        view.getCamera().updateViewportResize(viewport[2], viewport[3]);
 
         for (PyramidalImageInstance instance : session.orderedByStackHeight()) {
             List<DrawCommand> drawnCommands = session.isTerrainMode()
                 ? drawTerrain(gl, instance, view)
                 : drawPaletteImage(gl, instance, view);
-            if (session.isTerrainTileBoundsVisible() && !drawnCommands.isEmpty()) {
-                drawTileLabels(gl, drawnCommands, view, viewport, canvasWidth, canvasHeight);
+            List<TextLabel> labels = session.tileLabels(drawnCommands, view, viewport);
+            if (!labels.isEmpty()) {
+                drawTileLabels(gl, labels, viewport, canvasWidth, canvasHeight);
             }
         }
 
@@ -163,9 +164,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             session.isTerrainTileBoundsVisible(), session.isUniformLodVisible());
     }
 
-    private void drawTileLabels(GL4 gl, List<DrawCommand> commands, View view, int[] viewport,
-                                int canvasWidth, int canvasHeight) {
-        var labels = TileLabelLayout.labels(commands, view.getCamera(), viewport);
+    private void drawTileLabels(GL4 gl, List<TextLabel> labels, int[] viewport, int canvasWidth, int canvasHeight) {
         gl.glViewport(0, 0, canvasWidth, canvasHeight);
         gl.glDisable(GL.GL_DEPTH_TEST);
         text.draw(gl, labels, canvasWidth, canvasHeight);

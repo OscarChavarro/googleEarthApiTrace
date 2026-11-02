@@ -1,5 +1,5 @@
 package planetdemviewer.render;
 
-/** The texture to show on a tile, and the part of it that covers the tile: {left, bottom, right, top} in 0..1. */
-public record PaletteTile<T>(T texture, double[] subRect) {
+/** The texture to show on a tile, and the triangle strip that shows it, as in {@link TileQuadGeometry#texturedStrip}. */
+public record PaletteTile<T>(T texture, float[] vertices) {
 }

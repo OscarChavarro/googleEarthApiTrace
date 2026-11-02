@@ -11,6 +11,7 @@ import planetdemviewer.logger.Logger;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
+import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.processing.PscUpdater;
 import planetdemviewer.scheduler.ResourceTelemetry;
 import planetdemviewer.scheduler.ResourceType;
@@ -81,13 +82,9 @@ public final class PlanetViewerSession {
     public <T, M> TerrainFramePlanner<T, M> newTerrainFramePlanner() {
         TerrainFramePlanner<T, M> planner =
             new TerrainFramePlanner<>(tileImageLoader, treeDiscoveryService, imageryTileLoader,
-                simplificationStatistics);
+                simplificationStatistics, pickFrame);
         terrainGpuUsage = planner.meshUsage();
         return planner;
-    }
-
-    public TerrainPickFrame pickFrame() {
-        return pickFrame;
     }
 
     public ViewOverlayPlanner viewOverlays() {
@@ -273,8 +270,13 @@ public final class PlanetViewerSession {
         simplificationStatistics.beginFrame();
     }
 
-    public List<View> views() {
-        return viewports.views();
+    public List<View> activeViews() {
+        return viewports.views().stream().filter(View::isActive).toList();
+    }
+
+    /** What to write over the tiles drawn in a view: nothing unless their bounds are shown. */
+    public List<TextLabel> tileLabels(List<DrawCommand> drawn, View view, int[] viewport) {
+        return terrainTileBoundsVisible ? TileLabelLayout.labels(drawn, view.getCamera(), viewport) : List.of();
     }
 
     public List<PyramidalImageInstance> orderedByStackHeight() {

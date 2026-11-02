@@ -15,7 +15,7 @@ class RenderBackendBoundaryTest {
     private static final Path RENDER = Path.of("src/main/planetdemviewer/render");
     private static final List<String> NOT_GPU_WORK = List.of(
         "java.io.", "java.nio.file.", "System.out", "System.err", "planetdemviewer.io.",
-        "planetdemviewer.logger.", "ImagePersistence", "AWTTextureIO", "util.texture.");
+        "planetdemviewer.logger.", "ImagePersistence", "AWTTextureIO", "util.texture.", "com.jogamp.common.nio");
     private static final List<Path> AWT_FREE_FOLDERS = List.of(RENDER, RENDER.resolve("jogl4"),
         Path.of("src/main/planetdemviewer/io"), Path.of("src/main/planetdemviewer/io/imagery"),
         Path.of("src/main/planetdemviewer/model"), Path.of("src/main/planetdemviewer/terrain"));

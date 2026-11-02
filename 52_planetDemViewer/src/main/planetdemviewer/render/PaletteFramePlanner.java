@@ -40,16 +40,13 @@ public final class PaletteFramePlanner<T> {
         return QuadtreeDrawPlanner.selectAllLeaves(instance, relativeScale);
     }
 
-    /** A displayed tile asks for its descendants to be discovered. */
-    public void tileDisplayed(PyramidalImageInstance instance, DrawCommand command) {
-        discoveryService.requestVisible(instance.getImage(), command.node().nearestSelfOrAncestorWithTile());
-    }
-
     /**
      * Interactive frames decode in the background; the offline snapshot waits for each
      * tile instead. Returns null when neither the tile nor any ancestor has a texture.
+     * An interactive frame also asks for the descendants of the tile it shows to be discovered.
      */
-    public PaletteTile<T> resolve(DrawCommand command, boolean synchronous, TextureUploader<T> gpu) {
+    public PaletteTile<T> resolve(PyramidalImageInstance instance, DrawCommand command, boolean synchronous,
+                                  TextureUploader<T> gpu) {
         QuadtreeNode node = command.node();
         T texture = null;
         QuadtreeNode textureOwner = null;
@@ -78,9 +75,13 @@ public final class PaletteFramePlanner<T> {
         if (texture == null) {
             return null;
         }
-        return new PaletteTile<>(texture, textureOwner == node
+        if (!synchronous) {
+            discoveryService.requestVisible(instance.getImage(), node.nearestSelfOrAncestorWithTile());
+        }
+        double[] subRect = textureOwner == node
             ? new double[] {0.0, 0.0, 1.0, 1.0}
-            : node.subRectRelativeTo(textureOwner));
+            : node.subRectRelativeTo(textureOwner);
+        return new PaletteTile<>(texture, TileQuadGeometry.texturedStrip(command.corners(), subRect));
     }
 
     private RGBAImageUncompressed decodeNow(File tileFile) {

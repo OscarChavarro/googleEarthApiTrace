@@ -4,9 +4,13 @@ import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 import vsdk.toolkit.environment.material.SimpleMaterial;
 
-/** The materials and shading settings of the viewer's own decorations. */
+/** The colors, materials and shading settings of the viewer's own decorations. */
 public final class RenderStyles {
     private RenderStyles() {
+    }
+
+    public static ColorRgb backgroundColor() {
+        return new ColorRgb(0.02, 0.02, 0.05);
     }
 
     public static RendererConfiguration noLightConfiguration() {

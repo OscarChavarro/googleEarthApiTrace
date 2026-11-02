@@ -300,10 +300,11 @@ from `Jogl4PlanetViewerRenderer` through `ViewerSnapshotWriter`.
 | --- | --- | --- |
 | `PlanetViewerSession` | Loaders, views, selection, user choices; composes each frame's inputs | `Jogl4PlanetViewerRenderer` |
 | `ViewportLayout` | The 1 to 4 views, their layout, and which one the camera controller drives | Through the session |
-| `TerrainPicker`, `TerrainPickFrame` | From a pixel to the selected surface point and tile, on the CPU | `Jogl4TerrainRenderer` reports drawn meshes |
-| `TerrainFramePlanner`, `TerrainMeshBuffers` | LOD selection, seam variants, placement, imagery; arrays to upload | `Jogl4TerrainRenderer` |
+| `TerrainPicker`, `TerrainPickFrame` | From a pixel to the selected surface point and tile, on the CPU | Through the session; `TerrainFramePlanner` reports drawn meshes |
+| `TerrainFramePlanner`, `TerrainMeshBuffers`, `TerrainMeshDraw` | LOD selection, seam variants, placement, imagery, which meshes to upload and when; arrays to upload; what to draw, already on the GPU | `Jogl4TerrainRenderer` |
 | `PaletteFramePlanner`, `TileQuadGeometry` | LOD selection, texture or ancestor fallback; quad and outline vertices | `Jogl4QuadtreeRenderer` |
-| `GpuResourceCache`, `TileTextureCache`, `TextureUploader`, `GpuResourceUsage` | LRU, memory budget and usage counters; the backend only creates and destroys | `Jogl4TerrainRenderer`, `Jogl4TextureCacheHelper` |
+| `GpuResourceCache`, `TileTextureCache`, `TextureUploader`, `TerrainMeshUploader`, `GpuResourceUsage` | LRU, memory budget and usage counters; the backend only creates and destroys | `Jogl4TerrainMeshHelper`, `Jogl4TextureCacheHelper` |
+| `DirectBuffers` | Native-memory copies of vertex data | `Jogl4TerrainMeshHelper`, `Jogl4QuadtreeRenderer`, `Jogl4TextRenderer` |
 | `HudContent`, `TileLabelLayout`, `TextLabel`, `TextRasterizer` | What text goes where; its pixels come from `gui.awt.AwtTextRasterizerHelper`, which the application injects | `Jogl4TextRenderer` |
 | `ViewOverlayPlanner` | Which frustums, marker placement, view border | `Jogl4ViewOverlayRenderer` |
 

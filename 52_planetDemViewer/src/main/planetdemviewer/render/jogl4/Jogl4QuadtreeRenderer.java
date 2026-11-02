@@ -1,13 +1,12 @@
 package planetdemviewer.render.jogl4;
 
-import com.jogamp.common.nio.Buffers;
 import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL4;
-import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.DrawCommand;
+import planetdemviewer.render.DirectBuffers;
 import planetdemviewer.render.PaletteFramePlanner;
 import planetdemviewer.render.PaletteTile;
 import planetdemviewer.render.TileQuadGeometry;
@@ -80,14 +79,10 @@ final class Jogl4QuadtreeRenderer {
         Jogl4TextureCacheHelper gpu = new Jogl4TextureCacheHelper(gl);
         List<DrawCommand> drawnCommands = new ArrayList<>();
         for (DrawCommand command : commands) {
-            PaletteTile<Integer> tile = planner.resolve(command, synchronous, gpu);
-            if (tile == null) {
-                continue;
-            }
-            drawTile(gl, command, tile);
-            drawnCommands.add(command);
-            if (!synchronous) {
-                planner.tileDisplayed(instance, command);
+            PaletteTile<Integer> tile = planner.resolve(instance, command, synchronous, gpu);
+            if (tile != null) {
+                drawTile(gl, tile);
+                drawnCommands.add(command);
             }
         }
         gl.glBindVertexArray(0);
@@ -103,13 +98,11 @@ final class Jogl4QuadtreeRenderer {
         return List.copyOf(drawnCommands);
     }
 
-    private void drawTile(GL4 gl, DrawCommand command, PaletteTile<Integer> tile) {
+    private void drawTile(GL4 gl, PaletteTile<Integer> tile) {
         gl.glBindTexture(GL.GL_TEXTURE_2D, tile.texture());
-        float[] vertices = TileQuadGeometry.texturedStrip(command.corners(), tile.subRect());
-        FloatBuffer buffer = Buffers.newDirectFloatBuffer(vertices.length);
-        buffer.put(vertices).flip();
         gl.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo);
-        gl.glBufferSubData(GL.GL_ARRAY_BUFFER, 0, (long) vertices.length * Float.BYTES, buffer);
+        gl.glBufferSubData(GL.GL_ARRAY_BUFFER, 0, (long) tile.vertices().length * Float.BYTES,
+            DirectBuffers.floats(tile.vertices()));
         gl.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, TileQuadGeometry.QUAD_VERTICES);
     }
 

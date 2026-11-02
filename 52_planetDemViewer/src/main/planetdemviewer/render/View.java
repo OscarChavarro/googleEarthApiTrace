@@ -105,6 +105,13 @@ public final class View {
         return new int[] {x, y, Math.max(1, w), Math.max(1, h)};
     }
 
+    /** Returns the viewport for a frame on this canvas, after adjusting the camera's aspect ratio to it. */
+    public int[] fitToCanvas(int canvasWidth, int canvasHeight) {
+        int[] viewport = viewportInPixels(canvasWidth, canvasHeight);
+        camera.updateViewportResize(viewport[2], viewport[3]);
+        return viewport;
+    }
+
     public boolean inside(double xPercent, double yPercent) {
         return xPercent >= viewportStartXPercent && xPercent <= viewportStartXPercent + viewportSizeXPercent
             && yPercent >= viewportStartYPercent && yPercent <= viewportStartYPercent + viewportSizeYPercent;

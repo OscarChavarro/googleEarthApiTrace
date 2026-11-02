@@ -1,10 +1,10 @@
 package planetdemviewer.render.jogl4;
 
-import com.jogamp.common.nio.Buffers;
 import com.jogamp.opengl.GL;
 import com.jogamp.opengl.GL4;
 import java.nio.FloatBuffer;
 import java.util.List;
+import planetdemviewer.render.DirectBuffers;
 import planetdemviewer.render.RasterizedText;
 import planetdemviewer.render.TextLabel;
 import planetdemviewer.render.TextRasterizer;
@@ -54,7 +54,7 @@ final class Jogl4TextRenderer {
             return;
         }
         ensureInitialized(gl);
-        FloatBuffer vertices = Buffers.newDirectFloatBuffer(text.quadVertices());
+        FloatBuffer vertices = DirectBuffers.floats(text.quadVertices());
 
         gl.glEnable(GL.GL_BLEND);
         gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
