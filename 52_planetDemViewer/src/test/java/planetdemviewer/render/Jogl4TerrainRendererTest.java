@@ -29,4 +29,14 @@ class Jogl4TerrainRendererTest {
         assertArrayEquals(new float[] {0f, 1f}, new float[] {uvs[southWest], uvs[southWest + 1]}, 0.00001f);
         assertArrayEquals(new float[] {1f, 1f}, new float[] {uvs[southWest + 255 * 2], uvs[southWest + 255 * 2 + 1]}, 0.00001f);
     }
+
+    @Test
+    void mapsTheDiamondSquareGridCornersToThePngCorners() {
+        QuadtreeNode root = new QuadtreeNode("0", null, Path.of("root.bin").toFile());
+        float[] uvs = Jogl4TerrainRenderer.textureCoordinatesFor(new double[257 * 257 * 3], root);
+        assertArrayEquals(new float[] {1f, 0f}, new float[] {uvs[256 * 2], uvs[256 * 2 + 1]}, 0.00001f);
+        int southEast = (256 * 257 + 256) * 2;
+        assertArrayEquals(new float[] {1f, 1f}, new float[] {uvs[southEast], uvs[southEast + 1]}, 0.00001f);
+        assertArrayEquals(new float[] {1f / 256f, 0f}, new float[] {uvs[2], uvs[3]}, 0.00001f);
+    }
 }

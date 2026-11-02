@@ -14,6 +14,7 @@ import planetdemviewer.scene.SceneSnapshot;
 import planetdemviewer.scene.ProjectionType;
 import planetdemviewer.scene.TerrainSurfaceSelection;
 import planetdemviewer.spatial.WorldPosition;
+import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
@@ -49,6 +50,7 @@ public final class PlanetViewerModel {
     private String hudStatus = "";
     private final StorageProfile storageProfile;
     private OperationModes operationMode = OperationModes.BASIC_TRIANGULATION;
+    private TerrainSubdivisionScheme terrainSubdivisionScheme = TerrainSubdivisionScheme.TRIANGLE_EDGE;
     private boolean imageryAvailable;
     private boolean imageryEnabled = true;
     private Widget guiDefinitions;
@@ -191,6 +193,15 @@ public final class PlanetViewerModel {
 
     public void setOperationMode(OperationModes operationMode) {
         this.operationMode = operationMode == null ? OperationModes.BASIC_TRIANGULATION : operationMode;
+        notifyLayerStateChanged();
+    }
+
+    public TerrainSubdivisionScheme getTerrainSubdivisionScheme() {
+        return terrainSubdivisionScheme;
+    }
+
+    public void setTerrainSubdivisionScheme(TerrainSubdivisionScheme scheme) {
+        terrainSubdivisionScheme = scheme;
         notifyLayerStateChanged();
     }
 

@@ -1,6 +1,7 @@
 package planetdemviewer.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.nio.file.Path;
@@ -26,7 +27,7 @@ class TerrainSeamStitcherTest {
 
         TerrainSeamStitcher stitcher = new TerrainSeamStitcher();
         try {
-            List<TerrainMeshPlan> first = stitcher.plan(commands);
+            List<TerrainMeshPlan> first = stitcher.plan(commands, TerrainSubdivisionScheme.TRIANGLE_EDGE);
             TerrainMeshPlan finePlan = first.stream()
                 .filter(plan -> plan.command().node() == fineNorthEast)
                 .findFirst().orElseThrow();
@@ -34,7 +35,7 @@ class TerrainSeamStitcherTest {
             assertEquals(TerrainEdge.EAST, finePlan.coarseNeighbours().get(0).fineEdge());
             assertSame(coarseSouthEast, finePlan.coarseNeighbours().get(0).coarseNode());
 
-            List<TerrainMeshPlan> cached = stitcher.plan(commands);
+            List<TerrainMeshPlan> cached = stitcher.plan(commands, TerrainSubdivisionScheme.TRIANGLE_EDGE);
             assertSame(first, cached);
             assertEquals(1, stitcher.relationCacheSize());
 
@@ -42,9 +43,25 @@ class TerrainSeamStitcherTest {
             stitcher.plan(List.of(
                 new DrawCommand(fineNorthEast, new Vector3Dd[0]),
                 new DrawCommand(coarseSouthEast, new Vector3Dd[0]),
-                new DrawCommand(coarseNorthWest, new Vector3Dd[0])));
+                new DrawCommand(coarseNorthWest, new Vector3Dd[0])), TerrainSubdivisionScheme.TRIANGLE_EDGE);
             assertEquals(2, stitcher.relationCacheSize());
             assertEquals(1, stitcher.pairCacheHits());
+        }
+        finally {
+            stitcher.shutdown();
+        }
+    }
+
+    @Test
+    void eachSchemeGetsItsOwnMeshVariant() {
+        QuadtreeNode root = node("0", null);
+        List<DrawCommand> commands = List.of(new DrawCommand(root, new Vector3Dd[0]));
+        TerrainSeamStitcher stitcher = new TerrainSeamStitcher();
+        try {
+            TerrainMeshPlan rows = stitcher.plan(commands, TerrainSubdivisionScheme.TRIANGLE_EDGE).get(0);
+            TerrainMeshPlan diamonds = stitcher.plan(commands, TerrainSubdivisionScheme.DIAMOND_SQUARE).get(0);
+            assertEquals(TerrainSubdivisionScheme.DIAMOND_SQUARE, diamonds.scheme());
+            assertNotEquals(rows.variantKey(), diamonds.variantKey());
         }
         finally {
             stitcher.shutdown();

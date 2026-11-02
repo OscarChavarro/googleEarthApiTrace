@@ -24,6 +24,7 @@ import planetdemviewer.spatial.TileAddress;
 import planetdemviewer.spatial.WorldPosition;
 import planetdemviewer.processing.QuadtreeDrawPlanner;
 import planetdemviewer.terrain.TerrainSeamStitcher;
+import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import planetdemviewer.terrain.TerrainMeshPlan;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
@@ -142,7 +143,8 @@ public final class Jogl4TerrainRenderer {
         TileTreeDiscoveryService discoveryService,
         boolean tileBoundsVisible,
         boolean uniformLod, ImageryTileLoader imageryLoader, boolean imageryEnabled,
-        TileAddress selectedTile
+        TileAddress selectedTile,
+        TerrainSubdivisionScheme subdivisionScheme
     ) {
         List<DrawCommand> commands = uniformLod
             ? QuadtreeDrawPlanner.selectUniformLod(instance, cullingCamera, relativeScale)
@@ -155,7 +157,7 @@ public final class Jogl4TerrainRenderer {
             }
         }
 
-        List<TerrainMeshPlan> plans = seamStitcher.plan(commands);
+        List<TerrainMeshPlan> plans = seamStitcher.plan(commands, subdivisionScheme);
         List<DrawCommand> drawnCommands = new ArrayList<>();
         Map<String, CompletableFuture<TriangleMesh>> preparations = new LinkedHashMap<>();
         for (TerrainMeshPlan plan : plans) {
@@ -479,20 +481,19 @@ public final class Jogl4TerrainRenderer {
     }
 
     /**
-     * Maps the exact 256x256 terrain vertex grid to the corresponding PNG.
-     * There are 255 intervals per axis, so edge vertices have s/t values 0
-     * and 1 exactly.  This must not be reconstructed from global positions:
-     * LOD edge stitching can move those positions beyond the logical tile.
-     * PNG row zero is its top edge.
+     * Maps the exact square terrain vertex grid to the corresponding PNG.
+     * Edge vertices have s/t values 0 and 1 exactly.  This must not be
+     * reconstructed from global positions: LOD edge stitching can move those
+     * positions beyond the logical tile.  PNG row zero is its top edge.
      */
     static float[] textureCoordinatesFor(double[] positions, QuadtreeNode node) {
         if (positions == null || positions.length % 3 != 0 || node == null) {
             throw new IllegalArgumentException("Mesh positions and tile node are required");
         }
-        final int gridSize = 256;
         int vertexCount = positions.length / 3;
-        if (vertexCount != gridSize * gridSize) {
-            throw new IllegalArgumentException("Terrain imagery requires a 256x256 vertex grid");
+        int gridSize = (int) Math.round(Math.sqrt(vertexCount));
+        if (gridSize < 2 || gridSize * gridSize != vertexCount) {
+            throw new IllegalArgumentException("Terrain imagery requires a square vertex grid");
         }
         float[] uvs = new float[vertexCount * 2];
         for (int vertex = 0; vertex < vertexCount; vertex++) {

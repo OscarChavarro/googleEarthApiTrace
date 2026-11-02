@@ -25,6 +25,7 @@ import planetdemviewer.io.imagery.ImageryTileLoader;
 import planetdemviewer.logger.Logger;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.OperationModes;
+import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.PscUpdater;
 import planetdemviewer.scheduler.ResourceTelemetry;
@@ -324,6 +325,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             + ",\"projectionMode\":" + camera.getProjectionMode()
             + ",\"operationMode\":\"" + model.getOperationMode() + "\""
             + ",\"imageryVisible\":" + model.isImageryVisible()
+            + ",\"subdivisionScheme\":\"" + model.getTerrainSubdivisionScheme() + "\""
             + ",\"uniformLod\":" + uniformLodVisible
             + ",\"tileBounds\":" + terrainTileBoundsVisible + "}";
     }
@@ -560,7 +562,8 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
                     treeDiscoveryService,
                     terrainTileBoundsVisible,
                     uniformLodVisible, imageryTileLoader, model.isImageryVisible(),
-                    selectedTerrainTile()
+                    selectedTerrainTile(),
+                    model.getTerrainSubdivisionScheme()
                 );
             }
             else {
@@ -878,7 +881,8 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
                 String.format("%.4gx", model.getHeightExagerationFactor()),
                 terrainRenderer.getResidentMeshCount(),
                 terrainRenderer.getGpuBytesAssigned() / (1024 * 1024),
-                model.text(uniformLodVisible ? "IDM_HUD_ON" : "IDM_HUD_OFF")),
+                model.text(uniformLodVisible ? "IDM_HUD_ON" : "IDM_HUD_OFF"),
+                subdivisionSchemeLabel()),
             16, canvasHeight - 68, canvasWidth, canvasHeight
         );
         hudTextRenderer.draw(
@@ -912,6 +916,11 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
                 String.format(Locale.ROOT, "%.2f", selection.geoidYMetres())),
                 16, 38, canvasWidth, canvasHeight, selectionColor);
         }
+    }
+
+    private String subdivisionSchemeLabel() {
+        return model.text(model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.DIAMOND_SQUARE
+            ? "IDM_LAYER_SUBDIVISION_DIAMOND_SQUARE" : "IDM_LAYER_SUBDIVISION_TRIANGLE_EDGE");
     }
 
     private String operationModeLabel() {

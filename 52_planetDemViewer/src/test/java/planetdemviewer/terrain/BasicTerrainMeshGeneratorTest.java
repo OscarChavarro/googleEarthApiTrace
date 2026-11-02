@@ -163,6 +163,105 @@ class BasicTerrainMeshGeneratorTest {
         }
     }
 
+    @Test
+    void diamondSquareMeshRendersEveryStoredSampleFromZeroTo256() throws Exception {
+        short[] samples = new short[DemTile.SAMPLE_COUNT];
+        for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+            for (int column = 0; column < DemTile.STORED_SIZE; column++) {
+                samples[row * DemTile.STORED_SIZE + column] = (short) (row * 10 + column);
+            }
+        }
+        DemTile tile = writeAndRead(temporaryDirectory.resolve("diamond.bin"), samples);
+        QuadtreeNode node = new QuadtreeNode("0", null, temporaryDirectory.resolve("diamond.bin").toFile());
+
+        TriangleMesh mesh = diamondSquare().generate(node, tile);
+
+        assertEquals(257 * 257, mesh.getNumVertices());
+        assertEquals(2 * 256 * 256, mesh.getNumTriangles());
+        for (int[] sample : new int[][] {{0, 0}, {0, 1}, {1, 0}, {7, 3}, {256, 256}}) {
+            int z = (sample[0] * 257 + sample[1]) * 3 + 2;
+            double metres = tile.elevationMetres(sample[0], sample[1]);
+            assertEquals(metres / Configuration.WORLD_WIDTH_METRES, mesh.getVertexPositions()[z], 1e-15);
+        }
+        // World positions are uniform: sample 1 is 1/256 of the tile from its west edge.
+        assertEquals(1.0 / 256.0, mesh.getVertexPositions()[3] - mesh.getVertexPositions()[0], 1e-12);
+    }
+
+    @Test
+    void diamondSquareSameResolutionNeighboursShareTheirWholeEdge() throws Exception {
+        short[] westSamples = new short[DemTile.SAMPLE_COUNT];
+        short[] eastSamples = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(westSamples, (short) 100);
+        Arrays.fill(eastSamples, (short) 200);
+        for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+            westSamples[row * DemTile.STORED_SIZE + 256] = (short) (1_000 + row);
+            eastSamples[row * DemTile.STORED_SIZE] = (short) (1_000 + row);
+        }
+        DemTile westTile = writeAndRead(temporaryDirectory.resolve("dw.bin"), westSamples);
+        DemTile eastTile = writeAndRead(temporaryDirectory.resolve("de.bin"), eastSamples);
+        QuadtreeNode root = new QuadtreeNode("0", null, temporaryDirectory.resolve("root.bin").toFile());
+        QuadtreeNode west = new QuadtreeNode("00", root, temporaryDirectory.resolve("dw.bin").toFile());
+        QuadtreeNode east = new QuadtreeNode("01", root, temporaryDirectory.resolve("de.bin").toFile());
+
+        double[] westPositions = diamondSquare().generate(west, westTile).getVertexPositions();
+        double[] eastPositions = diamondSquare().generate(east, eastTile).getVertexPositions();
+
+        for (int row = 0; row <= 256; row++) {
+            int westEdge = (row * 257 + 256) * 3;
+            int eastEdge = row * 257 * 3;
+            for (int axis = 0; axis < 3; axis++) {
+                assertEquals(westPositions[westEdge + axis], eastPositions[eastEdge + axis], 1e-12);
+            }
+        }
+    }
+
+    @Test
+    void diamondSquareFineEdgeInterpolatesTheCoarseEdgeAndOverlapsIt() throws Exception {
+        short[] fineElevations = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(fineElevations, (short) 1_000);
+        short[] coarseElevations = new short[DemTile.SAMPLE_COUNT];
+        for (int row = 0; row < DemTile.STORED_SIZE; row++) {
+            for (int column = 0; column < DemTile.STORED_SIZE; column++) {
+                coarseElevations[row * DemTile.STORED_SIZE + column] = (short) (row * 10);
+            }
+        }
+        Path fineFile = temporaryDirectory.resolve("dfine.bin");
+        Path coarseFile = temporaryDirectory.resolve("dcoarse.bin");
+        DemTile fineTile = writeAndRead(fineFile, fineElevations);
+        DemTile coarseTile = writeAndRead(coarseFile, coarseElevations);
+        QuadtreeNode root = new QuadtreeNode("0", null, temporaryDirectory.resolve("root.bin").toFile());
+        QuadtreeNode southWest = new QuadtreeNode("00", root, temporaryDirectory.resolve("sw.bin").toFile());
+        QuadtreeNode fine = new QuadtreeNode("002", southWest, fineFile.toFile());
+        QuadtreeNode coarse = new QuadtreeNode("01", root, coarseFile.toFile());
+
+        TriangleMesh mesh = diamondSquare().generate(fine, fineTile,
+            List.of(new TerrainSeamConstraint(TerrainEdge.EAST, coarse, coarseTile)));
+
+        // Fine row 1 lies halfway between the first two rows of the coarse edge: 0 m and 10 m.
+        int eastVertex = (257 + 256) * 3;
+        assertEquals(5.0 / Configuration.WORLD_WIDTH_METRES, mesh.getVertexPositions()[eastVertex + 2], 1e-15);
+        double fineStep = (fine.getX1() - fine.getX0()) / 256.0;
+        assertEquals(fine.getX1() - 0.5 + fineStep, mesh.getVertexPositions()[eastVertex], 1e-12);
+    }
+
+    @Test
+    void diamondSquareOmitsTrianglesThatTouchNoData() throws Exception {
+        short[] samples = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(samples, (short) 100);
+        samples[2 * DemTile.STORED_SIZE + 2] = DemTile.NO_DATA;
+        DemTile tile = writeAndRead(temporaryDirectory.resolve("dnodata.bin"), samples);
+        QuadtreeNode node = new QuadtreeNode("0", null, temporaryDirectory.resolve("dnodata.bin").toFile());
+
+        TriangleMesh mesh = diamondSquare().generate(node, tile);
+
+        // Both coordinates even, so this is one of the mesh's eight-triangle vertices.
+        assertEquals(2 * 256 * 256 - 8, mesh.getNumTriangles());
+    }
+
+    private static BasicTerrainMeshGenerator diamondSquare() {
+        return new BasicTerrainMeshGenerator(TerrainSubdivisionScheme.DIAMOND_SQUARE.traversal());
+    }
+
     private TriangleMesh generate(short[] elevations) throws Exception {
         ByteBuffer bytes = ByteBuffer.allocate(DemTile.BYTE_COUNT).order(ByteOrder.LITTLE_ENDIAN);
         for (short elevation : elevations) {

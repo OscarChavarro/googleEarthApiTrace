@@ -8,6 +8,7 @@ import planetdemviewer.processing.DrawCommand;
 public record TerrainMeshPlan(
     DrawCommand command,
     List<Neighbour> coarseNeighbours,
+    TerrainSubdivisionScheme scheme,
     String variantKey
 ) {
     public TerrainMeshPlan {

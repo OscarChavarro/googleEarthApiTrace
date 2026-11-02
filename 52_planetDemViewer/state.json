@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "camera": {"position": {"x": -245.33999999997508, "y": 1118.9800000000487, "z": 6.647937511890568},"focus": {"x": -245.33999999997508, "y": 1118.9800000000487, "z": 1.6479375118878288},"up": {"x": -0.021817477290083504, "y": 0.9997619705133303, "z": 6.123233995736766E-17}, "projectionMode": 5},
-  "model": {"operationMode": "BASIC_TRIANGULATION", "heightExaggeration": 1.0, "currentPSC": -4},
+  "camera": {"position": {"x": -130.5399999999816, "y": 1016.7800000000254, "z": 6.647937511890568},"focus": {"x": -130.5399999999816, "y": 1016.7800000000254, "z": 1.6479375118878288},"up": {"x": -0.010909712457510308, "y": 0.9999404873161675, "z": 6.123233995736766E-17}, "projectionMode": 5},
+  "model": {"operationMode": "BASIC_TRIANGULATION", "heightExaggeration": 1.0, "currentPSC": -4, "imageryEnabled": true},
   "renderer": {"tileBounds": false, "uniformLod": false},
   "sources": ["/media/extra/FABDEM/02_rawPyramidal"],
   "instances": [

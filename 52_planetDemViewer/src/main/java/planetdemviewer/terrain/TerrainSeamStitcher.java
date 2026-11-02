@@ -3,6 +3,7 @@ package planetdemviewer.terrain;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,8 @@ public final class TerrainSeamStitcher {
     private static final int PAIR_CACHE_ENTRIES = 65_536;
     private static final double EPSILON = 1e-12;
 
-    private final BasicTerrainMeshGenerator meshGenerator = new BasicTerrainMeshGenerator();
+    private final Map<TerrainSubdivisionScheme, BasicTerrainMeshGenerator> meshGenerators =
+        new EnumMap<>(TerrainSubdivisionScheme.class);
     private final ExecutorService workers;
     private final Map<String, List<TerrainMeshPlan>> relationCache =
         new LinkedHashMap<>(32, 0.75f, true) {
@@ -46,6 +48,9 @@ public final class TerrainSeamStitcher {
     private long pairCacheHits;
 
     public TerrainSeamStitcher() {
+        for (TerrainSubdivisionScheme scheme : TerrainSubdivisionScheme.values()) {
+            meshGenerators.put(scheme, new BasicTerrainMeshGenerator(scheme.traversal()));
+        }
         int available = Runtime.getRuntime().availableProcessors();
         int workerCount = Math.max(1, Math.min(8, available - 1));
         workers = Executors.newFixedThreadPool(workerCount, runnable -> {
@@ -55,11 +60,11 @@ public final class TerrainSeamStitcher {
         });
     }
 
-    public List<TerrainMeshPlan> plan(List<DrawCommand> commands) {
+    public List<TerrainMeshPlan> plan(List<DrawCommand> commands, TerrainSubdivisionScheme scheme) {
         List<DrawCommand> drawable = commands.stream()
             .filter(command -> command.node().getTileFile() != null)
             .toList();
-        String topologyKey = topologyKey(drawable);
+        String topologyKey = scheme + "|" + topologyKey(drawable);
         synchronized (relationCache) {
             List<TerrainMeshPlan> cached = relationCache.get(topologyKey);
             if (cached != null) {
@@ -68,7 +73,7 @@ public final class TerrainSeamStitcher {
         }
 
         List<TerrainMeshPlan> result = CompletableFuture
-            .supplyAsync(() -> buildPlan(drawable), workers)
+            .supplyAsync(() -> buildPlan(drawable, scheme), workers)
             .join();
         synchronized (relationCache) {
             relationCache.put(topologyKey, result);
@@ -76,7 +81,7 @@ public final class TerrainSeamStitcher {
         return result;
     }
 
-    private List<TerrainMeshPlan> buildPlan(List<DrawCommand> drawable) {
+    private List<TerrainMeshPlan> buildPlan(List<DrawCommand> drawable, TerrainSubdivisionScheme scheme) {
         Map<QuadtreeNode, List<TerrainMeshPlan.Neighbour>> neighbours = new LinkedHashMap<>();
         for (DrawCommand command : drawable) {
             neighbours.put(command.node(), new ArrayList<>());
@@ -103,7 +108,8 @@ public final class TerrainSeamStitcher {
             constraints.sort(Comparator
                 .comparing((TerrainMeshPlan.Neighbour n) -> n.fineEdge().ordinal())
                 .thenComparing(n -> n.coarseNode().getId()));
-            result.add(new TerrainMeshPlan(command, constraints, variantKey(command.node(), constraints)));
+            result.add(new TerrainMeshPlan(command, constraints, scheme,
+                scheme + "|" + variantKey(command.node(), constraints)));
         }
         result = List.copyOf(result);
         return result;
@@ -153,7 +159,8 @@ public final class TerrainSeamStitcher {
         synchronized (pendingMeshes) {
             return pendingMeshes.computeIfAbsent(plan.variantKey(), ignored ->
                 CompletableFuture.supplyAsync(
-                    () -> meshGenerator.generate(plan.command().node(), fineTile, constraints), workers));
+                    () -> meshGenerators.get(plan.scheme()).generate(plan.command().node(), fineTile, constraints),
+                    workers));
         }
     }
 

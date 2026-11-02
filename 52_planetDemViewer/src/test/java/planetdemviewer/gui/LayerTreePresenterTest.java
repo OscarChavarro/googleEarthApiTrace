@@ -18,6 +18,7 @@ import planetdemviewer.config.Configuration;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.dialog.LayerTreePresenter;
+import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.gui.dialog.components.DialogTreeNode;
 import vsdk.toolkit.gui.widget.Widget;
 import vsdk.toolkit.gui.widget.WidgetMenuItem;
@@ -105,6 +106,20 @@ class LayerTreePresenterTest {
         assertEquals(current, gui.definitions());
         gui.execute(GuiController.COMMAND_EXIT);
         assertEquals(List.of("exit"), exits);
+    }
+
+    @Test
+    void subdivisionOptionsSelectTheSchemeOnlyOnTheTerrain() {
+        assertTrue(presenter.isSelected(option(2, 0)));
+        presenter.activate(option(2, 1));
+        assertEquals(TerrainSubdivisionScheme.DIAMOND_SQUARE, model.getTerrainSubdivisionScheme());
+        assertTrue(presenter.isSelected(option(2, 1)));
+        assertFalse(presenter.isSelected(option(2, 0)));
+
+        model.setOperationMode(OperationModes.PALETTE_BASED_IMAGE);
+        assertFalse(presenter.isEnabled(option(2, 0)));
+        presenter.activate(option(2, 0));
+        assertEquals(TerrainSubdivisionScheme.DIAMOND_SQUARE, model.getTerrainSubdivisionScheme());
     }
 
     @Test

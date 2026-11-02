@@ -2,6 +2,7 @@ package planetdemviewer.model.dialog;
 
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.gui.dialog.components.DialogTreeNode;
 import vsdk.toolkit.gui.widget.Widget;
 import vsdk.toolkit.gui.widget.WidgetDialog;
@@ -20,6 +21,8 @@ public final class LayerTreePresenter {
     private static final String SHOW_PALETTE_IMAGE = "showPaletteImage";
     private static final String HIDE_IMAGERY = "hideImagery";
     private static final String SHOW_IMAGERY = "showImagery";
+    private static final String USE_TRIANGLE_EDGE = "useTriangleEdgeSubdivision";
+    private static final String USE_DIAMOND_SQUARE = "useDiamondSquareSubdivision";
 
     private record Option(String action) { }
 
@@ -76,7 +79,8 @@ public final class LayerTreePresenter {
 
     private static void requireKnownAction(String action) {
         switch (action) {
-            case SHOW_TERRAIN_MESH, SHOW_PALETTE_IMAGE, HIDE_IMAGERY, SHOW_IMAGERY -> { }
+            case SHOW_TERRAIN_MESH, SHOW_PALETTE_IMAGE, HIDE_IMAGERY, SHOW_IMAGERY,
+                USE_TRIANGLE_EDGE, USE_DIAMOND_SQUARE -> { }
             default -> throw new IllegalArgumentException("Unknown layer action: " + action);
         }
     }
@@ -93,16 +97,24 @@ public final class LayerTreePresenter {
             case SHOW_TERRAIN_MESH -> model.getOperationMode() == OperationModes.BASIC_TRIANGULATION;
             case SHOW_PALETTE_IMAGE -> model.getOperationMode() == OperationModes.PALETTE_BASED_IMAGE;
             case HIDE_IMAGERY -> !model.isImageryVisible();
-            default -> model.isImageryVisible();
+            case SHOW_IMAGERY -> model.isImageryVisible();
+            case USE_TRIANGLE_EDGE -> model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.TRIANGLE_EDGE;
+            default -> model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.DIAMOND_SQUARE;
         };
     }
 
-    /** A group is enabled while any of its options is; color needs imagery and the 3D terrain. */
+    /**
+     * A group is enabled while any of its options is. Color needs imagery and
+     * the 3D terrain; subdivision needs the 3D terrain.
+     */
     public boolean isEnabled(DialogTreeNode node) {
         if (node.getIdentity() instanceof Option option) {
-            boolean colorOption = HIDE_IMAGERY.equals(option.action()) || SHOW_IMAGERY.equals(option.action());
-            return !colorOption || (model.isImageryAvailable()
-                && model.getOperationMode() == OperationModes.BASIC_TRIANGULATION);
+            boolean terrain = model.getOperationMode() == OperationModes.BASIC_TRIANGULATION;
+            return switch (option.action()) {
+                case HIDE_IMAGERY, SHOW_IMAGERY -> terrain && model.isImageryAvailable();
+                case USE_TRIANGLE_EDGE, USE_DIAMOND_SQUARE -> terrain;
+                default -> true;
+            };
         }
         return node.getChildren().stream().anyMatch(this::isEnabled);
     }
@@ -120,7 +132,9 @@ public final class LayerTreePresenter {
                 case SHOW_TERRAIN_MESH -> model.setOperationMode(OperationModes.BASIC_TRIANGULATION);
                 case SHOW_PALETTE_IMAGE -> model.setOperationMode(OperationModes.PALETTE_BASED_IMAGE);
                 case HIDE_IMAGERY -> model.setImageryEnabled(false);
-                default -> model.setImageryEnabled(true);
+                case SHOW_IMAGERY -> model.setImageryEnabled(true);
+                case USE_TRIANGLE_EDGE -> model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.TRIANGLE_EDGE);
+                default -> model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.DIAMOND_SQUARE);
             }
         });
     }

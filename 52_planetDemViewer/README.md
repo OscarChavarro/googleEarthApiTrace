@@ -19,7 +19,8 @@ screen.
 - Two rendering modes:
   - palette-coloured 2D DEM tiles;
   - shaded 3D terrain built from a regular triangle mesh.
-- 3D terrain meshes contain 256 x 256 vertices and two triangles per cell.
+- 3D terrain meshes use one of two edge-subdivision schemes, selectable at run
+  time (see [Terrain subdivision schemes](#terrain-subdivision-schemes)).
   A one-sample DEM halo is used for border normals.
 - Seam stitching between adjacent tiles at different LODs: fine border heights
   are interpolated from the coarser neighbour, and the outer halo used for
@@ -68,6 +69,28 @@ Press `9` to temporarily use a uniform LOD: all visible branches are drawn at
 the finest depth required by the current dynamic selection. Press `0` to show
 the bounding boxes of terrain tiles selected for 3D rendering.
 
+## Terrain subdivision schemes
+
+The layer panel selects how each tile's samples are joined into triangles. Both
+schemes render every tile at full resolution, and there is no key for this
+setting. It starts on triangle edge and is not saved in `state.json`.
+
+| | Triangle edge | Diamond-square |
+| --- | --- | --- |
+| Reference | Miller 1986, figure 1 | Miller 1986, figure 2 |
+| Traversal | Row by row, same diagonal in every cell | Recursive bisection from the tile's four quadrants |
+| Vertices per tile | 256 x 256 | 257 x 257 (stored samples 0 to 256) |
+| Triangles per tile | 130,050 | 131,072 |
+| Can subdivide below the DEM spacing | No | Yes, but not implemented yet |
+
+Each tile still draws the PNG of its own level in both schemes, so color deeper
+than the geometry is not used yet.
+
+The diamond-square traversal is the triangulation of Lindstrom et al. 1996. An
+implementation of that algorithm would supply a `TerrainVertexSelection`, which
+decides which vertices are in the mesh. Today all of them are: projected error
+metrics, vertex dependencies and per-frame refinement are not implemented.
+
 ## Caching and locality
 
 Tiles are the cache pages in this viewer: elevation rasters, palette images,
@@ -82,8 +105,8 @@ viewed page is evicted first. The RAM cache has one shared LRU order for DEM
 rasters and transient palette images; the 2D texture cache and terrain-mesh
 cache maintain their own GPU LRU orders.
 
-Terrain meshes are cached by a complete seam-variant key rather than by tile
-alone. That key includes every coarse neighbour which modifies one of the
+Terrain meshes are cached by subdivision scheme and a complete seam-variant key
+rather than by tile alone. That key includes every coarse neighbour which modifies one of the
 tile's borders, so a mesh stitched for one LOD frontier cannot overwrite or be
 mistaken for the same tile under another frontier. The OpenGL 4 renderer uses
 VAOs/VBOs, not deprecated display lists.
@@ -151,7 +174,8 @@ interactive viewer, this intentionally performs a complete pyramid traversal.
 
 The window has a menu bar and a left panel with a tree of layers. Radio buttons
 select how elevation is shown (3D terrain, the default, or a 2D palette image)
-and whether Google Earth color is drawn on the terrain. Color is on by default,
+and whether Google Earth color is drawn on the terrain, plus the terrain's edge
+subdivision scheme. Color is on by default,
 is saved in `state.json` with `e`, and is available only with 3D terrain and when
 a color pyramid was given as the second folder. The `Space` and `t` keys change
 the same state, so the tree always follows them. `Settings > Language` switches
