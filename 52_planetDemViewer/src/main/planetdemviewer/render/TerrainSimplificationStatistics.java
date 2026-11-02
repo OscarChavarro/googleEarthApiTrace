@@ -1,16 +1,10 @@
 package planetdemviewer.render;
 
 import planetdemviewer.terrain.AdaptiveTerrainMesh;
+import planetdemviewer.terrain.TerrainSimplificationCounts;
 
 /**
- * What the view-dependent subdivision did in a frame, with the quantities of figure
- * [LIND1996].6: n1, n2 and the number of evaluations of Equation [LIND1996](2).
- *
- * <p>References:</p>
- * <ul>
- * <li>[LIND1996] Lindstrom, P. et al. "Real-Time, Continuous Level of Detail
- * Rendering of Height Fields", SIGGRAPH 1996.</li>
- * </ul>
+ * Adds up what the view-dependent subdivision does in each frame.
  */
 public final class TerrainSimplificationStatistics {
     private int blocks;
@@ -18,22 +12,7 @@ public final class TerrainSimplificationStatistics {
     private long trianglesRendered;
     private long deltaProjections;
     private int blocksThatCouldCoarsen;
-    private volatile Frame lastFrame = new Frame(0, 0L, 0L, 0L, 0);
-
-    /**
-     * @param trianglesBeforeSimplification n1: the triangles of the selected blocks
-     * @param trianglesRendered n2: the triangles after vertex-based simplification
-     * @param blocksThatCouldCoarsen how many pass the test of line 4 of MAIN in section
-     *        [LIND1996].5, which the area-based tile selection does not use
-     */
-    public record Frame(int blocks, long trianglesBeforeSimplification, long trianglesRendered,
-                        long deltaProjections, int blocksThatCouldCoarsen) {
-        String json() {
-            return "{\"blocks\":" + blocks + ",\"trianglesBeforeSimplification\":" + trianglesBeforeSimplification
-                + ",\"trianglesRendered\":" + trianglesRendered + ",\"deltaProjections\":" + deltaProjections
-                + ",\"blocksThatCouldCoarsen\":" + blocksThatCouldCoarsen + "}";
-        }
-    }
+    private volatile TerrainSimplificationCounts lastFrame = new TerrainSimplificationCounts(0, 0L, 0L, 0L, 0);
 
     void beginFrame() {
         lastFrame = currentFrame();
@@ -54,13 +33,13 @@ public final class TerrainSimplificationStatistics {
         }
     }
 
-    Frame currentFrame() {
-        return new Frame(blocks, trianglesBeforeSimplification, trianglesRendered,
+    TerrainSimplificationCounts currentFrame() {
+        return new TerrainSimplificationCounts(blocks, trianglesBeforeSimplification, trianglesRendered,
             deltaProjections, blocksThatCouldCoarsen);
     }
 
     /** Safe to read from any thread. */
-    Frame lastFrame() {
+    TerrainSimplificationCounts lastFrame() {
         return lastFrame;
     }
 }

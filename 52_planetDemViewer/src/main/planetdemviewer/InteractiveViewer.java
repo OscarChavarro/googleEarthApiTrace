@@ -19,6 +19,7 @@ import planetdemviewer.io.ViewerSnapshotWriter;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.dialog.LayerTreePresenter;
+import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
 import planetdemviewer.render.PlanetViewerSession;
 import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
 import planetdemviewer.state.ApplicationStateStore;
@@ -54,7 +55,8 @@ public class InteractiveViewer extends Applet {
     public void launchDesktop() {
         fillGuiWithCanvas();
 
-        frame = new AwtMainWindow(canvas, gui, new LayerTreePresenter(model), this::requestClose);
+        frame = new AwtMainWindow(canvas, gui, new LayerTreePresenter(model),
+            new ScreenErrorThresholdPresenter(model, session::terrainSimplificationCounts), this::requestClose);
         frame.setVisible(true);
         startJoglAnimator();
         canvas.requestFocusInWindow();

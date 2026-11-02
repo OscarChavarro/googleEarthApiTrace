@@ -17,6 +17,7 @@ import planetdemviewer.scheduler.ResourceType;
 import planetdemviewer.spatial.TileAddress;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
+import planetdemviewer.terrain.TerrainSimplificationCounts;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.light.Light;
 import vsdk.toolkit.environment.material.RendererConfiguration;
@@ -228,6 +229,11 @@ public final class PlanetViewerSession {
             + ",\"terrainSimplification\":" + simplificationStatistics.lastFrame().json()
             + ",\"uniformLod\":" + uniformLodVisible
             + ",\"tileBounds\":" + terrainTileBoundsVisible + "}";
+    }
+
+    /** What the view-dependent subdivision did in the last finished frame. Safe to read from any thread. */
+    public TerrainSimplificationCounts terrainSimplificationCounts() {
+        return simplificationStatistics.lastFrame();
     }
 
     public void setSelectedCameraModel(Vector3Dd position, Vector3Dd focus, Vector3Dd up) {

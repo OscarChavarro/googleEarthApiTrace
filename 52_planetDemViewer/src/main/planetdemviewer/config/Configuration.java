@@ -21,6 +21,16 @@ public final class Configuration {
      * Height Fields", SIGGRAPH 1996.
      */
     public static final double DEFAULT_SCREEN_ERROR_THRESHOLD_PIXELS = 1.0;
+    /**
+     * The thresholds a user can choose: those of table [LIND1996].1, whose 0 only joins
+     * coplanar triangles, and beyond them one where almost only the tile boundaries remain.
+     */
+    private static final double[] SCREEN_ERROR_THRESHOLD_STOPS_PIXELS = {0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0};
+
+    public static double[] screenErrorThresholdStopsPixels() {
+        return SCREEN_ERROR_THRESHOLD_STOPS_PIXELS.clone();
+    }
+
     public static final Path PALETTE_DIRECTORY = Path.of("../etc/palettes");
     public static final Path EGM2008_GRID = Path.of("etc/wgs/globalDeltaHeightsMatrix.json");
     public static final Path GUI_DIRECTORY = Path.of("etc/gui");

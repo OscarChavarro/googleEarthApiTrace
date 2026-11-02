@@ -9,6 +9,7 @@ import planetdemviewer.config.Configuration;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.terrain.TerrainSimplificationCounts;
 import planetdemviewer.terrain.TerrainSubdivisionScheme;
 
 class HudContentTest {
@@ -20,8 +21,8 @@ class HudContentTest {
     private final ViewportLayout viewports = new ViewportLayout(model.getViewingCamera());
     private final HudContent hud = new HudContent(model, viewports);
 
-    private static final TerrainSimplificationStatistics.Frame SIMPLIFICATION =
-        new TerrainSimplificationStatistics.Frame(2, 262144L, 900L, 33L, 1);
+    private static final TerrainSimplificationCounts SIMPLIFICATION =
+        new TerrainSimplificationCounts(2, 262144L, 900L, 33L, 1);
 
     private List<String> lines(boolean uniformLod) {
         return hud.statusLines(new HudFrameStats(7, 3 * MB, 11, 5 * MB, 0L, 0, uniformLod, SIMPLIFICATION));

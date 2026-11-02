@@ -34,7 +34,7 @@ public final class LayerTreePresenter {
     }
 
     public void setChangeListener(Runnable listener) {
-        model.setLayerStateListener(listener);
+        model.addLayerStateListener(listener);
     }
 
     public String title(Widget definitions) {

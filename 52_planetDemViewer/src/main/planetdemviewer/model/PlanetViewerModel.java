@@ -1,5 +1,6 @@
 package planetdemviewer.model;
 
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -55,7 +56,7 @@ public final class PlanetViewerModel {
     private boolean imageryAvailable;
     private boolean imageryEnabled = true;
     private Widget guiDefinitions;
-    private Runnable layerStateListener;
+    private final List<Runnable> layerStateListeners = new CopyOnWriteArrayList<>();
     private double heightExagerationFactor = 1.0;
     private TerrainSurfaceSelection terrainSurfaceSelection;
 
@@ -213,6 +214,7 @@ public final class PlanetViewerModel {
 
     public void setScreenErrorThresholdPixels(double pixels) {
         screenErrorThresholdPixels = pixels;
+        notifyLayerStateChanged();
     }
 
     public boolean isImageryAvailable() {
@@ -285,14 +287,12 @@ public final class PlanetViewerModel {
     }
 
     /** Lets a GUI follow layer changes from any input path. May run while the model lock is held. */
-    public void setLayerStateListener(Runnable layerStateListener) {
-        this.layerStateListener = layerStateListener;
+    public void addLayerStateListener(Runnable layerStateListener) {
+        layerStateListeners.add(layerStateListener);
     }
 
     private void notifyLayerStateChanged() {
-        if (layerStateListener != null) {
-            layerStateListener.run();
-        }
+        layerStateListeners.forEach(Runnable::run);
     }
 
     public double getHeightExagerationFactor() {

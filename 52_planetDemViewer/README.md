@@ -90,10 +90,12 @@ than the geometry is not used yet.
 ### LIND1996
 
 The vertex-based simplification of [LIND1996] removes a vertex while its delta
-segment projects to less than a threshold of 1 pixel. The MCP tool
-`set_screen_error_threshold` changes that threshold, which is not saved. The HUD and
-`get_camera_model` report, per frame, the triangles before and after simplification
-and the evaluations of the projection equation. The vertices of a tile stay on the
+segment projects to less than a threshold, τ, of 1 pixel. Selecting LIND1996 shows a
+panel at the bottom of the layer panel, with a slider and the mouse wheel moving τ over
+values from 0 to 16 pixels, and the original and optimized triangle counts of the frame
+below them. The MCP tool `set_screen_error_threshold` also sets τ, to any value. It is
+not saved. The HUD and `get_camera_model` report, per frame, the triangles before and
+after simplification and the evaluations of the projection equation. The vertices of a tile stay on the
 GPU and only its triangle indices change. Popping is visible: the algorithm is meant
 to be compared with later ones that treat it.
 

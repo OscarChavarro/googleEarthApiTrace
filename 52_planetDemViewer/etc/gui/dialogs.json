@@ -34,6 +34,16 @@
           ]
         }
       ]
+    },
+    {
+      "id": "lind1996.details",
+      "titleKey": "IDM_LIND1996_TITLE",
+      "modal": false,
+      "content": [
+        { "kind": "slider", "id": "threshold", "binding": "screenErrorThresholdPixels", "labelKey": "IDM_LIND1996_THRESHOLD" },
+        { "kind": "label", "id": "originalTriangles", "binding": "trianglesBeforeSimplification", "labelKey": "IDM_LIND1996_ORIGINAL_TRIANGLES" },
+        { "kind": "label", "id": "optimizedTriangles", "binding": "trianglesRendered", "labelKey": "IDM_LIND1996_OPTIMIZED_TRIANGLES" }
+      ]
     }
   ]
 }

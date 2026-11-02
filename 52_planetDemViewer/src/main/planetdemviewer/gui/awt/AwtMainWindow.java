@@ -14,6 +14,7 @@ import javax.swing.JSplitPane;
 import javax.swing.WindowConstants;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.dialog.LayerTreePresenter;
+import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
 import vsdk.toolkit.gui.widget.Widget;
 import vsdk.toolkit.render.swing.SwingGuiRenderer;
 
@@ -28,23 +29,30 @@ public final class AwtMainWindow extends JFrame {
     private final transient GuiController gui;
     private final Component canvas;
     private final AwtLayerTreePanel layerPanel;
+    private final AwtScreenErrorThresholdPanel thresholdPanel;
+    private final JPanel sidePanel;
     private final JSplitPane split;
     private final int dividerSize;
     private int windowedDividerLocation = LAYER_PANEL_WIDTH;
     private boolean fullScreen;
 
-    public AwtMainWindow(Component canvas, GuiController gui, LayerTreePresenter layers, Runnable closeAction) {
+    public AwtMainWindow(Component canvas, GuiController gui, LayerTreePresenter layers,
+                         ScreenErrorThresholdPresenter threshold, Runnable closeAction) {
         this.canvas = canvas;
         this.gui = gui;
         layerPanel = new AwtLayerTreePanel(layers);
+        thresholdPanel = new AwtScreenErrorThresholdPanel(threshold);
+        sidePanel = new JPanel(new BorderLayout());
+        sidePanel.add(layerPanel, BorderLayout.CENTER);
+        sidePanel.add(thresholdPanel, BorderLayout.SOUTH);
 
         // Inside a lightweight container, the split pane resizes the heavyweight
         // canvas instead of removing it and destroying its OpenGL context.
         JPanel canvasHost = new JPanel(new BorderLayout());
         canvasHost.add(canvas, BorderLayout.CENTER);
         canvasHost.setMinimumSize(new Dimension(160, 120));
-        layerPanel.setMinimumSize(new Dimension(120, 120));
-        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, layerPanel, canvasHost);
+        sidePanel.setMinimumSize(new Dimension(120, 120));
+        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidePanel, canvasHost);
         split.setContinuousLayout(true);
         split.setResizeWeight(0.0);
         split.setDividerLocation(LAYER_PANEL_WIDTH);
@@ -76,6 +84,7 @@ public final class AwtMainWindow extends JFrame {
         menuBar.setVisible(!fullScreen);
         setJMenuBar(menuBar);
         layerPanel.rebuild(definitions);
+        thresholdPanel.rebuild(definitions);
         revalidate();
         repaint();
     }
@@ -88,7 +97,7 @@ public final class AwtMainWindow extends JFrame {
             windowedDividerLocation = split.getDividerLocation();
         }
         getJMenuBar().setVisible(!fullScreen);
-        layerPanel.setVisible(!fullScreen);
+        sidePanel.setVisible(!fullScreen);
         split.setDividerSize(fullScreen ? 0 : dividerSize);
         device.setFullScreenWindow(fullScreen ? this : null);
         if (!fullScreen) {
