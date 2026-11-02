@@ -318,7 +318,9 @@ Vitral's `CameraControllerAquynza` move the active camera. Project-specific
 controls are:
 
 In 3D terrain mode, a left click places the blue surface marker and updates
-its HUD information. Use `Ctrl`+click to also select the hit tile; its min/max
+its HUD information: the elevation tile and level, and on the line below them
+the color tile and level showing at that point when it was clicked, which can
+be another level. Use `Ctrl`+click to also select the hit tile; its min/max
 box is drawn in yellow.
 
 | Key | Action |
@@ -327,8 +329,9 @@ box is drawn in yellow.
 | `t` | Toggle Google Earth color on the 3D terrain |
 | `3` / `4` | Previous / next GIMP palette |
 | `5` / `6` | Halve / double vertical exaggeration |
-| `0` | Toggle terrain tile bounds |
+| `0` / `F4` | Toggle tile bounds in the selected view |
 | `F2` | Toggle triangle edges |
+| `F7` | Next shading model of the selected view: no light, flat, Gouraud, Phong, Cook-Terrance |
 | `Ctrl` + click | Select terrain tile for cleanup |
 | `Delete` | Delete the selected tile's imagery `.png` and all its sublevels, and free their GPU textures; no confirmation, no undo (never the DEM `.bin`) |
 | `9` | Toggle uniform LOD |
@@ -359,7 +362,7 @@ agents at `http://127.0.0.1:<port>/mcp`:
 | `set_dependencies_cross_tiles` | Whether adjacent LIND1996 tiles of the same level simplify their common edge together |
 | `set_independent_imagery_levels` | Whether color may come from other levels than the geometry |
 | `set_wires` | Show or hide the triangle edges, as `F2` does |
-| `set_tile_bounds` | Show or hide tile bounds |
+| `set_tile_bounds` | Show or hide tile bounds in the selected view, as `0` and `F4` do |
 | `click_viewport` | Select the terrain under a pixel of `capture_view` |
 | `key_event` | Send a key code, without modifiers |
 | `capture_view` | Save the canvas to a local PNG and return its path |

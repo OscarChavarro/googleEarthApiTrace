@@ -155,14 +155,14 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
 
     private List<DrawCommand> drawTerrain(GL4 gl, PyramidalImageInstance instance, View view) {
         Light light = session.terrainLightFor(view.getCamera());
-        return terrainRenderer.draw(gl, instance, session.terrainFrameSettings(instance), view.getCamera(),
+        return terrainRenderer.draw(gl, instance, session.terrainFrameSettings(instance, view), view.getCamera(),
             view.getRenderingConfiguration(), light, session.terrainMaterial());
     }
 
     private List<DrawCommand> drawPaletteImage(GL4 gl, PyramidalImageInstance instance, View view) {
         return quadtreeRenderer.draw(gl, instance, session.cullingCamera(), session.relativeScale(instance),
             view.getRenderingConfiguration().isWiresSet(),
-            session.isTerrainTileBoundsVisible(), session.isUniformLodVisible());
+            view.getRenderingConfiguration().isBoundingVolumeSet(), session.isUniformLodVisible());
     }
 
     private void drawTileLabels(GL4 gl, List<TextLabel> labels, int[] viewport, int canvasWidth, int canvasHeight) {

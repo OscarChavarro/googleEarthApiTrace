@@ -49,44 +49,107 @@ public final class Jogl4TerrainRenderer {
         uniform mat4 model;
         uniform mat4 modelInverseTranspose;
         uniform vec3 textureMapping;
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform float phongExponent;
         out vec2 uv;
         out vec3 surfacePosition;
         out vec3 surfaceNormal;
+        out float gouraudLambert;
+        out float gouraudSpecular;
         void main() {
             gl_Position=mvp*vec4(position,1.0);
             uv=texCoord*textureMapping.x+textureMapping.yz;
             surfacePosition=(model*vec4(position,1.0)).xyz;
             surfaceNormal=normalize(mat3(modelInverseTranspose)*normal);
+            vec3 lightDirection=normalize(lightPosition-surfacePosition);
+            vec3 viewDirection=normalize(cameraPosition-surfacePosition);
+            gouraudLambert=max(dot(surfaceNormal, lightDirection), 0.0);
+            gouraudSpecular=gouraudLambert > 0.0
+                ? pow(max(dot(viewDirection, reflect(-lightDirection, surfaceNormal)), 0.0), phongExponent)
+                : 0.0;
         }
         """;
+    /**
+     * Each shading type of Vitral's RendererConfiguration, with a mapped texture that Vitral's own
+     * shaders cannot take. Light is computed as in those shaders (the Cook-Terrance terms are those
+     * of its cookTexturePixelShader.glsl), but the image also modulates the ambient term here.
+     */
     private static final String TEXTURE_FRAGMENT_SHADER = """
         #version 410 core
         in vec2 uv;
         in vec3 surfacePosition;
         in vec3 surfaceNormal;
+        in float gouraudLambert;
+        in float gouraudSpecular;
         uniform sampler2D tileTexture;
+        uniform int shadingType;
         uniform vec3 lightPosition;
         uniform vec3 lightColor;
         uniform vec3 ambientColor;
         uniform vec3 cameraPosition;
         uniform vec3 specularColor;
         uniform float phongExponent;
+        uniform float cookRoughness;
+        uniform float cookAlpha;
+        uniform float cookKd;
+        uniform float cookKs;
+        uniform vec3 cookF0;
         out vec4 fragColor;
+
+        vec3 cookTerrance(vec3 albedo, vec3 normal, vec3 lightDirection, vec3 viewDirection) {
+            float ndotL=max(dot(normal, lightDirection), 0.0);
+            float ndotV=max(dot(normal, viewDirection), 0.0);
+            vec3 color=albedo*ambientColor;
+            if (ndotL <= 0.0 || ndotV <= 0.0) {
+                return color;
+            }
+            vec3 H=normalize(lightDirection+viewDirection);
+            float ndotH=max(dot(normal, H), 0.0);
+            float vdotH=max(dot(viewDirection, H), 0.0);
+            float mSquared=max(cookRoughness*cookRoughness, 1e-6);
+            float ndotHSquared=max(ndotH*ndotH, 1e-8);
+            float D=exp(-(1.0-ndotHSquared)/ndotHSquared/mSquared)
+                / (3.14159265*mSquared*ndotHSquared*ndotHSquared);
+            float k=cookAlpha*0.5;
+            float G=ndotV/(ndotV*(1.0-k)+k)*ndotL/(ndotL*(1.0-k)+k);
+            vec3 F=cookF0+(vec3(1.0)-cookF0)*pow(max(0.0, 1.0-vdotH), 5.0);
+            vec3 specular=cookKs*(D*G/max(1e-8, 4.0*ndotL*ndotV))*F;
+            return color+lightColor*(cookKd*albedo*ndotL+specular);
+        }
+
         void main() {
             vec3 albedo=texture(tileTexture, uv).rgb;
+            if (shadingType == %d) {
+                fragColor=vec4(albedo, 1.0);
+                return;
+            }
             vec3 lightDirection=normalize(lightPosition-surfacePosition);
-            vec3 normal=normalize(surfaceNormal);
-            float lambert=max(dot(normal, lightDirection), 0.0);
             vec3 viewDirection=normalize(cameraPosition-surfacePosition);
-            vec3 reflectedLight=reflect(-lightDirection, normal);
-            float specular=lambert > 0.0
-                ? pow(max(dot(viewDirection, reflectedLight), 0.0), phongExponent)
-                : 0.0;
+            vec3 normal=normalize(surfaceNormal);
+            if (shadingType == %d) {
+                // Window x cross window y points to the viewer whatever the triangle's winding.
+                normal=normalize(cross(dFdx(surfacePosition), dFdy(surfacePosition)));
+            }
+            if (shadingType == %d) {
+                fragColor=vec4(cookTerrance(albedo, normal, lightDirection, viewDirection), 1.0);
+                return;
+            }
+            float lambert=gouraudLambert;
+            float specular=gouraudSpecular;
+            if (shadingType != %d) {
+                lambert=max(dot(normal, lightDirection), 0.0);
+                vec3 reflectedLight=reflect(-lightDirection, normal);
+                specular=lambert > 0.0
+                    ? pow(max(dot(viewDirection, reflectedLight), 0.0), phongExponent)
+                    : 0.0;
+            }
             vec3 color=albedo*(ambientColor+lightColor*lambert)
                 + specularColor*lightColor*specular;
             fragColor=vec4(color, 1.0);
         }
-        """;
+        """.formatted(RendererConfiguration.SHADING_TYPE_NOLIGHT, RendererConfiguration.SHADING_TYPE_FLAT,
+            RendererConfiguration.SHADING_TYPE_COOK_TERRANCE, RendererConfiguration.SHADING_TYPE_GOURAUD);
     private static final String BOUNDS_FRAGMENT_SHADER = """
         #version 410 core
         layout(location = 0) out vec4 fragColor;
@@ -159,7 +222,7 @@ public final class Jogl4TerrainRenderer {
         gl.glDisable(GL.GL_CULL_FACE);
 
         if (quality.isSurfacesSet()) {
-            drawTexturedBlocks(gl, draw, mvp, modelMatrix, modelIt, camera, light, material);
+            drawTexturedBlocks(gl, draw, mvp, modelMatrix, modelIt, camera, light, material, quality);
             drawUntexturedBlocks(gl, draw, mvp, modelMatrix, modelIt, camera, light, material, quality);
         }
 
@@ -202,7 +265,7 @@ public final class Jogl4TerrainRenderer {
 
     private void drawTexturedBlocks(GL4 gl, TerrainMeshDraw<Integer, GpuMesh> draw, Matrix4x4d mvp,
                                     Matrix4x4d modelMatrix, Matrix4x4d modelIt, Camera camera, Light light,
-                                    SimpleMaterial material) {
+                                    SimpleMaterial material, RendererConfiguration quality) {
         ensureTextureProgram(gl);
         gl.glUseProgram(textureProgram);
         gl.glUniformMatrix4fv(textureMvpLocation, 1, false, Jogl4MatrixRenderer.toColumnMajorFloatArray(mvp), 0);
@@ -214,6 +277,8 @@ public final class Jogl4TerrainRenderer {
         setVector3(gl, textureProgram, "cameraPosition", camera.getPosition());
         setVector3(gl, textureProgram, "specularColor", material.getSpecular());
         setFloat(gl, textureProgram, "phongExponent", (float) material.getPhongExponent());
+        setInt(gl, textureProgram, "shadingType", quality.getShadingType());
+        setCookParameters(gl, textureProgram, material);
         gl.glActiveTexture(GL.GL_TEXTURE0);
         int sampler = gl.glGetUniformLocation(textureProgram, "tileTexture");
         if (sampler >= 0) {
@@ -277,8 +342,17 @@ public final class Jogl4TerrainRenderer {
         setVector3(gl, program, "diffuseColor", material.getDiffuse());
         setVector3(gl, program, "specularColor", material.getSpecular());
         setFloat(gl, program, "phongExponent", (float) material.getPhongExponent());
+        setCookParameters(gl, program, material);
         setInt(gl, program, "withTexture", 0);
         setInt(gl, program, "withBumpMap", 0);
+    }
+
+    private static void setCookParameters(GL4 gl, int program, SimpleMaterial material) {
+        setFloat(gl, program, "cookRoughness", RenderStyles.COOK_ROUGHNESS);
+        setFloat(gl, program, "cookAlpha", RenderStyles.COOK_ALPHA);
+        setFloat(gl, program, "cookKd", RenderStyles.COOK_KD);
+        setFloat(gl, program, "cookKs", RenderStyles.COOK_KS);
+        setVector3(gl, program, "cookF0", material.getSpecular());
     }
 
     public void dispose(GL4 gl) {

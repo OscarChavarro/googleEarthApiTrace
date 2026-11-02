@@ -7,12 +7,11 @@ import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.scene.TerrainSurfaceSelection;
-import vsdk.toolkit.common.color.ColorRgb;
+import planetdemviewer.spatial.TileAddress;
 
 /** Composes the localized status text, the frame statistics and the selected surface point. */
 public final class HudContent {
     private static final long BYTES_PER_MB = 1024L * 1024L;
-    private static final ColorRgb SELECTION_COLOR = new ColorRgb(45 / 255.0, 125 / 255.0, 205 / 255.0);
     private static final int STATUS_LEFT = 16;
     private static final int STATUS_TOP_MARGIN = 24;
     private static final int STATUS_LINE_HEIGHT = 22;
@@ -40,25 +39,32 @@ public final class HudContent {
         }
         int right = canvasWidth - PERFORMANCE_RIGHT_MARGIN;
         labels.add(TextLabel.rightAligned(model.text("IDM_HUD_FPS", frameRate.framesPerSecond()),
-            TextStyle.PERFORMANCE, right, 94, TextLabel.YELLOW));
+            TextStyle.PERFORMANCE, right, 94, TextLabel.WHITE));
         labels.add(TextLabel.rightAligned(model.text("IDM_HUD_TILE_RAM", formatBytes(stats.tileRamBytes())),
-            TextStyle.PERFORMANCE, right, 58, TextLabel.YELLOW));
+            TextStyle.PERFORMANCE, right, 58, TextLabel.WHITE));
         labels.add(TextLabel.rightAligned(model.text("IDM_HUD_TILE_GPU", formatBytes(stats.totalGpuBytes())),
-            TextStyle.PERFORMANCE, right, 22, TextLabel.YELLOW));
+            TextStyle.PERFORMANCE, right, 22, TextLabel.WHITE));
         TerrainSurfaceSelection selection = model.getTerrainSurfaceSelection();
         if (selection != null) {
             labels.add(TextLabel.left(model.text("IDM_HUD_SURFACE",
                 String.format(Locale.ROOT, "%.6f", selection.position().longitude()),
                 String.format(Locale.ROOT, "%.6f", selection.position().latitude()),
                 String.format(Locale.ROOT, "%.2f", selection.heightAboveMeanSeaLevelMetres())),
-                TextStyle.SELECTION, 16, 76, SELECTION_COLOR));
+                TextStyle.SELECTION, 16, 114, TextLabel.WHITE));
             labels.add(TextLabel.left(model.text("IDM_HUD_SELECTED_TILE",
                 selection.tile().quadkey(), selection.tile().level(),
                 String.format(Locale.ROOT, "%.2f", selection.geoidXMetres()),
                 String.format(Locale.ROOT, "%.2f", selection.geoidYMetres())),
-                TextStyle.SELECTION, 16, 38, SELECTION_COLOR));
+                TextStyle.SELECTION, 16, 76, TextLabel.WHITE));
+            labels.add(TextLabel.left(selectedImageryLabel(selection), TextStyle.SELECTION, 16, 38, TextLabel.WHITE));
         }
-        return labels;
+        return labels.stream().flatMap(label -> label.withShadow().stream()).toList();
+    }
+
+    private String selectedImageryLabel(TerrainSurfaceSelection selection) {
+        TileAddress imagery = selection.imageryTile();
+        return imagery == null ? model.text("IDM_HUD_SELECTED_NO_IMAGERY")
+            : model.text("IDM_HUD_SELECTED_IMAGERY", imagery.quadkey(), imagery.level());
     }
 
     List<String> statusLines(HudFrameStats stats) {

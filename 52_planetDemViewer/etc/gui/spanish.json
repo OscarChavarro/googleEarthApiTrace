@@ -68,6 +68,8 @@
     "IDM_HUD_TILE_RAM": "RAM de teselas: {0}",
     "IDM_HUD_TILE_GPU": "GPU de teselas: {0}",
     "IDM_HUD_SURFACE": "Superficie: {0}°, {1}° | NMM: {2} m",
-    "IDM_HUD_SELECTED_TILE": "{0}: {1} <geoideX={2} m, geoideY={3} m>"
+    "IDM_HUD_SELECTED_TILE": "H: {0}: {1} <geoideX={2} m, geoideY={3} m>",
+    "IDM_HUD_SELECTED_IMAGERY": "T: {0}: {1}",
+    "IDM_HUD_SELECTED_NO_IMAGERY": "T: ninguno"
   }
 }

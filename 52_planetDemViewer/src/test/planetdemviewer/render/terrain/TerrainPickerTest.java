@@ -41,7 +41,7 @@ class TerrainPickerTest {
         picker.setRenderedSurfaceSize(800, 600);
         model.setOperationMode(OperationModes.BASIC_TRIANGULATION);
         model.setTerrainSurfaceSelection(new TerrainSurfaceSelection(new GeographicSurfacePosition(1.0, 2.0),
-            new WorldPosition(0.0, 0.0, 0.0), TileAddress.fabdem("0"), 0.0, 0.0, 0.0));
+            new WorldPosition(0.0, 0.0, 0.0), TileAddress.fabdem("0"), null, 0.0, 0.0, 0.0));
     }
 
     @AfterEach
@@ -87,7 +87,7 @@ class TerrainPickerTest {
         QuadtreeNode root = new QuadtreeNode("0", null, new File("0.bin"));
         QuadtreeNode node = quadkey.equals("0") ? root : new QuadtreeNode(quadkey, root, new File(quadkey + ".bin"));
         return new TerrainPickHit(new DrawCommand(node, new Vector3Dd[0]),
-            new WorldPosition(1.0, 2.0, 3.0), 10.0, localX, localY, 0.0);
+            new WorldPosition(1.0, 2.0, 3.0), 10.0, localX, localY, 0.0, TileAddress.fabdem("012"));
     }
 
     @Test
@@ -98,6 +98,7 @@ class TerrainPickerTest {
         assertEquals(90.0, selection.position().longitude(), 1e-9);
         assertEquals(-45.0, selection.position().latitude(), 1e-9);
         assertEquals(TileAddress.fabdem("0"), selection.tile());
+        assertEquals(TileAddress.fabdem("012"), selection.imageryTile());
         assertEquals(1.0, selection.worldPosition().x(), 1e-12);
     }
 

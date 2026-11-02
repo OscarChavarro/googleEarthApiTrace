@@ -6,11 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import planetdemviewer.config.Configuration;
+import planetdemviewer.geo.GeographicSurfacePosition;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.render.terrain.TerrainSimplificationCounts;
 import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.scene.TerrainSurfaceSelection;
+import planetdemviewer.spatial.TileAddress;
+import planetdemviewer.spatial.WorldPosition;
 
 class HudContentTest {
     private static final long MB = 1024L * 1024L;
@@ -72,6 +76,45 @@ class HudContentTest {
         assertTrue(camera.contains(model.text("IDM_HUD_VIEW_TITLE", 2)), camera);
         assertEquals(model.text("IDM_HUD_VIEW_TITLE", 1),
             HudContent.viewTitle(model, viewports, viewports.mainView()));
+    }
+
+    private List<TextLabel> labels() {
+        return hud.labels(1000, 800, new HudFrameStats(7, 3 * MB, 11, 5 * MB, 0L, 0, false, SIMPLIFICATION));
+    }
+
+    private void select(TileAddress imagery) {
+        model.setTerrainSurfaceSelection(new TerrainSurfaceSelection(new GeographicSurfacePosition(1.0, 2.0),
+            new WorldPosition(0.0, 0.0, 0.0), TileAddress.fabdem("0312"), imagery, 0.0, 0.0, 0.0));
+    }
+
+    @Test
+    void everyLabelIsWhiteOverABlackShadow() {
+        select(TileAddress.fabdem("03121"));
+        List<TextLabel> labels = labels();
+        assertEquals(0, labels.size() % 2);
+        for (int i = 0; i < labels.size(); i += 2) {
+            assertEquals(TextLabel.BLACK, labels.get(i).color(), labels.get(i).text());
+            assertEquals(TextLabel.WHITE, labels.get(i + 1).color(), labels.get(i + 1).text());
+        }
+    }
+
+    @Test
+    void theColorTileGoesOnTheLineBelowTheElevationTile() {
+        select(TileAddress.fabdem("03121"));
+        List<TextLabel> selection = labels().stream()
+            .filter(label -> label.style() == TextStyle.SELECTION && label.color() == TextLabel.WHITE).toList();
+        assertEquals(3, selection.size());
+        assertTrue(selection.get(1).text().startsWith("H: 0312: 3"), selection.get(1).text());
+        assertEquals("T: 03121: 4", selection.get(2).text());
+        assertTrue(selection.get(2).baselineY() < selection.get(1).baselineY());
+        assertTrue(selection.get(2).baselineY() > 0);
+    }
+
+    @Test
+    void saysSoWhenThePointShowedNoColor() {
+        select(null);
+        assertTrue(labels().stream().anyMatch(
+            label -> label.text().equals(model.text("IDM_HUD_SELECTED_NO_IMAGERY"))));
     }
 
     @Test

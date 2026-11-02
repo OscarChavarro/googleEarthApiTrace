@@ -57,7 +57,6 @@ public final class PlanetViewerSession {
     private final List<TileAddress> pendingImageryReleases = new ArrayList<>();
     private GpuResourceUsage rasterGpuUsage = GpuResourceUsage.NONE;
     private GpuResourceUsage terrainGpuUsage = GpuResourceUsage.NONE;
-    private boolean terrainTileBoundsVisible;
     private boolean uniformLodVisible;
     private volatile boolean paletteInvalidationRequested;
 
@@ -179,16 +178,17 @@ public final class PlanetViewerSession {
     }
 
     /** Shows the min/max bounding box of every terrain tile selected for 3D rendering. */
+    /** Tile bounds are the bounding volumes of the selected view, which F4 also changes in its configuration. */
     public void toggleTerrainTileBoundsVisible() {
-        terrainTileBoundsVisible = !terrainTileBoundsVisible;
+        getSelectedViewRenderingConfiguration().changeBoundingVolume();
     }
 
     public void setTerrainTileBoundsVisible(boolean visible) {
-        terrainTileBoundsVisible = visible;
+        getSelectedViewRenderingConfiguration().setBoundingVolume(visible);
     }
 
     public boolean isTerrainTileBoundsVisible() {
-        return terrainTileBoundsVisible;
+        return getSelectedViewRenderingConfiguration().isBoundingVolumeSet();
     }
 
     /** Keeps all visible tiles at the finest LOD that dynamic selection currently needs. */
@@ -236,7 +236,7 @@ public final class PlanetViewerSession {
             + ",\"wires\":" + viewports.selectedRenderingConfiguration().isWiresSet()
             + ",\"terrainSimplification\":" + simplificationStatistics.lastFrame().json()
             + ",\"uniformLod\":" + uniformLodVisible
-            + ",\"tileBounds\":" + terrainTileBoundsVisible + "}";
+            + ",\"tileBounds\":" + isTerrainTileBoundsVisible() + "}";
     }
 
     /** What the view-dependent subdivision did in the last finished frame. Safe to read from any thread. */
@@ -292,7 +292,7 @@ public final class PlanetViewerSession {
 
     /** What to write over the tiles drawn in a view: nothing unless their bounds are shown. */
     public List<TextLabel> tileLabels(List<DrawCommand> drawn, View view, int[] viewport) {
-        return terrainTileBoundsVisible ? TileLabelLayout.labels(drawn, view.getCamera(), viewport) : List.of();
+        return view.getRenderingConfiguration().isBoundingVolumeSet() ? TileLabelLayout.labels(drawn, view.getCamera(), viewport) : List.of();
     }
 
     public List<PyramidalImageInstance> orderedByStackHeight() {
@@ -318,10 +318,10 @@ public final class PlanetViewerSession {
         return model.relativeScale(instance.getPsc());
     }
 
-    public TerrainFrameSettings terrainFrameSettings(PyramidalImageInstance instance) {
+    public TerrainFrameSettings terrainFrameSettings(PyramidalImageInstance instance, View view) {
         return new TerrainFrameSettings(cullingCamera(), relativeScale(instance),
             model.getHeightExagerationFactor(), uniformLodVisible, model.getTerrainSubdivisionScheme(),
-            terrainTileBoundsVisible, terrainPicker.selectedTile(), model.isImageryVisible(),
+            view.getRenderingConfiguration().isBoundingVolumeSet(), terrainPicker.selectedTile(), model.isImageryVisible(),
             model.getScreenErrorThresholdPixels(), model.isDependenciesCrossTiles(),
             model.usesIndependentImageryLevels());
     }

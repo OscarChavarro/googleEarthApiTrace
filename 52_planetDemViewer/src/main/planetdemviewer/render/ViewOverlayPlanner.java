@@ -107,6 +107,6 @@ public final class ViewOverlayPlanner {
         }
         TextLabel title = TextLabel.left(HudContent.viewTitle(model, viewports, view), TextStyle.STATUS,
             viewport[0] + 6, viewport[1] + viewport[3] - 18, TextLabel.WHITE);
-        return new ViewBorder(positions, colors, view.isSelected() ? 2.5f : 1.0f, title);
+        return new ViewBorder(positions, colors, view.isSelected() ? 2.5f : 1.0f, title.withShadow());
     }
 }

@@ -68,6 +68,8 @@
     "IDM_HUD_TILE_RAM": "Tile RAM: {0}",
     "IDM_HUD_TILE_GPU": "Tile GPU: {0}",
     "IDM_HUD_SURFACE": "Surface: {0}°, {1}° | MSL: {2} m",
-    "IDM_HUD_SELECTED_TILE": "{0}: {1} <geoidX={2} m, geoidY={3} m>"
+    "IDM_HUD_SELECTED_TILE": "H: {0}: {1} <geoidX={2} m, geoidY={3} m>",
+    "IDM_HUD_SELECTED_IMAGERY": "T: {0}: {1}",
+    "IDM_HUD_SELECTED_NO_IMAGERY": "T: none"
   }
 }

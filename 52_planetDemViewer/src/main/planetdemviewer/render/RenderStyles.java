@@ -13,6 +13,15 @@ public final class RenderStyles {
         return new ColorRgb(0.02, 0.02, 0.05);
     }
 
+    /**
+     * The values that Vitral's mesh renderer gives the Cook-Terrance shaders for a material
+     * that has no microfacet data; the Fresnel reflectance there is the material's specular color.
+     */
+    public static final float COOK_ROUGHNESS = 0.35f;
+    public static final float COOK_ALPHA = COOK_ROUGHNESS * COOK_ROUGHNESS;
+    public static final float COOK_KD = 1.0f;
+    public static final float COOK_KS = 1.0f;
+
     public static RendererConfiguration noLightConfiguration() {
         RendererConfiguration configuration = new RendererConfiguration();
         configuration.setTexture(false);

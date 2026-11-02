@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.spatial.Ray3;
+import planetdemviewer.spatial.TileAddress;
 import planetdemviewer.spatial.WorldPosition;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.geometry.surface.TriangleMesh;
@@ -17,8 +18,9 @@ public final class TerrainPickFrame implements TerrainRayIntersector {
         drawnMeshes.clear();
     }
 
-    public void meshDrawn(TerrainDrawItem item, TriangleMesh mesh) {
-        drawnMeshes.add(new DrawnMesh(item, mesh));
+    /** The texture blocks say which imagery tile fills each range of the mesh's triangle indices. */
+    public void meshDrawn(TerrainDrawItem item, TriangleMesh mesh, List<? extends TerrainTextureBlock<?>> textureBlocks) {
+        drawnMeshes.add(new DrawnMesh(item, mesh, textureBlocks));
     }
 
     @Override
@@ -40,11 +42,22 @@ public final class TerrainPickFrame implements TerrainRayIntersector {
                     double elevationMetres = (world.z() - item.offsetZ())
                         / (item.relativeScale() * item.heightExaggeration())
                         * Configuration.WORLD_WIDTH_METRES;
-                    closest = new TerrainPickHit(item.command(), world, distance, localX, localY, elevationMetres);
+                    closest = new TerrainPickHit(item.command(), world, distance, localX, localY, elevationMetres,
+                        imageryTileAt(drawn.textureBlocks, offset));
                 }
             }
         }
         return closest;
+    }
+
+    /** Returns null when that triangle shows no color. */
+    private static TileAddress imageryTileAt(List<? extends TerrainTextureBlock<?>> textureBlocks, int index) {
+        for (TerrainTextureBlock<?> block : textureBlocks) {
+            if (index >= block.firstIndex() && index < block.firstIndex() + block.indexCount()) {
+                return block.source();
+            }
+        }
+        return null;
     }
 
     private static WorldPosition transformed(double[] positions, int vertex, TerrainDrawItem item) {
@@ -97,6 +110,7 @@ public final class TerrainPickFrame implements TerrainRayIntersector {
         return first.x() * second.x() + first.y() * second.y() + first.z() * second.z();
     }
 
-    private record DrawnMesh(TerrainDrawItem item, TriangleMesh mesh) {
+    private record DrawnMesh(TerrainDrawItem item, TriangleMesh mesh,
+                             List<? extends TerrainTextureBlock<?>> textureBlocks) {
     }
 }

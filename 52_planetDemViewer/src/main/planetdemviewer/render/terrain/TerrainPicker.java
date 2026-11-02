@@ -125,7 +125,7 @@ public final class TerrainPicker {
         GeographicSurfacePosition position = new GeographicSurfacePosition(longitude, latitude);
         double orthometricHeight = tileImageLoader.orthometricHeight(
             new GeographicCoordinate(longitude, latitude), hit.ellipsoidalElevationMetres());
-        return new TerrainSurfaceSelection(position, hit.worldPosition(), tile,
+        return new TerrainSurfaceSelection(position, hit.worldPosition(), tile, hit.imageryTile(),
             orthometricHeight, geoidX, geoidY);
     }
 }

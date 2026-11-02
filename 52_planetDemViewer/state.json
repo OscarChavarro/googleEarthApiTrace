@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "camera": {"position": {"x": 45.060000000019755, "y": 1063.1800000000276, "z": 3.22515619759},"focus": {"x": 45.04952650088902, "y": 1067.0102078960394, "z": 0.011218149155200585},"up": {"x": -0.0017576618515452184, "y": 0.6427852065747565, "z": 0.766044443118977}, "projectionMode": 5},
+  "camera": {"position": {"x": -103.13999999998042, "y": 1125.780000000034, "z": 5.924599977901943},"focus": {"x": -103.13999999998042, "y": 1125.780000000034, "z": 0.9245999778984118},"up": {"x": -1.7090259443933427E-4, "y": 0.9999999853961515, "z": 6.123233906313986E-17}, "projectionMode": 5},
   "model": {"operationMode": "BASIC_TRIANGULATION", "heightExaggeration": 1.0, "currentPSC": -4, "imageryEnabled": true},
-  "renderer": {"tileBounds": false, "uniformLod": true},
+  "renderer": {"tileBounds": true, "uniformLod": true},
   "instances": [
     {"index": 0, "offsetX": 0.0, "offsetY": 0.0, "psc": 1, "zOffset": 0.0, "opacity": 1.0, "visible": true}
   ]

@@ -126,9 +126,10 @@ public final class TerrainFramePlanner<T, M> {
                 indexScratch = DirectBuffers.ints(changedTriangles, indexScratch);
                 meshGpu.replaceTriangles(mesh.gpuMesh(), indexScratch);
             }
-            pickFrame.meshDrawn(item, mesh.cpuMesh());
-            draws.add(new TerrainMeshDraw<>(item, mesh.gpuMesh(),
-                textureBlocks(item, mesh.cpuMesh(), imageryBlocks.get(i), settings, renderingCamera, textureGpu),
+            List<TerrainTextureBlock<T>> textureBlocks =
+                textureBlocks(item, mesh.cpuMesh(), imageryBlocks.get(i), settings, renderingCamera, textureGpu);
+            pickFrame.meshDrawn(item, mesh.cpuMesh(), textureBlocks);
+            draws.add(new TerrainMeshDraw<>(item, mesh.gpuMesh(), textureBlocks,
                 projection.multiply(item.modelMatrix()), item.modelMatrix().invert().transpose()));
         }
         return draws;
@@ -295,7 +296,7 @@ public final class TerrainFramePlanner<T, M> {
             if (wanted != null && !settings.independentImageryLevels()) {
                 texture = imageryTextures.acquire(wanted, this::decodedImagery, gpu);
                 source = wanted;
-                result.add(TerrainTextureBlock.unmapped(texture, first, count));
+                result.add(TerrainTextureBlock.unmapped(texture, texture == null ? null : wanted, first, count));
             }
             else {
                 if (wanted != null) {
@@ -309,7 +310,7 @@ public final class TerrainFramePlanner<T, M> {
                         texture = source == null ? null : imageryTextures.peekResident(source);
                     }
                 }
-                result.add(texture == null ? TerrainTextureBlock.unmapped(null, first, count)
+                result.add(texture == null ? TerrainTextureBlock.unmapped(null, null, first, count)
                     : TerrainTextureBlock.mapped(texture, tile, source, first, count));
             }
             if (renderingCamera == settings.cullingCamera()) {
