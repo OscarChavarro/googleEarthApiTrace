@@ -117,24 +117,37 @@ final class Jogl4TerrainRenderer {
                            SimpleMaterial material) {
         Jogl4TextureCacheHelper gpu = new Jogl4TextureCacheHelper(gl);
         List<DrawCommand> drawnCommands = new ArrayList<>();
-        for (TerrainDrawItem item : planner.plan(instance, settings)) {
-            GpuMesh mesh = planner.residentMesh(item.variantKey());
-            if (mesh == null) {
-                if (item.preparation() == null) {
-                    continue;
-                }
+        List<TerrainDrawItem> items = planner.plan(instance, settings);
+        for (TerrainDrawItem item : items) {
+            if (planner.residentMesh(item.variantKey()) == null && item.preparation() != null) {
                 try {
-                    mesh = acquire(gl, item);
+                    acquire(gl, item);
                 }
                 catch (RuntimeException ignored) {
                     // Keep rendering other tiles; a later frame may retry after cache eviction.
-                    continue;
                 }
                 finally {
                     planner.releasePreparedMesh(item.variantKey());
                 }
             }
-            int[] changedTriangles = planner.updateTriangles(item, mesh.cpuMesh, settings, renderingCamera);
+        }
+        // Looked up after every upload, since an upload may evict a mesh of this same frame.
+        List<TerrainDrawItem> drawnItems = new ArrayList<>(items.size());
+        List<GpuMesh> drawnMeshes = new ArrayList<>(items.size());
+        List<TriangleMesh> cpuMeshes = new ArrayList<>(items.size());
+        for (TerrainDrawItem item : items) {
+            GpuMesh mesh = planner.residentMesh(item.variantKey());
+            if (mesh != null) {
+                drawnItems.add(item);
+                drawnMeshes.add(mesh);
+                cpuMeshes.add(mesh.cpuMesh);
+            }
+        }
+        planner.updateTriangles(drawnItems, cpuMeshes, settings, renderingCamera);
+        for (int i = 0; i < drawnItems.size(); i++) {
+            TerrainDrawItem item = drawnItems.get(i);
+            GpuMesh mesh = drawnMeshes.get(i);
+            int[] changedTriangles = planner.trianglesToUpload(mesh.cpuMesh);
             if (changedTriangles != null) {
                 replaceTriangles(gl, mesh, changedTriangles);
             }

@@ -43,6 +43,7 @@
     "IDM_LAYER_SUBDIVISION_LIND1996": "LIND1996",
     "IDM_LIND1996_TITLE": "LIND1996",
     "IDM_LIND1996_THRESHOLD": "τ: {0} px",
+    "IDM_LIND1996_DEPENDENCIES_CROSS_TILES": "Simplify tile boundaries",
     "IDM_LIND1996_ORIGINAL_TRIANGLES": "Triangles: {0}",
     "IDM_LIND1996_OPTIMIZED_TRIANGLES": "Optimized: {0} ({1}%)",
     "IDM_HUD_NO_IMAGE": "No DEM pyramid loaded. Press 'l' to load one.",

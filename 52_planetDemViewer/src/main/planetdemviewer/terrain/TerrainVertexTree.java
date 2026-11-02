@@ -18,8 +18,8 @@ import planetdemviewer.model.DemTile;
  * The table is built with the walk of {@link DiamondSquareTraversal}, so each base
  * vertex gets the hypotenuse that this triangulation really bisects. A vertex on the
  * block boundary has its other parent and two other children in the adjacent block;
- * dependencies that cross blocks are not implemented, see
- * {@link VertexBasedSimplification}.</p>
+ * this table only holds the ones inside the block, and
+ * {@link VertexBasedSimplification} connects the copies of that vertex.</p>
  */
 final class TerrainVertexTree {
     static final TerrainVertexTree INSTANCE = new TerrainVertexTree();
@@ -90,6 +90,31 @@ final class TerrainVertexTree {
         int row = vertex / SIDE;
         int column = vertex % SIDE;
         return row == 0 || column == 0 || row == LAST || column == LAST;
+    }
+
+    /** The vertex at a position along an edge, from west to east or from north to south. Row 0 is the north. */
+    static int edgeVertex(TerrainEdge edge, int position) {
+        return switch (edge) {
+            case NORTH -> vertex(0, position);
+            case SOUTH -> vertex(LAST, position);
+            case WEST -> vertex(position, 0);
+            case EAST -> vertex(position, LAST);
+        };
+    }
+
+    /** The edge of a boundary vertex, which must not be a corner. */
+    static TerrainEdge edgeOf(int vertex) {
+        int row = vertex / SIDE;
+        int column = vertex % SIDE;
+        return row == 0 ? TerrainEdge.NORTH : row == LAST ? TerrainEdge.SOUTH
+            : column == 0 ? TerrainEdge.WEST : TerrainEdge.EAST;
+    }
+
+    /** The same point in the block across the edge of this boundary vertex, which must not be a corner. */
+    static int otherCopy(int vertex) {
+        TerrainEdge edge = edgeOf(vertex);
+        int position = edge == TerrainEdge.NORTH || edge == TerrainEdge.SOUTH ? vertex % SIDE : vertex / SIDE;
+        return edgeVertex(edge.opposite(), position);
     }
 
     /**

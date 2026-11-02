@@ -8,5 +8,5 @@ import vsdk.toolkit.environment.camera.Camera;
 public record TerrainFrameSettings(Camera cullingCamera, double relativeScale, double heightExaggeration,
                                    boolean uniformLod, TerrainSubdivisionScheme subdivisionScheme,
                                    boolean tileBoundsVisible, TileAddress selectedTile, boolean imageryVisible,
-                                   double screenErrorThresholdPixels) {
+                                   double screenErrorThresholdPixels, boolean dependenciesCrossBlocks) {
 }

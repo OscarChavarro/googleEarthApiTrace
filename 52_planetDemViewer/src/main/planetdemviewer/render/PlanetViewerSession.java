@@ -225,6 +225,7 @@ public final class PlanetViewerSession {
             + ",\"imageryVisible\":" + model.isImageryVisible()
             + ",\"subdivisionScheme\":\"" + model.getTerrainSubdivisionScheme() + "\""
             + ",\"screenErrorThresholdPixels\":" + model.getScreenErrorThresholdPixels()
+            + ",\"dependenciesCrossTiles\":" + model.isDependenciesCrossTiles()
             + ",\"wires\":" + viewports.selectedRenderingConfiguration().isWiresSet()
             + ",\"terrainSimplification\":" + simplificationStatistics.lastFrame().json()
             + ",\"uniformLod\":" + uniformLodVisible
@@ -303,7 +304,7 @@ public final class PlanetViewerSession {
         return new TerrainFrameSettings(cullingCamera(), relativeScale(instance),
             model.getHeightExagerationFactor(), uniformLodVisible, model.getTerrainSubdivisionScheme(),
             terrainTileBoundsVisible, terrainPicker.selectedTile(), model.isImageryVisible(),
-            model.getScreenErrorThresholdPixels());
+            model.getScreenErrorThresholdPixels(), model.isDependenciesCrossTiles());
     }
 
     /** The light follows the camera of the view being drawn. */

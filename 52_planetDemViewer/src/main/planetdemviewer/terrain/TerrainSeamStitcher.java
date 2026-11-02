@@ -207,7 +207,8 @@ public final class TerrainSeamStitcher {
         }
     }
 
-    private static TerrainEdge touchingEdge(QuadtreeNode fine, QuadtreeNode coarse) {
+    /** The edge of the first tile that lies on the second one, or null when they do not touch. */
+    static TerrainEdge touchingEdge(QuadtreeNode fine, QuadtreeNode coarse) {
         if (equal(fine.getX1(), coarse.getX0()) && overlaps(
             fine.getY0(), fine.getY1(), coarse.getY0(), coarse.getY1())) {
             return TerrainEdge.EAST;

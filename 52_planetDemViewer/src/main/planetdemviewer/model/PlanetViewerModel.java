@@ -53,6 +53,7 @@ public final class PlanetViewerModel {
     private OperationModes operationMode = OperationModes.BASIC_TRIANGULATION;
     private TerrainSubdivisionScheme terrainSubdivisionScheme = TerrainSubdivisionScheme.TRIANGLE_EDGE;
     private double screenErrorThresholdPixels = Configuration.DEFAULT_SCREEN_ERROR_THRESHOLD_PIXELS;
+    private boolean dependenciesCrossTiles = true;
     private boolean imageryAvailable;
     private boolean imageryEnabled = true;
     private Widget guiDefinitions;
@@ -214,6 +215,16 @@ public final class PlanetViewerModel {
 
     public void setScreenErrorThresholdPixels(double pixels) {
         screenErrorThresholdPixels = pixels;
+        notifyLayerStateChanged();
+    }
+
+    /** Whether adjacent tiles of a view-dependent subdivision scheme simplify their common edge together. */
+    public boolean isDependenciesCrossTiles() {
+        return dependenciesCrossTiles;
+    }
+
+    public void setDependenciesCrossTiles(boolean enabled) {
+        dependenciesCrossTiles = enabled;
         notifyLayerStateChanged();
     }
 

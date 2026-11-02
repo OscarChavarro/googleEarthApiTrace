@@ -14,6 +14,7 @@ import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.processing.QuadtreeDrawPlanner;
 import planetdemviewer.spatial.TileAddress;
 import planetdemviewer.terrain.AdaptiveTerrainMesh;
+import planetdemviewer.terrain.BlockBoundaryConstraints;
 import planetdemviewer.terrain.ProjectedDeltaCriterion;
 import planetdemviewer.terrain.TerrainMeshPlacement;
 import planetdemviewer.terrain.TerrainMeshPlan;
@@ -104,30 +105,48 @@ public final class TerrainFramePlanner<T, M> {
     }
 
     /**
-     * Updates the triangles of a view-dependent mesh, always for the culling camera, as the
-     * tile selection does. Other views show that same mesh from outside, and only the
-     * culling camera's own view counts in the statistics, so each frame counts once.
+     * Updates the triangles of the view-dependent meshes of a frame, always for the culling
+     * camera, as the tile selection does. Other views show those same meshes from outside, and
+     * only the culling camera's own view counts in the statistics, so each frame counts once.
+     * All the blocks go first, since a block can change the shared vertices of the others.
      *
-     * @return the triangles the backend must upload, or null when it already has them
+     * @param items the items that will be drawn
+     * @param meshes the mesh of each item
      */
-    public int[] updateTriangles(TerrainDrawItem item, TriangleMesh mesh, TerrainFrameSettings settings,
-                                 Camera renderingCamera) {
-        if (!(mesh instanceof AdaptiveTerrainMesh adaptive)) {
-            return null;
-        }
+    public void updateTriangles(List<TerrainDrawItem> items, List<TriangleMesh> meshes,
+                                TerrainFrameSettings settings, Camera renderingCamera) {
         ProjectedDeltaCriterion criterion = ProjectedDeltaCriterion.of(
             settings.cullingCamera(), settings.screenErrorThresholdPixels());
-        if (criterion == null) {
-            adaptive.useAllTriangles();
-        }
-        else {
-            adaptive.simplify(criterion, new TerrainMeshPlacement(item.offsetX(), item.offsetY(), item.offsetZ(),
-                item.relativeScale(), item.heightExaggeration()));
-            if (renderingCamera == settings.cullingCamera()) {
-                simplificationStatistics.blockDrawn(adaptive);
+        List<BlockBoundaryConstraints.Block> blocks = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            if (meshes.get(i) instanceof AdaptiveTerrainMesh adaptive) {
+                if (criterion == null) {
+                    adaptive.useAllTriangles();
+                }
+                else {
+                    blocks.add(new BlockBoundaryConstraints.Block(items.get(i).command().node(), adaptive));
+                }
             }
         }
-        return adaptive.takeTrianglesToUpload();
+        BlockBoundaryConstraints.apply(blocks, settings.dependenciesCrossBlocks());
+        for (int i = 0; i < items.size(); i++) {
+            TerrainDrawItem item = items.get(i);
+            if (criterion != null && meshes.get(i) instanceof AdaptiveTerrainMesh adaptive) {
+                adaptive.updateVertexSelection(criterion, new TerrainMeshPlacement(item.offsetX(), item.offsetY(),
+                    item.offsetZ(), item.relativeScale(), item.heightExaggeration()));
+            }
+        }
+        for (BlockBoundaryConstraints.Block block : blocks) {
+            block.mesh().selectTriangles();
+            if (renderingCamera == settings.cullingCamera()) {
+                simplificationStatistics.blockDrawn(block.mesh());
+            }
+        }
+    }
+
+    /** Returns the triangles the backend must upload, or null when it already has them. */
+    public int[] trianglesToUpload(TriangleMesh mesh) {
+        return mesh instanceof AdaptiveTerrainMesh adaptive ? adaptive.takeTrianglesToUpload() : null;
     }
 
     /** Counts as a use of the mesh, which renews it in the LRU. */

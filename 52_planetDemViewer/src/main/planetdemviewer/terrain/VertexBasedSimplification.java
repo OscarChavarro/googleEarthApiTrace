@@ -13,12 +13,21 @@ package planetdemviewer.terrain;
  * <p>This class implements lines 10 to 20 of MAIN, and UPDATE-VERTEX, EVALUATE-VERTEX and
  * NOTIFY, from section [LIND1996].5, with the dependencies of section [LIND1996].4.3.</p>
  *
+ * <p>Each edge of the block is in one of three states, see {@link BlockBoundaryConstraints}:
+ * locked, with every vertex enabled; free, with only the dependencies inside the block; or
+ * shared with the adjacent block. A shared edge follows section [LIND1996].4.3, which keeps
+ * all the copies of a boundary vertex consistent. A corner is no base vertex here, so a copy
+ * has just one other copy, and the paper's circular linked list reduces to a reference to
+ * the adjacent block. A copy does not forward the enabled attribute of the other, since two
+ * copies would then keep each other enabled forever. It forwards the reasons of its own
+ * block, activated or a dependency, so both copies are enabled when any of those holds.</p>
+ *
  * <p>Departures from the paper:</p>
  * <ul>
- * <li>Dependencies do not cross blocks. Instead, the boundary vertices of a block are locked
- * as enabled, so that adjacent blocks always meet with all their samples and the seam
- * stitching applies as in the other schemes. The cost is that this detail spreads inward
- * through the dependencies.</li>
+ * <li>Blocks of different levels do not share vertices: their common edge stays locked, with
+ * every sample enabled, so that seam stitching applies as in the other schemes. The paper
+ * instead suggests that locked may disable some vertices of the finer block. The cost is that
+ * this detail spreads inward through the dependencies.</li>
  * <li>Line 4 of the paper's MAIN and the rest of the block-based simplification of section
  * [LIND1996].4.2 are not implemented: the block comes from the area-based tile selection, so
  * the threshold only bounds the error inside each block.</li>
@@ -34,12 +43,19 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
     private static final int ACTIVATED = 0x10;
     private static final int ENABLED = 0x20;
     private static final int LOCKED = 0x40;
+    /** The copy in the adjacent block has a reason to be enabled. It defers no evaluation, unlike a dependency. */
+    private static final int OTHER_COPY_NEEDED = 0x80;
+
+    private static final int LAST = TerrainVertexTree.SIDE - 1;
+    private static final TerrainEdge[] EDGES = TerrainEdge.values();
 
     private final TerrainVertexTree tree = TerrainVertexTree.INSTANCE;
     private final VertexDeltaTable deltas;
     private final double[] positions;
     private final byte[] attributes = new byte[TerrainVertexTree.VERTEX_COUNT];
     private final double[] meshBounds;
+    private final boolean[] lockedEdges = new boolean[EDGES.length];
+    private final VertexBasedSimplification[] adjacentBlocks = new VertexBasedSimplification[EDGES.length];
 
     /** The sorted vertices before this position have delta in I0 of earlier frames, so they are deactivated. */
     private int deactivatedEnd;
@@ -47,6 +63,9 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
     private int activatedStart;
     private ProjectedDeltaCriterion lastCriterion;
     private TerrainMeshPlacement lastPlacement;
+    /** Changed in the running pass, which is what {@link #simplify} reports. */
+    private boolean enabledSetChangedInPass;
+    /** Changed since the last {@link #takeEnabledSetChanged}, by this block or by an adjacent one. */
     private boolean enabledSetChanged;
     private boolean unsettled = true;
     private int deltaProjections;
@@ -57,6 +76,7 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
         this.positions = positions;
         this.meshBounds = boundsOf(positions);
         this.activatedStart = deltas.orderedCount();
+        java.util.Arrays.fill(lockedEdges, true);
         for (int vertex = 0; vertex < TerrainVertexTree.VERTEX_COUNT; vertex++) {
             if (!tree.isBase(vertex) || tree.isOnBoundary(vertex)) {
                 attributes[vertex] = LOCKED | ENABLED | ACTIVATED;
@@ -86,6 +106,94 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
         return (attributes[TerrainVertexTree.vertex(row, column)] & ENABLED) != 0;
     }
 
+    /**
+     * Sets the state of one edge. Does nothing when it already has that state, so this can run in
+     * every frame.
+     *
+     * @param locked whether every vertex of the edge stays enabled
+     * @param adjacent the block whose opposite edge shares these vertices, or null
+     */
+    void constrainEdge(TerrainEdge edge, boolean locked, VertexBasedSimplification adjacent) {
+        int index = edge.ordinal();
+        if (adjacentBlocks[index] != null && adjacentBlocks[index] != adjacent) {
+            disconnect(edge);
+        }
+        if (lockedEdges[index] != locked) {
+            setEdgeLocked(edge, locked);
+        }
+        if (adjacent != null && adjacentBlocks[index] != adjacent) {
+            connect(edge, adjacent);
+        }
+    }
+
+    private void setEdgeLocked(TerrainEdge edge, boolean locked) {
+        lockedEdges[edge.ordinal()] = locked;
+        for (int i = 1; i < LAST; i++) {
+            int vertex = TerrainVertexTree.edgeVertex(edge, i);
+            if (locked) {
+                attributes[vertex] = (byte) (attributes[vertex] | LOCKED | ACTIVATED);
+                if ((attributes[vertex] & ENABLED) == 0) {
+                    setEnabled(vertex, true);
+                }
+            }
+            else {
+                attributes[vertex] = (byte) (attributes[vertex] & ~LOCKED);
+                updateOtherCopy(vertex);
+            }
+        }
+        // Vertices that were locked are not where their delta says. As section [LIND1996].5
+        // does for a block that starts being active, this restarts with Iu = [0, inf).
+        deactivatedEnd = 0;
+        activatedStart = deltas.orderedCount();
+        unsettled = true;
+    }
+
+    private void connect(TerrainEdge edge, VertexBasedSimplification adjacent) {
+        adjacent.disconnect(edge.opposite());
+        adjacentBlocks[edge.ordinal()] = adjacent;
+        adjacent.adjacentBlocks[edge.opposite().ordinal()] = this;
+        for (int i = 1; i < LAST; i++) {
+            updateOtherCopy(TerrainVertexTree.edgeVertex(edge, i));
+            adjacent.updateOtherCopy(TerrainVertexTree.edgeVertex(edge.opposite(), i));
+        }
+    }
+
+    private void disconnect(TerrainEdge edge) {
+        VertexBasedSimplification adjacent = adjacentBlocks[edge.ordinal()];
+        if (adjacent == null) {
+            return;
+        }
+        adjacentBlocks[edge.ordinal()] = null;
+        adjacent.adjacentBlocks[edge.opposite().ordinal()] = null;
+        for (int i = 1; i < LAST; i++) {
+            otherCopyChanged(TerrainVertexTree.edgeVertex(edge, i), false);
+            adjacent.otherCopyChanged(TerrainVertexTree.edgeVertex(edge.opposite(), i), false);
+        }
+    }
+
+    /** Sends this copy's reasons to be enabled to the other copy, if it has one. */
+    private void updateOtherCopy(int vertex) {
+        if (!tree.isOnBoundary(vertex)) {
+            return;
+        }
+        TerrainEdge edge = TerrainVertexTree.edgeOf(vertex);
+        VertexBasedSimplification adjacent = adjacentBlocks[edge.ordinal()];
+        if (adjacent != null) {
+            adjacent.otherCopyChanged(TerrainVertexTree.otherCopy(vertex),
+                (attributes[vertex] & (ACTIVATED | DEPENDENCIES)) != 0);
+        }
+    }
+
+    private void otherCopyChanged(int vertex, boolean needed) {
+        int attribute = attributes[vertex];
+        if (((attribute & OTHER_COPY_NEEDED) != 0) == needed) {
+            return;
+        }
+        attributes[vertex] = (byte) (needed ? attribute | OTHER_COPY_NEEDED : attribute & ~OTHER_COPY_NEEDED);
+        unsettled = true;
+        followAttributes(vertex);
+    }
+
     /** Lines 10 to 20 of MAIN. Returns whether the set of enabled vertices changed. */
     boolean simplify(ProjectedDeltaCriterion criterion, TerrainMeshPlacement placement) {
         deltaProjections = 0;
@@ -94,7 +202,8 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
         }
         lastCriterion = criterion;
         lastPlacement = placement;
-        enabledSetChanged = false;
+        enabledSetChangedInPass = false;
+        unsettled = false;
 
         ProjectedDeltaCriterion.UncertaintyInterval interval = criterion.uncertaintyInterval(
             placement.worldX(meshBounds[0]), placement.worldY(meshBounds[1]), placement.worldZ(meshBounds[2]),
@@ -116,8 +225,14 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
         }
         deactivatedEnd = uncertainStart;
         activatedStart = uncertainEnd;
-        unsettled = enabledSetChanged;
-        return enabledSetChanged;
+        return enabledSetChangedInPass;
+    }
+
+    /** Returns whether the triangles changed since the last call, by this block or by an adjacent one. */
+    boolean takeEnabledSetChanged() {
+        boolean changed = enabledSetChanged;
+        enabledSetChanged = false;
+        return changed;
     }
 
     /** UPDATE-VERTEX, with the assignment of activated that precedes it in MAIN. */
@@ -126,9 +241,8 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
         if ((attribute & LOCKED) != 0) {
             return;
         }
-        attribute = activated ? attribute | ACTIVATED : attribute & ~ACTIVATED;
-        attributes[vertex] = (byte) attribute;
-        followActivated(vertex, attribute);
+        attributes[vertex] = (byte) (activated ? attribute | ACTIVATED : attribute & ~ACTIVATED);
+        followAttributes(vertex);
     }
 
     /** EVALUATE-VERTEX: the evaluation is deferred while the vertex has dependencies. */
@@ -141,25 +255,29 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
         deltaProjections++;
         boolean activated = !lastCriterion.coalesces(deltas.delta(vertex) * placement.verticalScale(),
             placement.worldX(positions[p]), placement.worldY(positions[p + 1]), placement.worldZ(positions[p + 2]));
-        attribute = activated ? attribute | ACTIVATED : attribute & ~ACTIVATED;
-        attributes[vertex] = (byte) attribute;
-        followActivated(vertex, attribute);
+        attributes[vertex] = (byte) (activated ? attribute | ACTIVATED : attribute & ~ACTIVATED);
+        followAttributes(vertex);
     }
 
-    private void followActivated(int vertex, int attribute) {
-        if ((attribute & DEPENDENCIES) != 0) {
+    /** The relationship of section [LIND1996].4.3: enabled follows activated and the dependencies, on any copy. */
+    private void followAttributes(int vertex) {
+        int attribute = attributes[vertex];
+        if ((attribute & LOCKED) != 0) {
             return;
         }
-        boolean activated = (attribute & ACTIVATED) != 0;
-        if (activated != ((attribute & ENABLED) != 0)) {
-            setEnabled(vertex, activated);
+        boolean enabled = (attribute & (ACTIVATED | DEPENDENCIES | OTHER_COPY_NEEDED)) != 0;
+        if (enabled != ((attribute & ENABLED) != 0)) {
+            setEnabled(vertex, enabled);
         }
+        updateOtherCopy(vertex);
     }
 
     private void setEnabled(int vertex, boolean enabled) {
         int attribute = attributes[vertex];
         attributes[vertex] = (byte) (enabled ? attribute | ENABLED : attribute & ~ENABLED);
+        enabledSetChangedInPass = true;
         enabledSetChanged = true;
+        unsettled = true;
         notifyParents(vertex, enabled);
     }
 
@@ -174,19 +292,8 @@ final class VertexBasedSimplification implements TerrainVertexSelection {
             return;
         }
         int attribute = attributes[vertex];
-        attribute = state ? attribute | (1 << child) : attribute & ~(1 << child);
-        attributes[vertex] = (byte) attribute;
-        if ((attribute & LOCKED) != 0) {
-            return;
-        }
-        if ((attribute & DEPENDENCIES) == 0) {
-            if ((attribute & ACTIVATED) == 0) {
-                setEnabled(vertex, false);
-            }
-        }
-        else if ((attribute & ENABLED) == 0) {
-            setEnabled(vertex, true);
-        }
+        attributes[vertex] = (byte) (state ? attribute | (1 << child) : attribute & ~(1 << child));
+        followAttributes(vertex);
     }
 
     /** The number of evaluations of Equation [LIND1996](2) in the last pass. */

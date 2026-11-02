@@ -41,6 +41,7 @@
       "modal": false,
       "content": [
         { "kind": "slider", "id": "threshold", "binding": "screenErrorThresholdPixels", "labelKey": "IDM_LIND1996_THRESHOLD" },
+        { "kind": "checkbox", "id": "dependenciesCrossTiles", "binding": "dependenciesCrossTiles", "labelKey": "IDM_LIND1996_DEPENDENCIES_CROSS_TILES" },
         { "kind": "label", "id": "originalTriangles", "binding": "trianglesBeforeSimplification", "labelKey": "IDM_LIND1996_ORIGINAL_TRIANGLES" },
         { "kind": "label", "id": "optimizedTriangles", "binding": "trianglesRendered", "labelKey": "IDM_LIND1996_OPTIMIZED_TRIANGLES" }
       ]

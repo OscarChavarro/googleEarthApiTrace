@@ -184,6 +184,13 @@ public class InteractiveViewer extends Applet {
         });
     }
 
+    public void setDependenciesCrossTilesFromMcp(boolean enabled) throws Exception {
+        runOnEventThread(() -> {
+            model.writeLocked(() -> model.setDependenciesCrossTiles(enabled));
+            canvas.repaint();
+        });
+    }
+
     public void setWiresFromMcp(boolean enabled) throws Exception {
         runOnEventThread(() -> {
             model.writeLocked(() -> session.getSelectedViewRenderingConfiguration().setWires(enabled));

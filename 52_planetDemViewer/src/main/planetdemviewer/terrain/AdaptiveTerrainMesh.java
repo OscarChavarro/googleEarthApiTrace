@@ -37,12 +37,28 @@ public final class AdaptiveTerrainMesh extends TriangleMesh {
         traversal = new DiamondSquareTraversal(simplification);
     }
 
-    /** Updates the triangles for this view. */
+    /** Updates the triangles for this view, for a block that shares no vertices. */
     public void simplify(ProjectedDeltaCriterion criterion, TerrainMeshPlacement placement) {
-        if (simplification.simplify(criterion, placement) || triangles == null) {
+        updateVertexSelection(criterion, placement);
+        selectTriangles();
+    }
+
+    /** Updates the vertices for this view, which can also change the vertices of adjacent blocks. */
+    public void updateVertexSelection(ProjectedDeltaCriterion criterion, TerrainMeshPlacement placement) {
+        simplification.simplify(criterion, placement);
+    }
+
+    /** Call this once every block of the frame has updated its vertices. */
+    public void selectTriangles() {
+        if (simplification.takeEnabledSetChanged() || triangles == null) {
             triangles = selectedTriangles();
             uploaded = false;
         }
+    }
+
+    /** See {@link VertexBasedSimplification#constrainEdge}. */
+    void constrainEdge(TerrainEdge edge, boolean locked, AdaptiveTerrainMesh adjacent) {
+        simplification.constrainEdge(edge, locked, adjacent == null ? null : adjacent.simplification);
     }
 
     /** Goes back to every triangle, for a camera that has no criterion. */

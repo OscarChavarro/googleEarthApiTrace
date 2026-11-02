@@ -6,6 +6,7 @@ import java.util.Hashtable;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
@@ -26,6 +27,7 @@ final class AwtScreenErrorThresholdPanel extends JPanel {
     private final transient ScreenErrorThresholdPresenter presenter;
     private final JLabel threshold = new JLabel();
     private final JSlider stops;
+    private final JCheckBox dependenciesCrossTiles = new JCheckBox();
     private final JLabel originalTriangles = new JLabel();
     private final JLabel optimizedTriangles = new JLabel();
     private final Timer countsRefresh = new Timer(COUNTS_REFRESH_MILLISECONDS, event -> refresh());
@@ -51,7 +53,10 @@ final class AwtScreenErrorThresholdPanel extends JPanel {
             int stop = stops.getValue() - event.getWheelRotation();
             stops.setValue(Math.max(stops.getMinimum(), Math.min(stops.getMaximum(), stop)));
         });
-        for (Component line : new Component[] {threshold, stops, Box.createVerticalStrut(4),
+        dependenciesCrossTiles.setFocusable(false);
+        dependenciesCrossTiles.addActionListener(
+            event -> presenter.setDependenciesCrossTiles(dependenciesCrossTiles.isSelected()));
+        for (Component line : new Component[] {threshold, stops, dependenciesCrossTiles, Box.createVerticalStrut(4),
                                                originalTriangles, optimizedTriangles}) {
             ((javax.swing.JComponent) line).setAlignmentX(Component.LEFT_ALIGNMENT);
             add(line);
@@ -105,12 +110,18 @@ final class AwtScreenErrorThresholdPanel extends JPanel {
         stops.setValue(presenter.selectedStop());
         followingModel = false;
         threshold.setText(presenter.thresholdText());
+        dependenciesCrossTiles.setText(presenter.dependenciesCrossTilesText());
+        dependenciesCrossTiles.setSelected(presenter.isDependenciesCrossTiles());
         originalTriangles.setText(presenter.originalTrianglesText());
         optimizedTriangles.setText(presenter.optimizedTrianglesText());
     }
 
     JSlider slider() {
         return stops;
+    }
+
+    JCheckBox dependenciesCrossTilesCheckBox() {
+        return dependenciesCrossTiles;
     }
 
     JLabel thresholdLabel() {

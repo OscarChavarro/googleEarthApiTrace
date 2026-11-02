@@ -110,7 +110,22 @@ class AwtScreenErrorThresholdPanelTest {
     }
 
     @Test
+    void theCheckBoxChoosesWhetherTilesShareTheirBoundaries() throws Exception {
+        model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.LIND1996);
+        flushEvents();
+        assertEquals("Simplify tile boundaries", panel.dependenciesCrossTilesCheckBox().getText());
+        assertTrue(panel.dependenciesCrossTilesCheckBox().isSelected(), "on by default");
+        SwingUtilities.invokeAndWait(() -> panel.dependenciesCrossTilesCheckBox().doClick(0));
+        flushEvents();
+        assertFalse(model.isDependenciesCrossTiles());
+        model.setDependenciesCrossTiles(true);
+        flushEvents();
+        assertTrue(panel.dependenciesCrossTilesCheckBox().isSelected());
+    }
+
+    @Test
     void neverTakesTheKeyboardFocus() {
         assertFalse(panel.slider().isFocusable());
+        assertFalse(panel.dependenciesCrossTilesCheckBox().isFocusable());
     }
 }

@@ -1,9 +1,8 @@
 {
   "version": 1,
-  "camera": {"position": {"x": -130.5399999999816, "y": 1016.7800000000254, "z": 6.647937511890568},"focus": {"x": -130.5399999999816, "y": 1016.7800000000254, "z": 1.6479375118878288},"up": {"x": -0.010909712457510308, "y": 0.9999404873161675, "z": 6.123233995736766E-17}, "projectionMode": 5},
+  "camera": {"position": {"x": 45.060000000019755, "y": 1063.1800000000276, "z": 3.22515619759},"focus": {"x": 45.04952650088902, "y": 1067.0102078960394, "z": 0.011218149155200585},"up": {"x": -0.0017576618515452184, "y": 0.6427852065747565, "z": 0.766044443118977}, "projectionMode": 5},
   "model": {"operationMode": "BASIC_TRIANGULATION", "heightExaggeration": 1.0, "currentPSC": -4, "imageryEnabled": true},
-  "renderer": {"tileBounds": false, "uniformLod": false},
-  "sources": ["/media/extra/FABDEM/02_rawPyramidal"],
+  "renderer": {"tileBounds": false, "uniformLod": true},
   "instances": [
     {"index": 0, "offsetX": 0.0, "offsetY": 0.0, "psc": 1, "zOffset": 0.0, "opacity": 1.0, "visible": true}
   ]

@@ -19,6 +19,7 @@ import vsdk.toolkit.gui.widget.WidgetDialog;
 public final class ScreenErrorThresholdPresenter {
     public static final String DIALOG_ID = "lind1996.details";
     private static final String THRESHOLD = "threshold";
+    private static final String DEPENDENCIES_CROSS_TILES = "dependenciesCrossTiles";
     private static final String ORIGINAL_TRIANGLES = "originalTriangles";
     private static final String OPTIMIZED_TRIANGLES = "optimizedTriangles";
 
@@ -76,6 +77,18 @@ public final class ScreenErrorThresholdPresenter {
 
     public String thresholdText() {
         return text(THRESHOLD, number(model.getScreenErrorThresholdPixels()));
+    }
+
+    public String dependenciesCrossTilesText() {
+        return text(DEPENDENCIES_CROSS_TILES);
+    }
+
+    public boolean isDependenciesCrossTiles() {
+        return model.isDependenciesCrossTiles();
+    }
+
+    public void setDependenciesCrossTiles(boolean enabled) {
+        model.writeLocked(() -> model.setDependenciesCrossTiles(enabled));
     }
 
     public String originalTrianglesText() {

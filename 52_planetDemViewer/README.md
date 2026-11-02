@@ -104,9 +104,13 @@ These parts differ from the paper:
 - **Block selection.** Tiles still come from the projected-area selection, not from
   section 4.2, so the threshold bounds the error only inside each tile. The HUD counts
   the tiles that the paper's test would replace with a coarser one.
-- **Tile boundaries.** Dependencies do not cross tiles. Boundary vertices stay enabled,
-  so adjacent tiles meet with all their samples and seams work as in the other schemes,
-  at the cost of extra triangles near the boundaries.
+- **Tile boundaries.** By default, section 4.3 of the paper applies to tiles of the same
+  level: each keeps its own copy of a shared vertex, and both are enabled when either
+  tile needs it. An edge against a tile of another level always stays complete, because
+  seam stitching relies on its samples. Clearing the panel's "Simplify tile boundaries"
+  checkbox, or the MCP tool `set_dependencies_cross_tiles`, keeps every boundary complete
+  instead, so adjacent tiles meet with all their samples, at the cost of extra triangles
+  near the boundaries.
 - **Level jump.** The paper obtains a parent tile by discarding samples of its children.
   This pyramid filters them, so the parent has other heights. The largest height
   difference at the vertices they share is added to the tile's maximum delta, when the
@@ -313,6 +317,7 @@ agents at `http://127.0.0.1:<port>/mcp`:
 | `set_subdivision_scheme` | Select `TRIANGLE_EDGE`, `DIAMOND_SQUARE` or `LIND1996`; 3D terrain mode only |
 | `set_screen_error_threshold` | Set the LIND1996 threshold, in pixels |
 | `set_camera_model` | Define the selected view's camera directly, in world coordinates |
+| `set_dependencies_cross_tiles` | Whether adjacent LIND1996 tiles of the same level simplify their common edge together |
 | `set_wires` | Show or hide the triangle edges, as `F2` does |
 | `set_tile_bounds` | Show or hide tile bounds |
 | `click_viewport` | Select the terrain under a pixel of `capture_view` |

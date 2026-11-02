@@ -219,4 +219,112 @@ class VertexBasedSimplificationTest {
         });
         return area[0];
     }
+
+    /** A block to the west and one to the east, with the same heights on their common edge. */
+    private static VertexBasedSimplification[] adjacentRoughBlocks(long seed) {
+        double[] westZ = roughTerrain(seed);
+        double[] eastZ = roughTerrain(seed + 1);
+        for (int position = 0; position < SIDE; position++) {
+            eastZ[TerrainVertexTree.vertex(position, 0)] = westZ[TerrainVertexTree.vertex(position, LAST)];
+        }
+        double[] eastPositions = positions(eastZ);
+        for (int vertex = 0; vertex < TerrainVertexTree.VERTEX_COUNT; vertex++) {
+            eastPositions[vertex * 3] += 1.0;
+        }
+        return new VertexBasedSimplification[] {
+            simplification(westZ, allValid()),
+            new VertexBasedSimplification(new VertexDeltaTable(eastZ, allValid(), 0.0), eastPositions)};
+    }
+
+    private static void share(VertexBasedSimplification[] blocks) {
+        blocks[0].constrainEdge(TerrainEdge.EAST, false, blocks[1]);
+        blocks[1].constrainEdge(TerrainEdge.WEST, false, blocks[0]);
+    }
+
+    private static void settleBoth(VertexBasedSimplification[] blocks, ProjectedDeltaCriterion criterion) {
+        int passes = 0;
+        boolean changed = true;
+        while (changed) {
+            changed = blocks[0].simplify(criterion, PLACEMENT);
+            changed |= blocks[1].simplify(criterion, PLACEMENT);
+            assertTrue(++passes < 64, "the selection must settle");
+        }
+    }
+
+    private static int enabledOnSharedEdge(VertexBasedSimplification[] blocks) {
+        int enabled = 0;
+        for (int position = 0; position < SIDE; position++) {
+            boolean west = blocks[0].isEnabled(position, LAST);
+            assertEquals(west, blocks[1].isEnabled(position, 0), "both copies at " + position);
+            enabled += west ? 1 : 0;
+        }
+        return enabled;
+    }
+
+    private static void assertSharedSelectionIsValid(VertexBasedSimplification[] blocks) {
+        enabledOnSharedEdge(blocks);
+        for (VertexBasedSimplification block : blocks) {
+            assertDependenciesHold(block);
+            assertConformingCover(block);
+        }
+    }
+
+    @Test
+    void theCopiesOfASharedVertexAgreeAtAnyThreshold() {
+        VertexBasedSimplification[] blocks = adjacentRoughBlocks(21);
+        share(blocks);
+        for (double kappa : new double[] {0.0, 1e-4, 1e-3, 1e-2, 1e-1}) {
+            settleBoth(blocks, new ProjectedDeltaCriterion(0.3, -0.9, 0.5, kappa));
+            assertSharedSelectionIsValid(blocks);
+        }
+    }
+
+    @Test
+    void sharingAnEdgeRemovesSamplesFromIt() {
+        VertexBasedSimplification[] blocks = adjacentRoughBlocks(22);
+        ProjectedDeltaCriterion criterion = new ProjectedDeltaCriterion(0.5, 0.0, 2.0, 1e-2);
+        settleBoth(blocks, criterion);
+        assertEquals(SIDE, enabledOnSharedEdge(blocks));
+        int lockedTriangles = triangleCount(blocks[0]);
+        share(blocks);
+        settleBoth(blocks, criterion);
+        assertTrue(enabledOnSharedEdge(blocks) < SIDE);
+        assertTrue(triangleCount(blocks[0]) < lockedTriangles);
+    }
+
+    /** Two copies must not keep each other enabled once neither block needs the vertex. */
+    @Test
+    void aSharedSelectionDoesNotDependOnThePathOfTheViewpoint() {
+        ProjectedDeltaCriterion near = new ProjectedDeltaCriterion(1.0, 0.0, 0.2, 1e-3);
+        ProjectedDeltaCriterion far = new ProjectedDeltaCriterion(1.0, 0.0, 8.0, 1e-3);
+        VertexBasedSimplification[] moved = adjacentRoughBlocks(23);
+        share(moved);
+        settleBoth(moved, near);
+        int nearEnabled = enabledOnSharedEdge(moved);
+        settleBoth(moved, far);
+        assertSharedSelectionIsValid(moved);
+
+        VertexBasedSimplification[] direct = adjacentRoughBlocks(23);
+        share(direct);
+        settleBoth(direct, far);
+        assertTrue(enabledOnSharedEdge(moved) < nearEnabled);
+        for (int vertex = 0; vertex < TerrainVertexTree.VERTEX_COUNT; vertex++) {
+            int row = vertex / SIDE;
+            int column = vertex % SIDE;
+            assertEquals(direct[0].isEnabled(row, column), moved[0].isEnabled(row, column), "west " + vertex);
+            assertEquals(direct[1].isEnabled(row, column), moved[1].isEnabled(row, column), "east " + vertex);
+        }
+    }
+
+    @Test
+    void aVertexOnTheBoundaryHasOneOtherCopy() {
+        for (TerrainEdge edge : TerrainEdge.values()) {
+            for (int position = 1; position < LAST; position++) {
+                int vertex = TerrainVertexTree.edgeVertex(edge, position);
+                assertEquals(edge, TerrainVertexTree.edgeOf(vertex));
+                assertEquals(TerrainVertexTree.edgeVertex(edge.opposite(), position), TerrainVertexTree.otherCopy(vertex));
+                assertEquals(vertex, TerrainVertexTree.otherCopy(TerrainVertexTree.otherCopy(vertex)));
+            }
+        }
+    }
 }
