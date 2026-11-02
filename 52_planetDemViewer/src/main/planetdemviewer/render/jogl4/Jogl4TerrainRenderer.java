@@ -105,6 +105,7 @@ final class Jogl4TerrainRenderer {
     private int boundsColorLocation;
     private int textureProgram;
     private int textureMvpLocation;
+    private IntBuffer indexScratch;
 
     Jogl4TerrainRenderer(PlanetViewerSession session) {
         this.planner = session.newTerrainFramePlanner();
@@ -132,6 +133,10 @@ final class Jogl4TerrainRenderer {
                 finally {
                     planner.releasePreparedMesh(item.variantKey());
                 }
+            }
+            int[] changedTriangles = planner.updateTriangles(item, mesh.cpuMesh, settings, renderingCamera);
+            if (changedTriangles != null) {
+                replaceTriangles(gl, mesh, changedTriangles);
             }
             Matrix4x4d modelMatrix = item.modelMatrix();
             Integer imagery = planner.acquireImagery(item, gpu);
@@ -236,7 +241,7 @@ final class Jogl4TerrainRenderer {
             gl.glDepthMask(false);
             gl.glDepthFunc(GL.GL_LEQUAL);
             gl.glBindVertexArray(mesh.vaoId);
-            gl.glDrawArrays(GL.GL_POINTS, 0, mesh.vertexCount);
+            gl.glDrawElements(GL.GL_POINTS, mesh.indexCount, GL.GL_UNSIGNED_INT, 0L);
             gl.glBindVertexArray(0);
             Jogl4RendererConfigurationShaderSelector.deactivateShader(gl);
         }
@@ -283,6 +288,19 @@ final class Jogl4TerrainRenderer {
         return uploaded;
     }
 
+    private void replaceTriangles(GL4 gl, GpuMesh mesh, int[] indices) {
+        if (indexScratch == null || indexScratch.capacity() < indices.length) {
+            indexScratch = Buffers.newDirectIntBuffer(indices.length);
+        }
+        indexScratch.clear();
+        indexScratch.put(indices).flip();
+        gl.glBindVertexArray(mesh.vaoId);
+        gl.glBufferData(GL.GL_ELEMENT_ARRAY_BUFFER, (long) indices.length * Integer.BYTES,
+            indexScratch, GL.GL_DYNAMIC_DRAW);
+        gl.glBindVertexArray(0);
+        mesh.indexCount = indices.length;
+    }
+
     private static GpuMesh upload(GL4 gl, TerrainMeshBuffers source, TriangleMesh mesh) {
         float[] positions = source.positions();
         float[] normals = source.normals();
@@ -320,8 +338,7 @@ final class Jogl4TerrainRenderer {
         gl.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
         GpuBounds bounds = uploadBounds(gl, source.boundsLines());
         return new GpuMesh(vao[0], buffers[0], buffers[1], buffers[2], buffers[3],
-            source.vertexCount(), indices.length,
-            bounds, mesh);
+            indices.length, bounds, mesh);
     }
 
     private static GpuBounds uploadBounds(GL4 gl, float[] positions) {
@@ -423,9 +440,27 @@ final class Jogl4TerrainRenderer {
         }
     }
 
-    private record GpuMesh(int vaoId, int positionVboId, int normalVboId, int uvVboId,
-                           int indexBufferId, int vertexCount, int indexCount,
-                           GpuBounds bounds, TriangleMesh cpuMesh) {
+    private static final class GpuMesh {
+        private final int vaoId;
+        private final int positionVboId;
+        private final int normalVboId;
+        private final int uvVboId;
+        private final int indexBufferId;
+        private int indexCount;
+        private final GpuBounds bounds;
+        private final TriangleMesh cpuMesh;
+
+        private GpuMesh(int vaoId, int positionVboId, int normalVboId, int uvVboId, int indexBufferId,
+                        int indexCount, GpuBounds bounds, TriangleMesh cpuMesh) {
+            this.vaoId = vaoId;
+            this.positionVboId = positionVboId;
+            this.normalVboId = normalVboId;
+            this.uvVboId = uvVboId;
+            this.indexBufferId = indexBufferId;
+            this.indexCount = indexCount;
+            this.bounds = bounds;
+            this.cpuMesh = cpuMesh;
+        }
     }
 
     private record GpuBounds(int vaoId, int vboId) {

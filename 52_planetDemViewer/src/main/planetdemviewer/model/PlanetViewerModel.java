@@ -51,6 +51,7 @@ public final class PlanetViewerModel {
     private final StorageProfile storageProfile;
     private OperationModes operationMode = OperationModes.BASIC_TRIANGULATION;
     private TerrainSubdivisionScheme terrainSubdivisionScheme = TerrainSubdivisionScheme.TRIANGLE_EDGE;
+    private double screenErrorThresholdPixels = Configuration.DEFAULT_SCREEN_ERROR_THRESHOLD_PIXELS;
     private boolean imageryAvailable;
     private boolean imageryEnabled = true;
     private Widget guiDefinitions;
@@ -203,6 +204,15 @@ public final class PlanetViewerModel {
     public void setTerrainSubdivisionScheme(TerrainSubdivisionScheme scheme) {
         terrainSubdivisionScheme = scheme;
         notifyLayerStateChanged();
+    }
+
+    /** The largest projected error, in pixels, that the view-dependent subdivision schemes accept. */
+    public double getScreenErrorThresholdPixels() {
+        return screenErrorThresholdPixels;
+    }
+
+    public void setScreenErrorThresholdPixels(double pixels) {
+        screenErrorThresholdPixels = pixels;
     }
 
     public boolean isImageryAvailable() {

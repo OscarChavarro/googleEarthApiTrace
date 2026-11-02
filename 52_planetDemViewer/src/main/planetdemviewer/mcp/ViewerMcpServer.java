@@ -14,6 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import planetdemviewer.InteractiveViewer;
 import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 /**
  * Local-only Streamable HTTP MCP endpoint for visual diagnostics.  It is
@@ -25,7 +26,10 @@ public final class ViewerMcpServer implements AutoCloseable {
           {"name":"key_event","description":"Send any Java AWT key code to the viewer.","inputSchema":{"type":"object","properties":{"key_code":{"type":"integer","description":"java.awt.event.KeyEvent VK_* numeric value"}},"required":["key_code"]}},
           {"name":"set_geometry_mode","description":"Enable or disable the 3D terrain mesh mode.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
           {"name":"set_tile_bounds","description":"Show or hide white tile bounds.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
-          {"name":"set_subdivision_scheme","description":"Select how terrain tile meshes are triangulated, as the Edge subdivision options of the layer panel do. Only available in the 3D terrain mode. get_camera_model reports the current scheme.","inputSchema":{"type":"object","properties":{"scheme":{"type":"string","enum":["TRIANGLE_EDGE","DIAMOND_SQUARE"]}},"required":["scheme"]}},
+          {"name":"set_subdivision_scheme","description":"Select how terrain tile meshes are triangulated, as the Edge subdivision options of the layer panel do. Only available in the 3D terrain mode. get_camera_model reports the current scheme.","inputSchema":{"type":"object","properties":{"scheme":{"type":"string","enum":["TRIANGLE_EDGE","DIAMOND_SQUARE","LIND1996"]}},"required":["scheme"]}},
+          {"name":"set_screen_error_threshold","description":"Set the threshold tau, in pixels, of the LIND1996 subdivision scheme.","inputSchema":{"type":"object","properties":{"pixels":{"type":"number","minimum":0}},"required":["pixels"]}},
+          {"name":"set_camera_model","description":"Define the selected view's camera directly, in world coordinates; use get_camera_model to read them.","inputSchema":{"type":"object","properties":{"position_x":{"type":"number"},"position_y":{"type":"number"},"position_z":{"type":"number"},"focus_x":{"type":"number"},"focus_y":{"type":"number"},"focus_z":{"type":"number"},"up_x":{"type":"number"},"up_y":{"type":"number"},"up_z":{"type":"number"}},"required":["position_x","position_y","position_z","focus_x","focus_y","focus_z","up_x","up_y","up_z"]}},
+          {"name":"set_wires","description":"Show or hide the triangle edges in the selected view.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
           {"name":"click_viewport","description":"Click a physical pixel of the image returned by capture_view, using top-left viewport coordinates. A terrain hit selects it; a sky hit clears the selection.","inputSchema":{"type":"object","properties":{"x":{"type":"integer","description":"capture pixel x from the left"},"y":{"type":"integer","description":"capture pixel y from the top"}},"required":["x","y"]}},
           {"name":"capture_view","description":"Capture the current OpenGL canvas to a local PNG file.","inputSchema":{"type":"object","properties":{}}},
           {"name":"get_camera_model","description":"Return the selected camera model and rendering toggles as JSON.","inputSchema":{"type":"object","properties":{}}}
@@ -115,6 +119,23 @@ public final class ViewerMcpServer implements AutoCloseable {
                 }
                 yield textResult("subdivision scheme set to " + scheme);
             }
+            case "set_screen_error_threshold" -> {
+                double pixels = doubleValue(request, "pixels");
+                if (pixels < 0.0) {
+                    throw new IllegalArgumentException("The threshold cannot be negative");
+                }
+                viewer.setScreenErrorThresholdFromMcp(pixels);
+                yield textResult("screen error threshold updated");
+            }
+            case "set_camera_model" -> {
+                viewer.setCameraModelFromMcp(
+                    vectorValue(request, "position"), vectorValue(request, "focus"), vectorValue(request, "up"));
+                yield textResult("camera model updated");
+            }
+            case "set_wires" -> {
+                viewer.setWiresFromMcp(booleanValue(request, "enabled"));
+                yield textResult("wires updated");
+            }
             case "click_viewport" -> {
                 viewer.clickViewportFromMcp(intValue(request, "x"), intValue(request, "y"));
                 yield textResult("viewport click delivered");
@@ -166,6 +187,20 @@ public final class ViewerMcpServer implements AutoCloseable {
             throw new IllegalArgumentException("Missing integer argument: " + key);
         }
         return Integer.parseInt(matcher.group(1));
+    }
+
+    private static Vector3Dd vectorValue(String request, String prefix) {
+        return new Vector3Dd(doubleValue(request, prefix + "_x"), doubleValue(request, prefix + "_y"),
+            doubleValue(request, prefix + "_z"));
+    }
+
+    static double doubleValue(String request, String key) {
+        Matcher matcher = Pattern.compile("\\\"" + Pattern.quote(key)
+            + "\\\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)").matcher(request);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Missing number argument: " + key);
+        }
+        return Double.parseDouble(matcher.group(1));
     }
 
     private static boolean booleanValue(String request, String key) {

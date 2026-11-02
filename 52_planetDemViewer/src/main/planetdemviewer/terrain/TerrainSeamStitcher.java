@@ -156,12 +156,23 @@ public final class TerrainSeamStitcher {
             return null;
         }
 
+        DemTile parentTile = plan.scheme().isViewDependent() ? residentParent(plan.command().node(), loader) : null;
         synchronized (pendingMeshes) {
             return pendingMeshes.computeIfAbsent(plan.variantKey(), ignored ->
-                CompletableFuture.supplyAsync(
-                    () -> meshGenerators.get(plan.scheme()).generate(plan.command().node(), fineTile, constraints),
-                    workers));
+                CompletableFuture.supplyAsync(() -> {
+                    BasicTerrainMeshGenerator generator = meshGenerators.get(plan.scheme());
+                    QuadtreeNode node = plan.command().node();
+                    return plan.scheme().isViewDependent()
+                        ? generator.generateAdaptive(node, fineTile, constraints, parentTile)
+                        : generator.generate(node, fineTile, constraints);
+                }, workers));
         }
+    }
+
+    /** The parent is not requested: its DEM only refines a statistic, so the mesh does not wait for it. */
+    private static DemTile residentParent(QuadtreeNode node, ElevationTileSource loader) {
+        QuadtreeNode parent = node.getParent();
+        return parent == null || parent.getTileFile() == null ? null : loader.peekElevation(parent.getTileFile());
     }
 
     /** CPU mesh may be discarded after upload; the relation plan remains cached. */

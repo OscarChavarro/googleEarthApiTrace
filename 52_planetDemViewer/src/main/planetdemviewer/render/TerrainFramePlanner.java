@@ -13,9 +13,13 @@ import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.processing.QuadtreeDrawPlanner;
 import planetdemviewer.spatial.TileAddress;
+import planetdemviewer.terrain.AdaptiveTerrainMesh;
+import planetdemviewer.terrain.ProjectedDeltaCriterion;
+import planetdemviewer.terrain.TerrainMeshPlacement;
 import planetdemviewer.terrain.TerrainMeshPlan;
 import planetdemviewer.terrain.TerrainSeamStitcher;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
+import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.geometry.surface.TriangleMesh;
 import vsdk.toolkit.media.RGBAImageUncompressed;
 
@@ -32,6 +36,7 @@ public final class TerrainFramePlanner<T, M> {
     private final TileImageLoader loader;
     private final TileTreeDiscoveryService discoveryService;
     private final ImageryTileLoader imageryLoader;
+    private final TerrainSimplificationStatistics simplificationStatistics;
     private final TerrainSeamStitcher seamStitcher = new TerrainSeamStitcher();
     private final QuadtreeDrawPlanner.LodState lodState = new QuadtreeDrawPlanner.LodState();
     private final TileTextureCache<TileAddress, T> imageryTextures = new TileTextureCache<>(Long.MAX_VALUE);
@@ -39,7 +44,8 @@ public final class TerrainFramePlanner<T, M> {
         new GpuResourceCache<>(Configuration.MAX_GPU_TEXTURE_MEMORY, 1);
 
     TerrainFramePlanner(TileImageLoader loader, TileTreeDiscoveryService discoveryService,
-                        ImageryTileLoader imageryLoader) {
+                        ImageryTileLoader imageryLoader, TerrainSimplificationStatistics simplificationStatistics) {
+        this.simplificationStatistics = simplificationStatistics;
         this.loader = loader;
         this.discoveryService = discoveryService;
         this.imageryLoader = imageryLoader;
@@ -95,6 +101,33 @@ public final class TerrainFramePlanner<T, M> {
             return null;
         }
         return new float[] {1.0f, 1.0f, selected ? 0.0f : 1.0f};
+    }
+
+    /**
+     * Updates the triangles of a view-dependent mesh, always for the culling camera, as the
+     * tile selection does. Other views show that same mesh from outside, and only the
+     * culling camera's own view counts in the statistics, so each frame counts once.
+     *
+     * @return the triangles the backend must upload, or null when it already has them
+     */
+    public int[] updateTriangles(TerrainDrawItem item, TriangleMesh mesh, TerrainFrameSettings settings,
+                                 Camera renderingCamera) {
+        if (!(mesh instanceof AdaptiveTerrainMesh adaptive)) {
+            return null;
+        }
+        ProjectedDeltaCriterion criterion = ProjectedDeltaCriterion.of(
+            settings.cullingCamera(), settings.screenErrorThresholdPixels());
+        if (criterion == null) {
+            adaptive.useAllTriangles();
+        }
+        else {
+            adaptive.simplify(criterion, new TerrainMeshPlacement(item.offsetX(), item.offsetY(), item.offsetZ(),
+                item.relativeScale(), item.heightExaggeration()));
+            if (renderingCamera == settings.cullingCamera()) {
+                simplificationStatistics.blockDrawn(adaptive);
+            }
+        }
+        return adaptive.takeTrianglesToUpload();
     }
 
     /** Counts as a use of the mesh, which renews it in the LRU. */

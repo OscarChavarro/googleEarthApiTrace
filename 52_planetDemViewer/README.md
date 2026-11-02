@@ -19,7 +19,7 @@ screen.
 - Two rendering modes:
   - palette-coloured 2D DEM tiles;
   - shaded 3D terrain built from a regular triangle mesh.
-- 3D terrain meshes use one of two edge-subdivision schemes, selectable at run
+- 3D terrain meshes use one of three edge-subdivision schemes, selectable at run
   time (see [Terrain subdivision schemes](#terrain-subdivision-schemes)).
   A one-sample DEM halo is used for border normals.
 - Seam stitching between adjacent tiles at different LODs: fine border heights
@@ -71,25 +71,50 @@ the bounding boxes of terrain tiles selected for 3D rendering.
 
 ## Terrain subdivision schemes
 
-The layer panel selects how each tile's samples are joined into triangles. Both
-schemes render every tile at full resolution, and there is no key for this
-setting. It starts on triangle edge and is not saved in `state.json`.
+The layer panel selects how each tile's samples are joined into triangles. There
+is no key for this setting. It starts on triangle edge and is not saved in
+`state.json`. The first two schemes render every tile at full resolution, and
+LIND1996 chooses its triangles for each frame.
 
-| | Triangle edge | Diamond-square |
-| --- | --- | --- |
-| Reference | Figure [MILL1986a].1 | Figure [MILL1986a].2 |
-| Traversal | Row by row, same diagonal in every cell | Recursive bisection from the tile's four quadrants |
-| Vertices per tile | 256 x 256 | 257 x 257 (stored samples 0 to 256) |
-| Triangles per tile | 130,050 | 131,072 |
-| Can subdivide below the DEM spacing | No | Yes, but not implemented yet |
+| | Triangle edge | Diamond-square | LIND1996 |
+| --- | --- | --- | --- |
+| Reference | Figure [MILL1986a].1 | Figure [MILL1986a].2 | [LIND1996] |
+| Traversal | Row by row, same diagonal in every cell | Recursive bisection from the tile's four quadrants | The same bisection, stopping at vertices that are not enabled |
+| Vertices per tile | 256 x 256 | 257 x 257 (stored samples 0 to 256) | 257 x 257, of which it draws a subset |
+| Triangles per tile | 130,050 | 131,072 | Up to 131,072, depending on the view |
+| Can subdivide below the DEM spacing | No | Yes, but not implemented yet | No |
 
-Each tile still draws the PNG of its own level in both schemes, so color deeper
+Each tile still draws the PNG of its own level in every scheme, so color deeper
 than the geometry is not used yet.
 
-The diamond-square traversal is the triangulation of [LIND1996]. An
-implementation of that algorithm would supply a `TerrainVertexSelection`, which
-decides which vertices are in the mesh. Today all of them are: projected error
-metrics, vertex dependencies and per-frame refinement are not implemented.
+### LIND1996
+
+The vertex-based simplification of [LIND1996] removes a vertex while its delta
+segment projects to less than a threshold of 1 pixel. The MCP tool
+`set_screen_error_threshold` changes that threshold, which is not saved. The HUD and
+`get_camera_model` report, per frame, the triangles before and after simplification
+and the evaluations of the projection equation. The vertices of a tile stay on the
+GPU and only its triangle indices change. Popping is visible: the algorithm is meant
+to be compared with later ones that treat it.
+
+These parts differ from the paper:
+
+- **Block selection.** Tiles still come from the projected-area selection, not from
+  section 4.2, so the threshold bounds the error only inside each tile. The HUD counts
+  the tiles that the paper's test would replace with a coarser one.
+- **Tile boundaries.** Dependencies do not cross tiles. Boundary vertices stay enabled,
+  so adjacent tiles meet with all their samples and seams work as in the other schemes,
+  at the cost of extra triangles near the boundaries.
+- **Level jump.** The paper obtains a parent tile by discarding samples of its children.
+  This pyramid filters them, so the parent has other heights. The largest height
+  difference at the vertices they share is added to the tile's maximum delta, when the
+  parent is in memory.
+- **NoData.** The paper does not treat it. Vertices next to NoData are kept, so the
+  outline of the data is the same as in the full mesh.
+- **Orthogonal cameras.** The equations assume perspective, so these draw every triangle.
+
+Selection always uses the camera of the main view, as tile selection does, so the
+other views show that same mesh from outside.
 
 ## Caching and locality
 
@@ -258,6 +283,7 @@ box is drawn in yellow.
 | `3` / `4` | Previous / next GIMP palette |
 | `5` / `6` | Halve / double vertical exaggeration |
 | `0` | Toggle terrain tile bounds |
+| `F2` | Toggle triangle edges |
 | `Ctrl` + click | Select terrain tile for cleanup |
 | `Delete` | Delete the selected tile's imagery `.png` and all its sublevels, and free their GPU textures; no confirmation, no undo (never the DEM `.bin`) |
 | `9` | Toggle uniform LOD |
@@ -282,7 +308,10 @@ agents at `http://127.0.0.1:<port>/mcp`:
 | Tool | Purpose |
 | --- | --- |
 | `set_geometry_mode` | Switch between the 3D terrain and the 2D palette image |
-| `set_subdivision_scheme` | Select `TRIANGLE_EDGE` or `DIAMOND_SQUARE`; 3D terrain mode only |
+| `set_subdivision_scheme` | Select `TRIANGLE_EDGE`, `DIAMOND_SQUARE` or `LIND1996`; 3D terrain mode only |
+| `set_screen_error_threshold` | Set the LIND1996 threshold, in pixels |
+| `set_camera_model` | Define the selected view's camera directly, in world coordinates |
+| `set_wires` | Show or hide the triangle edges, as `F2` does |
 | `set_tile_bounds` | Show or hide tile bounds |
 | `click_viewport` | Select the terrain under a pixel of `capture_view` |
 | `key_event` | Send a key code, without modifiers |

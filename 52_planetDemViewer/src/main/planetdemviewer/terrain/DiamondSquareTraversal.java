@@ -19,11 +19,19 @@ import planetdemviewer.model.DemTile;
  * below that spacing is not implemented. The walk starts from the tile's four
  * quadrants, each with its apex on the tile center, and bisects each triangle at the
  * midpoint of its hypotenuse. That is the triangulation and quadrant layout of figure
- * [LIND1996].2, so that algorithm only has to supply a {@link TerrainVertexSelection}.</p>
+ * [LIND1996].2, and {@link VertexBasedSimplification} supplies the
+ * {@link TerrainVertexSelection} of that algorithm.</p>
  */
 public final class DiamondSquareTraversal implements TerrainGridTraversal {
     private static final int LAST = DemTile.CORE_SIZE;
     private static final int CENTER = LAST / 2;
+
+    /** Receives a triangle that can be bisected, with the vertex that would bisect it. */
+    @FunctionalInterface
+    interface BisectionSink {
+        void bisection(int apexRow, int apexColumn, int leftRow, int leftColumn,
+                       int rightRow, int rightColumn, int baseRow, int baseColumn);
+    }
 
     private final TerrainVertexSelection selection;
 
@@ -52,6 +60,28 @@ public final class DiamondSquareTraversal implements TerrainGridTraversal {
         bisect(CENTER, CENTER, LAST, 0, LAST, LAST, sink);
         bisect(CENTER, CENTER, LAST, LAST, 0, LAST, sink);
         bisect(CENTER, CENTER, 0, LAST, 0, 0, sink);
+    }
+
+    /** Visits every triangle of the complete hierarchy that has a base vertex. */
+    static void visitBisections(BisectionSink sink) {
+        visit(CENTER, CENTER, 0, 0, LAST, 0, sink);
+        visit(CENTER, CENTER, LAST, 0, LAST, LAST, sink);
+        visit(CENTER, CENTER, LAST, LAST, 0, LAST, sink);
+        visit(CENTER, CENTER, 0, LAST, 0, 0, sink);
+    }
+
+    private static void visit(int apexRow, int apexColumn, int leftRow, int leftColumn,
+                              int rightRow, int rightColumn, BisectionSink sink) {
+        int rowSum = leftRow + rightRow;
+        int columnSum = leftColumn + rightColumn;
+        if ((rowSum & 1) != 0 || (columnSum & 1) != 0) {
+            return;
+        }
+        int baseRow = rowSum / 2;
+        int baseColumn = columnSum / 2;
+        sink.bisection(apexRow, apexColumn, leftRow, leftColumn, rightRow, rightColumn, baseRow, baseColumn);
+        visit(baseRow, baseColumn, apexRow, apexColumn, leftRow, leftColumn, sink);
+        visit(baseRow, baseColumn, rightRow, rightColumn, apexRow, apexColumn, sink);
     }
 
     /** The apex is opposite the hypotenuse that joins the left and right vertices. */

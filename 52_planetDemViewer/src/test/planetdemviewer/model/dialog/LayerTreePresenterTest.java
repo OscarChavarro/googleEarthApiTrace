@@ -77,6 +77,11 @@ class LayerTreePresenterTest {
         assertEquals(TerrainSubdivisionScheme.DIAMOND_SQUARE, model.getTerrainSubdivisionScheme());
         assertTrue(presenter.isSelected(option(2, 1)));
         assertFalse(presenter.isSelected(option(2, 0)));
+        presenter.activate(option(2, 2));
+        assertEquals(TerrainSubdivisionScheme.LIND1996, model.getTerrainSubdivisionScheme());
+        assertTrue(presenter.isSelected(option(2, 2)));
+        assertFalse(presenter.isSelected(option(2, 1)));
+        presenter.activate(option(2, 1));
 
         model.setOperationMode(OperationModes.PALETTE_BASED_IMAGE);
         assertFalse(presenter.isEnabled(option(2, 0)));

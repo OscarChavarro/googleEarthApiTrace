@@ -164,6 +164,53 @@ class BasicTerrainMeshGeneratorTest {
     }
 
     @Test
+    void adaptiveMeshKeepsItsVerticesAndUploadsOnlyChangedTriangles() throws Exception {
+        short[] samples = new short[DemTile.SAMPLE_COUNT];
+        for (int i = 0; i < samples.length; i++) {
+            samples[i] = (short) (2_000 + 1_500 * Math.sin(i * 0.003) + (i * 7919 % 17));
+        }
+        DemTile tile = writeAndRead(temporaryDirectory.resolve("adaptive.bin"), samples);
+        QuadtreeNode node = new QuadtreeNode("0", null, temporaryDirectory.resolve("adaptive.bin").toFile());
+        AdaptiveTerrainMesh mesh = new BasicTerrainMeshGenerator(TerrainSubdivisionScheme.LIND1996.traversal())
+            .generateAdaptive(node, tile, List.of(), null);
+        assertEquals(257 * 257, mesh.getNumVertices());
+        assertEquals(131_072, mesh.getNumTriangles());
+
+        TerrainMeshPlacement placement = new TerrainMeshPlacement(0.0, 0.0, 0.0, 1.0, 1.0);
+        ProjectedDeltaCriterion criterion = new ProjectedDeltaCriterion(0.3, -0.9, 0.2, 1e-3);
+        mesh.simplify(criterion, placement);
+        assertEquals(131_072, mesh.fullTriangleCount());
+        assertTrue(mesh.getNumTriangles() < 131_072, "got " + mesh.getNumTriangles());
+        assertArrayEquals(mesh.getTriangleIndexes(), mesh.takeTrianglesToUpload());
+
+        for (int pass = 0; pass < 64; pass++) {
+            mesh.takeTrianglesToUpload();
+            mesh.simplify(criterion, placement);
+        }
+        mesh.takeTrianglesToUpload();
+        mesh.simplify(criterion, placement);
+        assertEquals(null, mesh.takeTrianglesToUpload());
+
+        mesh.useAllTriangles();
+        assertEquals(131_072, mesh.getNumTriangles());
+        assertEquals(131_072 * 3, mesh.takeTrianglesToUpload().length);
+    }
+
+    @Test
+    void levelJumpComparesTheVerticesAParentAndItsChildShare() throws Exception {
+        short[] parentSamples = new short[DemTile.SAMPLE_COUNT];
+        short[] childSamples = new short[DemTile.SAMPLE_COUNT];
+        Arrays.fill(parentSamples, (short) 100);
+        Arrays.fill(childSamples, (short) 100);
+        // Stored (10, 140) of the parent is in its north-east quadrant, at (20, 24) of that child.
+        parentSamples[10 * DemTile.STORED_SIZE + 140] = 150;
+        DemTile parent = writeAndRead(temporaryDirectory.resolve("parent.bin"), parentSamples);
+        DemTile child = writeAndRead(temporaryDirectory.resolve("child.bin"), childSamples);
+        assertEquals(50.0 / Configuration.WORLD_WIDTH_METRES, VertexDeltaTable.levelJump(parent, child, '2'), 1e-15);
+        assertEquals(0.0, VertexDeltaTable.levelJump(parent, child, '0'), 1e-15);
+    }
+
+    @Test
     void diamondSquareMeshRendersEveryStoredSampleFromZeroTo256() throws Exception {
         short[] samples = new short[DemTile.SAMPLE_COUNT];
         for (int row = 0; row < DemTile.STORED_SIZE; row++) {

@@ -27,7 +27,8 @@
               "kind": "column", "id": "subdivision", "labelKey": "IDM_LAYER_SUBDIVISION",
               "children": [
                 { "kind": "action", "id": "subdivision.triangleEdge", "action": "useTriangleEdgeSubdivision", "labelKey": "IDM_LAYER_SUBDIVISION_TRIANGLE_EDGE" },
-                { "kind": "action", "id": "subdivision.diamondSquare", "action": "useDiamondSquareSubdivision", "labelKey": "IDM_LAYER_SUBDIVISION_DIAMOND_SQUARE" }
+                { "kind": "action", "id": "subdivision.diamondSquare", "action": "useDiamondSquareSubdivision", "labelKey": "IDM_LAYER_SUBDIVISION_DIAMOND_SQUARE" },
+                { "kind": "action", "id": "subdivision.lind1996", "action": "useLind1996Subdivision", "labelKey": "IDM_LAYER_SUBDIVISION_LIND1996" }
               ]
             }
           ]

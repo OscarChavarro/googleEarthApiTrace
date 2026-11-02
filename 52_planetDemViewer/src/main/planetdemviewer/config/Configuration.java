@@ -15,6 +15,12 @@ public final class Configuration {
     /** Hysteresis keeps a tile refined until it has become materially smaller on screen. */
     public static final double SCREEN_AREA_REFINE_THRESHOLD = 0.75;
     public static final double SCREEN_AREA_COARSEN_THRESHOLD = 0.55;
+    /**
+     * Section [LIND1996].7 reports virtually no popping in animated sequences at one pixel.
+     * [LIND1996] Lindstrom, P. et al. "Real-Time, Continuous Level of Detail Rendering of
+     * Height Fields", SIGGRAPH 1996.
+     */
+    public static final double DEFAULT_SCREEN_ERROR_THRESHOLD_PIXELS = 1.0;
     public static final Path PALETTE_DIRECTORY = Path.of("../etc/palettes");
     public static final Path EGM2008_GRID = Path.of("etc/wgs/globalDeltaHeightsMatrix.json");
     public static final Path GUI_DIRECTORY = Path.of("etc/gui");

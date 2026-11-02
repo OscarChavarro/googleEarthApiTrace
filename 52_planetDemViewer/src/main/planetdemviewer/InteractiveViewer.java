@@ -23,6 +23,7 @@ import planetdemviewer.render.PlanetViewerSession;
 import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
 import planetdemviewer.state.ApplicationStateStore;
 import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.animation.AnimationEvent;
 import vsdk.toolkit.animation.AnimationEventGenerator;
 import vsdk.toolkit.animation.AnimationListener;
@@ -163,6 +164,27 @@ public class InteractiveViewer extends Applet {
     public void setTileBoundsFromMcp(boolean enabled) throws Exception {
         runOnEventThread(() -> {
             session.setTerrainTileBoundsVisible(enabled);
+            canvas.repaint();
+        });
+    }
+
+    public void setCameraModelFromMcp(Vector3Dd position, Vector3Dd focus, Vector3Dd up) throws Exception {
+        runOnEventThread(() -> {
+            model.writeLocked(() -> session.setSelectedCameraModel(position, focus, up));
+            canvas.repaint();
+        });
+    }
+
+    public void setScreenErrorThresholdFromMcp(double pixels) throws Exception {
+        runOnEventThread(() -> {
+            model.writeLocked(() -> model.setScreenErrorThresholdPixels(pixels));
+            canvas.repaint();
+        });
+    }
+
+    public void setWiresFromMcp(boolean enabled) throws Exception {
+        runOnEventThread(() -> {
+            model.writeLocked(() -> session.getSelectedViewRenderingConfiguration().setWires(enabled));
             canvas.repaint();
         });
     }

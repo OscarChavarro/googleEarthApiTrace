@@ -20,13 +20,26 @@ class HudContentTest {
     private final ViewportLayout viewports = new ViewportLayout(model.getViewingCamera());
     private final HudContent hud = new HudContent(model, viewports);
 
+    private static final TerrainSimplificationStatistics.Frame SIMPLIFICATION =
+        new TerrainSimplificationStatistics.Frame(2, 262144L, 900L, 33L, 1);
+
     private List<String> lines(boolean uniformLod) {
-        return hud.statusLines(new HudFrameStats(7, 3 * MB, 11, 5 * MB, 0L, 0, uniformLod));
+        return hud.statusLines(new HudFrameStats(7, 3 * MB, 11, 5 * MB, 0L, 0, uniformLod, SIMPLIFICATION));
     }
 
     @Test
     void writesOneLineForEachHudSection() {
         assertEquals(5, lines(false).size());
+    }
+
+    @Test
+    void addsTheSimplificationStatisticsOnlyForAViewDependentScheme() {
+        model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.LIND1996);
+        List<String> lines = lines(false);
+        assertEquals(6, lines.size());
+        assertTrue(lines.get(2).contains(model.text("IDM_LAYER_SUBDIVISION_LIND1996")), lines.get(2));
+        assertTrue(lines.get(5).contains("900"), lines.get(5));
+        assertTrue(lines.get(5).contains("33"), lines.get(5));
     }
 
     @Test
@@ -62,7 +75,7 @@ class HudContentTest {
 
     @Test
     void addsTheTotalGpuMemoryOfBothRenderers() {
-        assertEquals(8 * MB, new HudFrameStats(0, 3 * MB, 0, 5 * MB, 0L, 0, false).totalGpuBytes());
+        assertEquals(8 * MB, new HudFrameStats(0, 3 * MB, 0, 5 * MB, 0L, 0, false, SIMPLIFICATION).totalGpuBytes());
     }
 
     @Test

@@ -7,7 +7,6 @@ import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.scene.TerrainSurfaceSelection;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.common.color.ColorRgb;
 
 /** Composes the localized status text, the frame statistics and the selected surface point. */
@@ -63,6 +62,19 @@ public final class HudContent {
     }
 
     List<String> statusLines(HudFrameStats stats) {
+        List<String> lines = new ArrayList<>(sectionLines(stats));
+        if (model.getOperationMode() == OperationModes.BASIC_TRIANGULATION
+            && model.getTerrainSubdivisionScheme().isViewDependent()) {
+            lines.add(model.text("IDM_HUD_SIMPLIFICATION",
+                String.format(Locale.ROOT, "%.3g", model.getScreenErrorThresholdPixels()),
+                stats.simplification().blocks(), stats.simplification().trianglesBeforeSimplification(),
+                stats.simplification().trianglesRendered(), stats.simplification().deltaProjections(),
+                stats.simplification().blocksThatCouldCoarsen()));
+        }
+        return lines;
+    }
+
+    private List<String> sectionLines(HudFrameStats stats) {
         return List.of(
             selectedImageLabel(stats),
             model.text("IDM_HUD_CAMERA", model.getCurrentPSC(),
@@ -93,8 +105,11 @@ public final class HudContent {
     }
 
     private String subdivisionSchemeLabel() {
-        return model.text(model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.DIAMOND_SQUARE
-            ? "IDM_LAYER_SUBDIVISION_DIAMOND_SQUARE" : "IDM_LAYER_SUBDIVISION_TRIANGLE_EDGE");
+        return model.text(switch (model.getTerrainSubdivisionScheme()) {
+            case TRIANGLE_EDGE -> "IDM_LAYER_SUBDIVISION_TRIANGLE_EDGE";
+            case DIAMOND_SQUARE -> "IDM_LAYER_SUBDIVISION_DIAMOND_SQUARE";
+            case LIND1996 -> "IDM_LAYER_SUBDIVISION_LIND1996";
+        });
     }
 
     private String operationModeLabel() {

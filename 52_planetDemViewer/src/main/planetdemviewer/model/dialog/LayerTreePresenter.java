@@ -23,6 +23,7 @@ public final class LayerTreePresenter {
     private static final String SHOW_IMAGERY = "showImagery";
     private static final String USE_TRIANGLE_EDGE = "useTriangleEdgeSubdivision";
     private static final String USE_DIAMOND_SQUARE = "useDiamondSquareSubdivision";
+    private static final String USE_LIND1996 = "useLind1996Subdivision";
 
     private record Option(String action) { }
 
@@ -80,7 +81,7 @@ public final class LayerTreePresenter {
     private static void requireKnownAction(String action) {
         switch (action) {
             case SHOW_TERRAIN_MESH, SHOW_PALETTE_IMAGE, HIDE_IMAGERY, SHOW_IMAGERY,
-                USE_TRIANGLE_EDGE, USE_DIAMOND_SQUARE -> { }
+                USE_TRIANGLE_EDGE, USE_DIAMOND_SQUARE, USE_LIND1996 -> { }
             default -> throw new IllegalArgumentException("Unknown layer action: " + action);
         }
     }
@@ -99,7 +100,8 @@ public final class LayerTreePresenter {
             case HIDE_IMAGERY -> !model.isImageryVisible();
             case SHOW_IMAGERY -> model.isImageryVisible();
             case USE_TRIANGLE_EDGE -> model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.TRIANGLE_EDGE;
-            default -> model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.DIAMOND_SQUARE;
+            case USE_DIAMOND_SQUARE -> model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.DIAMOND_SQUARE;
+            default -> model.getTerrainSubdivisionScheme() == TerrainSubdivisionScheme.LIND1996;
         };
     }
 
@@ -112,7 +114,7 @@ public final class LayerTreePresenter {
             boolean terrain = model.getOperationMode() == OperationModes.BASIC_TRIANGULATION;
             return switch (option.action()) {
                 case HIDE_IMAGERY, SHOW_IMAGERY -> terrain && model.isImageryAvailable();
-                case USE_TRIANGLE_EDGE, USE_DIAMOND_SQUARE -> terrain;
+                case USE_TRIANGLE_EDGE, USE_DIAMOND_SQUARE, USE_LIND1996 -> terrain;
                 default -> true;
             };
         }
@@ -134,7 +136,8 @@ public final class LayerTreePresenter {
                 case HIDE_IMAGERY -> model.setImageryEnabled(false);
                 case SHOW_IMAGERY -> model.setImageryEnabled(true);
                 case USE_TRIANGLE_EDGE -> model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.TRIANGLE_EDGE);
-                default -> model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.DIAMOND_SQUARE);
+                case USE_DIAMOND_SQUARE -> model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.DIAMOND_SQUARE);
+                default -> model.setTerrainSubdivisionScheme(TerrainSubdivisionScheme.LIND1996);
             }
         });
     }

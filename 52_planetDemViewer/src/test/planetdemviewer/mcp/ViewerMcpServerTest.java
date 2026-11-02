@@ -18,6 +18,16 @@ class ViewerMcpServerTest {
     }
 
     @Test
+    void readsNumbersInEveryNotation() {
+        String request = "{\"position_x\":-130.5,\"position_y\":1e3,\"position_z\":6.1E-2,\"focus_x\": 4}";
+        assertEquals(-130.5, ViewerMcpServer.doubleValue(request, "position_x"));
+        assertEquals(1000.0, ViewerMcpServer.doubleValue(request, "position_y"));
+        assertEquals(0.061, ViewerMcpServer.doubleValue(request, "position_z"));
+        assertEquals(4.0, ViewerMcpServer.doubleValue(request, "focus_x"));
+        assertThrows(IllegalArgumentException.class, () -> ViewerMcpServer.doubleValue(request, "up_x"));
+    }
+
+    @Test
     void anUnknownSchemeNamesTheValidOnes() {
         String message = assertThrows(IllegalArgumentException.class,
             () -> ViewerMcpServer.subdivisionScheme("diamond")).getMessage();

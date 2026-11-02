@@ -43,6 +43,34 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
 
     public TriangleMesh generate(QuadtreeNode node, DemTile elevationsWithHalo,
                                  List<TerrainSeamConstraint> seamConstraints) {
+        TriangleMesh mesh = new TriangleMesh();
+        fill(mesh, node, elevationsWithHalo, seamConstraints);
+        return mesh;
+    }
+
+    /**
+     * The mesh of a view-dependent scheme, whose deltas come from the heights it renders,
+     * seam stitching included.
+     *
+     * @param parentElevations the DEM of the node's parent, or null when it is not in memory
+     */
+    public AdaptiveTerrainMesh generateAdaptive(QuadtreeNode node, DemTile elevationsWithHalo,
+                                                List<TerrainSeamConstraint> seamConstraints,
+                                                DemTile parentElevations) {
+        AdaptiveTerrainMesh mesh = new AdaptiveTerrainMesh();
+        HeightField heightField = fill(mesh, node, elevationsWithHalo, seamConstraints);
+        boolean[] valid = new boolean[grid.verticesPerSide() * grid.verticesPerSide()];
+        for (int vertex = 0; vertex < valid.length; vertex++) {
+            valid[vertex] = validRendered(heightField, vertex / grid.verticesPerSide(), vertex % grid.verticesPerSide());
+        }
+        String id = node.getId();
+        mesh.prepareSimplification(valid, parentElevations == null ? 0.0
+            : VertexDeltaTable.levelJump(parentElevations, elevationsWithHalo, id.charAt(id.length() - 1)));
+        return mesh;
+    }
+
+    private HeightField fill(TriangleMesh mesh, QuadtreeNode node, DemTile elevationsWithHalo,
+                             List<TerrainSeamConstraint> seamConstraints) {
         if (node == null || elevationsWithHalo == null) {
             throw new IllegalArgumentException("A quadtree node and DEM tile are required");
         }
@@ -50,7 +78,6 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
         EnumSet<TerrainEdge> stitchedEdges = stitchedEdges(seamConstraints);
         int side = grid.verticesPerSide();
 
-        TriangleMesh mesh = new TriangleMesh();
         mesh.setName("DEM " + node.getId());
         mesh.initVertexPositionsArray(side * side);
         mesh.initVertexNormalsArray();
@@ -97,7 +124,7 @@ public final class BasicTerrainMeshGenerator implements TerrainMeshGenerator<Tri
                 indices[out[0]++] = r2 * side + c2;
             }
         });
-        return mesh;
+        return heightField;
     }
 
     private static EnumSet<TerrainEdge> stitchedEdges(List<TerrainSeamConstraint> constraints) {

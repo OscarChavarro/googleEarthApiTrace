@@ -38,6 +38,7 @@ public final class PlanetViewerSession {
     private final TileTreeDiscoveryService treeDiscoveryService;
     private final ImageryTileLoader imageryTileLoader;
     private final ViewportLayout viewports;
+    private final TerrainSimplificationStatistics simplificationStatistics = new TerrainSimplificationStatistics();
     private final TerrainPickFrame pickFrame = new TerrainPickFrame();
     private final TerrainPicker terrainPicker;
     private final HudContent hud;
@@ -78,7 +79,8 @@ public final class PlanetViewerSession {
 
     public <T, M> TerrainFramePlanner<T, M> newTerrainFramePlanner() {
         TerrainFramePlanner<T, M> planner =
-            new TerrainFramePlanner<>(tileImageLoader, treeDiscoveryService, imageryTileLoader);
+            new TerrainFramePlanner<>(tileImageLoader, treeDiscoveryService, imageryTileLoader,
+                simplificationStatistics);
         terrainGpuUsage = planner.meshUsage();
         return planner;
     }
@@ -221,8 +223,19 @@ public final class PlanetViewerSession {
             + ",\"operationMode\":\"" + model.getOperationMode() + "\""
             + ",\"imageryVisible\":" + model.isImageryVisible()
             + ",\"subdivisionScheme\":\"" + model.getTerrainSubdivisionScheme() + "\""
+            + ",\"screenErrorThresholdPixels\":" + model.getScreenErrorThresholdPixels()
+            + ",\"wires\":" + viewports.selectedRenderingConfiguration().isWiresSet()
+            + ",\"terrainSimplification\":" + simplificationStatistics.lastFrame().json()
             + ",\"uniformLod\":" + uniformLodVisible
             + ",\"tileBounds\":" + terrainTileBoundsVisible + "}";
+    }
+
+    public void setSelectedCameraModel(Vector3Dd position, Vector3Dd focus, Vector3Dd up) {
+        Camera camera = viewports.selectedView().getCamera();
+        camera.setPosition(position);
+        camera.setFocusedPositionDirect(focus);
+        camera.setUpDirect(up);
+        camera.updateVectors();
     }
 
     private static String vectorJson(Vector3Dd vector) {
@@ -250,6 +263,7 @@ public final class PlanetViewerSession {
     public void beginFrame() {
         PscUpdater.update(model, viewports.mainView().getCamera());
         pickFrame.begin();
+        simplificationStatistics.beginFrame();
     }
 
     public List<View> views() {
@@ -282,7 +296,8 @@ public final class PlanetViewerSession {
     public TerrainFrameSettings terrainFrameSettings(PyramidalImageInstance instance) {
         return new TerrainFrameSettings(cullingCamera(), relativeScale(instance),
             model.getHeightExagerationFactor(), uniformLodVisible, model.getTerrainSubdivisionScheme(),
-            terrainTileBoundsVisible, terrainPicker.selectedTile(), model.isImageryVisible());
+            terrainTileBoundsVisible, terrainPicker.selectedTile(), model.isImageryVisible(),
+            model.getScreenErrorThresholdPixels());
     }
 
     /** The light follows the camera of the view being drawn. */
@@ -316,7 +331,7 @@ public final class PlanetViewerSession {
         return hud.labels(canvasWidth, canvasHeight, new HudFrameStats(
             rasterGpuUsage.residentCount(), rasterGpuUsage.bytesAssigned(),
             terrainGpuUsage.residentCount(), terrainGpuUsage.bytesAssigned(), tileImageLoader.getRamBytesUsed(),
-            treeDiscoveryService.getPendingCount(), uniformLodVisible));
+            treeDiscoveryService.getPendingCount(), uniformLodVisible, simplificationStatistics.currentFrame()));
     }
 
     public void shutdown() {
