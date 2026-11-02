@@ -151,4 +151,34 @@ class ImageryTileResolverTest {
         assertNotNull(loader.takeReady(sibling));
         loader.shutdown();
     }
+
+    @Test
+    void aLinkTellsTheImageAndTheDeeperBlocksApart() throws Exception {
+        Path pyramid = temporaryDirectory.resolve("toplevel");
+        page(pyramid.resolve("2"), "02");
+        Files.createDirectories(pyramid.resolve("3/1"));
+        ImageryTileResolver resolver = new ImageryTileResolver(pyramid);
+        assertEquals(new ImageryBlockLink(true, false), resolver.link(TileAddress.fabdem("02")));
+        assertEquals(new ImageryBlockLink(false, true), resolver.link(TileAddress.fabdem("03")));
+        assertEquals(ImageryBlockLink.NONE, resolver.link(TileAddress.fabdem("01")));
+    }
+
+    @Test
+    void theLoaderFindsLinksInTheBackgroundAndForgetsADeletedSubtree() throws Exception {
+        Path pyramid = temporaryDirectory.resolve("toplevel");
+        page(pyramid.resolve("2"), "02");
+        ImageryTileLoader loader = new ImageryTileLoader(pyramid);
+        TileAddress block = TileAddress.fabdem("02");
+        CountDownLatch probed = new CountDownLatch(1);
+        loader.setOnReady(probed::countDown);
+        ImageryBlockLink link = loader.link(block);
+        if (link == null) {
+            assertTrue(probed.await(10, TimeUnit.SECONDS));
+            link = loader.link(block);
+        }
+        assertEquals(new ImageryBlockLink(true, false), link);
+        loader.deleteSubtree(block).join();
+        assertEquals(ImageryBlockLink.NONE, loader.link(block));
+        loader.shutdown();
+    }
 }

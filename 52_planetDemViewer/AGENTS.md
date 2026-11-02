@@ -49,6 +49,8 @@ If Vitral lacks something or has a defect, fix it in its own repository
 - A class with JOGL dependencies is named `Jogl4<Name>Renderer`, or
   `Jogl4<Name>Helper` when it supports a renderer, and lives in `render/jogl4`.
 - A class without JOGL dependencies has a plain name, without that prefix.
+- Terrain code goes in the `terrain` subfolder of each side: `render/terrain` and
+  `render/jogl4/terrain`. Code shared with the palette images stays in the parent folder.
 - A class that depends on AWT for rendering work is named `Awt<Name>Helper` and lives
   in `gui/awt`. An interface with a plain name keeps `render` unaware of it, and the
   application injects it, as with `TextRasterizer` and `AwtTextRasterizerHelper`. Use

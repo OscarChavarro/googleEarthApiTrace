@@ -16,7 +16,10 @@ class RenderBackendBoundaryTest {
     private static final List<String> NOT_GPU_WORK = List.of(
         "java.io.", "java.nio.file.", "System.out", "System.err", "planetdemviewer.io.",
         "planetdemviewer.logger.", "ImagePersistence", "AWTTextureIO", "util.texture.", "com.jogamp.common.nio");
-    private static final List<Path> AWT_FREE_FOLDERS = List.of(RENDER, RENDER.resolve("jogl4"),
+    private static final List<Path> BACKEND_FOLDERS = List.of(RENDER.resolve("jogl4"), RENDER.resolve("jogl4/terrain"));
+    private static final List<Path> BACKEND_NEUTRAL_FOLDERS = List.of(RENDER, RENDER.resolve("terrain"));
+    private static final List<Path> AWT_FREE_FOLDERS = List.of(RENDER, RENDER.resolve("terrain"),
+        RENDER.resolve("jogl4"), RENDER.resolve("jogl4/terrain"),
         Path.of("src/main/planetdemviewer/io"), Path.of("src/main/planetdemviewer/io/imagery"),
         Path.of("src/main/planetdemviewer/model"), Path.of("src/main/planetdemviewer/terrain"));
 
@@ -28,12 +31,14 @@ class RenderBackendBoundaryTest {
 
     @Test
     void theOpenGlBackendDoesNoInputOutputNorApplicationWork() throws IOException {
-        List<Path> backend = javaFilesOf(RENDER.resolve("jogl4"));
-        assertTrue(!backend.isEmpty());
-        for (Path file : backend) {
-            String source = Files.readString(file);
-            for (String forbidden : NOT_GPU_WORK) {
-                assertTrue(!source.contains(forbidden), file + " uses " + forbidden);
+        for (Path folder : BACKEND_FOLDERS) {
+            List<Path> backend = javaFilesOf(folder);
+            assertTrue(!backend.isEmpty(), folder + " has no classes");
+            for (Path file : backend) {
+                String source = Files.readString(file);
+                for (String forbidden : NOT_GPU_WORK) {
+                    assertTrue(!source.contains(forbidden), file + " uses " + forbidden);
+                }
             }
         }
     }
@@ -52,11 +57,15 @@ class RenderBackendBoundaryTest {
 
     @Test
     void theBackendNeutralClassesDoNotDependOnAGraphicsApi() throws IOException {
-        for (Path file : javaFilesOf(RENDER)) {
-            String source = Files.readString(file);
-            assertEquals(false, source.contains("com.jogamp") || source.contains("render.jogl")
-                || source.contains("planetdemviewer.gui"),
-                file + " depends on OpenGL or on the GUI toolkit");
+        for (Path folder : BACKEND_NEUTRAL_FOLDERS) {
+            List<Path> neutral = javaFilesOf(folder);
+            assertTrue(!neutral.isEmpty(), folder + " has no classes");
+            for (Path file : neutral) {
+                String source = Files.readString(file);
+                assertEquals(false, source.contains("com.jogamp") || source.contains("render.jogl")
+                    || source.contains("planetdemviewer.gui"),
+                    file + " depends on OpenGL or on the GUI toolkit");
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 package planetdemviewer.render;
 
-import planetdemviewer.terrain.TerrainSimplificationCounts;
+import planetdemviewer.render.terrain.TerrainSimplificationCounts;
 
 /** What the HUD reports about the renderers and loaders during one frame. */
 public record HudFrameStats(int residentTextures, long rasterGpuBytes, int residentMeshes, long terrainGpuBytes,

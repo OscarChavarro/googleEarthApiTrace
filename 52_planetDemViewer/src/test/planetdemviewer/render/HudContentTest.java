@@ -9,8 +9,8 @@ import planetdemviewer.config.Configuration;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
-import planetdemviewer.terrain.TerrainSimplificationCounts;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.render.terrain.TerrainSimplificationCounts;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 
 class HudContentTest {
     private static final long MB = 1024L * 1024L;

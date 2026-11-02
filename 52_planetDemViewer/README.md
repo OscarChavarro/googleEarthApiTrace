@@ -83,9 +83,41 @@ LIND1996 chooses its triangles for each frame.
 | Vertices per tile | 256 x 256 | 257 x 257 (stored samples 0 to 256) | 257 x 257, of which it draws a subset |
 | Triangles per tile | 130,050 | 131,072 | Up to 131,072, depending on the view |
 | Can subdivide below the DEM spacing | No | Yes, but not implemented yet | No |
+| Color from other levels than the geometry | No | Yes | Yes |
 
-Each tile still draws the PNG of its own level in every scheme, so color deeper
-than the geometry is not used yet.
+### Independent color and geometry levels
+
+The elevation and color pyramids are two independent, incomplete quadtrees: a tile may have
+no PNG of its own level, or PNG files many levels deeper than its DEM. Following sections 4.1
+and 4.2 of [LERB2010], an elevation block is linked to the color blocks that cover it, and
+the option "Independent color levels" controls this. It appears in a panel at the bottom of the
+layer panel when it applies (3D terrain with color, in the diamond-square and LIND1996 schemes),
+along with the levels the last frame used. It is on by default and is not saved. The MCP tool
+`set_independent_imagery_levels` also sets it, and `get_camera_model` reports those levels.
+Clearing it draws each tile with the PNG of its own level only, or without color.
+
+- **Color shallower than the geometry.** A tile whose PNG is missing, or still loading, uses the
+  nearest ancestor that has one, with a texture coordinate transform.
+- **Color deeper than the geometry.** A tile that is an elevation leaf is split into squares of
+  its grid with the same coverage test and thresholds as the elevation tiles, and each square is
+  drawn with its own PNG. Squares outside the view are not drawn. Whether a block exists is found
+  out in the background, so the frame never waits for storage.
+
+These parts differ from the paper or limit the result:
+
+- The paper binds several textures in one fragment shader. Here the triangles of a tile are
+  grouped by square, with one draw call per square. Two bisections of the diamond-square triangles
+  leave the four quadrants of a square with the same pattern, so a square is an exact set of
+  triangles. Triangle edge has 255 intervals per side, which cannot be halved, so it keeps the PNG
+  of its own level. Only its deeper color needs this: the ancestor fallback alone would work there,
+  and is not enabled.
+- In LIND1996 a coarse triangle may cross several squares, so the center of each square stays
+  enabled, with its dependencies. This adds triangles only where a color block requires them.
+- The smallest square has 2 intervals of the grid, so color goes at most 7 levels below the DEM
+  tile. Geometry is not subdivided further.
+- Importance is not a separate measure, as section 4.2 says, and a tile whose DEM can still split
+  is refined by splitting it. So deeper color only appears at elevation leaves.
+- The mipmaps and filtering of sections 4.2 and 4.3 are not implemented.
 
 ### LIND1996
 
@@ -164,6 +196,13 @@ throughout, so that `render`, its backend and the loaders do not depend on AWT.
 Text goes through the `TextRasterizer` interface. Because Vitral has no font
 rasterizer that works without AWT, the application gives the renderer
 `gui.awt.AwtTextRasterizerHelper`.
+
+The terrain has its own subpackages on each side of that line, which keep it apart
+from the rest of the application. `planetdemviewer.render.terrain` holds the three
+[subdivision schemes](#terrain-subdivision-schemes), seam stitching, the frame planner
+and picking, and `planetdemviewer.render.jogl4.terrain` holds their GPU side. The
+caches, `TextureUploader` and `DirectBuffers` stay in `render`, and
+`Jogl4TextureCacheHelper` in `render/jogl4`, because the palette images use them too.
 
 There are three reasons to keep this separation:
 
@@ -318,6 +357,7 @@ agents at `http://127.0.0.1:<port>/mcp`:
 | `set_screen_error_threshold` | Set the LIND1996 threshold, in pixels |
 | `set_camera_model` | Define the selected view's camera directly, in world coordinates |
 | `set_dependencies_cross_tiles` | Whether adjacent LIND1996 tiles of the same level simplify their common edge together |
+| `set_independent_imagery_levels` | Whether color may come from other levels than the geometry |
 | `set_wires` | Show or hide the triangle edges, as `F2` does |
 | `set_tile_bounds` | Show or hide tile bounds |
 | `click_viewport` | Select the terrain under a pixel of `capture_view` |

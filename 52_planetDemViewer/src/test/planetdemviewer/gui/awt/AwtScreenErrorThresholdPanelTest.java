@@ -15,8 +15,8 @@ import planetdemviewer.config.Configuration;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
-import planetdemviewer.terrain.TerrainSimplificationCounts;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.render.terrain.TerrainSimplificationCounts;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 
 class AwtScreenErrorThresholdPanelTest {
     private final PlanetViewerModel model = new PlanetViewerModel();

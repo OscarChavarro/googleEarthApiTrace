@@ -13,12 +13,19 @@ import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.DrawCommand;
 import planetdemviewer.processing.PscUpdater;
+import planetdemviewer.render.terrain.TerrainFramePlanner;
+import planetdemviewer.render.terrain.TerrainFrameSettings;
+import planetdemviewer.render.terrain.TerrainImageryCounts;
+import planetdemviewer.render.terrain.TerrainImageryStatistics;
+import planetdemviewer.render.terrain.TerrainPickFrame;
+import planetdemviewer.render.terrain.TerrainPicker;
+import planetdemviewer.render.terrain.TerrainSimplificationCounts;
+import planetdemviewer.render.terrain.TerrainSimplificationStatistics;
 import planetdemviewer.scheduler.ResourceTelemetry;
 import planetdemviewer.scheduler.ResourceType;
 import planetdemviewer.spatial.TileAddress;
 import vsdk.toolkit.common.linealAlgebra.Matrix4x4d;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
-import planetdemviewer.terrain.TerrainSimplificationCounts;
 import vsdk.toolkit.environment.camera.Camera;
 import vsdk.toolkit.environment.light.Light;
 import vsdk.toolkit.environment.material.RendererConfiguration;
@@ -41,6 +48,7 @@ public final class PlanetViewerSession {
     private final ImageryTileLoader imageryTileLoader;
     private final ViewportLayout viewports;
     private final TerrainSimplificationStatistics simplificationStatistics = new TerrainSimplificationStatistics();
+    private final TerrainImageryStatistics imageryStatistics = new TerrainImageryStatistics();
     private final TerrainPickFrame pickFrame = new TerrainPickFrame();
     private final TerrainPicker terrainPicker;
     private final HudContent hud;
@@ -82,7 +90,7 @@ public final class PlanetViewerSession {
     public <T, M> TerrainFramePlanner<T, M> newTerrainFramePlanner() {
         TerrainFramePlanner<T, M> planner =
             new TerrainFramePlanner<>(tileImageLoader, treeDiscoveryService, imageryTileLoader,
-                simplificationStatistics, pickFrame);
+                simplificationStatistics, imageryStatistics, pickFrame);
         terrainGpuUsage = planner.meshUsage();
         return planner;
     }
@@ -223,6 +231,8 @@ public final class PlanetViewerSession {
             + ",\"subdivisionScheme\":\"" + model.getTerrainSubdivisionScheme() + "\""
             + ",\"screenErrorThresholdPixels\":" + model.getScreenErrorThresholdPixels()
             + ",\"dependenciesCrossTiles\":" + model.isDependenciesCrossTiles()
+            + ",\"independentImageryLevels\":" + model.isIndependentImageryLevels()
+            + ",\"imageryLevels\":" + imageryStatistics.lastFrame().json()
             + ",\"wires\":" + viewports.selectedRenderingConfiguration().isWiresSet()
             + ",\"terrainSimplification\":" + simplificationStatistics.lastFrame().json()
             + ",\"uniformLod\":" + uniformLodVisible
@@ -232,6 +242,11 @@ public final class PlanetViewerSession {
     /** What the view-dependent subdivision did in the last finished frame. Safe to read from any thread. */
     public TerrainSimplificationCounts terrainSimplificationCounts() {
         return simplificationStatistics.lastFrame();
+    }
+
+    /** Which levels of the two quadtrees the last finished frame used. Safe to read from any thread. */
+    public TerrainImageryCounts terrainImageryCounts() {
+        return imageryStatistics.lastFrame();
     }
 
     public void setSelectedCameraModel(Vector3Dd position, Vector3Dd focus, Vector3Dd up) {
@@ -268,6 +283,7 @@ public final class PlanetViewerSession {
         PscUpdater.update(model, viewports.mainView().getCamera());
         pickFrame.begin();
         simplificationStatistics.beginFrame();
+        imageryStatistics.beginFrame();
     }
 
     public List<View> activeViews() {
@@ -306,7 +322,8 @@ public final class PlanetViewerSession {
         return new TerrainFrameSettings(cullingCamera(), relativeScale(instance),
             model.getHeightExagerationFactor(), uniformLodVisible, model.getTerrainSubdivisionScheme(),
             terrainTileBoundsVisible, terrainPicker.selectedTile(), model.isImageryVisible(),
-            model.getScreenErrorThresholdPixels(), model.isDependenciesCrossTiles());
+            model.getScreenErrorThresholdPixels(), model.isDependenciesCrossTiles(),
+            model.usesIndependentImageryLevels());
     }
 
     /** The light follows the camera of the view being drawn. */

@@ -202,6 +202,12 @@ patch, and a per-frame patch limit. Texture tessellation must not change DEM
 mesh continuity or unnecessarily multiply geometry. The backend hides whether
 it uses an atlas, a texture table, or a later technique.
 
+`terrain.LinkedImageryBlocks` and `terrain.QuadrantTerrainMesh` are a first version
+of this plan, after sections 4.1 and 4.2 of [LERB2010]: ancestor fallback, and
+texture patches with UVs per patch, drawn as ranges of a tile's indices. They do not
+have a per-frame patch limit yet, and the patches are limited to squares of the DEM
+grid. The README describes them under "Independent color and geometry levels".
+
 ### OpenStreetMap vectors
 
 `VectorLayer` models entities rather than prebuilt triangles:
@@ -287,11 +293,12 @@ interface FrameEncoder {
 }
 ```
 
-The package `render/jogl4` is the present OpenGL implementation, and it only
-controls the GPU: shaders, buffers, textures, draw calls and reading the color
+The package `render/jogl4`, with its subpackage `render/jogl4/terrain`, is the
+present OpenGL implementation, and it only controls the GPU: shaders, buffers, textures, draw calls and reading the color
 buffer. Every method in it depends directly or indirectly on OpenGL, and it does
-no input/output. Everything else lives in `render`, which does not depend on any
-graphics API, so that another backend only has to replace `render/jogl4`.
+no input/output. Everything else lives in `render`, with its subpackage
+`render/terrain`, which does not depend on any graphics API, so that another backend
+only has to replace `render/jogl4`.
 
 The application talks to `PlanetViewerSession`, and exports the images it obtains
 from `Jogl4PlanetViewerRenderer` through `ViewerSnapshotWriter`.
@@ -300,11 +307,11 @@ from `Jogl4PlanetViewerRenderer` through `ViewerSnapshotWriter`.
 | --- | --- | --- |
 | `PlanetViewerSession` | Loaders, views, selection, user choices; composes each frame's inputs | `Jogl4PlanetViewerRenderer` |
 | `ViewportLayout` | The 1 to 4 views, their layout, and which one the camera controller drives | Through the session |
-| `TerrainPicker`, `TerrainPickFrame` | From a pixel to the selected surface point and tile, on the CPU | Through the session; `TerrainFramePlanner` reports drawn meshes |
-| `TerrainFramePlanner`, `TerrainMeshBuffers`, `TerrainMeshDraw` | LOD selection, seam variants, placement, imagery, which meshes to upload and when; arrays to upload; what to draw, already on the GPU | `Jogl4TerrainRenderer` |
+| `terrain.TerrainPicker`, `terrain.TerrainPickFrame` | From a pixel to the selected surface point and tile, on the CPU | Through the session; `TerrainFramePlanner` reports drawn meshes |
+| `terrain.TerrainFramePlanner`, `terrain.TerrainMeshBuffers`, `terrain.TerrainMeshDraw` | LOD selection, seam variants, placement, imagery, which meshes to upload and when; arrays to upload; what to draw, already on the GPU | `terrain.Jogl4TerrainRenderer` |
 | `PaletteFramePlanner`, `TileQuadGeometry` | LOD selection, texture or ancestor fallback; quad and outline vertices | `Jogl4QuadtreeRenderer` |
-| `GpuResourceCache`, `TileTextureCache`, `TextureUploader`, `TerrainMeshUploader`, `GpuResourceUsage` | LRU, memory budget and usage counters; the backend only creates and destroys | `Jogl4TerrainMeshHelper`, `Jogl4TextureCacheHelper` |
-| `DirectBuffers` | Native-memory copies of vertex data | `Jogl4TerrainMeshHelper`, `Jogl4QuadtreeRenderer`, `Jogl4TextRenderer` |
+| `GpuResourceCache`, `TileTextureCache`, `TextureUploader`, `terrain.TerrainMeshUploader`, `GpuResourceUsage` | LRU, memory budget and usage counters; the backend only creates and destroys | `terrain.Jogl4TerrainMeshHelper`, `Jogl4TextureCacheHelper` |
+| `DirectBuffers` | Native-memory copies of vertex data | `terrain.Jogl4TerrainMeshHelper`, `Jogl4QuadtreeRenderer`, `Jogl4TextRenderer` |
 | `HudContent`, `TileLabelLayout`, `TextLabel`, `TextRasterizer` | What text goes where; its pixels come from `gui.awt.AwtTextRasterizerHelper`, which the application injects | `Jogl4TextRenderer` |
 | `ViewOverlayPlanner` | Which frustums, marker placement, view border | `Jogl4ViewOverlayRenderer` |
 
@@ -407,12 +414,14 @@ planetdemviewer
   io/elevation/ FABDEM elevation import and normalization
   io/imagery/   imagery-pyramid importers
   io/vector/    preprocessed OSM vector-tile importers
-  terrain/      elevation, LOD, meshes, seams, texture patches
+  terrain/      LOD-transition contract; future elevation and texture patches
   vector/       entities, styles, draping
   scheduler/    priorities, cancellation, budgets, executors
   acceleration/ BLAS, TLAS, rays, picking
   render/       backend-neutral contracts and caches
+  render/terrain/ subdivision schemes, meshes, seams, frame planning, picking
   render/jogl4/ existing OpenGL 4 implementation
+  render/jogl4/terrain/ GPU side of the terrain
   bridge/       future native C++ packet/ABI boundary; no native renderer here
   ui/           AWT/Swing, HUD, input, MCP, persistence
 ```

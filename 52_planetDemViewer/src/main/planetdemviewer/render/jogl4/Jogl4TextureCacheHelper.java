@@ -10,10 +10,10 @@ import vsdk.toolkit.media.RGBAImageUncompressed;
  * valid while the GL context it was given is current. The first row of a Vitral image
  * in memory is its bottom row, so it lands where OpenGL expects v = 0.
  */
-final class Jogl4TextureCacheHelper implements TextureUploader<Integer> {
+public final class Jogl4TextureCacheHelper implements TextureUploader<Integer> {
     private final GL4 gl;
 
-    Jogl4TextureCacheHelper(GL4 gl) {
+    public Jogl4TextureCacheHelper(GL4 gl) {
         this.gl = gl;
     }
 

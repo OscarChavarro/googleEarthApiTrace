@@ -1,21 +1,21 @@
 package planetdemviewer.model;
 
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.config.StorageProfile;
 import planetdemviewer.palette.PaletteCatalog;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 import planetdemviewer.scene.CameraSnapshot;
 import planetdemviewer.scene.LayerSnapshot;
-import planetdemviewer.scene.SceneSnapshot;
 import planetdemviewer.scene.ProjectionType;
+import planetdemviewer.scene.SceneSnapshot;
 import planetdemviewer.scene.TerrainSurfaceSelection;
 import planetdemviewer.spatial.WorldPosition;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.environment.camera.Camera;
@@ -54,6 +54,7 @@ public final class PlanetViewerModel {
     private TerrainSubdivisionScheme terrainSubdivisionScheme = TerrainSubdivisionScheme.TRIANGLE_EDGE;
     private double screenErrorThresholdPixels = Configuration.DEFAULT_SCREEN_ERROR_THRESHOLD_PIXELS;
     private boolean dependenciesCrossTiles = true;
+    private boolean independentImageryLevels = true;
     private boolean imageryAvailable;
     private boolean imageryEnabled = true;
     private Widget guiDefinitions;
@@ -226,6 +227,21 @@ public final class PlanetViewerModel {
     public void setDependenciesCrossTiles(boolean enabled) {
         dependenciesCrossTiles = enabled;
         notifyLayerStateChanged();
+    }
+
+    /** Whether color may come from other levels than the geometry, in the schemes that allow it. */
+    public boolean isIndependentImageryLevels() {
+        return independentImageryLevels;
+    }
+
+    public void setIndependentImageryLevels(boolean enabled) {
+        independentImageryLevels = enabled;
+        notifyLayerStateChanged();
+    }
+
+    /** Whether the current scheme does draw color from other levels than the geometry. */
+    public boolean usesIndependentImageryLevels() {
+        return independentImageryLevels && terrainSubdivisionScheme.allowsImageryBeyondGeometryLevel();
     }
 
     public boolean isImageryAvailable() {

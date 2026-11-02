@@ -18,16 +18,17 @@ import planetdemviewer.gui.awt.AwtMainWindow;
 import planetdemviewer.io.ViewerSnapshotWriter;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.model.dialog.ImageryLevelsPresenter;
 import planetdemviewer.model.dialog.LayerTreePresenter;
 import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
 import planetdemviewer.render.PlanetViewerSession;
 import planetdemviewer.render.jogl4.Jogl4PlanetViewerRenderer;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 import planetdemviewer.state.ApplicationStateStore;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
-import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.animation.AnimationEvent;
 import vsdk.toolkit.animation.AnimationEventGenerator;
 import vsdk.toolkit.animation.AnimationListener;
+import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 import vsdk.toolkit.media.RGBImageUncompressed;
 
 @SuppressWarnings("removal")
@@ -56,7 +57,8 @@ public class InteractiveViewer extends Applet {
         fillGuiWithCanvas();
 
         frame = new AwtMainWindow(canvas, gui, new LayerTreePresenter(model),
-            new ScreenErrorThresholdPresenter(model, session::terrainSimplificationCounts), this::requestClose);
+            new ScreenErrorThresholdPresenter(model, session::terrainSimplificationCounts),
+            new ImageryLevelsPresenter(model, session::terrainImageryCounts), this::requestClose);
         frame.setVisible(true);
         startJoglAnimator();
         canvas.requestFocusInWindow();
@@ -187,6 +189,13 @@ public class InteractiveViewer extends Applet {
     public void setDependenciesCrossTilesFromMcp(boolean enabled) throws Exception {
         runOnEventThread(() -> {
             model.writeLocked(() -> model.setDependenciesCrossTiles(enabled));
+            canvas.repaint();
+        });
+    }
+
+    public void setIndependentImageryLevelsFromMcp(boolean enabled) throws Exception {
+        runOnEventThread(() -> {
+            model.writeLocked(() -> model.setIndependentImageryLevels(enabled));
             canvas.repaint();
         });
     }

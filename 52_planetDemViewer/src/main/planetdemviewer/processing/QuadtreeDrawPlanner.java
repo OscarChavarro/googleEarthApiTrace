@@ -174,7 +174,7 @@ public final class QuadtreeDrawPlanner {
      * Conservative screen coverage of an AABB.  A box touching the eye/near
      * plane refines rather than dividing by an unstable homogeneous W.
      */
-    private static double projectedCoverage(Camera camera, Vector3Dd[] corners) {
+    public static double projectedCoverage(Camera camera, Vector3Dd[] corners) {
         Matrix4x4d projection = camera.calculateProjectionMatrix();
         double minX = Double.POSITIVE_INFINITY;
         double minY = Double.POSITIVE_INFINITY;
@@ -207,12 +207,12 @@ public final class QuadtreeDrawPlanner {
         return Math.max(0.0, (maxX - minX) * (maxY - minY) * 0.25);
     }
 
-    /** Stateful hysteresis for one renderer/view. */
+    /** Stateful hysteresis for one renderer/view; a node is any key that identifies a block. */
     public static final class LodState {
         private static final int MAX_ENTRIES = 8_192;
-        private final Map<QuadtreeNode, Boolean> refined = new LinkedHashMap<>(256, 0.75f, true);
+        private final Map<Object, Boolean> refined = new LinkedHashMap<>(256, 0.75f, true);
 
-        public synchronized boolean shouldRefine(QuadtreeNode node, double coverage) {
+        public synchronized boolean shouldRefine(Object node, double coverage) {
             boolean wasRefined = Boolean.TRUE.equals(refined.get(node));
             boolean result = wasRefined
                 ? coverage > Configuration.SCREEN_AREA_COARSEN_THRESHOLD

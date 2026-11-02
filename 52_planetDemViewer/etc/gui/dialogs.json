@@ -45,6 +45,18 @@
         { "kind": "label", "id": "originalTriangles", "binding": "trianglesBeforeSimplification", "labelKey": "IDM_LIND1996_ORIGINAL_TRIANGLES" },
         { "kind": "label", "id": "optimizedTriangles", "binding": "trianglesRendered", "labelKey": "IDM_LIND1996_OPTIMIZED_TRIANGLES" }
       ]
+    },
+    {
+      "id": "imageryLevels.details",
+      "titleKey": "IDM_IMAGERY_LEVELS_TITLE",
+      "modal": false,
+      "content": [
+        { "kind": "checkbox", "id": "independentImageryLevels", "binding": "independentImageryLevels", "labelKey": "IDM_IMAGERY_LEVELS_INDEPENDENT" },
+        { "kind": "label", "id": "geometryLevels", "binding": "imageryLevels", "labelKey": "IDM_IMAGERY_LEVELS_GEOMETRY_LEVELS" },
+        { "kind": "label", "id": "colorLevels", "binding": "imageryLevels", "labelKey": "IDM_IMAGERY_LEVELS_COLOR_LEVELS" },
+        { "kind": "label", "id": "colorBlocks", "binding": "imageryLevels", "labelKey": "IDM_IMAGERY_LEVELS_COLOR_BLOCKS" },
+        { "kind": "label", "id": "colorSources", "binding": "imageryLevels", "labelKey": "IDM_IMAGERY_LEVELS_COLOR_SOURCES" }
+      ]
     }
   ]
 }

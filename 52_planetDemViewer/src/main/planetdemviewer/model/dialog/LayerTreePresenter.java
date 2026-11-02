@@ -2,7 +2,7 @@ package planetdemviewer.model.dialog;
 
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.gui.dialog.components.DialogTreeNode;
 import vsdk.toolkit.gui.widget.Widget;
 import vsdk.toolkit.gui.widget.WidgetDialog;

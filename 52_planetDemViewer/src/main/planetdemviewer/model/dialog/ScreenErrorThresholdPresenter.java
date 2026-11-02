@@ -6,7 +6,7 @@ import java.util.function.Supplier;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
-import planetdemviewer.terrain.TerrainSimplificationCounts;
+import planetdemviewer.render.terrain.TerrainSimplificationCounts;
 import vsdk.toolkit.gui.widget.Widget;
 import vsdk.toolkit.gui.widget.WidgetDialog;
 

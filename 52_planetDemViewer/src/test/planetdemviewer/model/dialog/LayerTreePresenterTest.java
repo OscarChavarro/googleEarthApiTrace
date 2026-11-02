@@ -11,7 +11,7 @@ import planetdemviewer.config.Configuration;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.gui.dialog.components.DialogTreeNode;
 
 class LayerTreePresenterTest {

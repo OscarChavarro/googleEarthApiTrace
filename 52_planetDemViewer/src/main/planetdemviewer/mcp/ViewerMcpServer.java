@@ -13,7 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import planetdemviewer.InteractiveViewer;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
 /**
@@ -30,6 +30,7 @@ public final class ViewerMcpServer implements AutoCloseable {
           {"name":"set_screen_error_threshold","description":"Set the threshold tau, in pixels, of the LIND1996 subdivision scheme.","inputSchema":{"type":"object","properties":{"pixels":{"type":"number","minimum":0}},"required":["pixels"]}},
           {"name":"set_camera_model","description":"Define the selected view's camera directly, in world coordinates; use get_camera_model to read them.","inputSchema":{"type":"object","properties":{"position_x":{"type":"number"},"position_y":{"type":"number"},"position_z":{"type":"number"},"focus_x":{"type":"number"},"focus_y":{"type":"number"},"focus_z":{"type":"number"},"up_x":{"type":"number"},"up_y":{"type":"number"},"up_z":{"type":"number"}},"required":["position_x","position_y","position_z","focus_x","focus_y","focus_z","up_x","up_y","up_z"]}},
           {"name":"set_dependencies_cross_tiles","description":"Choose whether adjacent tiles of the same level simplify their common edge together in the LIND1996 subdivision scheme, or keep all its samples.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
+          {"name":"set_independent_imagery_levels","description":"Choose whether terrain color may come from other levels of its pyramid than the geometry, in the DIAMOND_SQUARE and LIND1996 subdivision schemes. get_camera_model reports the levels used.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
           {"name":"set_wires","description":"Show or hide the triangle edges in the selected view.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
           {"name":"click_viewport","description":"Click a physical pixel of the image returned by capture_view, using top-left viewport coordinates. A terrain hit selects it; a sky hit clears the selection.","inputSchema":{"type":"object","properties":{"x":{"type":"integer","description":"capture pixel x from the left"},"y":{"type":"integer","description":"capture pixel y from the top"}},"required":["x","y"]}},
           {"name":"capture_view","description":"Capture the current OpenGL canvas to a local PNG file.","inputSchema":{"type":"object","properties":{}}},
@@ -131,6 +132,10 @@ public final class ViewerMcpServer implements AutoCloseable {
             case "set_dependencies_cross_tiles" -> {
                 viewer.setDependenciesCrossTilesFromMcp(booleanValue(request, "enabled"));
                 yield textResult("dependencies across tiles updated");
+            }
+            case "set_independent_imagery_levels" -> {
+                viewer.setIndependentImageryLevelsFromMcp(booleanValue(request, "enabled"));
+                yield textResult("independent imagery levels updated");
             }
             case "set_camera_model" -> {
                 viewer.setCameraModelFromMcp(

@@ -13,6 +13,7 @@ import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.WindowConstants;
 import planetdemviewer.gui.GuiController;
+import planetdemviewer.model.dialog.ImageryLevelsPresenter;
 import planetdemviewer.model.dialog.LayerTreePresenter;
 import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
 import vsdk.toolkit.gui.widget.Widget;
@@ -30,6 +31,7 @@ public final class AwtMainWindow extends JFrame {
     private final Component canvas;
     private final AwtLayerTreePanel layerPanel;
     private final AwtScreenErrorThresholdPanel thresholdPanel;
+    private final AwtImageryLevelsPanel imageryLevelsPanel;
     private final JPanel sidePanel;
     private final JSplitPane split;
     private final int dividerSize;
@@ -37,14 +39,19 @@ public final class AwtMainWindow extends JFrame {
     private boolean fullScreen;
 
     public AwtMainWindow(Component canvas, GuiController gui, LayerTreePresenter layers,
-                         ScreenErrorThresholdPresenter threshold, Runnable closeAction) {
+                         ScreenErrorThresholdPresenter threshold, ImageryLevelsPresenter imageryLevels,
+                         Runnable closeAction) {
         this.canvas = canvas;
         this.gui = gui;
         layerPanel = new AwtLayerTreePanel(layers);
         thresholdPanel = new AwtScreenErrorThresholdPanel(threshold);
         sidePanel = new JPanel(new BorderLayout());
         sidePanel.add(layerPanel, BorderLayout.CENTER);
-        sidePanel.add(thresholdPanel, BorderLayout.SOUTH);
+        imageryLevelsPanel = new AwtImageryLevelsPanel(imageryLevels);
+        JPanel detailsPanels = new JPanel(new BorderLayout());
+        detailsPanels.add(thresholdPanel, BorderLayout.CENTER);
+        detailsPanels.add(imageryLevelsPanel, BorderLayout.SOUTH);
+        sidePanel.add(detailsPanels, BorderLayout.SOUTH);
 
         // Inside a lightweight container, the split pane resizes the heavyweight
         // canvas instead of removing it and destroying its OpenGL context.
@@ -85,6 +92,7 @@ public final class AwtMainWindow extends JFrame {
         setJMenuBar(menuBar);
         layerPanel.rebuild(definitions);
         thresholdPanel.rebuild(definitions);
+        imageryLevelsPanel.rebuild(definitions);
         revalidate();
         repaint();
     }

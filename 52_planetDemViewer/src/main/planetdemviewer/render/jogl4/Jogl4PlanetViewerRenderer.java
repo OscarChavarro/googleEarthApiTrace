@@ -15,6 +15,7 @@ import planetdemviewer.render.RenderStyles;
 import planetdemviewer.render.TextLabel;
 import planetdemviewer.render.TextRasterizer;
 import planetdemviewer.render.View;
+import planetdemviewer.render.jogl4.terrain.Jogl4TerrainRenderer;
 import planetdemviewer.spatial.TileAddress;
 import vsdk.toolkit.common.color.ColorRgb;
 import vsdk.toolkit.environment.light.Light;

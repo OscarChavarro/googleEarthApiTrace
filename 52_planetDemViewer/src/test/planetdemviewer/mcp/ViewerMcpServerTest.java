@@ -5,12 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
-import planetdemviewer.terrain.TerrainSubdivisionScheme;
+import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 
 class ViewerMcpServerTest {
     @Test
     void theToolListOffersEverySubdivisionScheme() {
         assertTrue(ViewerMcpServer.TOOLS.contains("\"name\":\"set_subdivision_scheme\""));
+        assertTrue(ViewerMcpServer.TOOLS.contains("\"name\":\"set_independent_imagery_levels\""));
         for (TerrainSubdivisionScheme scheme : TerrainSubdivisionScheme.values()) {
             assertTrue(ViewerMcpServer.TOOLS.contains("\"" + scheme.name() + "\""), scheme.name());
             assertEquals(scheme, ViewerMcpServer.subdivisionScheme(scheme.name()));

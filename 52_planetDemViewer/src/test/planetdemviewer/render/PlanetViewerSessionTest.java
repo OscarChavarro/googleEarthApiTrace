@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import planetdemviewer.config.Configuration;
 import planetdemviewer.gui.GuiController;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.render.terrain.TerrainFramePlanner;
 
 class PlanetViewerSessionTest {
     private static final long MB = 1024L * 1024L;

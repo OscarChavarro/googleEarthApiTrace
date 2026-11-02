@@ -39,6 +39,39 @@ public record TileAddress(String scheme, String quadkey) {
         return new TileAddress(scheme, quadkey + quadrant);
     }
 
+    /** West edge in the root tile's [0,1] square; digits 0 to 3 are south-west, south-east, north-east, north-west. */
+    public double x0() {
+        double x = 0.0;
+        double size = 1.0;
+        for (int index = 1; index < quadkey.length(); index++) {
+            size *= 0.5;
+            char digit = quadkey.charAt(index);
+            if (digit == '1' || digit == '2') {
+                x += size;
+            }
+        }
+        return x;
+    }
+
+    /** South edge in the root tile's [0,1] square. */
+    public double y0() {
+        double y = 0.0;
+        double size = 1.0;
+        for (int index = 1; index < quadkey.length(); index++) {
+            size *= 0.5;
+            char digit = quadkey.charAt(index);
+            if (digit == '2' || digit == '3') {
+                y += size;
+            }
+        }
+        return y;
+    }
+
+    /** The side in the root tile's [0,1] square. */
+    public double size() {
+        return Math.scalb(1.0, -level());
+    }
+
     /** True for this tile itself and for every descendant of it. */
     public boolean contains(TileAddress other) {
         return scheme.equals(other.scheme) && other.quadkey.startsWith(quadkey);

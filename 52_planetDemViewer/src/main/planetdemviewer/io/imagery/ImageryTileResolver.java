@@ -33,6 +33,17 @@ public final class ImageryTileResolver {
         }
         return Files.isDirectory(directory) ? Optional.of(directory) : Optional.empty();
     }
+    /** What the pyramid has for this block, whether or not its PNG exists. */
+    public ImageryBlockLink link(TileAddress address) {
+        Optional<Path> directory = tileDirectory(address);
+        if (directory.isEmpty()) return ImageryBlockLink.NONE;
+        boolean hasImage = Files.isRegularFile(directory.get().resolve(address.quadkey() + ".png"));
+        boolean hasChildren = false;
+        for (int digit = 0; digit < 4 && !hasChildren; digit++) {
+            hasChildren = Files.isDirectory(directory.get().resolve(Integer.toString(digit)));
+        }
+        return new ImageryBlockLink(hasImage, hasChildren);
+    }
     public Optional<Path> resolve(TileAddress address) {
         Optional<Path> directory = tileDirectory(address);
         if (directory.isEmpty()) return Optional.empty();
