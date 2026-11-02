@@ -21,6 +21,7 @@ import vsdk.toolkit.environment.light.Light;
 import vsdk.toolkit.environment.light.PointLight;
 import vsdk.toolkit.environment.material.RendererConfiguration;
 import vsdk.toolkit.environment.material.SimpleMaterial;
+import vsdk.toolkit.gui.widget.Widget;
 
 /**
  * The scene: an ordered stack of pyramidal image instances plus the
@@ -47,7 +48,11 @@ public final class PlanetViewerModel {
     private int currentPSC = 0;
     private String hudStatus = "";
     private final StorageProfile storageProfile;
-    private OperationModes operationMode = OperationModes.PALETTE_BASED_IMAGE;
+    private OperationModes operationMode = OperationModes.BASIC_TRIANGULATION;
+    private boolean imageryAvailable;
+    private boolean imageryEnabled = true;
+    private Widget guiDefinitions;
+    private Runnable layerStateListener;
     private double heightExagerationFactor = 1.0;
     private TerrainSurfaceSelection terrainSurfaceSelection;
 
@@ -181,10 +186,92 @@ public final class PlanetViewerModel {
 
     public void cycleOperationMode() {
         operationMode = operationMode.next();
+        notifyLayerStateChanged();
     }
 
     public void setOperationMode(OperationModes operationMode) {
-        this.operationMode = operationMode == null ? OperationModes.PALETTE_BASED_IMAGE : operationMode;
+        this.operationMode = operationMode == null ? OperationModes.BASIC_TRIANGULATION : operationMode;
+        notifyLayerStateChanged();
+    }
+
+    public boolean isImageryAvailable() {
+        return imageryAvailable;
+    }
+
+    /** Declares whether a color pyramid was loaded; without one, imagery is not drawn. */
+    public void setImageryAvailable(boolean imageryAvailable) {
+        this.imageryAvailable = imageryAvailable;
+        notifyLayerStateChanged();
+    }
+
+    /** The user's choice, which is kept and saved even while no color pyramid is loaded. */
+    public boolean isImageryEnabled() {
+        return imageryEnabled;
+    }
+
+    public boolean isImageryVisible() {
+        return imageryEnabled && imageryAvailable;
+    }
+
+    public void setImageryEnabled(boolean enabled) {
+        imageryEnabled = enabled;
+        notifyLayerStateChanged();
+    }
+
+    public void toggleImageryVisible() {
+        if (imageryAvailable) {
+            setImageryEnabled(!imageryEnabled);
+        }
+    }
+
+    public void setGuiDefinitions(Widget guiDefinitions) {
+        this.guiDefinitions = guiDefinitions;
+    }
+
+    /**
+     * Returns a text of the current GUI language, replacing {0}, {1}... in one
+     * pass, so an argument such as a folder name is never read as a placeholder.
+     */
+    public String text(String key, Object... arguments) {
+        String template = guiDefinitions == null ? key : guiDefinitions.getMessage(key);
+        StringBuilder result = new StringBuilder(template.length() + 32);
+        int position = 0;
+        while (position < template.length()) {
+            int open = template.indexOf('{', position);
+            int close = open < 0 ? -1 : template.indexOf('}', open);
+            int index = close < 0 ? -1 : argumentIndex(template.substring(open + 1, close), arguments.length);
+            if (open < 0) {
+                result.append(template, position, template.length());
+                break;
+            }
+            if (index < 0) {
+                result.append(template, position, open + 1);
+                position = open + 1;
+                continue;
+            }
+            result.append(template, position, open).append(arguments[index]);
+            position = close + 1;
+        }
+        return result.toString();
+    }
+
+    private static int argumentIndex(String text, int argumentCount) {
+        if (text.length() != 1 || !Character.isDigit(text.charAt(0))) {
+            return -1;
+        }
+        int index = text.charAt(0) - '0';
+        return index < argumentCount ? index : -1;
+    }
+
+    /** Lets a GUI follow layer changes from any input path. May run while the model lock is held. */
+    public void setLayerStateListener(Runnable layerStateListener) {
+        this.layerStateListener = layerStateListener;
+    }
+
+    private void notifyLayerStateChanged() {
+        if (layerStateListener != null) {
+            layerStateListener.run();
+        }
     }
 
     public double getHeightExagerationFactor() {

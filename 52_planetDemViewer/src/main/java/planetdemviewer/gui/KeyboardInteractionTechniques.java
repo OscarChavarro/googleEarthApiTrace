@@ -27,6 +27,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final Runnable clearStateAction;
     private final Runnable toggleImageryAction;
     private final Runnable deleteSelectedTileAction;
+    private final Runnable toggleFullScreenAction;
 
     public KeyboardInteractionTechniques(
         PlanetViewerModel model,
@@ -39,7 +40,8 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         Runnable toggleTileBoundsAction,
         Runnable toggleUniformLodAction,
         Runnable saveStateAction,
-        Runnable clearStateAction, Runnable toggleImageryAction, Runnable deleteSelectedTileAction
+        Runnable clearStateAction, Runnable toggleImageryAction, Runnable deleteSelectedTileAction,
+        Runnable toggleFullScreenAction
     ) {
         this.model = model;
         this.closeAction = closeAction;
@@ -54,6 +56,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         this.clearStateAction = clearStateAction;
         this.toggleImageryAction = toggleImageryAction;
         this.deleteSelectedTileAction = deleteSelectedTileAction;
+        this.toggleFullScreenAction = toggleFullScreenAction;
         this.renderingConfigurationController = model == null
             ? null
             : new RendererConfigurationController();
@@ -70,6 +73,13 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private void keyPressedLocked(java.awt.event.KeyEvent e) {
         KeyEvent event = AwtSystem.awt2vsdkEvent(e);
 
+        // Checked first: without Ctrl, 'f' belongs to the camera controller.
+        if (e.isControlDown() && e.getKeyCode() == java.awt.event.KeyEvent.VK_F) {
+            if (toggleFullScreenAction != null) {
+                toggleFullScreenAction.run();
+            }
+            return;
+        }
         if (event.keycode == KeyEvent.KEY_ESC && closeAction != null) {
             closeAction.run();
             return;

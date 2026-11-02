@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "dialogs": [
+    {
+      "id": "layers.panel",
+      "titleKey": "IDM_LAYERS_TITLE",
+      "modal": false,
+      "content": [
+        {
+          "kind": "tree", "id": "layerTree", "binding": "layers",
+          "children": [
+            {
+              "kind": "column", "id": "elevation", "labelKey": "IDM_LAYER_ELEVATION",
+              "children": [
+                { "kind": "action", "id": "elevation.mesh", "action": "showTerrainMesh", "labelKey": "IDM_LAYER_ELEVATION_MESH" },
+                { "kind": "action", "id": "elevation.palette", "action": "showPaletteImage", "labelKey": "IDM_LAYER_ELEVATION_PALETTE" }
+              ]
+            },
+            {
+              "kind": "column", "id": "color", "labelKey": "IDM_LAYER_COLOR",
+              "children": [
+                { "kind": "action", "id": "color.off", "action": "hideImagery", "labelKey": "IDM_LAYER_COLOR_OFF" },
+                { "kind": "action", "id": "color.imagery", "action": "showImagery", "labelKey": "IDM_LAYER_COLOR_IMAGERY" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

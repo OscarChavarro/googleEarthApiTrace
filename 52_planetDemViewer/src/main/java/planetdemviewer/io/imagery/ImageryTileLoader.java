@@ -2,9 +2,12 @@ package planetdemviewer.io.imagery;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.imageio.ImageIO;
 import planetdemviewer.scheduler.LatestRequestQueue;
 import planetdemviewer.spatial.TileAddress;
@@ -13,7 +16,14 @@ import planetdemviewer.spatial.TileAddress;
 public final class ImageryTileLoader {
     private final ImageryTileResolver resolver;
     private final LatestRequestQueue<String, Request> requests = new LatestRequestQueue<>();
-    private final ConcurrentHashMap<String, BufferedImage> ready = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<TileAddress, BufferedImage> ready = new ConcurrentHashMap<>();
+    /** Subtrees deleted this session; they stay hidden even while their files are still going away. */
+    private final Set<TileAddress> deletedSubtrees = ConcurrentHashMap.newKeySet();
+    private final ExecutorService deleter = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "planet-imagery-deleter");
+        thread.setDaemon(true);
+        return thread;
+    });
     private volatile Runnable onReady;
     private volatile boolean running = true;
 
@@ -24,36 +34,43 @@ public final class ImageryTileLoader {
     }
     public void setOnReady(Runnable callback) { onReady = callback; }
     public void request(TileAddress address) {
+        if (isDeleted(address)) return;
         resolver.resolve(address).ifPresent(path -> requests.submit(path.toString(), new Request(address, path), 100));
     }
     public BufferedImage takeReady(TileAddress address) {
-        return resolver.resolve(address).map(path -> ready.remove(path.toString())).orElse(null);
+        return isDeleted(address) ? null : ready.remove(address);
     }
 
     /**
-     * Deletes only the resolved imagery page for an address. Elevation pages
-     * are owned by a different loader and are deliberately never touched.
-     *
-     * @return the deleted PNG path, or empty when that imagery tile is absent
+     * Deletes the imagery PNGs of a tile and of all its descendants, on a
+     * background thread because a shallow tile can own a very large subtree.
+     * The subtree stops being served immediately, before this method returns.
+     * Elevation pages are owned by a different loader and are never touched.
      */
-    public java.util.Optional<Path> delete(TileAddress address) throws IOException {
-        java.util.Optional<Path> resolved = resolver.resolve(address);
-        if (resolved.isEmpty()) {
-            return java.util.Optional.empty();
-        }
-        Path path = resolved.get();
-        Files.delete(path);
-        ready.remove(path.toString());
-        return java.util.Optional.of(path);
+    public CompletableFuture<ImageryDeletionReport> deleteSubtree(TileAddress address) {
+        deletedSubtrees.add(address);
+        ready.keySet().removeIf(address::contains);
+        return CompletableFuture.supplyAsync(() -> resolver.tileDirectory(address)
+            .map(directory -> ImageryPyramidPruner.prune(directory, address))
+            .orElse(ImageryDeletionReport.NOTHING), deleter);
+    }
+    private boolean isDeleted(TileAddress address) {
+        return deletedSubtrees.stream().anyMatch(deleted -> deleted.contains(address));
     }
     private void work() {
         while (running) try {
             Request request = requests.take();
+            if (isDeleted(request.address)) continue;
             BufferedImage image = ImageIO.read(request.path.toFile());
-            if (image != null) { ready.put(request.path.toString(), image); Runnable callback = onReady; if (callback != null) callback.run(); }
+            if (image != null) {
+                ready.put(request.address, image);
+                // Pairs with deleteSubtree's add-then-purge: one of the two sees the other.
+                if (isDeleted(request.address)) { ready.remove(request.address); continue; }
+                Runnable callback = onReady; if (callback != null) callback.run();
+            }
         } catch (InterruptedException ex) { Thread.currentThread().interrupt(); return; }
           catch (IOException ignored) { }
     }
-    public void shutdown() { running = false; requests.clear(); ready.clear(); }
+    public void shutdown() { running = false; requests.clear(); ready.clear(); deleter.shutdown(); }
     private record Request(TileAddress address, Path path) { }
 }

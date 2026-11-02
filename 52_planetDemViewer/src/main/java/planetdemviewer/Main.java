@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import planetdemviewer.io.PyramidalImageFolderReader;
 import planetdemviewer.logger.Logger;
+import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImage;
 import planetdemviewer.mcp.ViewerMcpServer;
@@ -29,6 +30,7 @@ public class Main {
         }
 
         if (cliArguments.isOffline()) {
+            model.setOperationMode(OperationModes.PALETTE_BASED_IMAGE);
             model.getRenderingConfiguration().setWires(cliArguments.isWires());
             for (var instance : model.getStack()) {
                 instance.getImage().discoverAll();

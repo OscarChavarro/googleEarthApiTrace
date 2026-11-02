@@ -1,0 +1,57 @@
+{
+  "format": "vitral-widget-gui",
+  "version": 1,
+  "menubar": {
+    "type": "menu",
+    "name": "GLOBAL",
+    "children": [
+      {
+        "type": "menu",
+        "name": "&Archivo",
+        "children": [
+          { "type": "item", "name": "&Salir", "modifiers": ["IDC_FILE_QUIT"] }
+        ]
+      },
+      {
+        "type": "menu",
+        "name": "&Configuración",
+        "children": [
+          {
+            "type": "menu",
+            "name": "&Idioma",
+            "children": [
+              { "type": "item", "name": "&Inglés (English)", "modifiers": ["IDC_CUSTOMIZE_LANGUAGE_ENGLISH"] },
+              { "type": "item", "name": "&Español", "modifiers": ["IDC_CUSTOMIZE_LANGUAGE_SPANISH"] }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "messages": {
+    "IDM_WINDOW_TITLE": "planetDemViewer - Visor interactivo de DEM",
+    "IDM_LAYERS_TITLE": "Capas",
+    "IDM_LAYER_ELEVATION": "Altimetría (FABDEM)",
+    "IDM_LAYER_ELEVATION_MESH": "Terreno 3D",
+    "IDM_LAYER_ELEVATION_PALETTE": "Imagen de paleta (2D)",
+    "IDM_LAYER_COLOR": "Color (Google Earth)",
+    "IDM_LAYER_COLOR_OFF": "Apagado",
+    "IDM_LAYER_COLOR_IMAGERY": "Imágenes sobre el terreno",
+    "IDM_HUD_NO_IMAGE": "No hay una pirámide DEM cargada. Presione 'l' para cargar una.",
+    "IDM_HUD_IMAGE": "Imagen {0}/{1}: {2} | indexadas {3} teselas / profundidad {4} | cola de metadatos {5} | opacidad {6} | z {7}",
+    "IDM_HUD_CAMERA": "PSC: {0} | cámara z: {1} | teselas GPU: {2} ({3} MB) | {4}",
+    "IDM_HUD_VIEWS_LAYOUT": "vistas: {0} (disposición {1}) | seleccionada: {2}",
+    "IDM_HUD_VIEWS_FULL_SCREEN": "vistas: {0} (vista completa) | seleccionada: {1}",
+    "IDM_HUD_VIEW_TITLE": "Vista {0}",
+    "IDM_HUD_MODE": "Modo: {0} | exageración de altura: {1} | mallas de terreno: {2} ({3} MB) | LOD uniforme: {4} | ESPACIO: siguiente modo | altura: 5/6",
+    "IDM_HUD_ON": "sí",
+    "IDM_HUD_OFF": "no",
+    "IDM_HUD_PALETTE": "Paleta: {0} ({1}..{2} m) | Paleta anterior/siguiente: 3/4",
+    "IDM_HUD_KEYS": "Zoom: rueda/z/Z | Reiniciar: r/R | Cargar: l | Imagen: 1/2 | Opacidad: o/O | Pila z: RePág/AvPág | Límites: 0 | LOD uniforme: 9 | Imágenes: t | Estado: e/E | Vista: ./,/w/v/V | Pantalla completa: Ctrl+F | ESC: salir",
+    "IDM_HUD_FPS": "FPS: {0}",
+    "IDM_HUD_TILE_RAM": "RAM de teselas: {0}",
+    "IDM_HUD_TILE_GPU": "GPU de teselas: {0}",
+    "IDM_HUD_SURFACE": "Superficie: {0}°, {1}° | NMM: {2} m",
+    "IDM_HUD_SELECTED_TILE": "{0}: {1} <geoideX={2} m, geoideY={3} m>"
+  }
+}

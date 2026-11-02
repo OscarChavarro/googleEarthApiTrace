@@ -1,7 +1,9 @@
 package planetdemviewer.spatial;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class TileAddressTest {
@@ -17,6 +19,17 @@ class TileAddressTest {
         assertEquals("021", grandchild.quadkey());
         assertEquals(child, grandchild.parent());
         assertNull(root.parent());
+    }
+
+    @Test
+    void containsItselfAndItsDescendantsOnly() {
+        TileAddress tile = TileAddress.fabdem("02");
+
+        assertTrue(tile.contains(tile));
+        assertTrue(tile.contains(TileAddress.fabdem("0213")));
+        assertFalse(tile.contains(TileAddress.fabdem("0")));
+        assertFalse(tile.contains(TileAddress.fabdem("03")));
+        assertFalse(tile.contains(new TileAddress("other-scheme", "021")));
     }
 }
 

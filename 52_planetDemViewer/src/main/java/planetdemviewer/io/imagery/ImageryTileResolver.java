@@ -20,7 +20,8 @@ import planetdemviewer.spatial.TileAddress;
 public final class ImageryTileResolver {
     private final Path root;
     public ImageryTileResolver(Path root) { this.root = root == null ? null : root.toAbsolutePath().normalize(); }
-    public Optional<Path> resolve(TileAddress address) {
+    /** The directory holding a tile's PNG and child directories, whether or not the PNG exists. */
+    public Optional<Path> tileDirectory(TileAddress address) {
         if (root == null || address == null || !TileAddress.FABDEM_QUADKEY_SCHEME.equals(address.scheme())) return Optional.empty();
         String key = address.quadkey();
         Path directory = root;
@@ -30,7 +31,12 @@ public final class ImageryTileResolver {
             directory = directory.resolve(Character.toString(key.charAt(digitIndex)));
             if (!Files.isDirectory(directory)) return Optional.empty();
         }
-        Path file = directory.resolve(key + ".png");
+        return Files.isDirectory(directory) ? Optional.of(directory) : Optional.empty();
+    }
+    public Optional<Path> resolve(TileAddress address) {
+        Optional<Path> directory = tileDirectory(address);
+        if (directory.isEmpty()) return Optional.empty();
+        Path file = directory.get().resolve(address.quadkey() + ".png");
         if (!Files.isRegularFile(file)) return Optional.empty();
         try {
             // Canonicalize only the completed file: this makes the decode

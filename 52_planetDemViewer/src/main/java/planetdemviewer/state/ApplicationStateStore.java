@@ -36,7 +36,8 @@ public final class ApplicationStateStore {
         json.append("\n  \"model\": {\"operationMode\": \"")
             .append(model.getOperationMode()).append("\", \"heightExaggeration\": ")
             .append(model.getHeightExagerationFactor()).append(", \"currentPSC\": ")
-            .append(model.getCurrentPSC()).append("},");
+            .append(model.getCurrentPSC()).append(", \"imageryEnabled\": ")
+            .append(model.isImageryEnabled()).append("},");
         json.append("\n  \"renderer\": {\"tileBounds\": ")
             .append(renderer.isTerrainTileBoundsVisible()).append(", \"uniformLod\": ")
             .append(renderer.isUniformLodVisible()).append("},");
@@ -83,6 +84,8 @@ public final class ApplicationStateStore {
             model.setOperationMode(OperationModes.valueOf(stringValue(json, "operationMode")));
             model.setHeightExagerationFactor(doubleValue(json, "heightExaggeration"));
             model.setCurrentPSC(intValue(json, "currentPSC"));
+            // Files saved before this setting existed keep the default.
+            model.setImageryEnabled(booleanValue(json, "imageryEnabled", model.isImageryEnabled()));
             restoreInstances(json, model.getStack());
             return Optional.of(new RendererState(booleanValue(json, "tileBounds"), booleanValue(json, "uniformLod")));
         }
@@ -181,6 +184,11 @@ public final class ApplicationStateStore {
             throw new IllegalArgumentException("Missing state value " + name);
         }
         return Boolean.parseBoolean(matcher.group(1));
+    }
+
+    private static boolean booleanValue(String json, String name, boolean missingValue) {
+        Matcher matcher = Pattern.compile("\\\"" + name + "\\\"\\s*:\\s*(true|false)").matcher(json);
+        return matcher.find() ? Boolean.parseBoolean(matcher.group(1)) : missingValue;
     }
 
     private static String escape(String value) {

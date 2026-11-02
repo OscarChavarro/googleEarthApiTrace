@@ -25,5 +25,13 @@ final class ImageryTextureCache {
         gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE);
         textures.put(address, texture); return texture;
     }
+    /** Frees the GPU textures of a tile and its descendants; needs a current GL context. */
+    void release(GL4 gl, TileAddress subtree) {
+        textures.entrySet().removeIf(entry -> {
+            if (!subtree.contains(entry.getKey())) return false;
+            entry.getValue().destroy(gl);
+            return true;
+        });
+    }
     void dispose(GL4 gl) { textures.values().forEach(texture -> texture.destroy(gl)); textures.clear(); }
 }

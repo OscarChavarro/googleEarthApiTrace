@@ -1,0 +1,57 @@
+{
+  "format": "vitral-widget-gui",
+  "version": 1,
+  "menubar": {
+    "type": "menu",
+    "name": "GLOBAL",
+    "children": [
+      {
+        "type": "menu",
+        "name": "&File",
+        "children": [
+          { "type": "item", "name": "E&xit", "modifiers": ["IDC_FILE_QUIT"] }
+        ]
+      },
+      {
+        "type": "menu",
+        "name": "&Settings",
+        "children": [
+          {
+            "type": "menu",
+            "name": "&Language",
+            "children": [
+              { "type": "item", "name": "&English", "modifiers": ["IDC_CUSTOMIZE_LANGUAGE_ENGLISH"] },
+              { "type": "item", "name": "&Spanish (Español)", "modifiers": ["IDC_CUSTOMIZE_LANGUAGE_SPANISH"] }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "messages": {
+    "IDM_WINDOW_TITLE": "planetDemViewer - Interactive DEM Viewer",
+    "IDM_LAYERS_TITLE": "Layers",
+    "IDM_LAYER_ELEVATION": "Elevation (FABDEM)",
+    "IDM_LAYER_ELEVATION_MESH": "3D terrain",
+    "IDM_LAYER_ELEVATION_PALETTE": "Palette image (2D)",
+    "IDM_LAYER_COLOR": "Color (Google Earth)",
+    "IDM_LAYER_COLOR_OFF": "Off",
+    "IDM_LAYER_COLOR_IMAGERY": "Imagery on terrain",
+    "IDM_HUD_NO_IMAGE": "No DEM pyramid loaded. Press 'l' to load one.",
+    "IDM_HUD_IMAGE": "Image {0}/{1}: {2} | indexed {3} tiles / depth {4} | metadata queue {5} | opacity {6} | z {7}",
+    "IDM_HUD_CAMERA": "PSC: {0} | camera z: {1} | GPU tiles: {2} ({3} MB) | {4}",
+    "IDM_HUD_VIEWS_LAYOUT": "views: {0} (layout {1}) | selected: {2}",
+    "IDM_HUD_VIEWS_FULL_SCREEN": "views: {0} (full-screen) | selected: {1}",
+    "IDM_HUD_VIEW_TITLE": "View {0}",
+    "IDM_HUD_MODE": "Mode: {0} | height exaggeration: {1} | terrain meshes: {2} ({3} MB) | uniform LOD: {4} | SPACE: next mode | height: 5/6",
+    "IDM_HUD_ON": "on",
+    "IDM_HUD_OFF": "off",
+    "IDM_HUD_PALETTE": "Palette: {0} ({1}..{2} m) | Previous/next palette: 3/4",
+    "IDM_HUD_KEYS": "Zoom: wheel/z/Z | Reset: r/R | Load: l | Image: 1/2 | Opacity: o/O | Stack z: PgUp/PgDn | Bounds: 0 | Uniform LOD: 9 | Imagery: t | State: e/E | View: ./,/w/v/V | Full screen: Ctrl+F | ESC: exit",
+    "IDM_HUD_FPS": "FPS: {0}",
+    "IDM_HUD_TILE_RAM": "Tile RAM: {0}",
+    "IDM_HUD_TILE_GPU": "Tile GPU: {0}",
+    "IDM_HUD_SURFACE": "Surface: {0}°, {1}° | MSL: {2} m",
+    "IDM_HUD_SELECTED_TILE": "{0}: {1} <geoidX={2} m, geoidY={3} m>"
+  }
+}

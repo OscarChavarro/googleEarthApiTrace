@@ -21,6 +21,8 @@ public final class Configuration {
     public static final String DEFAULT_DATASET_DIRECTORY = "/media/extra/FABDEM/02_rawPyramidal";
     public static final Path PALETTE_DIRECTORY = Path.of("../etc/palettes");
     public static final Path EGM2008_GRID = Path.of("etc/wgs/globalDeltaHeightsMatrix.json");
+    public static final Path GUI_DIRECTORY = Path.of("etc/gui");
+    public static final String DEFAULT_GUI_LANGUAGE = "english";
     public static final int MINIMUM_ELEVATION_METRES = 0;
     public static final int MAXIMUM_ELEVATION_METRES = 12_000;
     /** The normalized world domain is 360 degrees wide, i.e. one equatorial circumference. */

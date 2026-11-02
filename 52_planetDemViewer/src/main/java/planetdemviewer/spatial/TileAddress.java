@@ -39,6 +39,11 @@ public record TileAddress(String scheme, String quadkey) {
         return new TileAddress(scheme, quadkey + quadrant);
     }
 
+    /** True for this tile itself and for every descendant of it. */
+    public boolean contains(TileAddress other) {
+        return scheme.equals(other.scheme) && other.quadkey.startsWith(quadkey);
+    }
+
     public TileAddress parent() {
         return level() == 0 ? null : new TileAddress(scheme, quadkey.substring(0, quadkey.length() - 1));
     }

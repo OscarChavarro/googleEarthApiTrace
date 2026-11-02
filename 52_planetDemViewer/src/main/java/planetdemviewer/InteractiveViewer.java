@@ -4,20 +4,19 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.util.Animator;
 import java.applet.Applet;
 import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.GraphicsEnvironment;
-import java.awt.Rectangle;
 import java.awt.event.KeyEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
-import javax.swing.WindowConstants;
+import planetdemviewer.config.Configuration;
+import planetdemviewer.gui.GuiController;
 import planetdemviewer.gui.KeyboardInteractionTechniques;
 import planetdemviewer.gui.LoadPyramidalImageDialog;
 import planetdemviewer.gui.MouseInteractionTechnique;
 import planetdemviewer.gui.ViewActions;
+import planetdemviewer.gui.awt.AwtMainWindow;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.model.dialog.LayerTreePresenter;
 import planetdemviewer.render.Jogl4PlanetViewerRenderer;
 import planetdemviewer.state.ApplicationStateStore;
 import vsdk.toolkit.animation.AnimationEvent;
@@ -33,7 +32,8 @@ public class InteractiveViewer extends Applet {
     private KeyboardInteractionTechniques keyboardInteraction;
     private MouseInteractionTechnique mouseInteraction;
     private GLCanvas canvas;
-    private JFrame frame;
+    private AwtMainWindow frame;
+    private GuiController gui;
     private AutoCloseable mcpServer;
     private Thread animatorThread;
     private Animator joglAnimator;
@@ -46,21 +46,7 @@ public class InteractiveViewer extends Applet {
     public void launchDesktop() {
         fillGuiWithCanvas();
 
-        frame = new JFrame("planetDemViewer - Interactive DEM Viewer");
-        frame.add(canvas, BorderLayout.CENTER);
-        frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-        Dimension size = new Dimension(960, 600);
-        frame.setMinimumSize(size);
-        // Fill the usable desktop session without entering OS fullscreen mode.
-        Rectangle availableScreen = GraphicsEnvironment.getLocalGraphicsEnvironment()
-            .getMaximumWindowBounds();
-        frame.setBounds(availableScreen);
-        frame.addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosing(java.awt.event.WindowEvent e) {
-                requestClose();
-            }
-        });
+        frame = new AwtMainWindow(canvas, gui, new LayerTreePresenter(model), this::requestClose);
         frame.setVisible(true);
         startJoglAnimator();
         canvas.requestFocusInWindow();
@@ -74,6 +60,8 @@ public class InteractiveViewer extends Applet {
     }
 
     private void fillGuiWithCanvas() {
+        gui = new GuiController(
+            Configuration.GUI_DIRECTORY, Configuration.DEFAULT_GUI_LANGUAGE, this::requestClose, model);
         canvas = renderer.createCanvas();
         // JOGL owns its GL context on its animator thread. Tile I/O only updates caches.
         renderer.setRepaintOnTileReady(() -> { });
@@ -109,11 +97,21 @@ public class InteractiveViewer extends Applet {
             this::saveState,
             this::clearState,
             renderer::toggleImageryVisible,
-            renderer::deleteSelectedImageryTile
+            renderer::deleteSelectedImageryTile,
+            this::requestFullScreenToggle
         );
         canvas.addKeyListener(keyboardInteraction);
         canvas.setFocusable(true);
         startAnimator();
+    }
+
+    /** Deferred, because key handling holds the model lock that the OpenGL frame needs while the window resizes. */
+    private void requestFullScreenToggle() {
+        SwingUtilities.invokeLater(() -> {
+            if (frame != null) {
+                frame.toggleFullScreen();
+            }
+        });
     }
 
     /** Keeps a stable animation/render cadence even while there is no user input or tile I/O. */

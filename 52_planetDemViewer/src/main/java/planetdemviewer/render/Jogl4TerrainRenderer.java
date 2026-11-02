@@ -310,6 +310,10 @@ public final class Jogl4TerrainRenderer {
 
     private final ImageryTextureCache imageryTextureCache = new ImageryTextureCache();
 
+    public void releaseImagerySubtree(GL4 gl, TileAddress subtree) {
+        imageryTextureCache.release(gl, subtree);
+    }
+
     private void drawMesh(GL4 gl, GpuMesh mesh, Camera camera, Matrix4x4d modelMatrix,
                           RendererConfiguration quality, Light light, SimpleMaterial material, Texture imagery) {
         if (mesh.indexCount == 0) {

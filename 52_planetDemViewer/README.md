@@ -147,6 +147,24 @@ interactive viewer, this intentionally performs a complete pyramid traversal.
   --output /tmp/planet-dem.png --width 2048 --height 2048 --wires
 ```
 
+## GUI
+
+The window has a menu bar and a left panel with a tree of layers. Radio buttons
+select how elevation is shown (3D terrain, the default, or a 2D palette image)
+and whether Google Earth color is drawn on the terrain. Color is on by default,
+is saved in `state.json` with `e`, and is available only with 3D terrain and when
+a color pyramid was given as the second folder. The `Space` and `t` keys change
+the same state, so the tree always follows them. `Settings > Language` switches
+the menus, panel and HUD between English and Spanish without restarting; the
+language is not saved. `Ctrl+F` toggles full screen, which shows only the canvas
+and HUD.
+
+The GUI is defined by Vitral JSON files in `etc/gui`: `english.json` and
+`spanish.json` hold the menus, panel and HUD texts, and `dialogs.json` holds the layer tree.
+Swing code is limited to `planetdemviewer.gui.awt`. Commands and layer behavior
+are in the toolkit-independent `GuiController` and `LayerTreePresenter`, to make
+later ports easier.
+
 ## Controls
 
 The mouse, wheel, arrow keys, and the remaining camera controls provided by
@@ -160,11 +178,12 @@ box is drawn in yellow.
 | Key | Action |
 | --- | --- |
 | `Space` | Toggle palette and 3D terrain modes |
+| `t` | Toggle Google Earth color on the 3D terrain |
 | `3` / `4` | Previous / next GIMP palette |
 | `5` / `6` | Halve / double vertical exaggeration |
 | `0` | Toggle terrain tile bounds |
 | `Ctrl` + click | Select terrain tile for cleanup |
-| `Delete` | Delete the selected optional imagery `.png` (never the DEM `.bin`) |
+| `Delete` | Delete the selected tile's imagery `.png` and all its sublevels, and free their GPU textures; no confirmation, no undo (never the DEM `.bin`) |
 | `9` | Toggle uniform LOD |
 | `l` | Load a DEM pyramid from the GUI |
 | `1` / `2` | Select previous / next loaded pyramid |
@@ -176,6 +195,7 @@ box is drawn in yellow.
 | `w` | Toggle camera-frustum display |
 | `v` / `V` | Add / remove a view (up to four) |
 | `e` / `E` | Save / clear saved viewer state |
+| `Ctrl` + `f` | Toggle full screen (hides the menu bar and layer panel) |
 | `Escape` | Close the viewer |
 
 ## Palettes

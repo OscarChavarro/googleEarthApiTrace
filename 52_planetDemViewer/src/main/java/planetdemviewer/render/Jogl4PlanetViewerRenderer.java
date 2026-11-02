@@ -22,6 +22,7 @@ import java.util.Locale;
 import planetdemviewer.io.TileImageLoader;
 import planetdemviewer.io.TileTreeDiscoveryService;
 import planetdemviewer.io.imagery.ImageryTileLoader;
+import planetdemviewer.logger.Logger;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PyramidalImageInstance;
@@ -73,7 +74,8 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
     private final TileImageLoader tileImageLoader;
     private final TileTreeDiscoveryService treeDiscoveryService;
     private final ImageryTileLoader imageryTileLoader;
-    private boolean imageryVisible;
+    /** Guarded by the model's critical section; drained by display(), which owns the GL context. */
+    private final List<TileAddress> pendingImageryReleases = new ArrayList<>();
     // JOGL's drawable surface may use a higher pixel density than AWT's logical canvas.
     // Keep the last surface extent so both native clicks and MCP capture pixels map to the
     // same raster that was used to render the terrain.
@@ -108,6 +110,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         this.tileImageLoader = new TileImageLoader(model.getPalettes(), model.getStorageProfile(), resourceTelemetry);
         this.treeDiscoveryService = new TileTreeDiscoveryService(model.getStorageProfile());
         this.imageryTileLoader = imageryRoot == null ? null : new ImageryTileLoader(imageryRoot);
+        model.setImageryAvailable(imageryTileLoader != null);
         View mainView = new View("View 1", model.getViewingCamera());
         mainView.setSelected(true);
         views.add(mainView);
@@ -153,9 +156,13 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         tileImageLoader.paletteChanged();
         paletteInvalidationRequested = true;
     }
-    public void toggleImageryVisible() { imageryVisible = !imageryVisible; }
+    public void toggleImageryVisible() { model.toggleImageryVisible(); }
 
-    /** Removes the selected optional PNG page; DEM .bin pages are never deleted. */
+    /**
+     * Removes the selected tile's optional PNG and everything below it; DEM .bin
+     * pages are never deleted. Runs inside the model's critical section on the AWT
+     * event thread, so GL destruction is left to display(), and the files to the loader.
+     */
     public void deleteSelectedImageryTile() {
         TileAddress tile = selectedTerrainTile;
         if (tile == null) {
@@ -166,14 +173,15 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             model.setHudStatus("No imagery pyramid is loaded; no PNG was deleted");
             return;
         }
-        try {
-            var deleted = imageryTileLoader.delete(tile);
-            model.setHudStatus(deleted.map(path -> "Deleted imagery PNG: " + path)
-                .orElse("Imagery PNG was already absent: " + tile.quadkey()));
-        }
-        catch (Exception e) {
-            model.setHudStatus("Could not delete imagery PNG: " + e.getMessage());
-        }
+        pendingImageryReleases.add(tile);
+        model.setHudStatus("Deleting imagery subtree: " + tile.quadkey());
+        imageryTileLoader.deleteSubtree(tile).whenComplete((report, failure) -> {
+            String status = failure == null
+                ? "Deleted imagery subtree " + tile.quadkey() + ": " + report.summary()
+                : "Could not delete imagery subtree " + tile.quadkey() + ": " + failure.getMessage();
+            Logger.info(status);
+            model.writeLocked(() -> model.setHudStatus(status));
+        });
     }
 
     // --- View management (mirrors the old prototype's '.', ',', Alt+w, and an add/remove view pair) ---
@@ -315,6 +323,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             + ",\"front\":" + vectorJson(camera.getFront())
             + ",\"projectionMode\":" + camera.getProjectionMode()
             + ",\"operationMode\":\"" + model.getOperationMode() + "\""
+            + ",\"imageryVisible\":" + model.isImageryVisible()
             + ",\"uniformLod\":" + uniformLodVisible
             + ",\"tileBounds\":" + terrainTileBoundsVisible + "}";
     }
@@ -356,8 +365,14 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
     }
 
     public String viewSummary() {
-        return "views: " + views.size() + (fullScreenViewIndex >= 0 ? " (full-screen)" : " (layout " + (layoutStyle) + ")")
-            + " | selected: " + views.get(indexOfSelected()).getTitle();
+        String selected = viewTitle(views.get(indexOfSelected()));
+        return fullScreenViewIndex >= 0
+            ? model.text("IDM_HUD_VIEWS_FULL_SCREEN", views.size(), selected)
+            : model.text("IDM_HUD_VIEWS_LAYOUT", views.size(), layoutStyle, selected);
+    }
+
+    private String viewTitle(View view) {
+        return model.text("IDM_HUD_VIEW_TITLE", views.indexOf(view) + 1);
     }
 
     private void selectView(int index) {
@@ -478,6 +493,10 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
             quadtreeRenderer.invalidateTextures(gl);
             paletteInvalidationRequested = false;
         }
+        for (TileAddress subtree : pendingImageryReleases) {
+            terrainRenderer.releaseImagerySubtree(gl, subtree);
+        }
+        pendingImageryReleases.clear();
 
         if (offlineMode) {
             Matrix4x4d projection = offlineTopProjection(drawable);
@@ -536,11 +555,11 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
                     model.getHeightExagerationFactor(),
                     view.getRenderingConfiguration(),
                     model.getTerrainLight(),
-                    imageryVisible ? whiteTerrainMaterial() : model.getTerrainMaterial(),
+                    model.isImageryVisible() ? whiteTerrainMaterial() : model.getTerrainMaterial(),
                     tileImageLoader,
                     treeDiscoveryService,
                     terrainTileBoundsVisible,
-                    uniformLodVisible, imageryTileLoader, imageryVisible,
+                    uniformLodVisible, imageryTileLoader, model.isImageryVisible(),
                     selectedTerrainTile()
                 );
             }
@@ -780,7 +799,7 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         Jogl4LineRenderer.drawLines(gl, Matrix4x4d.identityMatrix(), positions, colors,
             view.isSelected() ? 2.5f : 1.0f);
         if (hudTextRenderer != null) {
-            hudTextRenderer.draw(gl, view.getTitle(), viewport[0] + 6,
+            hudTextRenderer.draw(gl, viewTitle(view), viewport[0] + 6,
                 viewport[1] + viewport[3] - 18, canvasWidth, canvasHeight);
         }
     }
@@ -847,56 +866,57 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
         gl.glDisable(GL.GL_DEPTH_TEST);
         hudTextRenderer.draw(gl, selectedImageLabel(), 16, canvasHeight - 24, canvasWidth, canvasHeight);
         hudTextRenderer.draw(
-            gl, "PSC: " + model.getCurrentPSC()
-                + " | camera z: " + String.format("%.4f", views.get(0).getCamera().getPosition().z())
-                + " | GPU tiles: " + quadtreeRenderer.getResidentTextureCount()
-                + " (" + (quadtreeRenderer.getGpuBytesAssigned() / (1024 * 1024)) + " MB)"
-                + " | " + viewSummary(),
+            gl, model.text("IDM_HUD_CAMERA", model.getCurrentPSC(),
+                String.format("%.4f", views.get(0).getCamera().getPosition().z()),
+                quadtreeRenderer.getResidentTextureCount(),
+                quadtreeRenderer.getGpuBytesAssigned() / (1024 * 1024),
+                viewSummary()),
             16, canvasHeight - 46, canvasWidth, canvasHeight
         );
         hudTextRenderer.draw(
-            gl, "Mode: " + model.getOperationMode()
-                + " | height exaggeration: " + String.format("%.4gx", model.getHeightExagerationFactor())
-                + " | terrain meshes: " + terrainRenderer.getResidentMeshCount()
-                + " (" + (terrainRenderer.getGpuBytesAssigned() / (1024 * 1024)) + " MB)"
-                + " | uniform LOD: " + (uniformLodVisible ? "on" : "off")
-                + " | SPACE: next mode | height: 5/6",
+            gl, model.text("IDM_HUD_MODE", operationModeLabel(),
+                String.format("%.4gx", model.getHeightExagerationFactor()),
+                terrainRenderer.getResidentMeshCount(),
+                terrainRenderer.getGpuBytesAssigned() / (1024 * 1024),
+                model.text(uniformLodVisible ? "IDM_HUD_ON" : "IDM_HUD_OFF")),
             16, canvasHeight - 68, canvasWidth, canvasHeight
         );
         hudTextRenderer.draw(
-            gl, "Palette: " + model.getPalettes().selectedName()
-                + " (" + model.getPalettes().minimumElevation() + ".." + model.getPalettes().maximumElevation() + " m)"
-                + " | Previous/next palette: 3/4",
+            gl, model.text("IDM_HUD_PALETTE", model.getPalettes().selectedName(),
+                model.getPalettes().minimumElevation(), model.getPalettes().maximumElevation()),
             16, canvasHeight - 90, canvasWidth, canvasHeight
         );
-        hudTextRenderer.draw(
-            gl, "Zoom: wheel/z/Z | Reset: r/R | Load: l | Image: 1/2 | Opacity: o/O | Stack z: PgUp/PgDn"
-                + " | Bounds: 0 | Uniform LOD: 9 | Imagery: t | State: e/E | View: ./,/w/v/V | ESC: exit",
-            16, canvasHeight - 112, canvasWidth, canvasHeight
-        );
+        hudTextRenderer.draw(gl, model.text("IDM_HUD_KEYS"), 16, canvasHeight - 112, canvasWidth, canvasHeight);
         if (performanceTextRenderer != null) {
             int right = canvasWidth - 18;
-            performanceTextRenderer.drawRightAligned(gl, "FPS: " + framesPerSecond,
+            performanceTextRenderer.drawRightAligned(gl, model.text("IDM_HUD_FPS", framesPerSecond),
                 right, 94, canvasWidth, canvasHeight, Color.YELLOW);
-            performanceTextRenderer.drawRightAligned(gl, "Tile RAM: " + formatBytes(tileImageLoader.getRamBytesUsed()),
+            performanceTextRenderer.drawRightAligned(gl,
+                model.text("IDM_HUD_TILE_RAM", formatBytes(tileImageLoader.getRamBytesUsed())),
                 right, 58, canvasWidth, canvasHeight, Color.YELLOW);
-            performanceTextRenderer.drawRightAligned(gl, "Tile GPU: " + formatBytes(getGpuBytesAssigned()),
+            performanceTextRenderer.drawRightAligned(gl,
+                model.text("IDM_HUD_TILE_GPU", formatBytes(getGpuBytesAssigned())),
                 right, 22, canvasWidth, canvasHeight, Color.YELLOW);
         }
         TerrainSurfaceSelection selection = model.getTerrainSurfaceSelection();
         if (selection != null && terrainSelectionTextRenderer != null) {
             Color selectionColor = new Color(45, 125, 205);
-            terrainSelectionTextRenderer.draw(gl, String.format(Locale.ROOT,
-                "Surface: %.6f°, %.6f° | MSL: %.2f m",
-                selection.position().longitude(), selection.position().latitude(),
-                selection.heightAboveMeanSeaLevelMetres()),
+            terrainSelectionTextRenderer.draw(gl, model.text("IDM_HUD_SURFACE",
+                String.format(Locale.ROOT, "%.6f", selection.position().longitude()),
+                String.format(Locale.ROOT, "%.6f", selection.position().latitude()),
+                String.format(Locale.ROOT, "%.2f", selection.heightAboveMeanSeaLevelMetres())),
                 16, 76, canvasWidth, canvasHeight, selectionColor);
-            terrainSelectionTextRenderer.draw(gl, String.format(Locale.ROOT,
-                "%s: %d <geoidX=%.2f m, geoidY=%.2f m>",
+            terrainSelectionTextRenderer.draw(gl, model.text("IDM_HUD_SELECTED_TILE",
                 selection.tile().quadkey(), selection.tile().level(),
-                selection.geoidXMetres(), selection.geoidYMetres()),
+                String.format(Locale.ROOT, "%.2f", selection.geoidXMetres()),
+                String.format(Locale.ROOT, "%.2f", selection.geoidYMetres())),
                 16, 38, canvasWidth, canvasHeight, selectionColor);
         }
+    }
+
+    private String operationModeLabel() {
+        return model.text(model.getOperationMode() == OperationModes.BASIC_TRIANGULATION
+            ? "IDM_LAYER_ELEVATION_MESH" : "IDM_LAYER_ELEVATION_PALETTE");
     }
 
     private void updateFramesPerSecond() {
@@ -929,13 +949,13 @@ public final class Jogl4PlanetViewerRenderer implements GLEventListener {
     private String selectedImageLabel() {
         PyramidalImageInstance selected = model.getSelectedInstance();
         if (selected == null) {
-            return "No DEM pyramid loaded. Press 'l' to load one.";
+            return model.text("IDM_HUD_NO_IMAGE");
         }
-        return "Image " + (model.getSelectedIndex() + 1) + "/" + model.getInstanceCount()
-            + ": " + selected.getImage().getSourceFolder()
-            + " | indexed " + selected.getImage().getTileCount() + " tiles / depth " + selected.getImage().getHeight()
-            + " | metadata queue " + treeDiscoveryService.getPendingCount()
-            + " | opacity " + String.format("%.3f", selected.getOpacity())
-            + " | z " + String.format("%.2f", selected.getZOffset());
+        return model.text("IDM_HUD_IMAGE", model.getSelectedIndex() + 1, model.getInstanceCount(),
+            selected.getImage().getSourceFolder(),
+            selected.getImage().getTileCount(), selected.getImage().getHeight(),
+            treeDiscoveryService.getPendingCount(),
+            String.format("%.3f", selected.getOpacity()),
+            String.format("%.2f", selected.getZOffset()));
     }
 }
