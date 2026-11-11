@@ -1,6 +1,5 @@
 package planetdemviewer.render.terrain;
 
-import planetdemviewer.config.Configuration;
 import planetdemviewer.geo.GeographicCoordinate;
 import planetdemviewer.geo.GeographicSurfacePosition;
 import planetdemviewer.io.TileImageLoader;
@@ -113,19 +112,34 @@ public final class TerrainPicker {
         return new WorldPosition(point.x(), point.y(), point.z());
     }
 
+    /** The terrain drawn in the last frame at the center of the selected view; null when the ray misses it. */
+    public TerrainPickHit hitAtViewCenter() {
+        return terrain.intersect(viewCenterRay());
+    }
+
+    public Ray3 viewCenterRay() {
+        View view = viewports.selectedView();
+        int[] viewport = view.viewportInPixels(surfaceWidth, surfaceHeight);
+        return viewportRay(view.getCamera(), viewport[2] / 2, viewport[3] / 2, viewport[2], viewport[3]);
+    }
+
+    /**
+     * The terrain drawn in the last frame vertically below a world point; null when there is none.
+     * @param aboveTerrain a height over everything drawn, in world coordinates
+     */
+    public TerrainSurfaceSelection surfaceBelow(double worldX, double worldY, double aboveTerrain) {
+        TerrainPickHit hit = terrain.intersect(new Ray3(new WorldPosition(worldX, worldY, aboveTerrain),
+            new WorldPosition(0.0, 0.0, -1.0)));
+        return hit == null ? null : surfaceSelection(hit);
+    }
+
     private TerrainSurfaceSelection surfaceSelection(TerrainPickHit hit) {
         TileAddress tile = TileAddress.fabdem(hit.command().node().getId());
         double longitude = hit.localX() * 360.0 - 180.0;
         double latitude = hit.localY() * 180.0 - 90.0;
-        double centerLongitude = (hit.command().node().getX0() + hit.command().node().getX1()) * 180.0 - 180.0;
-        double centerLatitude = (hit.command().node().getY0() + hit.command().node().getY1()) * 90.0 - 90.0;
-        double radius = Configuration.WORLD_WIDTH_METRES / (2.0 * Math.PI);
-        double geoidX = Math.toRadians(longitude - centerLongitude) * radius * Math.cos(Math.toRadians(centerLatitude));
-        double geoidY = Math.toRadians(latitude - centerLatitude) * radius;
-        GeographicSurfacePosition position = new GeographicSurfacePosition(longitude, latitude);
         double orthometricHeight = tileImageLoader.orthometricHeight(
             new GeographicCoordinate(longitude, latitude), hit.ellipsoidalElevationMetres());
-        return new TerrainSurfaceSelection(position, hit.worldPosition(), tile, hit.imageryTile(),
-            orthometricHeight, geoidX, geoidY);
+        return TerrainSurfaceSelection.inTile(new GeographicSurfacePosition(longitude, latitude),
+            hit.worldPosition(), tile, hit.imageryTile(), orthometricHeight);
     }
 }

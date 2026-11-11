@@ -2,6 +2,7 @@ package planetdemviewer.gui;
 
 import java.awt.event.KeyListener;
 import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 import planetdemviewer.model.PlanetViewerModel;
 import planetdemviewer.model.PyramidalImageInstance;
 import planetdemviewer.processing.CameraZoom;
@@ -28,6 +29,7 @@ public final class KeyboardInteractionTechniques implements KeyListener {
     private final Runnable toggleImageryAction;
     private final Runnable deleteSelectedTileAction;
     private final Runnable toggleFullScreenAction;
+    private final IntPredicate cameraControlKeyAction;
 
     public KeyboardInteractionTechniques(
         PlanetViewerModel model,
@@ -41,8 +43,10 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         Runnable toggleUniformLodAction,
         Runnable saveStateAction,
         Runnable clearStateAction, Runnable toggleImageryAction, Runnable deleteSelectedTileAction,
-        Runnable toggleFullScreenAction
+        Runnable toggleFullScreenAction,
+        IntPredicate cameraControlKeyAction
     ) {
+        this.cameraControlKeyAction = cameraControlKeyAction;
         this.model = model;
         this.closeAction = closeAction;
         this.cameraController = cameraController;
@@ -155,6 +159,10 @@ public final class KeyboardInteractionTechniques implements KeyListener {
         }
         if (event.keycode == KeyEvent.KEY_o || event.keycode == KeyEvent.KEY_O) {
             adjustSelectedOpacity(event.keycode == KeyEvent.KEY_O);
+            repaintAction.run();
+            return;
+        }
+        if (cameraControlKeyAction != null && cameraControlKeyAction.test(event.keycode)) {
             repaintAction.run();
             return;
         }

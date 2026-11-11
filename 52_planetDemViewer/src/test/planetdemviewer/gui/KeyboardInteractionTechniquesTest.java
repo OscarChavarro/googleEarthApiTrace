@@ -16,7 +16,7 @@ class KeyboardInteractionTechniquesTest {
     private final KeyboardInteractionTechniques keyboard = new KeyboardInteractionTechniques(
         new PlanetViewerModel(), nothing, null, nothing, nothing,
         new ViewActions(nothing, nothing, nothing, nothing, nothing, () -> configuration),
-        step -> { }, nothing, nothing, nothing, nothing, nothing, nothing, nothing);
+        step -> { }, nothing, nothing, nothing, nothing, nothing, nothing, nothing, keycode -> false);
 
     private void press(int keyCode) {
         keyboard.keyPressed(new KeyEvent(new Canvas(), KeyEvent.KEY_PRESSED, 0L, 0, keyCode, KeyEvent.CHAR_UNDEFINED));

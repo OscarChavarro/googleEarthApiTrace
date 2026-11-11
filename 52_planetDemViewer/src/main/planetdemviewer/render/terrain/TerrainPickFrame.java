@@ -23,6 +23,11 @@ public final class TerrainPickFrame implements TerrainRayIntersector {
         drawnMeshes.add(new DrawnMesh(item, mesh, textureBlocks));
     }
 
+    /** Whether the last frame drew a mesh of this tile. Much cheaper than casting a ray. */
+    public boolean isDrawn(TileAddress tile) {
+        return drawnMeshes.stream().anyMatch(drawn -> drawn.item.command().node().getId().equals(tile.quadkey()));
+    }
+
     @Override
     public TerrainPickHit intersect(Ray3 ray) {
         TerrainPickHit closest = null;

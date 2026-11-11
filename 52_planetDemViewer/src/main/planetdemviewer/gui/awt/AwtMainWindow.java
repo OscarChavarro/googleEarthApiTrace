@@ -10,9 +10,12 @@ import java.awt.event.WindowEvent;
 import javax.swing.JFrame;
 import javax.swing.JMenuBar;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.WindowConstants;
 import planetdemviewer.gui.GuiController;
+import planetdemviewer.model.dialog.CameraControlPresenter;
 import planetdemviewer.model.dialog.ImageryLevelsPresenter;
 import planetdemviewer.model.dialog.LayerTreePresenter;
 import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
@@ -20,7 +23,7 @@ import vsdk.toolkit.gui.widget.Widget;
 import vsdk.toolkit.render.swing.SwingGuiRenderer;
 
 /**
- * Main window: menu bar, layer panel and OpenGL canvas. Language and full-screen
+ * Main window: menu bar, side panel with the categories of controls, and OpenGL canvas. Language and full-screen
  * changes update this same window, so the canvas keeps its OpenGL context and
  * loaded tiles.
  */
@@ -32,7 +35,12 @@ public final class AwtMainWindow extends JFrame {
     private final AwtLayerTreePanel layerPanel;
     private final AwtScreenErrorThresholdPanel thresholdPanel;
     private final AwtImageryLevelsPanel imageryLevelsPanel;
-    private final JPanel sidePanel;
+    private final AwtCameraControlPanel cameraControlPanel;
+    private final transient LayerTreePresenter layers;
+    private final transient CameraControlPresenter cameraControl;
+    private final AwtCollapsiblePanel layersCategory;
+    private final AwtCollapsiblePanel cameraControlCategory;
+    private final JScrollPane sidePanel;
     private final JSplitPane split;
     private final int dividerSize;
     private int windowedDividerLocation = LAYER_PANEL_WIDTH;
@@ -40,18 +48,30 @@ public final class AwtMainWindow extends JFrame {
 
     public AwtMainWindow(Component canvas, GuiController gui, LayerTreePresenter layers,
                          ScreenErrorThresholdPresenter threshold, ImageryLevelsPresenter imageryLevels,
-                         Runnable closeAction) {
+                         CameraControlPresenter cameraControl, Runnable closeAction) {
         this.canvas = canvas;
         this.gui = gui;
+        this.layers = layers;
+        this.cameraControl = cameraControl;
         layerPanel = new AwtLayerTreePanel(layers);
         thresholdPanel = new AwtScreenErrorThresholdPanel(threshold);
-        sidePanel = new JPanel(new BorderLayout());
-        sidePanel.add(layerPanel, BorderLayout.CENTER);
         imageryLevelsPanel = new AwtImageryLevelsPanel(imageryLevels);
         JPanel detailsPanels = new JPanel(new BorderLayout());
         detailsPanels.add(thresholdPanel, BorderLayout.CENTER);
         detailsPanels.add(imageryLevelsPanel, BorderLayout.SOUTH);
-        sidePanel.add(detailsPanels, BorderLayout.SOUTH);
+        JPanel layersContent = new JPanel(new BorderLayout());
+        layersContent.add(layerPanel, BorderLayout.CENTER);
+        layersContent.add(detailsPanels, BorderLayout.SOUTH);
+        layersCategory = new AwtCollapsiblePanel(layersContent);
+        cameraControlPanel = new AwtCameraControlPanel(cameraControl);
+        cameraControlCategory = new AwtCollapsiblePanel(cameraControlPanel);
+        AwtControlCategoriesPanel categories = new AwtControlCategoriesPanel();
+        categories.addCategory(layersCategory);
+        categories.addCategory(cameraControlCategory);
+        sidePanel = new JScrollPane(categories, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+            ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        sidePanel.setFocusable(false);
+        sidePanel.getVerticalScrollBar().setFocusable(false);
 
         // Inside a lightweight container, the split pane resizes the heavyweight
         // canvas instead of removing it and destroying its OpenGL context.
@@ -90,7 +110,10 @@ public final class AwtMainWindow extends JFrame {
         });
         menuBar.setVisible(!fullScreen);
         setJMenuBar(menuBar);
+        layersCategory.setTitle(layers.title(definitions));
+        cameraControlCategory.setTitle(cameraControl.title(definitions));
         layerPanel.rebuild(definitions);
+        cameraControlPanel.rebuild(definitions);
         thresholdPanel.rebuild(definitions);
         imageryLevelsPanel.rebuild(definitions);
         revalidate();

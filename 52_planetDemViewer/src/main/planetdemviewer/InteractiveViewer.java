@@ -16,8 +16,10 @@ import planetdemviewer.gui.MouseInteractionTechnique;
 import planetdemviewer.gui.ViewActions;
 import planetdemviewer.gui.awt.AwtMainWindow;
 import planetdemviewer.io.ViewerSnapshotWriter;
+import planetdemviewer.model.CameraControlMode;
 import planetdemviewer.model.OperationModes;
 import planetdemviewer.model.PlanetViewerModel;
+import planetdemviewer.model.dialog.CameraControlPresenter;
 import planetdemviewer.model.dialog.ImageryLevelsPresenter;
 import planetdemviewer.model.dialog.LayerTreePresenter;
 import planetdemviewer.model.dialog.ScreenErrorThresholdPresenter;
@@ -58,7 +60,8 @@ public class InteractiveViewer extends Applet {
 
         frame = new AwtMainWindow(canvas, gui, new LayerTreePresenter(model),
             new ScreenErrorThresholdPresenter(model, session::terrainSimplificationCounts),
-            new ImageryLevelsPresenter(model, session::terrainImageryCounts), this::requestClose);
+            new ImageryLevelsPresenter(model, session::terrainImageryCounts),
+            new CameraControlPresenter(model), this::requestClose);
         frame.setVisible(true);
         startJoglAnimator();
         canvas.requestFocusInWindow();
@@ -110,7 +113,8 @@ public class InteractiveViewer extends Applet {
             this::clearState,
             session::toggleImageryVisible,
             session::deleteSelectedImageryTile,
-            this::requestFullScreenToggle
+            this::requestFullScreenToggle,
+            session::processCameraControlKey
         );
         canvas.addKeyListener(keyboardInteraction);
         canvas.setFocusable(true);
@@ -154,8 +158,17 @@ public class InteractiveViewer extends Applet {
 
     /** Accepts any java.awt.event.KeyEvent key code through the local MCP endpoint. */
     public void pressKeyFromMcp(int keyCode) throws Exception {
+        pressKeyFromMcp(keyCode, KeyEvent.CHAR_UNDEFINED);
+    }
+
+    /** Letters are told apart by their character, as x and X are. */
+    public void pressKeyFromMcp(int keyCode, char keyChar) throws Exception {
         runOnEventThread(() -> keyboardInteraction.keyPressed(new KeyEvent(
-            canvas, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, keyCode, KeyEvent.CHAR_UNDEFINED)));
+            canvas, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, keyCode, keyChar)));
+    }
+
+    public void setCameraControlModeFromMcp(CameraControlMode mode) throws Exception {
+        runOnEventThread(() -> model.writeLocked(() -> model.setCameraControlMode(mode)));
     }
 
     public void setGeometryModeFromMcp(boolean enabled) throws Exception {

@@ -4,11 +4,9 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
-import javax.swing.JScrollPane;
 import javax.swing.JTree;
 import javax.swing.SwingUtilities;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -25,13 +23,11 @@ import vsdk.toolkit.gui.widget.Widget;
  */
 final class AwtLayerTreePanel extends JPanel {
     private final LayerTreePresenter presenter;
-    private final JLabel title = new JLabel();
     private final JTree tree = new JTree(new DefaultTreeModel(null));
 
     AwtLayerTreePanel(LayerTreePresenter presenter) {
         super(new BorderLayout());
         this.presenter = presenter;
-        title.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
         tree.setRootVisible(false);
         tree.setShowsRootHandles(true);
         tree.setRowHeight(0);
@@ -47,15 +43,11 @@ final class AwtLayerTreePanel extends JPanel {
                 }
             }
         });
-        JScrollPane scroll = new JScrollPane(tree);
-        scroll.setFocusable(false);
-        add(title, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        add(tree, BorderLayout.CENTER);
         presenter.setChangeListener(() -> SwingUtilities.invokeLater(tree::repaint));
     }
 
     void rebuild(Widget definitions) {
-        title.setText(presenter.title(definitions));
         tree.setModel(new DefaultTreeModel(treeNode(presenter.hierarchy(definitions))));
         for (int row = 0; row < tree.getRowCount(); row++) {
             tree.expandRow(row);

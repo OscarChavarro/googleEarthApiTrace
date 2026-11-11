@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import planetdemviewer.InteractiveViewer;
+import planetdemviewer.model.CameraControlMode;
 import planetdemviewer.render.terrain.TerrainSubdivisionScheme;
 import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 
@@ -23,7 +24,8 @@ import vsdk.toolkit.common.linealAlgebra.Vector3Dd;
 public final class ViewerMcpServer implements AutoCloseable {
     static final String TOOLS = """
         {"tools":[
-          {"name":"key_event","description":"Send any Java AWT key code to the viewer.","inputSchema":{"type":"object","properties":{"key_code":{"type":"integer","description":"java.awt.event.KeyEvent VK_* numeric value"}},"required":["key_code"]}},
+          {"name":"key_event","description":"Send any Java AWT key code to the viewer. Letter keys also need key_char, which tells apart x from X.","inputSchema":{"type":"object","properties":{"key_code":{"type":"integer","description":"java.awt.event.KeyEvent VK_* numeric value"},"key_char":{"type":"string","description":"The character that the key types, if any"}},"required":["key_code"]}},
+          {"name":"set_camera_control","description":"Select how the keys move the camera, as the Camera control category of the side panel does. get_camera_model reports the current one.","inputSchema":{"type":"object","properties":{"mode":{"type":"string","enum":["AQUYNZA","LEVELS_BROWSER"]}},"required":["mode"]}},
           {"name":"set_geometry_mode","description":"Enable or disable the 3D terrain mesh mode.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
           {"name":"set_tile_bounds","description":"Show or hide white tile bounds in the selected view, as 0 and F4 do.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"]}},
           {"name":"set_subdivision_scheme","description":"Select how terrain tile meshes are triangulated, as the Edge subdivision options of the layer panel do. Only available in the 3D terrain mode. get_camera_model reports the current scheme.","inputSchema":{"type":"object","properties":{"scheme":{"type":"string","enum":["TRIANGLE_EDGE","DIAMOND_SQUARE","LIND1996"]}},"required":["scheme"]}},
@@ -102,8 +104,17 @@ public final class ViewerMcpServer implements AutoCloseable {
         String name = stringValue(request, "name");
         return switch (name) {
             case "key_event" -> {
-                viewer.pressKeyFromMcp(intValue(request, "key_code"));
+                if (request.contains("\"key_char\"")) {
+                    viewer.pressKeyFromMcp(intValue(request, "key_code"), stringValue(request, "key_char").charAt(0));
+                }
+                else {
+                    viewer.pressKeyFromMcp(intValue(request, "key_code"));
+                }
                 yield textResult("key event delivered");
+            }
+            case "set_camera_control" -> {
+                viewer.setCameraControlModeFromMcp(CameraControlMode.valueOf(stringValue(request, "mode")));
+                yield textResult("camera control updated");
             }
             case "set_geometry_mode" -> {
                 viewer.setGeometryModeFromMcp(booleanValue(request, "enabled"));

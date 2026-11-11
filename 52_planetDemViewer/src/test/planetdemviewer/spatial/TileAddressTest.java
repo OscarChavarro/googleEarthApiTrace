@@ -31,5 +31,27 @@ class TileAddressTest {
         assertFalse(tile.contains(TileAddress.fabdem("03")));
         assertFalse(tile.contains(new TileAddress("other-scheme", "021")));
     }
-}
 
+    @Test
+    void neighborsAreTheAdjacentTilesOfTheSameLevel() {
+        // Digits 0 to 3 are south-west, south-east, north-east, north-west.
+        assertEquals("01", TileAddress.fabdem("00").neighbor(1, 0).quadkey());
+        assertEquals("03", TileAddress.fabdem("00").neighbor(0, 1).quadkey());
+        assertEquals("010", TileAddress.fabdem("001").neighbor(1, 0).quadkey());
+        assertEquals("001", TileAddress.fabdem("010").neighbor(-1, 0).quadkey());
+        assertEquals("030", TileAddress.fabdem("003").neighbor(0, 1).quadkey());
+        TileAddress deep = TileAddress.fabdem("0123012301230123");
+        assertEquals(deep.x0() + deep.size(), deep.neighbor(1, 0).x0());
+        assertEquals(deep.y0(), deep.neighbor(1, 0).y0());
+        assertEquals(deep, deep.neighbor(1, 0).neighbor(-1, 0));
+    }
+
+    @Test
+    void thereIsNoNeighborOutsideTheRootTile() {
+        assertNull(TileAddress.fabdem("0").neighbor(1, 0));
+        assertNull(TileAddress.fabdem("00").neighbor(-1, 0));
+        assertNull(TileAddress.fabdem("00").neighbor(0, -1));
+        assertNull(TileAddress.fabdem("02").neighbor(1, 0));
+        assertNull(TileAddress.fabdem("02").neighbor(0, 1));
+    }
+}

@@ -48,6 +48,7 @@ public final class PlanetViewerModel {
     );
     private int selectedIndex = -1;
     private int currentPSC = 0;
+    private CameraControlMode cameraControlMode = CameraControlMode.AQUYNZA;
     private String hudStatus = "";
     private final StorageProfile storageProfile;
     private OperationModes operationMode = OperationModes.BASIC_TRIANGULATION;
@@ -197,6 +198,15 @@ public final class PlanetViewerModel {
 
     public void setOperationMode(OperationModes operationMode) {
         this.operationMode = operationMode == null ? OperationModes.BASIC_TRIANGULATION : operationMode;
+        notifyLayerStateChanged();
+    }
+
+    public CameraControlMode getCameraControlMode() {
+        return cameraControlMode;
+    }
+
+    public void setCameraControlMode(CameraControlMode mode) {
+        cameraControlMode = mode;
         notifyLayerStateChanged();
     }
 
@@ -392,7 +402,12 @@ public final class PlanetViewerModel {
         return currentPSC;
     }
 
+    /** Changing it rescales the whole world, so the selected point, which is in world coordinates, follows. */
     public void setCurrentPSC(int currentPSC) {
+        if (terrainSurfaceSelection != null && currentPSC != this.currentPSC) {
+            terrainSurfaceSelection = terrainSurfaceSelection.withWorldScaledBy(
+                Math.pow(10.0, this.currentPSC - currentPSC));
+        }
         this.currentPSC = currentPSC;
     }
 

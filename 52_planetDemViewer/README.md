@@ -294,7 +294,11 @@ draws the elevation palette only: the imagery folder is required but not drawn.
 
 ## GUI
 
-The window has a menu bar and a left panel with a tree of layers. Radio buttons
+The window has a menu bar and a left panel with categories of controls. Each one is a
+collapsible panel: its title has a triangle that points right while collapsed and down
+while expanded. The categories are stacked from the top, and the panel scrolls when they do not
+fit. The "Layers" category has a tree of layers, and "Camera control" has
+the select described in [Camera control](#camera-control). Radio buttons in the tree
 select how elevation is shown (3D terrain, the default, or a 2D palette image)
 and whether Google Earth color is drawn on the terrain, plus the terrain's edge
 subdivision scheme. Color is on by default,
@@ -306,10 +310,32 @@ language is not saved. `Ctrl+F` toggles full screen, which shows only the canvas
 and HUD.
 
 The GUI is defined by Vitral JSON files in `etc/gui`: `english.json` and
-`spanish.json` hold the menus, panel and HUD texts, and `dialogs.json` holds the layer tree.
+`spanish.json` hold the menus, panel and HUD texts, and `dialogs.json` holds the contents of the categories.
 Swing code is limited to `planetdemviewer.gui.awt`. Commands and layer behavior
 are in the toolkit-independent `GuiController` and `LayerTreePresenter`, to make
 later ports easier.
+
+## Camera control
+
+The "Camera control" category selects how the keys move the camera. It starts on Aquynza and
+is not saved in `state.json`. The MCP tool `set_camera_control` also sets it. The mouse, the wheel and all the
+other keys work the same in both.
+
+| Key | Aquynza | Levels browser |
+| --- | --- | --- |
+| `x` / `X` | Move west / east by a fixed step | Jump to the cell to the west / east |
+| `y` / `Y` | Move south / north by a fixed step | Jump to the cell to the south / north |
+| `z` / `Z` | Logarithmic zoom in / out | Halve / double the camera's height |
+
+- **Height.** It is measured over the `z = 0` plane, not over the terrain. Selection works by the
+  projected area of a tile, so halving the height usually selects the next level down.
+- **Cell.** The jump is the side of the cell under the selected point or, with no point selected,
+  under the center of the view. While a tile is loading, that cell can be its coarser ancestor.
+  Nothing happens at the edge of the root tile.
+- **Selected point.** It jumps with the camera, and keeps its offset from the center of the cell in
+  degrees. `geoidX` stays the same on `x` / `X`. On `y` / `Y` it changes slightly, because it is
+  measured at the latitude of the cell's center, and `geoidY` stays the same. Until
+  the neighbor is drawn, the HUD keeps the previous height and shows no color tile.
 
 ## Controls
 
@@ -339,13 +365,13 @@ box is drawn in yellow.
 | `1` / `2` | Select previous / next loaded pyramid |
 | `o` / `O` | Decrease / increase selected-layer opacity |
 | `Page Up` / `Page Down` | Raise / lower the selected layer |
-| `z` / `Z` | Zoom in / out |
+| `z` / `Z` | Zoom in / out; see [Camera control](#camera-control) |
 | `r` / `R` | Reset camera / reset to oblique camera |
 | `.` / `,` | Cycle active view / view layout |
 | `w` | Toggle camera-frustum display |
 | `v` / `V` | Add / remove a view (up to four) |
 | `e` / `E` | Save / clear saved viewer state |
-| `Ctrl` + `f` | Toggle full screen (hides the menu bar and layer panel) |
+| `Ctrl` + `f` | Toggle full screen (hides the menu bar and side panel) |
 | `Escape` | Close the viewer |
 
 ## MCP tools
@@ -356,6 +382,7 @@ agents at `http://127.0.0.1:<port>/mcp`:
 | Tool | Purpose |
 | --- | --- |
 | `set_geometry_mode` | Switch between the 3D terrain and the 2D palette image |
+| `set_camera_control` | Select `AQUYNZA` or `LEVELS_BROWSER` |
 | `set_subdivision_scheme` | Select `TRIANGLE_EDGE`, `DIAMOND_SQUARE` or `LIND1996`; 3D terrain mode only |
 | `set_screen_error_threshold` | Set the LIND1996 threshold, in pixels |
 | `set_camera_model` | Define the selected view's camera directly, in world coordinates |
@@ -364,9 +391,9 @@ agents at `http://127.0.0.1:<port>/mcp`:
 | `set_wires` | Show or hide the triangle edges, as `F2` does |
 | `set_tile_bounds` | Show or hide tile bounds in the selected view, as `0` and `F4` do |
 | `click_viewport` | Select the terrain under a pixel of `capture_view` |
-| `key_event` | Send a key code, without modifiers |
+| `key_event` | Send a key code, without modifiers. Letters also need `key_char`, which tells `x` from `X` |
 | `capture_view` | Save the canvas to a local PNG and return its path |
-| `get_camera_model` | Return the camera and the rendering options as JSON |
+| `get_camera_model` | Return the camera, the selected point and the rendering options as JSON |
 
 ## Palettes
 

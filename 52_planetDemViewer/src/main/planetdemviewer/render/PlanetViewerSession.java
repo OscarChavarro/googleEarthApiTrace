@@ -21,6 +21,7 @@ import planetdemviewer.render.terrain.TerrainPickFrame;
 import planetdemviewer.render.terrain.TerrainPicker;
 import planetdemviewer.render.terrain.TerrainSimplificationCounts;
 import planetdemviewer.render.terrain.TerrainSimplificationStatistics;
+import planetdemviewer.scene.TerrainSurfaceSelection;
 import planetdemviewer.scheduler.ResourceTelemetry;
 import planetdemviewer.scheduler.ResourceType;
 import planetdemviewer.spatial.TileAddress;
@@ -51,6 +52,7 @@ public final class PlanetViewerSession {
     private final TerrainImageryStatistics imageryStatistics = new TerrainImageryStatistics();
     private final TerrainPickFrame pickFrame = new TerrainPickFrame();
     private final TerrainPicker terrainPicker;
+    private final LevelsBrowserCameraControl levelsBrowser;
     private final HudContent hud;
     private final ViewOverlayPlanner viewOverlays;
     /** Guarded by the model's critical section; drained by the frame, which owns the graphics context. */
@@ -72,6 +74,7 @@ public final class PlanetViewerSession {
         model.setImageryAvailable(imageryTileLoader != null);
         this.viewports = new ViewportLayout(model.getViewingCamera());
         this.terrainPicker = new TerrainPicker(model, viewports, pickFrame, tileImageLoader);
+        this.levelsBrowser = new LevelsBrowserCameraControl(model, terrainPicker, pickFrame::isDrawn);
         this.hud = new HudContent(model, viewports);
         this.viewOverlays = new ViewOverlayPlanner(model, viewports);
     }
@@ -109,6 +112,11 @@ public final class PlanetViewerSession {
 
     public CameraControllerAquynza getCameraController() {
         return viewports.cameraController();
+    }
+
+    /** @return whether the selected camera control took this Vitral key code, on the selected view's camera */
+    public boolean processCameraControlKey(int keycode) {
+        return levelsBrowser.processKeyPressed(keycode, viewports.selectedView().getCamera());
     }
 
     /** Called from the AWT event thread; the textures are destroyed by the next frame. */
@@ -227,6 +235,8 @@ public final class PlanetViewerSession {
             + ",\"front\":" + vectorJson(camera.getFront())
             + ",\"projectionMode\":" + camera.getProjectionMode()
             + ",\"operationMode\":\"" + model.getOperationMode() + "\""
+            + ",\"cameraControl\":\"" + model.getCameraControlMode() + "\""
+            + ",\"selection\":" + selectionJson()
             + ",\"imageryVisible\":" + model.isImageryVisible()
             + ",\"subdivisionScheme\":\"" + model.getTerrainSubdivisionScheme() + "\""
             + ",\"screenErrorThresholdPixels\":" + model.getScreenErrorThresholdPixels()
@@ -255,6 +265,15 @@ public final class PlanetViewerSession {
         camera.setFocusedPositionDirect(focus);
         camera.setUpDirect(up);
         camera.updateVectors();
+    }
+
+    private String selectionJson() {
+        TerrainSurfaceSelection selection = model.getTerrainSurfaceSelection();
+        return selection == null ? "null" : "{\"tile\":\"" + selection.tile().quadkey()
+            + "\",\"longitude\":" + selection.position().longitude()
+            + ",\"latitude\":" + selection.position().latitude()
+            + ",\"geoidXMetres\":" + selection.geoidXMetres()
+            + ",\"geoidYMetres\":" + selection.geoidYMetres() + "}";
     }
 
     private static String vectorJson(Vector3Dd vector) {
@@ -351,6 +370,7 @@ public final class PlanetViewerSession {
 
     /** Publishes what the planners keep on the GPU, and returns the HUD to write over the finished frame. */
     public List<TextLabel> finishFrame(int canvasWidth, int canvasHeight) {
+        levelsBrowser.frameDrawn();
         resourceTelemetry.setBytes(ResourceType.TERRAIN_GPU, terrainGpuUsage.bytesAssigned());
         resourceTelemetry.setBytes(ResourceType.RASTER_GPU, rasterGpuUsage.bytesAssigned());
         hud.frameRendered();

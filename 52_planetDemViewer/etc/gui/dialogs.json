@@ -36,6 +36,20 @@
       ]
     },
     {
+      "id": "cameraControl.panel",
+      "titleKey": "IDM_CAMERA_CONTROL_TITLE",
+      "modal": false,
+      "content": [
+        {
+          "kind": "column", "id": "cameraControlMode",
+          "children": [
+            { "kind": "action", "id": "cameraControl.aquynza", "action": "useAquynzaCameraControl", "labelKey": "IDM_CAMERA_CONTROL_AQUYNZA" },
+            { "kind": "action", "id": "cameraControl.levelsBrowser", "action": "useLevelsBrowserCameraControl", "labelKey": "IDM_CAMERA_CONTROL_LEVELS_BROWSER" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "lind1996.details",
       "titleKey": "IDM_LIND1996_TITLE",
       "modal": false,

@@ -72,6 +72,26 @@ public record TileAddress(String scheme, String quadkey) {
         return Math.scalb(1.0, -level());
     }
 
+    /**
+     * The tile of this level that is the given number of columns to the east and rows to the north.
+     * @return null outside the root tile
+     */
+    public TileAddress neighbor(int columns, int rows) {
+        long tilesPerSide = 1L << level();
+        long column = Math.round(x0() * tilesPerSide) + columns;
+        long row = Math.round(y0() * tilesPerSide) + rows;
+        if (column < 0 || row < 0 || column >= tilesPerSide || row >= tilesPerSide) {
+            return null;
+        }
+        StringBuilder digits = new StringBuilder("0");
+        for (int bit = level() - 1; bit >= 0; bit--) {
+            boolean east = (column >> bit & 1L) != 0;
+            boolean north = (row >> bit & 1L) != 0;
+            digits.append(north ? (east ? '2' : '3') : (east ? '1' : '0'));
+        }
+        return new TileAddress(scheme, digits.toString());
+    }
+
     /** True for this tile itself and for every descendant of it. */
     public boolean contains(TileAddress other) {
         return scheme.equals(other.scheme) && other.quadkey.startsWith(quadkey);
